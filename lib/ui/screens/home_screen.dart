@@ -1,0 +1,616 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+
+import '../../models/game_info.dart';
+import '../../state/app_controller.dart';
+import '../../theme/app_palette.dart';
+import '../widgets/language_sheet.dart';
+import 'game_detail_screen.dart';
+import 'universal_ai_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _favouritesOnly = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final copy = controller.copy;
+    final palette = controller.palette;
+    final query = _searchController.text.trim().toLowerCase();
+    final games = controller.games.where((game) {
+      if (_favouritesOnly && game.id != 'puerto-rico') {
+        return false;
+      }
+      if (query.isEmpty) {
+        return true;
+      }
+      return game.title.toLowerCase().contains(query) ||
+          game.subtitle.toLowerCase().contains(query);
+    }).toList();
+
+    return Scaffold(
+      backgroundColor: palette.scaffoldBackground,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: palette.primaryGradient,
+          ),
+        ),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _SearchBar(
+                      controller: _searchController,
+                      hintText: copy.homeSearchHint,
+                      onChanged: (_) => setState(() {}),
+                      palette: palette,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  _AiOrbButton(
+                    palette: palette,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              UniversalAiScreen(controller: controller),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: <Widget>[
+                  IconButton(
+                    onPressed: () {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: palette.homeSurface,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(30),
+                          ),
+                        ),
+                        builder: (_) => LanguageSheet(controller: controller),
+                      );
+                    },
+                    iconSize: 40,
+                    color: Colors.white,
+                    icon: const Icon(Icons.settings_rounded),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      copy.favouritesOnly,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: palette.homeTextPrimary,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: _favouritesOnly,
+                    onChanged: (value) =>
+                        setState(() => _favouritesOnly = value),
+                    activeThumbColor: palette.accentPrimary,
+                    activeTrackColor: palette.accentPrimary.withValues(
+                      alpha: 0.55,
+                    ),
+                    inactiveThumbColor: palette.homeTextPrimary.withValues(
+                      alpha: 0.24,
+                    ),
+                    inactiveTrackColor: palette.homeTextPrimary.withValues(
+                      alpha: 0.12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _GlobalAiCard(
+                palette: palette,
+                title: copy.globalAiTitle,
+                subtitle: copy.globalAiSubtitle,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => UniversalAiScreen(controller: controller),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 18),
+              ...games.map(
+                (game) => Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _GameListCard(
+                    game: game,
+                    palette: palette,
+                    onTap: () {
+                      controller.selectGame(game.id);
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              GameDetailScreen(controller: controller),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({
+    required this.controller,
+    required this.hintText,
+    required this.onChanged,
+    required this.palette,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final ValueChanged<String> onChanged;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 70,
+      decoration: BoxDecoration(
+        color: palette.homeSearchBackground,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        style: TextStyle(color: palette.homeTextPrimary),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: palette.homeTextSecondary,
+            size: 32,
+          ),
+          hintText: hintText,
+          hintStyle: TextStyle(color: palette.homeSearchHint, fontSize: 20),
+          contentPadding: const EdgeInsets.symmetric(vertical: 22),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiOrbButton extends StatelessWidget {
+  const _AiOrbButton({required this.onTap, required this.palette});
+
+  final VoidCallback onTap;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(28),
+      child: Ink(
+        width: 76,
+        height: 76,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[palette.accentPrimary, palette.aiSecondary],
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: palette.accentPrimary.withValues(alpha: 0.3),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            const Icon(Icons.forum_rounded, color: Colors.white, size: 34),
+            Positioned(
+              right: 6,
+              bottom: 6,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: palette.homeSearchBackground,
+                    width: 2,
+                  ),
+                ),
+                child: Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 12,
+                  color: palette.aiSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GlobalAiCard extends StatelessWidget {
+  const _GlobalAiCard({
+    required this.palette,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final AppPalette palette;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(28),
+      child: Ink(
+        height: 158,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[
+              palette.aiPrimary,
+              palette.aiSecondary,
+              palette.accentPrimary,
+            ],
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Stack(
+            children: <Widget>[
+              Positioned(
+                top: -20,
+                right: -10,
+                child: _GlowCircle(
+                  size: 112,
+                  color: palette.accentSecondary.withValues(alpha: 0.25),
+                ),
+              ),
+              Positioned(
+                bottom: -30,
+                left: 110,
+                child: _GlowCircle(
+                  size: 160,
+                  color: Colors.white.withValues(alpha: 0.14),
+                ),
+              ),
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
+                  child: const SizedBox(),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 86,
+                      height: 86,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Icon(
+                        Icons.psychology_alt_rounded,
+                        color: Colors.white,
+                        size: 44,
+                      ),
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.displayMedium
+                                ?.copyWith(
+                                  color: palette.homeTextPrimary,
+                                  fontSize: 30,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: palette.homeTextPrimary.withValues(
+                                    alpha: 0.84,
+                                  ),
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GameListCard extends StatelessWidget {
+  const _GameListCard({
+    required this.game,
+    required this.palette,
+    required this.onTap,
+  });
+
+  final GameInfo game;
+  final AppPalette palette;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Color(game.cardAccent);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(28),
+      child: Ink(
+        height: 156,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          color: palette.cardSurface,
+        ),
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: _AssetCardImage(
+                  assetPath: game.bannerAssetPath,
+                  fallbackPath: game.coverAssetPath,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: <Color>[
+                      Colors.black.withValues(alpha: 0.42),
+                      palette.detailOverlayMid.withValues(alpha: 0.18),
+                      Colors.black.withValues(alpha: 0.34),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 18,
+              top: 18,
+              bottom: 18,
+              child: Container(
+                width: 106,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.16),
+                      blurRadius: 12,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: _AssetCardImage(
+                    assetPath: game.coverAssetPath,
+                    fallbackPath: game.bannerAssetPath,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 144,
+              right: 18,
+              top: 0,
+              bottom: 0,
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          game.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.displayMedium
+                              ?.copyWith(
+                                color: palette.homeTextPrimary,
+                                fontSize: 34,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          game.subtitle,
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: palette.homeTextPrimary.withValues(
+                                  alpha: 0.76,
+                                ),
+                              ),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${game.playerCount} · ${game.playTime}',
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(color: palette.homeTextPrimary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AssetCardImage extends StatefulWidget {
+  const _AssetCardImage({required this.assetPath, required this.fallbackPath});
+
+  final String assetPath;
+  final String fallbackPath;
+
+  @override
+  State<_AssetCardImage> createState() => _AssetCardImageState();
+}
+
+class _AssetCardImageState extends State<_AssetCardImage> {
+  late String _currentAssetPath;
+  bool _triedFallback = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentAssetPath = widget.assetPath;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AssetCardImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.assetPath != widget.assetPath) {
+      _currentAssetPath = widget.assetPath;
+      _triedFallback = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      _currentAssetPath,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        if (!_triedFallback && widget.fallbackPath != _currentAssetPath) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _currentAssetPath = widget.fallbackPath;
+              _triedFallback = true;
+            });
+          });
+        }
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[const Color(0xFF102339), const Color(0xFF081426)],
+            ),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.image_not_supported_outlined,
+              color: Colors.white54,
+              size: 34,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GlowCircle extends StatelessWidget {
+  const _GlowCircle({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+  }
+}
