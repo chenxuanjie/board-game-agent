@@ -15,6 +15,8 @@ import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/game_info.dart';
+import '../models/game_catalog_manifest.dart';
+import '../models/remote_library_update.dart';
 import '../models/resolved_document.dart';
 import '../services/ai_service.dart';
 import '../services/preferences_service.dart';
@@ -70,6 +72,10 @@ class AppController extends ChangeNotifier {
       <String, ConnectivityStatus>{};
   final Map<String, String> _resolvedAssetPaths = <String, String>{};
   Timer? _assetStatusTimer;
+  RemoteLibraryUpdate? _pendingLibraryUpdate;
+  bool _checkingLibraryUpdate = false;
+  bool _applyingLibraryUpdate = false;
+  bool _libraryUpdatePromptSeen = false;
   final List<ChatMessage> _messages = <ChatMessage>[];
   late final http.Client _assetTestClient = IOClient(
     HttpClient()
@@ -91,6 +97,9 @@ class AppController extends ChangeNotifier {
   ConnectivityStatus get assetConnectivityStatus => _assetConnectivityStatus;
   Map<String, ConnectivityStatus> get assetSourceStatuses =>
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
+  RemoteLibraryUpdate? get pendingLibraryUpdate => _pendingLibraryUpdate;
+  bool get checkingLibraryUpdate => _checkingLibraryUpdate;
+  bool get applyingLibraryUpdate => _applyingLibraryUpdate;
   String? resolvedAssetPath(String remotePath) => _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
@@ -110,6 +119,9 @@ class AppController extends ChangeNotifier {
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+    debugPrint(
+      '[updates] initialize loaded games: ${_games.map((g) => '${g.slug}:${g.title}').join(', ')}',
+    );
     _aiConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.success,
       message: copy.aiStatusDefaultReady,
@@ -129,6 +141,7 @@ class AppController extends ChangeNotifier {
     _ensureGreeting();
     unawaited(prefetchHomeImages());
     _startAssetStatusPolling();
+    unawaited(checkForLibraryUpdates());
     notifyListeners();
   }
 
@@ -417,6 +430,229 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> checkForLibraryUpdates({bool forcePromptReset = false}) async {
+    if (_checkingLibraryUpdate) {
+      return;
+    }
+
+    _checkingLibraryUpdate = true;
+    if (forcePromptReset) {
+      _libraryUpdatePromptSeen = false;
+    }
+    notifyListeners();
+
+      try {
+        debugPrint('[updates] checkForLibraryUpdates started');
+        final List<String> changedPaths = <String>[];
+        final Set<String> changedGameTitles = <String>{};
+        const String catalogPath = 'assets/catalog.json';
+        final List<AssetSourceConfig> sourcesForCheck = _preferredUpdateSources();
+        debugPrint(
+          '[updates] sourcesForCheck: ${sourcesForCheck.map((s) => s.id).join(', ')}',
+        );
+        final String? remoteCatalogSource = await _remoteAssetService.fetchRemoteText(
+          sources: sourcesForCheck,
+          remotePath: catalogPath,
+        );
+      final String localCatalogSource = await _gameManifestService.loadCatalogSource(
+        remoteAssetService: _remoteAssetService,
+      );
+      debugPrint(
+        '[updates] remote catalog fetched: ${remoteCatalogSource != null} len=${remoteCatalogSource?.length ?? 0}',
+      );
+      debugPrint(
+        '[updates] local catalog len=${localCatalogSource.length}',
+      );
+        if (remoteCatalogSource != null &&
+            _normalizeSource(remoteCatalogSource) !=
+                _normalizeSource(localCatalogSource)) {
+          changedPaths.add(catalogPath);
+          changedGameTitles.addAll(
+            await _diffCatalogGameTitles(remoteCatalogSource),
+          );
+          debugPrint('[updates] catalog changed');
+          final List<String> titles = changedGameTitles.toList()..sort();
+          _pendingLibraryUpdate = RemoteLibraryUpdate(
+            changedPaths: changedPaths,
+            changedGameTitles: titles,
+          );
+          _libraryUpdatePromptSeen = false;
+          debugPrint('[updates] pending update titles: ${titles.join(', ')}');
+          return;
+        } else {
+          debugPrint('[updates] catalog unchanged');
+        }
+
+        final Iterable<String> assetPaths = _trackedRemotePaths().toSet();
+        for (final String remotePath in assetPaths) {
+          if (remotePath == catalogPath) {
+            continue;
+          }
+          final bool changed = await _remoteAssetService.hasRemoteChanged(
+            sources: sourcesForCheck,
+            remotePath: remotePath,
+          );
+        if (changed) {
+          changedPaths.add(remotePath);
+          final String? title = _gameTitleForRemotePath(remotePath);
+          if (title != null) {
+            changedGameTitles.add(title);
+          }
+          debugPrint('[updates] changed path: $remotePath');
+        }
+      }
+
+      if (changedPaths.isNotEmpty) {
+        final List<String> titles = changedGameTitles.toList()..sort();
+        _pendingLibraryUpdate = RemoteLibraryUpdate(
+          changedPaths: changedPaths,
+          changedGameTitles: titles,
+        );
+        _libraryUpdatePromptSeen = false;
+        debugPrint('[updates] pending update titles: ${titles.join(', ')}');
+      } else {
+        debugPrint('[updates] no remote library updates detected');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('[updates] checkForLibraryUpdates failed: $error');
+      debugPrint('$stackTrace');
+    } finally {
+      _checkingLibraryUpdate = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> applyPendingLibraryUpdate() async {
+    final RemoteLibraryUpdate? pending = _pendingLibraryUpdate;
+    if (pending == null || _applyingLibraryUpdate) {
+      return;
+    }
+
+    _applyingLibraryUpdate = true;
+    notifyListeners();
+
+    try {
+      for (final String remotePath in pending.changedPaths) {
+        debugPrint('[updates] applying update for: $remotePath');
+        await _remoteAssetService.ensureCached(
+          sources: _assetSourceConfigs,
+          remotePath: remotePath,
+          forceRefresh: true,
+          allowCachedFallback: false,
+        );
+      }
+
+      _resolvedAssetPaths.clear();
+      _games = await _loadGamesForLanguage(_language);
+      _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+      _pendingLibraryUpdate = null;
+      _libraryUpdatePromptSeen = false;
+      await prefetchHomeImages();
+      debugPrint('[updates] apply complete');
+    } finally {
+      _applyingLibraryUpdate = false;
+      notifyListeners();
+    }
+  }
+
+  void dismissPendingLibraryUpdatePrompt() {
+    _libraryUpdatePromptSeen = true;
+    notifyListeners();
+  }
+
+  bool shouldShowLibraryUpdatePrompt() {
+    return _pendingLibraryUpdate != null && !_libraryUpdatePromptSeen;
+  }
+
+  Future<List<String>> _diffCatalogGameTitles(String remoteCatalogSource) async {
+    try {
+      final remoteCatalog = GameCatalogManifest.fromJson(
+        jsonDecode(remoteCatalogSource) as Map<String, dynamic>,
+      );
+      final GameCatalogManifest localCatalog =
+          await _gameManifestService.loadCatalogManifest(
+            remoteAssetService: _remoteAssetService,
+          );
+
+      final Map<String, GameCatalogEntry> localEntries = <String, GameCatalogEntry>{
+        for (final entry in localCatalog.games) entry.slug: entry,
+      };
+      final Map<String, GameCatalogEntry> remoteEntries = <String, GameCatalogEntry>{
+        for (final entry in remoteCatalog.games) entry.slug: entry,
+      };
+
+      final Set<String> changedSlugs = <String>{};
+      final Set<String> allSlugs = <String>{
+        ...localEntries.keys,
+        ...remoteEntries.keys,
+      };
+      for (final String slug in allSlugs) {
+        final local = localEntries[slug];
+        final remote = remoteEntries[slug];
+        if (local == null || remote == null) {
+          changedSlugs.add(slug);
+          continue;
+        }
+        if (local.enabled != remote.enabled || local.order != remote.order) {
+          changedSlugs.add(slug);
+        }
+      }
+      debugPrint('[updates] changed slugs from catalog diff: ${changedSlugs.join(', ')}');
+
+      final List<String> titles = <String>[];
+      for (final String slug in changedSlugs) {
+        final String? title = await _titleForSlug(slug);
+        if (title != null) {
+          titles.add(title);
+        }
+      }
+      return titles;
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
+  Future<String?> _titleForSlug(String slug) async {
+    final GameInfo? local = _games.where((game) => game.slug == slug).cast<GameInfo?>().firstWhere(
+      (game) => game != null,
+      orElse: () => null,
+    );
+    if (local != null) {
+      return local.title;
+    }
+
+    try {
+      final String source = await _gameManifestService.loadManifestSource(
+        remotePath: 'assets/games/$slug/game.json',
+        remoteAssetService: _remoteAssetService,
+      );
+      final GameManifest manifest = GameManifest.fromJson(
+        jsonDecode(source) as Map<String, dynamic>,
+      );
+      return manifest.toGameInfo(_language).title;
+    } catch (_) {
+      return slug;
+    }
+  }
+
+  String? _gameTitleForRemotePath(String remotePath) {
+    final RegExpMatch? match =
+        RegExp(r'assets/games/([^/]+)/').firstMatch(remotePath);
+    if (match == null) {
+      return null;
+    }
+    final String slug = match.group(1)!;
+    final GameInfo? game = _games.where((item) => item.slug == slug).cast<GameInfo?>().firstWhere(
+      (item) => item != null,
+      orElse: () => null,
+    );
+    return game?.title ?? slug;
+  }
+
+  String _normalizeSource(String source) {
+    return source.replaceAll('\r\n', '\n').trim();
+  }
+
   Future<String?> cacheDocument(String remotePath) async {
     final CachedAsset? cached = await _remoteAssetService.ensureCached(
       sources: _assetSourceConfigs,
@@ -561,8 +797,51 @@ class AppController extends ChangeNotifier {
     return localized;
   }
 
+  Iterable<String> _trackedRemotePaths() sync* {
+    for (final GameInfo game in _games) {
+      yield game.coverAssetPath;
+      yield game.bannerAssetPath;
+      for (final String path in game.galleryAssetPaths) {
+        yield path;
+      }
+      yield game.rulebookAssetPath;
+      yield game.faqAssetPath;
+      for (final String path in game.knowledgeAssetPaths) {
+        yield path;
+      }
+      for (final String path in _documentCandidates(
+        game: game,
+        baseName: 'rulebook',
+      )) {
+        yield path;
+      }
+      for (final String path in _documentCandidates(game: game, baseName: 'faq')) {
+        yield path;
+      }
+      yield 'assets/games/${game.slug}/game.json';
+    }
+  }
+
+  List<AssetSourceConfig> _preferredUpdateSources() {
+    final List<AssetSourceConfig> successful = _assetSourceConfigs
+        .where(
+          (source) =>
+              _assetSourceStatuses[source.id]?.state == ConnectivityState.success,
+        )
+        .toList();
+    if (successful.isNotEmpty) {
+      return successful;
+    }
+    if (_assetSourceConfigs.isNotEmpty) {
+      return <AssetSourceConfig>[_assetSourceConfigs.first];
+    }
+    return <AssetSourceConfig>[];
+  }
+
   Future<List<GameInfo>> _loadGamesForLanguage(AppLanguage language) async {
-    final manifests = await _gameManifestService.loadEnabledGames();
+    final manifests = await _gameManifestService.loadEnabledGames(
+      remoteAssetService: _remoteAssetService,
+    );
     return manifests.map((manifest) => manifest.toGameInfo(language)).toList();
   }
 

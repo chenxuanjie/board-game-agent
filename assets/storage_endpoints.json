@@ -2,7 +2,7 @@
   "version": 1,
   "defaultSource": "lan_share",
   "auth": {
-    "username": "shane",
+    "username": "Shane",
     "password": "1"
   },
   "timeouts": {

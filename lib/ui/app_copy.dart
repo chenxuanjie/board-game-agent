@@ -47,6 +47,17 @@ class AppCopy {
   String get assetTestDone =>
       isChinese ? '资源访问测试完成' : 'Asset access test completed';
   String get dialogClose => isChinese ? '关闭' : 'Close';
+  String get libraryUpdateTitle =>
+      isChinese ? '检测到新的桌游信息内容' : 'New board game content detected';
+  String get libraryUpdateMessage => isChinese
+      ? '检测到 catalog、背景图、规则书或相关资料有更新。是否现在下载并更新到本地？'
+      : 'Catalog, images, rulebooks, or related content has been updated. Download and update local data now?';
+  String libraryUpdateGameListLabel(int count) => isChinese
+      ? '涉及 $count 个桌游：'
+      : 'Affected games ($count):';
+  String get updateNow => isChinese ? '确定' : 'Update';
+  String get updateLater => isChinese ? '取消' : 'Cancel';
+  String get updatingNow => isChinese ? '正在更新资源…' : 'Updating content...';
   String get voiceReplyTitle => isChinese ? 'AI 回答朗读' : 'AI voice reply';
   String get voiceReplyHint => isChinese
       ? '打开后，AI 回复会自动朗读。'

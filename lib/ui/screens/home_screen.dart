@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/connectivity_status.dart';
 import '../../models/game_info.dart';
+import '../../models/remote_library_update.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
@@ -24,9 +25,18 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _favouritesOnly = false;
+  bool _showingLibraryUpdateDialog = false;
+  RemoteLibraryUpdate? _lastSeenUpdate;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerChanged);
+  }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -174,6 +184,104 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _maybeShowLibraryUpdateDialog(AppController controller) async {
+    if (!mounted || _showingLibraryUpdateDialog) {
+      debugPrint(
+        '[updates-ui] skip dialog mounted=$mounted showing=$_showingLibraryUpdateDialog',
+      );
+      return;
+    }
+    if (!controller.shouldShowLibraryUpdatePrompt()) {
+      debugPrint('[updates-ui] shouldShowLibraryUpdatePrompt=false');
+      return;
+    }
+
+    _showingLibraryUpdateDialog = true;
+    final copy = controller.copy;
+    final titles = controller.pendingLibraryUpdate?.changedGameTitles ?? const <String>[];
+    final debugLabel = 'show update dialog: [${titles.join(', ')}]';
+    debugPrint(debugLabel);
+    final bool? shouldUpdate = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        final update = controller.pendingLibraryUpdate;
+        return AlertDialog(
+          title: Text(copy.libraryUpdateTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(copy.libraryUpdateMessage),
+              const SizedBox(height: 12),
+              Text(
+                debugLabel,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (update != null && update.changedGameTitles.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 14),
+                Text(
+                  copy.libraryUpdateGameListLabel(update.changedGameTitles.length),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                ...update.changedGameTitles.map(
+                  (title) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('• $title'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(copy.updateLater),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(copy.updateNow),
+            ),
+          ],
+        );
+      },
+    );
+    _showingLibraryUpdateDialog = false;
+    if (!mounted) {
+      debugPrint('[updates-ui] dialog completed but widget unmounted');
+      return;
+    }
+
+    if (shouldUpdate == true) {
+      debugPrint('[updates-ui] user confirmed update');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(copy.updatingNow)),
+      );
+      await controller.applyPendingLibraryUpdate();
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+
+    debugPrint('[updates-ui] user cancelled update');
+    controller.dismissPendingLibraryUpdatePrompt();
+  }
+
+  void _onControllerChanged() {
+    if (!mounted) {
+      return;
+    }
+    final RemoteLibraryUpdate? next = widget.controller.pendingLibraryUpdate;
+    if (next != null && !identical(next, _lastSeenUpdate)) {
+      _lastSeenUpdate = next;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _maybeShowLibraryUpdateDialog(widget.controller);
+      });
+    }
   }
 }
 
