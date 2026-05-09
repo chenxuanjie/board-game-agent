@@ -1,16 +1,45 @@
 import 'package:flutter/material.dart';
 
+import '../../models/ai_api_config.dart';
 import '../../models/app_language.dart';
 import '../../models/color_scheme_option.dart';
 import '../../state/app_controller.dart';
 
-class LanguageSheet extends StatelessWidget {
+class LanguageSheet extends StatefulWidget {
   const LanguageSheet({super.key, required this.controller});
 
   final AppController controller;
 
   @override
+  State<LanguageSheet> createState() => _LanguageSheetState();
+}
+
+class _LanguageSheetState extends State<LanguageSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _urlController;
+  late final TextEditingController _keyController;
+  bool _isTesting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final config = widget.controller.aiApiConfig;
+    _nameController = TextEditingController(text: config.name);
+    _urlController = TextEditingController(text: config.baseUrl);
+    _keyController = TextEditingController(text: config.apiKey);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _urlController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     final copy = controller.copy;
     final palette = controller.palette;
     return SafeArea(
@@ -101,11 +130,126 @@ class LanguageSheet extends StatelessWidget {
                 ),
                 onChanged: controller.setVoiceReplyEnabled,
               ),
+              const SizedBox(height: 20),
+              Text(
+                copy.aiApiTitle,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              _ApiField(
+                label: copy.aiApiNameLabel,
+                controller: _nameController,
+              ),
+              const SizedBox(height: 12),
+              _ApiField(
+                label: copy.aiApiUrlLabel,
+                controller: _urlController,
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 12),
+              _ApiField(
+                label: copy.aiApiKeyLabel,
+                controller: _keyController,
+                obscureText: true,
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _saveConfig,
+                      child: Text(copy.aiApiSave),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _resetDefault,
+                      child: Text(copy.aiApiReset),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _isTesting ? null : _testConfig,
+                  child: Text(_isTesting ? '...' : copy.aiApiTest),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _saveConfig() async {
+    final controller = widget.controller;
+    final copy = controller.copy;
+    final next = AiApiConfig.defaultMimo.copyWith(
+      name: _nameController.text.trim().isEmpty
+          ? AiApiConfig.defaultMimo.name
+          : _nameController.text.trim(),
+      baseUrl: _urlController.text.trim().isEmpty
+          ? AiApiConfig.defaultMimo.baseUrl
+          : _urlController.text.trim(),
+      apiKey: _keyController.text.trim().isEmpty
+          ? AiApiConfig.defaultMimo.apiKey
+          : _keyController.text.trim(),
+    );
+    await controller.saveAiApiConfig(next);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(copy.aiApiSaved)));
+  }
+
+  void _resetDefault() {
+    final config = AiApiConfig.defaultMimo;
+    _nameController.text = config.name;
+    _urlController.text = config.baseUrl;
+    _keyController.text = config.apiKey;
+    _saveConfig();
+  }
+
+  Future<void> _testConfig() async {
+    final controller = widget.controller;
+    final config = AiApiConfig.defaultMimo.copyWith(
+      name: _nameController.text.trim().isEmpty
+          ? AiApiConfig.defaultMimo.name
+          : _nameController.text.trim(),
+      baseUrl: _urlController.text.trim().isEmpty
+          ? AiApiConfig.defaultMimo.baseUrl
+          : _urlController.text.trim(),
+      apiKey: _keyController.text.trim().isEmpty
+          ? AiApiConfig.defaultMimo.apiKey
+          : _keyController.text.trim(),
+    );
+    setState(() => _isTesting = true);
+    try {
+      final result = await controller.testAiApiConfig(config);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result)));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) {
+        setState(() => _isTesting = false);
+      }
+    }
   }
 }
 
@@ -173,6 +317,30 @@ class _LanguageOption extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ApiField extends StatelessWidget {
+  const _ApiField({
+    required this.label,
+    required this.controller,
+    this.keyboardType,
+    this.obscureText = false,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final TextInputType? keyboardType;
+  final bool obscureText;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      decoration: InputDecoration(labelText: label),
     );
   }
 }

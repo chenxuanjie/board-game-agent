@@ -1,7 +1,10 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
+import '../models/ai_api_config.dart';
 import '../models/app_language.dart';
 import '../models/chat_message.dart';
 import '../models/color_scheme_option.dart';
@@ -38,6 +41,7 @@ class AppController extends ChangeNotifier {
   bool _isListening = false;
   bool _isSending = false;
   String _selectedGameId = 'puerto-rico';
+  AiApiConfig _aiApiConfig = AiApiConfig.defaultMimo;
   final List<ChatMessage> _messages = <ChatMessage>[];
 
   AppLanguage get language => _language;
@@ -47,6 +51,7 @@ class AppController extends ChangeNotifier {
   bool get speechAvailable => _speechAvailable;
   bool get isListening => _isListening;
   bool get isSending => _isSending;
+  AiApiConfig get aiApiConfig => _aiApiConfig;
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => GameCatalog.allGames(_language);
   GameInfo get featuredGame => selectedGame;
@@ -61,6 +66,7 @@ class AppController extends ChangeNotifier {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
+    _aiApiConfig = await _preferencesService.loadAiApiConfig();
     try {
       _speechAvailable = await _speechService.initialize(
         onListeningStopped: _handleListeningStopped,
@@ -92,6 +98,45 @@ class AppController extends ChangeNotifier {
     _colorScheme = next;
     await _preferencesService.saveColorScheme(next);
     notifyListeners();
+  }
+
+  Future<void> saveAiApiConfig(AiApiConfig next) async {
+    _aiApiConfig = next;
+    await _preferencesService.saveAiApiConfig(next);
+    notifyListeners();
+  }
+
+  Future<String> testAiApiConfig(AiApiConfig config) async {
+    final String normalizedBaseUrl = config.baseUrl.endsWith('/')
+        ? config.baseUrl.substring(0, config.baseUrl.length - 1)
+        : config.baseUrl;
+    final String normalizedChatPath = config.chatPath.startsWith('/')
+        ? config.chatPath
+        : '/${config.chatPath}';
+    final Uri uri = Uri.parse('$normalizedBaseUrl$normalizedChatPath');
+    final response = await http
+        .post(
+          uri,
+          headers: <String, String>{
+            config.apiKeyHeader: config.apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(<String, dynamic>{
+            'model': config.model,
+            'messages': const <Map<String, String>>[
+              <String, String>{'role': 'user', 'content': 'ping'},
+            ],
+            'max_completion_tokens': 8,
+            'stream': false,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return copy.aiApiTestSuccess;
+    }
+
+    return 'HTTP ${response.statusCode}: ${response.body}';
   }
 
   void selectGame(String gameId) {
@@ -182,6 +227,7 @@ class AppController extends ChangeNotifier {
       prompt: trimmed,
       language: _language,
       game: featuredGame,
+      config: _aiApiConfig,
     );
 
     final assistantMessage = ChatMessage(

@@ -110,7 +110,126 @@ flutter build apk --release
 
 真正发布之前，建议再补自己的 Android 签名配置。
 
-## 9. 后续接入真实 AI 的位置
+## 9. 编译 iOS 版本
+
+当前项目已经补齐了 `ios/` 工程骨架，但 **真正编译 iOS App 必须在 macOS 上完成**，因为需要：
+
+- Xcode
+- Apple 的 iOS SDK
+- CocoaPods
+- Apple 开发者签名
+
+这台 Windows 机器上 **不能直接产出可安装的 iOS `.ipa`**。不过你后面把项目拷到 Mac 上后，可以按下面的最短步骤走。
+
+### 9.1 在 Mac 上准备环境
+
+你需要先安装：
+
+1. Xcode（从 App Store 安装）
+2. Flutter SDK
+3. CocoaPods
+
+建议先检查环境：
+
+```bash
+flutter doctor -v
+```
+
+你需要看到：
+
+- `Xcode` 正常
+- `CocoaPods` 正常
+- `iOS toolchain` 正常
+
+### 9.2 进入项目并拉依赖
+
+```bash
+flutter pub get
+cd ios
+pod install
+cd ..
+```
+
+如果是第一次在这台 Mac 上打开该项目，建议先执行一次：
+
+```bash
+flutter clean
+flutter pub get
+cd ios
+pod install
+cd ..
+```
+
+### 9.3 运行到 iPhone 模拟器
+
+先打开一个 iOS 模拟器，然后执行：
+
+```bash
+flutter run -d ios
+```
+
+或者先列出设备：
+
+```bash
+flutter devices
+```
+
+再指定某个模拟器运行。
+
+### 9.4 用 Xcode 配置签名
+
+如果你要装到真实 iPhone，先在 Xcode 打开：
+
+- `ios/Runner.xcworkspace`
+
+然后：
+
+1. 选中 `Runner`
+2. 打开 `Signing & Capabilities`
+3. 选择你的 `Team`
+4. 确认 `Bundle Identifier` 唯一可用
+
+### 9.5 生成 iOS Release
+
+在命令行生成 iOS release 构建：
+
+```bash
+flutter build ios --release
+```
+
+这一步会生成 iOS release 构建产物，但**默认还不是可分发的 `.ipa`**。
+
+### 9.6 导出 IPA
+
+通常推荐在 Xcode 中导出：
+
+1. 用 Xcode 打开 `ios/Runner.xcworkspace`
+2. 菜单选择：
+   - `Product > Archive`
+3. Archive 完成后，在 Organizer 中选择：
+   - `Distribute App`
+4. 选择导出方式：
+   - Development
+   - Ad Hoc
+   - App Store Connect
+
+如果只是自己装机测试，通常选 `Development` 或 `Ad Hoc`。
+
+### 9.7 常用 iOS 命令
+
+```bash
+flutter build ios --debug
+flutter build ios --release
+flutter run -d ios
+```
+
+### 9.8 iOS 版本当前状态说明
+
+- 我已经帮你生成了 `ios/` 工程
+- 你现在可以把整个项目直接拷到 Mac 上继续
+- Windows 这边无法替你完成最终 iOS 签名和 `.ipa` 导出
+
+## 10. 后续接入真实 AI 的位置
 
 现在这版模拟 AI 的行为只是“复读用户输入”。
 
@@ -127,7 +246,7 @@ flutter build apk --release
 4. 解析 AI 返回的文本内容
 5. 把结果返回到聊天页面里显示
 
-## 10. 当前版本已完成的功能
+## 11. 当前版本已完成的功能
 
 - 一个参考 Ludomentor 风格的首页视觉
 - 1 个桌游入口：`波多黎各`
@@ -138,7 +257,7 @@ flutter build apk --release
 - AI 回答朗读
 - 当前 AI 为模拟回声模式
 
-## 11. 如果打包失败
+## 12. 如果打包失败
 
 先检查这几项：
 

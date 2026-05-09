@@ -2,15 +2,12 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/ai_api_config.dart';
 import '../models/app_language.dart';
 import '../models/game_info.dart';
 import 'ai_service.dart';
 
 class MimoAiService implements AiService {
-  static const String apiKey = 'tp-cqrdq1go3g16pd4nhg05vd91dmh36vp0eq49i41qjmb4rdlb';
-  static const String baseUrl = 'https://token-plan-cn.xiaomimimo.com/v1';
-  static const String model = 'mimo-v2.5-pro';
-
   final http.Client _client;
 
   MimoAiService({http.Client? client}) : _client = client ?? http.Client();
@@ -20,21 +17,25 @@ class MimoAiService implements AiService {
     required String prompt,
     required AppLanguage language,
     required GameInfo game,
+    required AiApiConfig config,
   }) async {
-    final Uri uri = Uri.parse('$baseUrl/chat/completions');
-    final String systemPrompt = _buildSystemPrompt(language: language, game: game);
+    final String normalizedBaseUrl = config.baseUrl.endsWith('/')
+        ? config.baseUrl.substring(0, config.baseUrl.length - 1)
+        : config.baseUrl;
+    final String normalizedChatPath = config.chatPath.startsWith('/')
+        ? config.chatPath
+        : '/${config.chatPath}';
+    final Uri uri = Uri.parse('$normalizedBaseUrl$normalizedChatPath');
+    final String systemPrompt = _buildSystemPrompt(
+      language: language,
+      game: game,
+    );
 
     final Map<String, dynamic> payload = <String, dynamic>{
-      'model': model,
+      'model': config.model,
       'messages': <Map<String, String>>[
-        <String, String>{
-          'role': 'system',
-          'content': systemPrompt,
-        },
-        <String, String>{
-          'role': 'user',
-          'content': prompt,
-        },
+        <String, String>{'role': 'system', 'content': systemPrompt},
+        <String, String>{'role': 'user', 'content': prompt},
       ],
       'max_completion_tokens': 1024,
       'temperature': 1.0,
@@ -47,7 +48,7 @@ class MimoAiService implements AiService {
     final http.Response response = await _client.post(
       uri,
       headers: <String, String>{
-        'api-key': apiKey,
+        config.apiKeyHeader: config.apiKey,
         'Content-Type': 'application/json',
       },
       body: jsonEncode(payload),
@@ -57,7 +58,8 @@ class MimoAiService implements AiService {
       throw Exception('MiMo 接口请求失败：${response.statusCode} ${response.body}');
     }
 
-    final Map<String, dynamic> json = jsonDecode(response.body) as Map<String, dynamic>;
+    final Map<String, dynamic> json =
+        jsonDecode(response.body) as Map<String, dynamic>;
     final List<dynamic>? choices = json['choices'] as List<dynamic>?;
     if (choices == null || choices.isEmpty) {
       throw Exception('MiMo 接口没有返回可用回答。');

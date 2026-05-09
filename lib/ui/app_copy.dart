@@ -18,6 +18,15 @@ class AppCopy {
   String get languageTitle => isChinese ? '语言设置' : 'Language';
   String get colorSchemeTitle => isChinese ? '配色方案' : 'Color Scheme';
   String get colorSchemeHint => isChinese ? '切换不同视觉风格' : 'Switch visual styles';
+  String get aiApiTitle => isChinese ? 'AI 接口配置' : 'AI API Config';
+  String get aiApiNameLabel => isChinese ? '配置名称' : 'Config Name';
+  String get aiApiUrlLabel => isChinese ? '接口地址' : 'Base URL';
+  String get aiApiKeyLabel => isChinese ? '接口密钥' : 'API Key';
+  String get aiApiSave => isChinese ? '保存配置' : 'Save Config';
+  String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
+  String get aiApiTest => isChinese ? '测试连接' : 'Test Connection';
+  String get aiApiSaved => isChinese ? 'AI 接口配置已保存' : 'AI API config saved';
+  String get aiApiTestSuccess => isChinese ? '连接成功' : 'Connection successful';
   String get voiceReplyTitle => isChinese ? 'AI 回答朗读' : 'AI voice reply';
   String get voiceReplyHint => isChinese
       ? '打开后，AI 回复会自动朗读。'
