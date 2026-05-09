@@ -54,5 +54,8 @@ app.*.map.json
 # Temporary extracted rulebook text
 assets/games/**/docs/*.txt
 
+# Local game library payloads
+/assets/games/
+
 # Optional local notes / logs
 /last-build.log

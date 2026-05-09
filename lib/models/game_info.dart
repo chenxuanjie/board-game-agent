@@ -4,6 +4,7 @@ class GameInfo {
     required this.slug,
     required this.title,
     required this.subtitle,
+    this.editionLabel,
     required this.coverAssetPath,
     required this.bannerAssetPath,
     List<String>? galleryAssetPaths,
@@ -42,6 +43,7 @@ class GameInfo {
   final String slug;
   final String title;
   final String subtitle;
+  final String? editionLabel;
   final String coverAssetPath;
   final String bannerAssetPath;
   final List<String> galleryAssetPaths;

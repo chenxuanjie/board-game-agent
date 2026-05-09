@@ -13,7 +13,7 @@ class AppCopy {
       ? '像 Ludomentor 一样的桌游入口与统一 AI 助手'
       : 'A Ludomentor-style board game library with a unified AI helper';
   String get featuredLabel => isChinese ? '当前已装入' : 'Loaded now';
-  String get featuredGameCount => isChinese ? '2 个桌游' : '2 board games';
+  String featuredGameCount(int count) => isChinese ? '$count 个桌游' : '$count board games';
   String get openSettings => isChinese ? '语言与语音' : 'Language and voice';
   String get languageTitle => isChinese ? '语言设置' : 'Language';
   String get colorSchemeTitle => isChinese ? '配色方案' : 'Color Scheme';
@@ -104,26 +104,6 @@ class AppCopy {
   String get imagePageLabel => isChinese ? '图片' : 'Image';
   String get imageCoverLabel => isChinese ? '封面图' : 'Cover';
   String get imageSceneLabel => isChinese ? '场景图' : 'Scene';
-  String editionLabelFor(String gameId) {
-    if (!isChinese) {
-      if (gameId == 'puerto-rico') {
-        return 'Deluxe Edition';
-      }
-      if (gameId == 'arkham-horror-lcg') {
-        return 'Card Game';
-      }
-      return '';
-    }
-
-    if (gameId == 'puerto-rico') {
-      return '豪华版';
-    }
-    if (gameId == 'arkham-horror-lcg') {
-      return '卡牌版';
-    }
-    return '';
-  }
-
   String get supportPlayersLabel => isChinese ? '支持人数' : 'Supported Players';
   String get recommendedPlayersLabel =>
       isChinese ? '推荐人数' : 'Recommended Players';

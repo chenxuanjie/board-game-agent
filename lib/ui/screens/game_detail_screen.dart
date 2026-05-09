@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../models/game_info.dart';
+import '../../models/resolved_document.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import 'chat_screen.dart';
@@ -23,6 +24,8 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   late final PageController _galleryController;
   int _galleryIndex = 0;
   _PlayerStripMode _playerStripMode = _PlayerStripMode.supported;
+  bool _openingRulebook = false;
+  bool _openingFaq = false;
 
   @override
   void initState() {
@@ -42,7 +45,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     final copy = controller.copy;
     final game = controller.selectedGame;
     final palette = controller.palette;
-    final editionLabel = copy.editionLabelFor(game.id);
+    final editionLabel = game.editionLabel ?? '';
 
     return Scaffold(
       backgroundColor: palette.detailOverlayBottom,
@@ -155,58 +158,20 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                   icon: Icons.menu_book_rounded,
                   label: copy.rulesBook,
                   palette: palette,
-                  onTap: () {
-                    if (game.rulebookAssetPath.endsWith('.md')) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => MarkdownDocumentScreen(
-                            controller: controller,
-                            remotePath: game.rulebookAssetPath,
-                            title: copy.rulesBook,
-                          ),
-                        ),
-                      );
-                    } else {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => PdfDocumentScreen(
-                            controller: controller,
-                            title: copy.rulesBook,
-                            remotePath: game.rulebookAssetPath,
-                          ),
-                        ),
-                      );
-                    }
-                  },
+                  isLoading: _openingRulebook,
+                  onTap: _openingRulebook
+                      ? null
+                      : () => _openRulebook(controller, game, copy.rulesBook),
                 ),
                 const SizedBox(height: 12),
                 _ActionButton(
                   icon: Icons.quiz_rounded,
                   label: copy.faq,
                   palette: palette,
-                  onTap: () {
-                    if (game.faqAssetPath.endsWith('.md')) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => MarkdownDocumentScreen(
-                            controller: controller,
-                            remotePath: game.faqAssetPath,
-                            title: copy.faq,
-                          ),
-                        ),
-                      );
-                    } else {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => PdfDocumentScreen(
-                            controller: controller,
-                            title: copy.faq,
-                            remotePath: game.faqAssetPath,
-                          ),
-                        ),
-                      );
-                    }
-                  },
+                  isLoading: _openingFaq,
+                  onTap: _openingFaq
+                      ? null
+                      : () => _openFaq(controller, game, copy.faq),
                 ),
                 const SizedBox(height: 12),
                 _ActionButton(
@@ -225,6 +190,76 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openRulebook(
+    AppController controller,
+    GameInfo game,
+    String title,
+  ) async {
+    setState(() => _openingRulebook = true);
+    try {
+      final ResolvedDocument? document =
+          await controller.resolveRulebookDocument(game);
+      if (!mounted || document == null) {
+        return;
+      }
+      await _openResolvedDocument(controller, document, title);
+    } finally {
+      if (mounted) {
+        setState(() => _openingRulebook = false);
+      }
+    }
+  }
+
+  Future<void> _openFaq(
+    AppController controller,
+    GameInfo game,
+    String title,
+  ) async {
+    setState(() => _openingFaq = true);
+    try {
+      final ResolvedDocument? document = await controller.resolveFaqDocument(
+        game,
+      );
+      if (!mounted || document == null) {
+        return;
+      }
+      await _openResolvedDocument(controller, document, title);
+    } finally {
+      if (mounted) {
+        setState(() => _openingFaq = false);
+      }
+    }
+  }
+
+  Future<void> _openResolvedDocument(
+    AppController controller,
+    ResolvedDocument document,
+    String title,
+  ) async {
+    if (document.renderType == DocumentRenderType.markdown) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => MarkdownDocumentScreen(
+            controller: controller,
+            remotePath: document.remotePath,
+            title: title,
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PdfDocumentScreen(
+          controller: controller,
+          title: title,
+          remotePath: document.remotePath,
+        ),
       ),
     );
   }
@@ -921,12 +956,14 @@ class _ActionButton extends StatelessWidget {
     required this.label,
     required this.palette,
     required this.onTap,
+    this.isLoading = false,
   });
 
   final IconData icon;
   final String label;
   final AppPalette palette;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -948,7 +985,16 @@ class _ActionButton extends StatelessWidget {
           foregroundColor: foregroundColor,
           backgroundColor: palette.detailSurface.withValues(alpha: 0.18),
         ),
-        icon: Icon(icon, size: 22),
+        icon: isLoading
+            ? SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  valueColor: AlwaysStoppedAnimation<Color>(foregroundColor),
+                ),
+              )
+            : Icon(icon, size: 22),
         label: Text(
           label,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(

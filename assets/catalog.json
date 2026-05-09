@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "games": [
+    {
+      "slug": "puerto_rico",
+      "order": 10,
+      "enabled": true
+    },
+    {
+      "slug": "arkham_horror_lcg",
+      "order": 20,
+      "enabled": true
+    },
+    {
+      "slug": "startups",
+      "order": 30,
+      "enabled": true
+    },
+    {
+      "slug": "cabo",
+      "order": 40,
+      "enabled": true
+    },
+    {
+      "slug": "carcassonne_3",
+      "order": 50,
+      "enabled": true
+    },
+    {
+      "slug": "harmonies",
+      "order": 60,
+      "enabled": true
+    },
+    {
+      "slug": "war_chest",
+      "order": 70,
+      "enabled": true
+    },
+    {
+      "slug": "decrypto",
+      "order": 80,
+      "enabled": true
+    },
+    {
+      "slug": "seven_wonders_duel",
+      "order": 90,
+      "enabled": true
+    },
+    {
+      "slug": "splendor",
+      "order": 100,
+      "enabled": true
+    },
+    {
+      "slug": "splendor_duel",
+      "order": 110,
+      "enabled": true
+    },
+    {
+      "slug": "exploding_kittens",
+      "order": 120,
+      "enabled": true
+    },
+    {
+      "slug": "castles_of_burgundy_special_edition",
+      "order": 130,
+      "enabled": true
+    },
+    {
+      "slug": "citadels",
+      "order": 140,
+      "enabled": true
+    },
+    {
+      "slug": "in_a_grove",
+      "order": 150,
+      "enabled": true
+    },
+    {
+      "slug": "wriggle_roulette",
+      "order": 160,
+      "enabled": true
+    },
+    {
+      "slug": "manila",
+      "order": 170,
+      "enabled": true
+    }
+  ]
+}

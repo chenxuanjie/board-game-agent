@@ -15,31 +15,35 @@ import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/game_info.dart';
+import '../models/resolved_document.dart';
 import '../services/ai_service.dart';
 import '../services/preferences_service.dart';
+import '../services/game_manifest_service.dart';
 import '../services/remote_asset_service.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
 import '../theme/app_palette.dart';
 import '../theme/palette_registry.dart';
 import '../ui/app_copy.dart';
-import '../ui/game_catalog.dart';
 
 class AppController extends ChangeNotifier {
   AppController({
     required PreferencesService preferencesService,
     required AiService aiService,
+    required GameManifestService gameManifestService,
     required RemoteAssetService remoteAssetService,
     required SpeechService speechService,
     required TtsService ttsService,
   }) : _preferencesService = preferencesService,
        _aiService = aiService,
+       _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
        _speechService = speechService,
        _ttsService = ttsService;
 
   final PreferencesService _preferencesService;
   final AiService _aiService;
+  final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
   final SpeechService _speechService;
   final TtsService _ttsService;
@@ -53,6 +57,7 @@ class AppController extends ChangeNotifier {
   String _selectedGameId = 'puerto-rico';
   AiApiConfig _aiApiConfig = AiApiConfig.defaultMimo;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
+  List<GameInfo> _games = <GameInfo>[];
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
     state: ConnectivityState.success,
     message: '默认可用',
@@ -88,7 +93,7 @@ class AppController extends ChangeNotifier {
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
   String? resolvedAssetPath(String remotePath) => _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
-  List<GameInfo> get games => GameCatalog.allGames(_language);
+  List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
   GameInfo get featuredGame => selectedGame;
   GameInfo get selectedGame => games.firstWhere(
     (game) => game.id == _selectedGameId,
@@ -103,6 +108,8 @@ class AppController extends ChangeNotifier {
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
+    _games = await _loadGamesForLanguage(_language);
+    _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _aiConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.success,
       message: copy.aiStatusDefaultReady,
@@ -131,6 +138,8 @@ class AppController extends ChangeNotifier {
     }
 
     _language = next;
+    _games = await _loadGamesForLanguage(_language);
+    _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _preferencesService.saveLanguage(next);
     await _ttsService.setLanguage(next);
     notifyListeners();
@@ -440,6 +449,24 @@ class AppController extends ChangeNotifier {
     return File(localPath).readAsString();
   }
 
+  Future<ResolvedDocument?> resolveRulebookDocument(GameInfo game) {
+    return _resolveDocument(
+      game: game,
+      baseName: 'rulebook',
+      fallbackRemotePath: game.rulebookAssetPath,
+      fallbackLabel: copy.rulesBook,
+    );
+  }
+
+  Future<ResolvedDocument?> resolveFaqDocument(GameInfo game) {
+    return _resolveDocument(
+      game: game,
+      baseName: 'faq',
+      fallbackRemotePath: game.faqAssetPath,
+      fallbackLabel: copy.faq,
+    );
+  }
+
   Future<String?> resolveImagePath(String remotePath) async {
     return _cacheImage(remotePath);
   }
@@ -457,6 +484,96 @@ class AppController extends ChangeNotifier {
     }
     _resolvedAssetPaths[remotePath] = cached.localPath;
     return cached.localPath;
+  }
+
+  Future<ResolvedDocument?> _resolveDocument({
+    required GameInfo game,
+    required String baseName,
+    required String fallbackRemotePath,
+    required String fallbackLabel,
+  }) async {
+    final List<String> candidates = _documentCandidates(
+      game: game,
+      baseName: baseName,
+    );
+    for (final candidate in candidates) {
+      final CachedAsset? cached = await _remoteAssetService.ensureCached(
+        sources: _assetSourceConfigs,
+        remotePath: candidate,
+      );
+      if (cached != null) {
+        _resolvedAssetPaths[candidate] = cached.localPath;
+        _assetConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.success,
+          message: '文档已缓存',
+          checkedAt: DateTime.now(),
+        );
+        notifyListeners();
+        return ResolvedDocument(
+          remotePath: candidate,
+          renderType: candidate.endsWith('.pdf')
+              ? DocumentRenderType.pdf
+              : DocumentRenderType.markdown,
+          label: fallbackLabel,
+        );
+      }
+    }
+
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.failure,
+      message: '文档下载失败',
+      checkedAt: DateTime.now(),
+    );
+    notifyListeners();
+    return ResolvedDocument(
+      remotePath: fallbackRemotePath,
+      renderType: fallbackRemotePath.endsWith('.pdf')
+          ? DocumentRenderType.pdf
+          : DocumentRenderType.markdown,
+      label: fallbackLabel,
+    );
+  }
+
+  List<String> _documentCandidates({
+    required GameInfo game,
+    required String baseName,
+  }) {
+    final String docsRoot = 'assets/games/${game.slug}/docs';
+    final bool isChinese = language == AppLanguage.zhHans;
+    final List<String> localized = isChinese
+        ? <String>[
+            '$docsRoot/${baseName}_official_zh.pdf',
+            '$docsRoot/${baseName}_official_en.pdf',
+            '$docsRoot/${baseName}_zh.md',
+            '$docsRoot/${baseName}_en.md',
+          ]
+        : <String>[
+            '$docsRoot/${baseName}_official_en.pdf',
+            '$docsRoot/${baseName}_official_zh.pdf',
+            '$docsRoot/${baseName}_en.md',
+            '$docsRoot/${baseName}_zh.md',
+          ];
+
+    // Keep compatibility with already uploaded irregular names.
+    if (baseName == 'faq') {
+      localized.insert(0, '$docsRoot/faq_official_v25_en.pdf');
+    }
+    return localized;
+  }
+
+  Future<List<GameInfo>> _loadGamesForLanguage(AppLanguage language) async {
+    final manifests = await _gameManifestService.loadEnabledGames();
+    return manifests.map((manifest) => manifest.toGameInfo(language)).toList();
+  }
+
+  String _resolveSelectedGameId(String preferredId) {
+    if (_games.any((game) => game.id == preferredId)) {
+      return preferredId;
+    }
+    if (_games.isNotEmpty) {
+      return _games.first.id;
+    }
+    return preferredId;
   }
 
   void _startAssetStatusPolling() {
