@@ -1,6 +1,7 @@
 class GameInfo {
   GameInfo({
     required this.id,
+    required this.slug,
     required this.title,
     required this.subtitle,
     required this.coverAssetPath,
@@ -38,6 +39,7 @@ class GameInfo {
        );
 
   final String id;
+  final String slug;
   final String title;
   final String subtitle;
   final String coverAssetPath;

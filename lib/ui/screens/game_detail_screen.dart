@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -47,7 +49,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       body: Stack(
         children: <Widget>[
           Positioned.fill(
-            child: Image.asset(game.bannerAssetPath, fit: BoxFit.cover),
+            child: _RemoteGameImage(
+              controller: controller,
+              remotePath: game.bannerAssetPath,
+              fit: BoxFit.cover,
+            ),
           ),
           Positioned.fill(
             child: DecoratedBox(
@@ -72,6 +78,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                 const SizedBox(height: 18),
                 _ImageGallery(
                   controller: _galleryController,
+                  appController: controller,
                   game: game,
                   palette: palette,
                   pageLabel: copy.imagePageLabel,
@@ -154,7 +161,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         MaterialPageRoute<void>(
                           builder: (_) => MarkdownDocumentScreen(
                             controller: controller,
-                            assetPath: game.rulebookAssetPath,
+                            remotePath: game.rulebookAssetPath,
                             title: copy.rulesBook,
                           ),
                         ),
@@ -165,7 +172,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                           builder: (_) => PdfDocumentScreen(
                             controller: controller,
                             title: copy.rulesBook,
-                            assetPath: game.rulebookAssetPath,
+                            remotePath: game.rulebookAssetPath,
                           ),
                         ),
                       );
@@ -183,7 +190,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         MaterialPageRoute<void>(
                           builder: (_) => MarkdownDocumentScreen(
                             controller: controller,
-                            assetPath: game.faqAssetPath,
+                            remotePath: game.faqAssetPath,
                             title: copy.faq,
                           ),
                         ),
@@ -194,7 +201,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                           builder: (_) => PdfDocumentScreen(
                             controller: controller,
                             title: copy.faq,
-                            assetPath: game.faqAssetPath,
+                            remotePath: game.faqAssetPath,
                           ),
                         ),
                       );
@@ -220,6 +227,69 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         ],
       ),
     );
+  }
+}
+
+class _RemoteGameImage extends StatefulWidget {
+  const _RemoteGameImage({
+    required this.controller,
+    required this.remotePath,
+    required this.fit,
+  });
+
+  final AppController controller;
+  final String remotePath;
+  final BoxFit fit;
+
+  @override
+  State<_RemoteGameImage> createState() => _RemoteGameImageState();
+}
+
+class _RemoteGameImageState extends State<_RemoteGameImage> {
+  String? _resolvedPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RemoteGameImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.remotePath != widget.remotePath) {
+      _resolvedPath = null;
+      _resolve();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_resolvedPath == null) {
+      return DecoratedBox(
+        decoration: const BoxDecoration(color: Color(0xFF0C1624)),
+        child: const Center(
+          child: Icon(
+            Icons.image_not_supported_outlined,
+            color: Colors.white54,
+            size: 34,
+          ),
+        ),
+      );
+    }
+    return Image.file(File(_resolvedPath!), fit: widget.fit);
+  }
+
+  Future<void> _resolve() async {
+    final String? path = await widget.controller.resolveImagePath(
+      widget.remotePath,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _resolvedPath = path;
+    });
   }
 }
 
@@ -276,6 +346,7 @@ class _DetailTopBar extends StatelessWidget {
 class _ImageGallery extends StatelessWidget {
   const _ImageGallery({
     required this.controller,
+    required this.appController,
     required this.game,
     required this.palette,
     required this.pageLabel,
@@ -286,6 +357,7 @@ class _ImageGallery extends StatelessWidget {
   });
 
   final PageController controller;
+  final AppController appController;
   final GameInfo game;
   final AppPalette palette;
   final String pageLabel;
@@ -334,6 +406,7 @@ class _ImageGallery extends StatelessWidget {
                       fit: StackFit.expand,
                       children: <Widget>[
                         _GalleryImage(
+                          controller: appController,
                           assetPath: assetPath,
                           fallbackPath: fallbackPath,
                         ),
@@ -429,8 +502,13 @@ class _ImageGallery extends StatelessWidget {
 }
 
 class _GalleryImage extends StatefulWidget {
-  const _GalleryImage({required this.assetPath, required this.fallbackPath});
+  const _GalleryImage({
+    required this.controller,
+    required this.assetPath,
+    required this.fallbackPath,
+  });
 
+  final AppController controller;
   final String assetPath;
   final String fallbackPath;
 
@@ -439,59 +517,87 @@ class _GalleryImage extends StatefulWidget {
 }
 
 class _GalleryImageState extends State<_GalleryImage> {
-  late String _currentAssetPath;
+  String? _resolvedPath;
   bool _triedFallback = false;
 
   @override
   void initState() {
     super.initState();
-    _currentAssetPath = widget.assetPath;
+    _resolve();
   }
 
   @override
   void didUpdateWidget(covariant _GalleryImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.assetPath != widget.assetPath) {
-      _currentAssetPath = widget.assetPath;
+      _resolvedPath = null;
       _triedFallback = false;
+      _resolve();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      _currentAssetPath,
+    if (_resolvedPath == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[const Color(0xFF203047), const Color(0xFF101826)],
+          ),
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.photo_library_outlined,
+            color: Colors.white70,
+            size: 44,
+          ),
+        ),
+      );
+    }
+    return Image.file(
+      File(_resolvedPath!),
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
-        if (!_triedFallback && widget.fallbackPath != _currentAssetPath) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_triedFallback && widget.fallbackPath != widget.assetPath) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) {
+              return;
+            }
+            _triedFallback = true;
+            final String? fallback = await widget.controller.resolveImagePath(
+              widget.fallbackPath,
+            );
             if (!mounted) {
               return;
             }
             setState(() {
-              _currentAssetPath = widget.fallbackPath;
-              _triedFallback = true;
+              _resolvedPath = fallback;
             });
           });
         }
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[const Color(0xFF203047), const Color(0xFF101826)],
-            ),
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.photo_library_outlined,
-              color: Colors.white70,
-              size: 44,
-            ),
+        return const Center(
+          child: Icon(
+            Icons.photo_library_outlined,
+            color: Colors.white70,
+            size: 44,
           ),
         );
       },
     );
+  }
+
+  Future<void> _resolve() async {
+    final String? path = await widget.controller.resolveImagePath(
+      widget.assetPath,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _resolvedPath = path;
+    });
   }
 }
 

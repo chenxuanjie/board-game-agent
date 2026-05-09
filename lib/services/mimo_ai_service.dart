@@ -4,9 +4,11 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import '../models/ai_api_config.dart';
+import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/game_info.dart';
 import 'ai_service.dart';
+import 'remote_asset_service.dart';
 
 class MimoAiService implements AiService {
   static const int _maxKnowledgeCharsPerAsset = 6000;
@@ -22,6 +24,8 @@ class MimoAiService implements AiService {
     required AppLanguage language,
     required GameInfo game,
     required AiApiConfig config,
+    required List<AssetSourceConfig> assetSourceConfigs,
+    required RemoteAssetService remoteAssetService,
   }) async {
     final String normalizedBaseUrl = config.baseUrl.endsWith('/')
         ? config.baseUrl.substring(0, config.baseUrl.length - 1)
@@ -33,6 +37,8 @@ class MimoAiService implements AiService {
     final String systemPrompt = await _buildSystemPrompt(
       language: language,
       game: game,
+      assetSourceConfigs: assetSourceConfigs,
+      remoteAssetService: remoteAssetService,
     );
 
     final Map<String, dynamic> payload = <String, dynamic>{
@@ -82,11 +88,17 @@ class MimoAiService implements AiService {
   Future<String> _buildSystemPrompt({
     required AppLanguage language,
     required GameInfo game,
+    required List<AssetSourceConfig> assetSourceConfigs,
+    required RemoteAssetService remoteAssetService,
   }) async {
     final String todayLabel = language == AppLanguage.zhHans
         ? _chineseTodayString()
         : _englishTodayString();
-    final String knowledgeContext = await _buildKnowledgeContext(game);
+    final String knowledgeContext = await _buildKnowledgeContext(
+      game,
+      assetSourceConfigs,
+      remoteAssetService,
+    );
     final String knowledgeBlock = knowledgeContext.isEmpty
         ? ''
         : '\n\n当前游戏的本地知识库摘录如下，请优先依据这些内容回答：\n$knowledgeContext';
@@ -122,17 +134,33 @@ $englishKnowledgeBlock
 ''';
   }
 
-  Future<String> _buildKnowledgeContext(GameInfo game) async {
+  Future<String> _buildKnowledgeContext(
+    GameInfo game,
+    List<AssetSourceConfig> assetSourceConfigs,
+    RemoteAssetService remoteAssetService,
+  ) async {
     final StringBuffer buffer = StringBuffer();
     int totalChars = 0;
 
-    for (final String assetPath in game.knowledgeAssetPaths) {
-      if (!assetPath.endsWith('.md')) {
+    for (final String remotePath in game.knowledgeAssetPaths) {
+      if (!remotePath.endsWith('.md')) {
         continue;
       }
 
       try {
-        String content = await rootBundle.loadString(assetPath);
+        String? content;
+        try {
+          content = await rootBundle.loadString(remotePath);
+        } catch (_) {
+          content = null;
+        }
+        content ??= await remoteAssetService.loadTextFromAny(
+          sources: assetSourceConfigs,
+          remotePaths: <String>[remotePath],
+        );
+        if (content == null) {
+          continue;
+        }
         content = _normalizeKnowledgeContent(content);
         if (content.isEmpty) {
           continue;
@@ -152,7 +180,7 @@ $englishKnowledgeBlock
           content = content.substring(0, remaining);
         }
 
-        final String fileName = assetPath.split('/').last;
+        final String fileName = remotePath.split('/').last;
         buffer.writeln('### $fileName');
         buffer.writeln(content);
         buffer.writeln();

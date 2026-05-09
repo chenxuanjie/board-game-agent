@@ -16,6 +16,7 @@ class GameCatalog {
     if (language == AppLanguage.zhHans) {
       return GameInfo(
         id: 'puerto-rico',
+        slug: 'puerto_rico',
         title: '波多黎各',
         subtitle: 'Puerto Rico',
         coverAssetPath: 'assets/games/puerto_rico/images/cover.jpg',
@@ -63,6 +64,7 @@ class GameCatalog {
 
     return GameInfo(
       id: 'puerto-rico',
+      slug: 'puerto_rico',
       title: 'Puerto Rico',
       subtitle: 'Puerto Rico',
       coverAssetPath: 'assets/games/puerto_rico/images/cover.jpg',
@@ -120,6 +122,7 @@ class GameCatalog {
     if (language == AppLanguage.zhHans) {
       return GameInfo(
         id: 'arkham-horror-lcg',
+        slug: 'arkham_horror_lcg',
         title: '诡镇奇谈',
         subtitle: 'Arkham Horror: The Card Game',
         coverAssetPath: 'assets/games/arkham_horror_lcg/images/cover.webp',
@@ -169,6 +172,7 @@ class GameCatalog {
 
     return GameInfo(
       id: 'arkham-horror-lcg',
+      slug: 'arkham_horror_lcg',
       title: 'Arkham Horror',
       subtitle: 'Arkham Horror: The Card Game',
       coverAssetPath: 'assets/games/arkham_horror_lcg/images/cover.webp',
@@ -226,6 +230,7 @@ class GameCatalog {
     if (language == AppLanguage.zhHans) {
       return GameInfo(
         id: 'startups',
+        slug: 'startups',
         title: '初创公司',
         subtitle: 'Startups',
         coverAssetPath: 'assets/games/startups/images/cover.jpg',
@@ -273,6 +278,7 @@ class GameCatalog {
 
     return GameInfo(
       id: 'startups',
+      slug: 'startups',
       title: 'Startups',
       subtitle: 'Startups',
       coverAssetPath: 'assets/games/startups/images/cover.jpg',
@@ -325,6 +331,7 @@ class GameCatalog {
     if (language == AppLanguage.zhHans) {
       return GameInfo(
         id: 'cabo',
+        slug: 'cabo',
         title: 'Cabo',
         subtitle: 'Cabo',
         coverAssetPath: 'assets/games/cabo/images/cover.jpg',
@@ -378,6 +385,7 @@ class GameCatalog {
 
     return GameInfo(
       id: 'cabo',
+      slug: 'cabo',
       title: 'Cabo',
       subtitle: 'Cabo',
       coverAssetPath: 'assets/games/cabo/images/cover.jpg',
@@ -436,6 +444,7 @@ class GameCatalog {
     if (language == AppLanguage.zhHans) {
       return GameInfo(
         id: 'carcassonne-3',
+        slug: 'carcassonne_3',
         title: '卡卡颂 3.0',
         subtitle: 'Carcassonne',
         coverAssetPath: 'assets/games/carcassonne_3/images/cover.jpg',
@@ -490,6 +499,7 @@ class GameCatalog {
 
     return GameInfo(
       id: 'carcassonne-3',
+      slug: 'carcassonne_3',
       title: 'Carcassonne 3.0',
       subtitle: 'Carcassonne',
       coverAssetPath: 'assets/games/carcassonne_3/images/cover.jpg',

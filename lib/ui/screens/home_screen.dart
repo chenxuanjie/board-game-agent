@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -153,6 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 (game) => Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: _GameListCard(
+                    controller: controller,
                     game: game,
                     palette: palette,
                     onTap: () {
@@ -543,11 +545,13 @@ class _GlobalAiCard extends StatelessWidget {
 
 class _GameListCard extends StatelessWidget {
   const _GameListCard({
+    required this.controller,
     required this.game,
     required this.palette,
     required this.onTap,
   });
 
+  final AppController controller;
   final GameInfo game;
   final AppPalette palette;
   final VoidCallback onTap;
@@ -570,6 +574,7 @@ class _GameListCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(28),
                 child: _AssetCardImage(
+                  controller: controller,
                   assetPath: game.bannerAssetPath,
                   fallbackPath: game.coverAssetPath,
                 ),
@@ -613,6 +618,7 @@ class _GameListCard extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(22),
                   child: _AssetCardImage(
+                    controller: controller,
                     assetPath: game.coverAssetPath,
                     fallbackPath: game.bannerAssetPath,
                   ),
@@ -686,8 +692,13 @@ class _GameListCard extends StatelessWidget {
 }
 
 class _AssetCardImage extends StatefulWidget {
-  const _AssetCardImage({required this.assetPath, required this.fallbackPath});
+  const _AssetCardImage({
+    required this.controller,
+    required this.assetPath,
+    required this.fallbackPath,
+  });
 
+  final AppController controller;
   final String assetPath;
   final String fallbackPath;
 
@@ -696,59 +707,88 @@ class _AssetCardImage extends StatefulWidget {
 }
 
 class _AssetCardImageState extends State<_AssetCardImage> {
-  late String _currentAssetPath;
+  String? _resolvedPath;
   bool _triedFallback = false;
 
   @override
   void initState() {
     super.initState();
-    _currentAssetPath = widget.assetPath;
+    _resolve();
   }
 
   @override
   void didUpdateWidget(covariant _AssetCardImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.assetPath != widget.assetPath) {
-      _currentAssetPath = widget.assetPath;
+      _resolvedPath = null;
       _triedFallback = false;
+      _resolve();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      _currentAssetPath,
+    final String? path = _resolvedPath;
+    if (path == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[const Color(0xFF102339), const Color(0xFF081426)],
+          ),
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.image_not_supported_outlined,
+            color: Colors.white54,
+            size: 34,
+          ),
+        ),
+      );
+    }
+    return Image.file(
+      File(path),
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
-        if (!_triedFallback && widget.fallbackPath != _currentAssetPath) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_triedFallback && widget.fallbackPath != widget.assetPath) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) {
+              return;
+            }
+            _triedFallback = true;
+            final String? nextPath = await widget.controller.resolveImagePath(
+              widget.fallbackPath,
+            );
             if (!mounted) {
               return;
             }
             setState(() {
-              _currentAssetPath = widget.fallbackPath;
-              _triedFallback = true;
+              _resolvedPath = nextPath;
             });
           });
         }
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[const Color(0xFF102339), const Color(0xFF081426)],
-            ),
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.image_not_supported_outlined,
-              color: Colors.white54,
-              size: 34,
-            ),
+        return const Center(
+          child: Icon(
+            Icons.image_not_supported_outlined,
+            color: Colors.white54,
+            size: 34,
           ),
         );
       },
     );
+  }
+
+  Future<void> _resolve() async {
+    final String? path = await widget.controller.resolveImagePath(
+      widget.assetPath,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _resolvedPath = path;
+    });
   }
 }
 

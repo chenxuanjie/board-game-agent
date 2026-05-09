@@ -11,11 +11,13 @@ import '../models/ai_api_config.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/chat_message.dart';
+import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/game_info.dart';
 import '../services/ai_service.dart';
 import '../services/preferences_service.dart';
+import '../services/remote_asset_service.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
 import '../theme/app_palette.dart';
@@ -27,15 +29,18 @@ class AppController extends ChangeNotifier {
   AppController({
     required PreferencesService preferencesService,
     required AiService aiService,
+    required RemoteAssetService remoteAssetService,
     required SpeechService speechService,
     required TtsService ttsService,
   }) : _preferencesService = preferencesService,
        _aiService = aiService,
+       _remoteAssetService = remoteAssetService,
        _speechService = speechService,
        _ttsService = ttsService;
 
   final PreferencesService _preferencesService;
   final AiService _aiService;
+  final RemoteAssetService _remoteAssetService;
   final SpeechService _speechService;
   final TtsService _ttsService;
 
@@ -58,6 +63,7 @@ class AppController extends ChangeNotifier {
   );
   final Map<String, ConnectivityStatus> _assetSourceStatuses =
       <String, ConnectivityStatus>{};
+  final Map<String, String> _resolvedAssetPaths = <String, String>{};
   Timer? _assetStatusTimer;
   final List<ChatMessage> _messages = <ChatMessage>[];
   late final http.Client _assetTestClient = IOClient(
@@ -80,6 +86,7 @@ class AppController extends ChangeNotifier {
   ConnectivityStatus get assetConnectivityStatus => _assetConnectivityStatus;
   Map<String, ConnectivityStatus> get assetSourceStatuses =>
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
+  String? resolvedAssetPath(String remotePath) => _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => GameCatalog.allGames(_language);
   GameInfo get featuredGame => selectedGame;
@@ -113,6 +120,7 @@ class AppController extends ChangeNotifier {
     }
     await _ttsService.initialize(_language);
     _ensureGreeting();
+    unawaited(prefetchHomeImages());
     _startAssetStatusPolling();
     notifyListeners();
   }
@@ -305,6 +313,8 @@ class AppController extends ChangeNotifier {
       language: _language,
       game: featuredGame,
       config: _aiApiConfig,
+      assetSourceConfigs: _assetSourceConfigs,
+      remoteAssetService: _remoteAssetService,
     );
 
     final assistantMessage = ChatMessage(
@@ -336,43 +346,28 @@ class AppController extends ChangeNotifier {
         <String, ConnectivityStatus>{};
     for (final source in _assetSourceConfigs) {
       try {
-        final response = await _assetTestClient
-            .get(
-              Uri.parse(source.testUrl),
-              headers: const <String, String>{
-                'Authorization': 'Basic U2hhbmU6MQ==',
-              },
-            )
-            .timeout(const Duration(seconds: 3));
-        final bool isSuccess =
-            response.statusCode >= 200 && response.statusCode < 300;
-        final bool isReachableButRestricted =
-            response.statusCode == 401 ||
-            response.statusCode == 403 ||
-            response.statusCode == 404;
-        final ConnectivityState state = isSuccess
-            ? ConnectivityState.success
-            : isReachableButRestricted
-            ? ConnectivityState.success
-            : ConnectivityState.failure;
-        final String message = isSuccess
-            ? '访问成功'
-            : isReachableButRestricted
-            ? '已响应 HTTP ${response.statusCode}'
-            : '返回 HTTP ${response.statusCode}';
-        final status = ConnectivityStatus(
-          state: state,
-          message: message,
-          checkedAt: DateTime.now(),
+        final CachedAsset? asset = await _remoteAssetService.ensureCached(
+          sources: <AssetSourceConfig>[source],
+          remotePath: 'assets/games/${featuredGame.slug}/images/cover.jpg',
+          forceRefresh: true,
+          allowCachedFallback: false,
         );
-        debugPrint('[assets] ${source.id} => $message');
+        final ConnectivityStatus status = asset != null
+            ? ConnectivityStatus(
+                state: ConnectivityState.success,
+                message: '图片拉取成功',
+                checkedAt: DateTime.now(),
+              )
+            : ConnectivityStatus(
+                state: ConnectivityState.failure,
+                message: '图片拉取失败',
+                checkedAt: DateTime.now(),
+              );
+        debugPrint('[assets] ${source.id} => ${status.message}');
         nextStatuses[source.id] = status;
-        if (bestStatus == null) {
-          bestStatus = status;
-          continue;
-        }
-        if (status.state == ConnectivityState.success &&
-            bestStatus.state != ConnectivityState.success) {
+        if (bestStatus == null ||
+            (status.state == ConnectivityState.success &&
+                bestStatus.state != ConnectivityState.success)) {
           bestStatus = status;
         }
       } catch (error) {
@@ -393,6 +388,75 @@ class AppController extends ChangeNotifier {
         nextStatuses[_assetSourceConfigs.first.id] ??
         ConnectivityStatus.unknown('未检测');
     notifyListeners();
+  }
+
+  Future<void> prefetchHomeImages() async {
+    bool anySuccess = false;
+    for (final game in games) {
+      anySuccess = (await _cacheImage(game.coverAssetPath)) != null || anySuccess;
+      anySuccess =
+          (await _cacheImage(game.bannerAssetPath)) != null || anySuccess;
+      for (final path in game.galleryAssetPaths) {
+        anySuccess = (await _cacheImage(path)) != null || anySuccess;
+      }
+    }
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: anySuccess ? ConnectivityState.success : ConnectivityState.failure,
+      message: anySuccess ? '首页资源已缓存' : '首页资源拉取失败',
+      checkedAt: DateTime.now(),
+    );
+    notifyListeners();
+  }
+
+  Future<String?> cacheDocument(String remotePath) async {
+    final CachedAsset? cached = await _remoteAssetService.ensureCached(
+      sources: _assetSourceConfigs,
+      remotePath: remotePath,
+    );
+    if (cached == null) {
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: '文档下载失败',
+        checkedAt: DateTime.now(),
+      );
+      notifyListeners();
+      return null;
+    }
+    _resolvedAssetPaths[remotePath] = cached.localPath;
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.success,
+      message: '文档已缓存',
+      checkedAt: DateTime.now(),
+    );
+    notifyListeners();
+    return cached.localPath;
+  }
+
+  Future<String?> loadMarkdownDocument(String remotePath) async {
+    final String? localPath = await cacheDocument(remotePath);
+    if (localPath == null) {
+      return null;
+    }
+    return File(localPath).readAsString();
+  }
+
+  Future<String?> resolveImagePath(String remotePath) async {
+    return _cacheImage(remotePath);
+  }
+
+  Future<String?> _cacheImage(String remotePath) async {
+    if (_resolvedAssetPaths.containsKey(remotePath)) {
+      return _resolvedAssetPaths[remotePath];
+    }
+    final CachedAsset? cached = await _remoteAssetService.ensureCached(
+      sources: _assetSourceConfigs,
+      remotePath: remotePath,
+    );
+    if (cached == null) {
+      return null;
+    }
+    _resolvedAssetPaths[remotePath] = cached.localPath;
+    return cached.localPath;
   }
 
   void _startAssetStatusPolling() {

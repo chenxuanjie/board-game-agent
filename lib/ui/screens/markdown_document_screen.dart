@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../state/app_controller.dart';
@@ -8,12 +7,12 @@ class MarkdownDocumentScreen extends StatefulWidget {
   const MarkdownDocumentScreen({
     super.key,
     required this.controller,
-    required this.assetPath,
+    required this.remotePath,
     required this.title,
   });
 
   final AppController controller;
-  final String assetPath;
+  final String remotePath;
   final String title;
 
   @override
@@ -21,12 +20,12 @@ class MarkdownDocumentScreen extends StatefulWidget {
 }
 
 class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
-  late Future<String> _contentFuture;
+  late Future<String?> _contentFuture;
 
   @override
   void initState() {
     super.initState();
-    _contentFuture = rootBundle.loadString(widget.assetPath);
+    _contentFuture = widget.controller.loadMarkdownDocument(widget.remotePath);
   }
 
   @override
@@ -41,17 +40,17 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       backgroundColor: palette.detailOverlayBottom,
-      body: FutureBuilder<String>(
+      body: FutureBuilder<String?>(
         future: _contentFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError) {
+          if (snapshot.hasError || snapshot.data == null) {
             return Center(
               child: Text(
-                '文档加载失败：${snapshot.error}',
+                '文档加载失败：${snapshot.error ?? '未找到缓存或远端资源'}',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyLarge?.copyWith(color: cardTextColor),
