@@ -1,12 +1,17 @@
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../models/ai_api_config.dart';
+import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/chat_message.dart';
+import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/game_info.dart';
 import '../services/ai_service.dart';
@@ -42,7 +47,24 @@ class AppController extends ChangeNotifier {
   bool _isSending = false;
   String _selectedGameId = 'puerto-rico';
   AiApiConfig _aiApiConfig = AiApiConfig.defaultMimo;
+  List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
+  ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
+    state: ConnectivityState.success,
+    message: '默认可用',
+    checkedAt: DateTime.now(),
+  );
+  ConnectivityStatus _assetConnectivityStatus = ConnectivityStatus.unknown(
+    '未检测',
+  );
+  final Map<String, ConnectivityStatus> _assetSourceStatuses =
+      <String, ConnectivityStatus>{};
+  Timer? _assetStatusTimer;
   final List<ChatMessage> _messages = <ChatMessage>[];
+  late final http.Client _assetTestClient = IOClient(
+    HttpClient()
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true,
+  );
 
   AppLanguage get language => _language;
   ColorSchemeOption get colorScheme => _colorScheme;
@@ -52,6 +74,12 @@ class AppController extends ChangeNotifier {
   bool get isListening => _isListening;
   bool get isSending => _isSending;
   AiApiConfig get aiApiConfig => _aiApiConfig;
+  List<AssetSourceConfig> get assetSourceConfigs =>
+      List<AssetSourceConfig>.unmodifiable(_assetSourceConfigs);
+  ConnectivityStatus get aiConnectivityStatus => _aiConnectivityStatus;
+  ConnectivityStatus get assetConnectivityStatus => _assetConnectivityStatus;
+  Map<String, ConnectivityStatus> get assetSourceStatuses =>
+      Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => GameCatalog.allGames(_language);
   GameInfo get featuredGame => selectedGame;
@@ -67,6 +95,15 @@ class AppController extends ChangeNotifier {
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
+    _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
+    _aiConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.success,
+      message: copy.aiStatusDefaultReady,
+      checkedAt: DateTime.now(),
+    );
+    for (final source in _assetSourceConfigs) {
+      _assetSourceStatuses[source.id] = ConnectivityStatus.unknown('未检测');
+    }
     try {
       _speechAvailable = await _speechService.initialize(
         onListeningStopped: _handleListeningStopped,
@@ -76,6 +113,7 @@ class AppController extends ChangeNotifier {
     }
     await _ttsService.initialize(_language);
     _ensureGreeting();
+    _startAssetStatusPolling();
     notifyListeners();
   }
 
@@ -106,6 +144,18 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> next) async {
+    _assetSourceConfigs = List<AssetSourceConfig>.from(next);
+    await _preferencesService.saveAssetSourceConfigs(_assetSourceConfigs);
+    for (final source in _assetSourceConfigs) {
+      _assetSourceStatuses.putIfAbsent(
+        source.id,
+        () => ConnectivityStatus.unknown('未检测'),
+      );
+    }
+    notifyListeners();
+  }
+
   Future<String> testAiApiConfig(AiApiConfig config) async {
     final String normalizedBaseUrl = config.baseUrl.endsWith('/')
         ? config.baseUrl.substring(0, config.baseUrl.length - 1)
@@ -114,29 +164,56 @@ class AppController extends ChangeNotifier {
         ? config.chatPath
         : '/${config.chatPath}';
     final Uri uri = Uri.parse('$normalizedBaseUrl$normalizedChatPath');
-    final response = await http
-        .post(
-          uri,
-          headers: <String, String>{
-            config.apiKeyHeader: config.apiKey,
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode(<String, dynamic>{
-            'model': config.model,
-            'messages': const <Map<String, String>>[
-              <String, String>{'role': 'user', 'content': 'ping'},
-            ],
-            'max_completion_tokens': 8,
-            'stream': false,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
+    try {
+      final response = await http
+          .post(
+            uri,
+            headers: <String, String>{
+              config.apiKeyHeader: config.apiKey,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(<String, dynamic>{
+              'model': config.model,
+              'messages': const <Map<String, String>>[
+                <String, String>{'role': 'user', 'content': 'ping'},
+              ],
+              'max_completion_tokens': 8,
+              'stream': false,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
 
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return copy.aiApiTestSuccess;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.success,
+          message: copy.aiApiTestSuccess,
+          checkedAt: DateTime.now(),
+        );
+        debugPrint('[ai] ${_aiConnectivityStatus.message}');
+        notifyListeners();
+        return copy.aiApiTestSuccess;
+      }
+
+      final message = 'HTTP ${response.statusCode}: ${response.body}';
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: message,
+        checkedAt: DateTime.now(),
+      );
+      debugPrint('[ai] $message');
+      notifyListeners();
+      return message;
+    } catch (error) {
+      final message = '连接失败: $error';
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: message,
+        checkedAt: DateTime.now(),
+      );
+      debugPrint('[ai] $message');
+      notifyListeners();
+      return message;
     }
-
-    return 'HTTP ${response.statusCode}: ${response.body}';
   }
 
   void selectGame(String gameId) {
@@ -247,8 +324,83 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> disposeServices() async {
+    _assetStatusTimer?.cancel();
     await _speechService.cancelListening();
     await _ttsService.stop();
+    _assetTestClient.close();
+  }
+
+  Future<void> refreshAssetAccessStatus() async {
+    ConnectivityStatus? bestStatus;
+    final Map<String, ConnectivityStatus> nextStatuses =
+        <String, ConnectivityStatus>{};
+    for (final source in _assetSourceConfigs) {
+      try {
+        final response = await _assetTestClient
+            .get(
+              Uri.parse(source.testUrl),
+              headers: const <String, String>{
+                'Authorization': 'Basic U2hhbmU6MQ==',
+              },
+            )
+            .timeout(const Duration(seconds: 3));
+        final bool isSuccess =
+            response.statusCode >= 200 && response.statusCode < 300;
+        final bool isReachableButRestricted =
+            response.statusCode == 401 ||
+            response.statusCode == 403 ||
+            response.statusCode == 404;
+        final ConnectivityState state = isSuccess
+            ? ConnectivityState.success
+            : isReachableButRestricted
+            ? ConnectivityState.success
+            : ConnectivityState.failure;
+        final String message = isSuccess
+            ? '访问成功'
+            : isReachableButRestricted
+            ? '已响应 HTTP ${response.statusCode}'
+            : '返回 HTTP ${response.statusCode}';
+        final status = ConnectivityStatus(
+          state: state,
+          message: message,
+          checkedAt: DateTime.now(),
+        );
+        debugPrint('[assets] ${source.id} => $message');
+        nextStatuses[source.id] = status;
+        if (bestStatus == null) {
+          bestStatus = status;
+          continue;
+        }
+        if (status.state == ConnectivityState.success &&
+            bestStatus.state != ConnectivityState.success) {
+          bestStatus = status;
+        }
+      } catch (error) {
+        final failureStatus = ConnectivityStatus(
+          state: ConnectivityState.failure,
+          message: '超时或失败',
+          checkedAt: DateTime.now(),
+        );
+        debugPrint('[assets] ${source.id} => ${failureStatus.message}: $error');
+        nextStatuses[source.id] = failureStatus;
+      }
+    }
+    _assetSourceStatuses
+      ..clear()
+      ..addAll(nextStatuses);
+    _assetConnectivityStatus =
+        bestStatus ??
+        nextStatuses[_assetSourceConfigs.first.id] ??
+        ConnectivityStatus.unknown('未检测');
+    notifyListeners();
+  }
+
+  void _startAssetStatusPolling() {
+    _assetStatusTimer?.cancel();
+    unawaited(refreshAssetAccessStatus());
+    _assetStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      unawaited(refreshAssetAccessStatus());
+    });
   }
 
   void _ensureGreeting() {

@@ -20,6 +20,7 @@ class GameInfo {
     required this.rankBadges,
     required this.rulebookAssetPath,
     required this.faqAssetPath,
+    List<String>? knowledgeAssetPaths,
     required this.heroTagline,
     required this.summary,
     required this.mentorPitch,
@@ -31,6 +32,9 @@ class GameInfo {
     required this.quickPrompts,
   }) : galleryAssetPaths = List<String>.unmodifiable(
          galleryAssetPaths ?? <String>[coverAssetPath, bannerAssetPath],
+       ),
+       knowledgeAssetPaths = List<String>.unmodifiable(
+         knowledgeAssetPaths ?? <String>[rulebookAssetPath, faqAssetPath],
        );
 
   final String id;
@@ -53,6 +57,7 @@ class GameInfo {
   final List<String> rankBadges;
   final String rulebookAssetPath;
   final String faqAssetPath;
+  final List<String> knowledgeAssetPaths;
   final String heroTagline;
   final String summary;
   final String mentorPitch;

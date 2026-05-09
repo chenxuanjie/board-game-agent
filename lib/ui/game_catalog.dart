@@ -7,6 +7,8 @@ class GameCatalog {
       puertoRico(language),
       arkhamHorrorLcg(language),
       startups(language),
+      cabo(language),
+      carcassonne3(language),
     ];
   }
 
@@ -315,6 +317,230 @@ class GameCatalog {
         'Do hidden cards count as shares?',
         'When does the anti-monopoly chip matter?',
         'What mistake do new players make most often?',
+      ],
+    );
+  }
+
+  static GameInfo cabo(AppLanguage language) {
+    if (language == AppLanguage.zhHans) {
+      return GameInfo(
+        id: 'cabo',
+        title: 'Cabo',
+        subtitle: 'Cabo',
+        coverAssetPath: 'assets/games/cabo/images/cover.jpg',
+        bannerAssetPath: 'assets/games/cabo/images/background.jpg',
+        cardAccent: 0xFFCC6A2F,
+        score: '7.0',
+        scoreCountLabel: '记忆 / 推理 / 小盒卡牌',
+        releaseYear: '2010',
+        categoryLine: '竞争 / 记忆 / 卡牌',
+        learningDifficulty: '3/10 级',
+        perPlayerTime: '15-30 分钟',
+        setupTime: '2 分钟',
+        languageRequirement: '低',
+        supportedPlayers: <int>[2, 3, 4, 5],
+        recommendedPlayer: 4,
+        rankBadges: <String>['2-5 人', '轻策略', '便携小盒'],
+        rulebookAssetPath: 'assets/games/cabo/docs/rulebook_zh.md',
+        faqAssetPath: 'assets/games/cabo/docs/faq_zh.md',
+        knowledgeAssetPaths: <String>[
+          'assets/games/cabo/docs/rulebook_zh.md',
+          'assets/games/cabo/docs/rules_reference_zh.md',
+          'assets/games/cabo/docs/faq_zh.md',
+          'assets/games/cabo/docs/asset_index_zh.md',
+        ],
+        heroTagline: '记住自己的低分牌，偷看、交换、诈唬，在喊出 Cabo 的那一刻赌一把。',
+        summary: '《Cabo》是一款节奏很快的记忆与推理卡牌游戏。玩家只知道自己部分手牌，通过抽牌、替换、偷看和交换来努力把总点数压到最低。',
+        mentorPitch: '这个页面适合边玩边问，例如“从弃牌堆拿到行动牌能不能发动”“喊 Cabo 之后别人还有没有回合”“配对失败会怎样”。',
+        playTime: '15-30 分钟',
+        playerCount: '2-5 人',
+        complexity: '轻',
+        roundFlow: <String>[
+          '每轮开始时，每位玩家有 4 张盖牌，只能先查看其中 2 张。',
+          '轮到你时，要么抽牌后决定如何处理，要么从弃牌堆顶拿牌替换，要么直接宣告 Cabo。',
+          '行动牌能让你偷看自己、偷看别人，或在不看牌的情况下交换牌位。',
+          '一旦有人宣告 Cabo，其余玩家各再行动 1 次，然后所有人亮牌并结算分数。',
+        ],
+        assistantSkills: <String>[
+          '解释 Cabo 宣告、平手、额外 5 分惩罚等轮末结算',
+          '澄清 Peek / Spy / Swap 的使用时机',
+          '解释配对消牌、抽牌堆重洗和特殊计分',
+          '优先引用本地整理的官方规则、FAQ 与资料索引',
+        ],
+        quickPrompts: <String>[
+          '从弃牌堆拿到 Swap 能发动吗？',
+          '喊 Cabo 后其他玩家还会行动吗？',
+          '配对失败后要怎么处理？',
+          '平手时谁会记 0 分？',
+        ],
+      );
+    }
+
+    return GameInfo(
+      id: 'cabo',
+      title: 'Cabo',
+      subtitle: 'Cabo',
+      coverAssetPath: 'assets/games/cabo/images/cover.jpg',
+      bannerAssetPath: 'assets/games/cabo/images/background.jpg',
+      cardAccent: 0xFFCC6A2F,
+      score: '7.0',
+      scoreCountLabel: 'Memory bluff card game',
+      releaseYear: '2010',
+      categoryLine: 'Competitive / Memory / Card Game',
+      learningDifficulty: '3/10',
+      perPlayerTime: '15-30 min',
+      setupTime: '2 min',
+      languageRequirement: 'Low',
+      supportedPlayers: <int>[2, 3, 4, 5],
+      recommendedPlayer: 4,
+      rankBadges: <String>['2-5 Players', 'Portable Box', 'Light Strategy'],
+      rulebookAssetPath: 'assets/games/cabo/docs/rulebook_en.md',
+      faqAssetPath: 'assets/games/cabo/docs/faq_en.md',
+      knowledgeAssetPaths: <String>[
+        'assets/games/cabo/docs/rulebook_en.md',
+        'assets/games/cabo/docs/rules_reference_en.md',
+        'assets/games/cabo/docs/faq_en.md',
+        'assets/games/cabo/docs/asset_index_en.md',
+      ],
+      heroTagline:
+          'Remember your low cards, bluff with incomplete information, and call Cabo at exactly the right moment.',
+      summary:
+          'Cabo is a fast card game of memory, deduction, and risk timing. Players only know part of their hand and use peeks, swaps, and replacements to finish each round with the lowest total.',
+      mentorPitch:
+          'This page is ideal for live questions such as “Can I use an action card from the discard pile?”, “Do other players still get turns after Cabo is called?”, or “What happens after a failed match attempt?”.',
+      playTime: '15-30 min',
+      playerCount: '2-5 players',
+      complexity: 'Light',
+      roundFlow: <String>[
+        'Each round begins with 4 face-down cards per player, and each player only checks 2 of their own cards.',
+        'On your turn, you either draw and resolve a card, take the top discard to replace a card, or call Cabo.',
+        'Action cards let you peek at your own cards, spy on others, or swap unseen cards.',
+        'Once Cabo is called, every other player gets one final turn before reveal and scoring.',
+      ],
+      assistantSkills: <String>[
+        'Explain Cabo timing, ties, and the failed-call penalty',
+        'Clarify when Peek, Spy, and Swap may be used',
+        'Walk through matching, redraw, and special scoring rules',
+        'Prioritize the local rulebook, FAQ, and official-source notes',
+      ],
+      quickPrompts: <String>[
+        'Can I use Swap from the discard pile?',
+        'Do other players still act after Cabo is called?',
+        'What happens if my match attempt is wrong?',
+        'Who gets 0 points on a tie?',
+      ],
+    );
+  }
+
+  static GameInfo carcassonne3(AppLanguage language) {
+    if (language == AppLanguage.zhHans) {
+      return GameInfo(
+        id: 'carcassonne-3',
+        title: '卡卡颂 3.0',
+        subtitle: 'Carcassonne',
+        coverAssetPath: 'assets/games/carcassonne_3/images/cover.jpg',
+        bannerAssetPath: 'assets/games/carcassonne_3/images/background.jpg',
+        cardAccent: 0xFF8B6A32,
+        score: '8.0',
+        scoreCountLabel: '拼板经典 / Hans im Glück 3.0',
+        releaseYear: '2023',
+        categoryLine: '竞争 / 拼板 / 区控',
+        learningDifficulty: '4/10 级',
+        perPlayerTime: '30-45 分钟',
+        setupTime: '3-5 分钟',
+        languageRequirement: '低',
+        supportedPlayers: <int>[2, 3, 4, 5],
+        recommendedPlayer: 4,
+        rankBadges: <String>['经典拼板', '地块放置', '新版 3.0'],
+        rulebookAssetPath: 'assets/games/carcassonne_3/docs/rulebook_zh.md',
+        faqAssetPath: 'assets/games/carcassonne_3/docs/faq_zh.md',
+        knowledgeAssetPaths: <String>[
+          'assets/games/carcassonne_3/docs/rulebook_zh.md',
+          'assets/games/carcassonne_3/docs/rules_reference_zh.md',
+          'assets/games/carcassonne_3/docs/supplement_zh.md',
+          'assets/games/carcassonne_3/docs/faq_zh.md',
+          'assets/games/carcassonne_3/docs/asset_index_zh.md',
+        ],
+        heroTagline: '铺路、筑城、占修道院，再用时机和多数判定把每一块地都变成分数。',
+        summary: '《卡卡颂 3.0》是经典地块拼放桌游的新版本基础套装。玩家通过放置地块和追随者，争夺道路、城市、修道院与终局田地的得分。',
+        mentorPitch: '这个页面适合边玩边问，例如“这块地能不能放人”“什么时候立刻得分”“终局未完成城市怎么算”“农夫和修道院长怎么结算”。',
+        playTime: '30-45 分钟',
+        playerCount: '2-5 人',
+        complexity: '轻中',
+        roundFlow: <String>[
+          '回合开始先抽 1 块地，并以边缘地形匹配的方式放到地图上。',
+          '放好后，你可以选择是否在刚放下的地块上放 1 个追随者。',
+          '若这次放置让道路、城市或修道院完成，则立即结算得分并收回对应追随者。',
+          '当常规地块耗尽后进行终局结算，未完成区域与田地按终局规则得分。',
+        ],
+        assistantSkills: <String>[
+          '解释占位限制、连通规则与多数判定',
+          '区分局中得分和终局得分',
+          '回答农夫、河流、修道院长等官方补充规则',
+          '优先引用本地整理的官方规则书、补充规则与资料索引',
+        ],
+        quickPrompts: <String>[
+          '这条路已经连通了，还能再放追随者吗？',
+          '终局未完成城市怎么算分？',
+          '农夫什么时候计分？',
+          '修道院长什么时候可以收回？',
+        ],
+      );
+    }
+
+    return GameInfo(
+      id: 'carcassonne-3',
+      title: 'Carcassonne 3.0',
+      subtitle: 'Carcassonne',
+      coverAssetPath: 'assets/games/carcassonne_3/images/cover.jpg',
+      bannerAssetPath: 'assets/games/carcassonne_3/images/background.jpg',
+      cardAccent: 0xFF8B6A32,
+      score: '8.0',
+      scoreCountLabel: 'Classic tile-laying evergreen',
+      releaseYear: '2023',
+      categoryLine: 'Competitive / Tile Laying / Area Control',
+      learningDifficulty: '4/10',
+      perPlayerTime: '30-45 min',
+      setupTime: '3-5 min',
+      languageRequirement: 'Low',
+      supportedPlayers: <int>[2, 3, 4, 5],
+      recommendedPlayer: 4,
+      rankBadges: <String>['Classic', 'Tile Laying', 'Version 3.0'],
+      rulebookAssetPath: 'assets/games/carcassonne_3/docs/rulebook_en.md',
+      faqAssetPath: 'assets/games/carcassonne_3/docs/faq_en.md',
+      knowledgeAssetPaths: <String>[
+        'assets/games/carcassonne_3/docs/rulebook_en.md',
+        'assets/games/carcassonne_3/docs/rules_reference_en.md',
+        'assets/games/carcassonne_3/docs/supplement_en.md',
+        'assets/games/carcassonne_3/docs/faq_en.md',
+        'assets/games/carcassonne_3/docs/asset_index_en.md',
+      ],
+      heroTagline:
+          'Grow roads, close cities, and time your meeples so each tile adds points instead of helping your rivals.',
+      summary:
+          'Carcassonne 3.0 is the modern base version of the classic tile-laying game. Players place land tiles, commit followers to features, and fight for scoring tempo across roads, cities, monasteries, and later fields.',
+      mentorPitch:
+          'This page works well for questions like “Can I place here if the road is already connected?”, “How do incomplete cities score at the end?”, or “How do farmers and abbots work in the supplement?”.',
+      playTime: '30-45 min',
+      playerCount: '2-5 players',
+      complexity: 'Light-medium',
+      roundFlow: <String>[
+        'Start each turn by drawing and legally placing 1 landscape tile.',
+        'Then optionally place 1 follower on the tile you just placed.',
+        'Any roads, cities, or monasteries completed by that placement score immediately.',
+        'Once the land tiles run out, score all incomplete features and any active field scoring.',
+      ],
+      assistantSkills: <String>[
+        'Explain occupancy limits, connection timing, and majority scoring',
+        'Distinguish in-game scoring from final scoring',
+        'Answer official supplement rules for farmers, the river, and the abbot',
+        'Prioritize the local official-rule summaries and asset index',
+      ],
+      quickPrompts: <String>[
+        'Can I place on this road if it is already connected?',
+        'How do incomplete cities score at the end?',
+        'When do farmers score?',
+        'When may I remove my abbot?',
       ],
     );
   }

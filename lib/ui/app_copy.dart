@@ -24,9 +24,29 @@ class AppCopy {
   String get aiApiKeyLabel => isChinese ? '接口密钥' : 'API Key';
   String get aiApiSave => isChinese ? '保存配置' : 'Save Config';
   String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
-  String get aiApiTest => isChinese ? '测试连接' : 'Test Connection';
+  String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';
   String get aiApiSaved => isChinese ? 'AI 接口配置已保存' : 'AI API config saved';
   String get aiApiTestSuccess => isChinese ? '连接成功' : 'Connection successful';
+  String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
+  String get assetPriorityTitle =>
+      isChinese ? '资源访问优先级' : 'Asset Source Priority';
+  String get assetPriorityHint => isChinese
+      ? '拖动排序，越靠上越优先使用'
+      : 'Drag to reorder. Higher items are preferred first.';
+  String get aiStatusTitle => isChinese ? 'AI接口' : 'AI API';
+  String get assetStatusTitle => isChinese ? '资源访问' : 'Assets';
+  String get aiStatusDialogTitle => isChinese ? 'AI 接口状态' : 'AI API Status';
+  String get assetStatusDialogTitle =>
+      isChinese ? '资源访问状态' : 'Asset Access Status';
+  String get statusReadyShort => isChinese ? '正常' : 'Ready';
+  String get statusFailedShort => isChinese ? '失败' : 'Failed';
+  String get statusPendingShort => isChinese ? '待测' : 'Pending';
+  String get statusLimitedShort => isChinese ? '受限' : 'Limited';
+  String get aiStatusDefaultReady =>
+      isChinese ? '默认可用' : 'Ready by default';
+  String get assetTestDone =>
+      isChinese ? '资源访问测试完成' : 'Asset access test completed';
+  String get dialogClose => isChinese ? '关闭' : 'Close';
   String get voiceReplyTitle => isChinese ? 'AI 回答朗读' : 'AI voice reply';
   String get voiceReplyHint => isChinese
       ? '打开后，AI 回复会自动朗读。'

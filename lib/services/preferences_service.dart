@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_api_config.dart';
+import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
 
@@ -9,6 +10,7 @@ class PreferencesService {
   static const _voiceReplyKey = 'voice_reply_enabled';
   static const _colorSchemeKey = 'color_scheme';
   static const _aiApiConfigKey = 'ai_api_config';
+  static const _assetSourceOrderKey = 'asset_source_order';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -50,5 +52,18 @@ class PreferencesService {
   Future<void> saveAiApiConfig(AiApiConfig config) async {
     final prefs = await _prefs;
     await prefs.setString(_aiApiConfigKey, config.toJson());
+  }
+
+  Future<List<AssetSourceConfig>> loadAssetSourceConfigs() async {
+    final prefs = await _prefs;
+    return AssetSourceConfig.decodeList(prefs.getString(_assetSourceOrderKey));
+  }
+
+  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> configs) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _assetSourceOrderKey,
+      AssetSourceConfig.encodeList(configs),
+    );
   }
 }

@@ -2,9 +2,11 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../models/connectivity_status.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../app_copy.dart';
 import '../widgets/language_sheet.dart';
 import 'game_detail_screen.dart';
 import 'universal_ai_screen.dart';
@@ -131,6 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              _ConnectivityStrip(controller: controller),
               const SizedBox(height: 10),
               _GlobalAiCard(
                 palette: palette,
@@ -169,6 +173,155 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
+
+class _ConnectivityStrip extends StatelessWidget {
+  const _ConnectivityStrip({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = controller.palette;
+    final copy = controller.copy;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _StatusLamp(
+            copy: copy,
+            dialogTitle: copy.aiStatusDialogTitle,
+            label: copy.aiStatusTitle,
+            status: controller.aiConnectivityStatus,
+            details: <String>[controller.aiConnectivityStatus.message],
+            palette: palette,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _StatusLamp(
+            copy: copy,
+            dialogTitle: copy.assetStatusDialogTitle,
+            label: copy.assetStatusTitle,
+            status: controller.assetConnectivityStatus,
+            details: controller.assetSourceConfigs.map((source) {
+              final status = controller.assetSourceStatuses[source.id];
+              final stateLabel = _statusSummary(copy, status?.state);
+              return '${source.name}: $stateLabel${status == null ? '' : ' · ${status.message}'}';
+            }).toList(),
+            palette: palette,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatusLamp extends StatelessWidget {
+  const _StatusLamp({
+    required this.copy,
+    required this.dialogTitle,
+    required this.label,
+    required this.status,
+    required this.details,
+    required this.palette,
+  });
+
+  final AppCopy copy;
+  final String dialogTitle;
+  final String label;
+  final ConnectivityStatus status;
+  final List<String> details;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color lampColor = switch (status.state) {
+      ConnectivityState.success => const Color(0xFF26D07C),
+      ConnectivityState.warning => const Color(0xFFFFA940),
+      ConnectivityState.failure => const Color(0xFFFF5E5E),
+      ConnectivityState.unknown => const Color(0xFF8B97A9),
+    };
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        showDialog<void>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text(dialogTitle),
+              content: Text(details.join('\n')),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(copy.dialogClose),
+                ),
+              ],
+            );
+          },
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: palette.cardSurface.withValues(alpha: 0.86),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: palette.cardBorder),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: lampColor,
+                shape: BoxShape.circle,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: lampColor.withValues(alpha: 0.45),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: palette.homeTextPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _statusSummary(copy, status.state),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: palette.homeTextPrimary.withValues(alpha: 0.72),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _statusSummary(AppCopy copy, ConnectivityState? state) {
+  return switch (state) {
+    ConnectivityState.success => copy.statusReadyShort,
+    ConnectivityState.warning => copy.statusLimitedShort,
+    ConnectivityState.failure => copy.statusFailedShort,
+    ConnectivityState.unknown || null => copy.statusPendingShort,
+  };
 }
 
 class _SearchBar extends StatelessWidget {
