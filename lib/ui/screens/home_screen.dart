@@ -200,37 +200,48 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _showingLibraryUpdateDialog = true;
     final copy = controller.copy;
+    final palette = controller.palette;
     final titles = controller.pendingLibraryUpdate?.changedGameTitles ?? const <String>[];
-    final debugLabel = 'show update dialog: [${titles.join(', ')}]';
-    debugPrint(debugLabel);
+    debugPrint('show update dialog: [${titles.join(', ')}]');
     final bool? shouldUpdate = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) {
         final update = controller.pendingLibraryUpdate;
+        final textTheme = Theme.of(context).textTheme;
         return AlertDialog(
           title: Text(copy.libraryUpdateTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(copy.libraryUpdateMessage),
-              const SizedBox(height: 12),
               Text(
-                debugLabel,
-                style: Theme.of(context).textTheme.bodySmall,
+                copy.libraryUpdateMessage,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                  height: 1.55,
+                ),
               ),
               if (update != null && update.changedGameTitles.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 14),
                 Text(
                   copy.libraryUpdateGameListLabel(update.changedGameTitles.length),
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: textTheme.titleSmall?.copyWith(
+                    color: palette.homeTextPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ...update.changedGameTitles.map(
                   (title) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('• $title'),
+                    child: Text(
+                      '• $title',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: palette.homeTextPrimary.withValues(alpha: 0.92),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -359,7 +370,13 @@ class _StatusLamp extends StatelessWidget {
           builder: (context) {
             return AlertDialog(
               title: Text(dialogTitle),
-              content: Text(details.join('\n')),
+              content: Text(
+                details.join('\n'),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                  height: 1.5,
+                ),
+              ),
               actions: <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),

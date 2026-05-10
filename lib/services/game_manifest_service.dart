@@ -11,11 +11,8 @@ class GameManifestService {
   Future<List<GameManifest>> loadEnabledGames({
     required RemoteAssetService remoteAssetService,
   }) async {
-    final String catalogSource = await loadCatalogSource(
+    final GameCatalogManifest catalog = await loadMergedCatalogManifest(
       remoteAssetService: remoteAssetService,
-    );
-    final GameCatalogManifest catalog = GameCatalogManifest.fromJson(
-      jsonDecode(catalogSource) as Map<String, dynamic>,
     );
 
     final List<GameCatalogEntry> entries = List<GameCatalogEntry>.from(
@@ -69,6 +66,58 @@ class GameManifestService {
     );
     return GameCatalogManifest.fromJson(
       jsonDecode(catalogSource) as Map<String, dynamic>,
+    );
+  }
+
+  Future<GameCatalogManifest> loadBundledCatalogManifest() async {
+    final String source = await rootBundle.loadString('assets/catalog.json');
+    return GameCatalogManifest.fromJson(
+      jsonDecode(source) as Map<String, dynamic>,
+    );
+  }
+
+  Future<GameCatalogManifest> loadMergedCatalogManifest({
+    required RemoteAssetService remoteAssetService,
+  }) async {
+    final GameCatalogManifest local = await loadBundledCatalogManifest();
+    final File? cached = await remoteAssetService.cachedFileFor(
+      'assets/catalog.json',
+    );
+    if (cached == null || !await cached.exists()) {
+      debugPrint('[manifests] merged catalog uses bundled catalog only');
+      return local;
+    }
+
+    try {
+      final String remoteSource = await cached.readAsString();
+      final GameCatalogManifest remote = GameCatalogManifest.fromJson(
+        jsonDecode(remoteSource) as Map<String, dynamic>,
+      );
+      debugPrint(
+        '[manifests] merged catalog base=${local.games.length} overlay=${remote.games.length}',
+      );
+      return mergeCatalogs(base: local, overlay: remote);
+    } catch (_) {
+      debugPrint('[manifests] failed to parse cached remote catalog, falling back to bundled');
+      return local;
+    }
+  }
+
+  GameCatalogManifest mergeCatalogs({
+    required GameCatalogManifest base,
+    required GameCatalogManifest overlay,
+  }) {
+    final Map<String, GameCatalogEntry> merged = <String, GameCatalogEntry>{
+      for (final GameCatalogEntry entry in base.games) entry.slug: entry,
+    };
+
+    for (final GameCatalogEntry entry in overlay.games) {
+      merged[entry.slug] = entry;
+    }
+
+    return GameCatalogManifest(
+      version: overlay.version >= base.version ? overlay.version : base.version,
+      games: merged.values.toList(),
     );
   }
 }

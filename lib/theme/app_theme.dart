@@ -13,11 +13,14 @@ class AppTheme {
   static const Color cream = Color(0xFFFBF6EE);
 
   static ThemeData buildTheme(AppPalette palette) {
+    final bool isDarkSurface =
+        ThemeData.estimateBrightnessForColor(palette.cardSurface) ==
+        Brightness.dark;
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
         seedColor: palette.accentPrimary,
-        brightness: Brightness.light,
+        brightness: isDarkSurface ? Brightness.dark : Brightness.light,
         primary: palette.accentPrimary,
         secondary: palette.accentSecondary,
         surface: palette.cardSurface,
@@ -124,6 +127,53 @@ class AppTheme {
           borderSide: BorderSide(
             color: palette.accentPrimary,
             width: 1.4,
+          ),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: palette.cardSurface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+          side: BorderSide(color: palette.cardBorder),
+        ),
+        titleTextStyle: GoogleFonts.manrope(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: palette.homeTextPrimary,
+        ),
+        contentTextStyle: GoogleFonts.manrope(
+          fontSize: 15,
+          height: 1.5,
+          color: palette.homeTextPrimary.withValues(alpha: 0.88),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: palette.detailSurface,
+        contentTextStyle: GoogleFonts.manrope(
+          color: palette.homeTextPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        actionTextColor: palette.accentPrimary,
+        behavior: SnackBarBehavior.floating,
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: palette.accentPrimary,
+          textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: palette.accentPrimary,
+          foregroundColor:
+              ThemeData.estimateBrightnessForColor(palette.accentPrimary) ==
+                  Brightness.dark
+              ? Colors.white
+              : const Color(0xFF102339),
+          textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
           ),
         ),
       ),

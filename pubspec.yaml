@@ -79,3 +79,6 @@ flutter:
     - assets/games/manila/images/
     - assets/games/manila/docs/
     - assets/games/manila/game.json
+    - assets/games/night_of_the_ninja/images/
+    - assets/games/night_of_the_ninja/docs/
+    - assets/games/night_of_the_ninja/game.json

@@ -570,9 +570,7 @@ class AppController extends ChangeNotifier {
         jsonDecode(remoteCatalogSource) as Map<String, dynamic>,
       );
       final GameCatalogManifest localCatalog =
-          await _gameManifestService.loadCatalogManifest(
-            remoteAssetService: _remoteAssetService,
-          );
+          await _gameManifestService.loadBundledCatalogManifest();
 
       final Map<String, GameCatalogEntry> localEntries = <String, GameCatalogEntry>{
         for (final entry in localCatalog.games) entry.slug: entry,
@@ -582,14 +580,13 @@ class AppController extends ChangeNotifier {
       };
 
       final Set<String> changedSlugs = <String>{};
-      final Set<String> allSlugs = <String>{
-        ...localEntries.keys,
-        ...remoteEntries.keys,
-      };
-      for (final String slug in allSlugs) {
+      for (final String slug in remoteEntries.keys) {
         final local = localEntries[slug];
         final remote = remoteEntries[slug];
-        if (local == null || remote == null) {
+        if (remote == null) {
+          continue;
+        }
+        if (local == null) {
           changedSlugs.add(slug);
           continue;
         }
@@ -618,7 +615,7 @@ class AppController extends ChangeNotifier {
       orElse: () => null,
     );
     if (local != null) {
-      return local.title;
+      return _composeDisplayTitle(local.title, local.subtitle);
     }
 
     try {
@@ -629,7 +626,8 @@ class AppController extends ChangeNotifier {
       final GameManifest manifest = GameManifest.fromJson(
         jsonDecode(source) as Map<String, dynamic>,
       );
-      return manifest.toGameInfo(_language).title;
+      final GameInfo info = manifest.toGameInfo(_language);
+      return _composeDisplayTitle(info.title, info.subtitle);
     } catch (_) {
       return slug;
     }
@@ -646,7 +644,23 @@ class AppController extends ChangeNotifier {
       (item) => item != null,
       orElse: () => null,
     );
-    return game?.title ?? slug;
+    if (game == null) {
+      return slug;
+    }
+    return _composeDisplayTitle(game.title, game.subtitle);
+  }
+
+  String _composeDisplayTitle(String title, String subtitle) {
+    final String normalizedTitle = title.trim();
+    final String normalizedSubtitle = subtitle.trim();
+    if (normalizedTitle.isEmpty) {
+      return normalizedSubtitle;
+    }
+    if (normalizedSubtitle.isEmpty ||
+        normalizedSubtitle.toLowerCase() == normalizedTitle.toLowerCase()) {
+      return normalizedTitle;
+    }
+    return '$normalizedTitle / $normalizedSubtitle';
   }
 
   String _normalizeSource(String source) {

@@ -1,208 +1,216 @@
-# Puerto Rico Rulebook
+# Puerto Rico Deluxe Edition Rulebook
 
-## Goal
+## Objective
 
-Puerto Rico is played over a series of rounds. In each round, players choose roles, then all players resolve the action associated with that role in clockwise order.
-
-Players develop plantations and quarries, construct buildings in their cities, produce goods, and turn those goods into coins or victory points. The player with the most victory points at the end wins.
+In Puerto Rico Deluxe Edition, players place plantations, assign colonists, construct city buildings, produce goods, and convert trading and shipping into victory points. The player with the most victory points at the end wins.
 
 ## Components Overview
 
-- 1 player board per player, with 12 island spaces and 12 city spaces
-- Role placards: Settler, Mayor, Builder, Craftsman, Trader, Captain, and Prospectors
-- Buildings: production buildings, beige buildings, and large buildings
-- Island tiles: quarries and five types of plantations
-- Colonists, goods, victory point chips, and doubloons
-- Trading house, colony ship, cargo ships, and governor marker
+- Player boards with 12 island spaces and 12 city spaces
+- Central game board
+- Governor placard
+- Role placards:
+  - Settler
+  - Mayor
+  - Builder
+  - Craftsman
+  - Trader
+  - Captain
+  - Prospector
+- Building tiles:
+  - Production buildings
+  - Small beige buildings
+  - Large beige buildings
+- Island tiles:
+  - Quarry tiles
+  - Plantation tiles for indigo, sugar, corn, tobacco, and coffee
+- Colony ship
+- Cargo ships
+- Trading house
+- Colonists
+- Goods tokens
+- Victory point chips
+- Doubloons
 
 ## Setup
 
-- Place the game board in the center of the table
-- Each player takes 1 player board
-- Starting doubloons:
-  - 3 players: 2 doubloons
-  - 4 players: 3 doubloons
-  - 5 players: 4 doubloons
-- Each player places 1 starting plantation on their island
-- Determine the starting player, who takes the governor marker and a starting indigo plantation
-- The remaining starting plantations are distributed by player count
-- Place a number of colonists on the colony ship equal to the number of players
-- Set up the plantation stacks, quarries, cargo ships, trading house, colonist supply, and goods supply
+- Place the central board in the middle of the table.
+- Place the basic buildings on their proper spaces.
+- Put the doubloons in the bank.
+- Choose a starting player and give them the Governor placard.
+- Give each player a player board and starting money.
+- Distribute the starting plantations by player order:
+  - 3 players: Governor and second player get indigo, third gets corn
+  - 4 players: Governor and second get indigo, third and fourth get corn
+  - 5 players: Governor, second, and third get indigo, fourth and fifth get corn
+- Set up the quarries, plantation stacks, colony ship, cargo ships, trading house, colonists, and goods according to player count.
 
 ## Round Structure
 
-Each round proceeds as follows:
+Each round begins with the Governor. Players choose roles in turn, and all players resolve the chosen role in clockwise order.
 
-1. The governor chooses a role
-2. The player who chose it resolves the role first
-3. Other players resolve the same role in clockwise order
-4. The next player chooses one of the remaining roles
-5. Continue until each player has chosen one role this round
-6. Place 1 doubloon on each unused role
-7. Pass the governor marker clockwise and begin the next round
+A full round normally works like this:
 
-## General Role Rules
+1. The active player chooses 1 role placard
+2. That player resolves the role and its privilege
+3. The other players, clockwise, resolve the same role without the privilege
+4. The next player chooses from the remaining roles
+5. Continue until all players have chosen a role this round
+6. Put 1 doubloon on each unchosen role
+7. Return the roles and pass the Governor to the next player
 
-- When it is your turn, you must choose a role
-- Most role actions are optional, except Captain in practical play
-- Only the player who chose a role receives its privilege
-- If a role has doubloons on it, the chooser also takes those doubloons
-- A role chosen this round cannot be chosen again until the next round
+## Core Rules
 
-## The Roles
+### 1. Role Selection
 
-## 1. Settler
+On your turn, you must take one remaining role placard.  
+The chooser gets both the action and the privilege. The others only get the action.
 
-### Effect
+### 2. Settler
 
-Players gain and place new plantations. The chooser may instead take a quarry as the privilege.
+In the Settler phase, the player who took the role may usually take a quarry as the privilege, or take one face-up plantation tile.
 
-### Resolution
+The other players may take face-up plantations, normally not quarries.
 
-- The player who chose Settler may take either:
-  - 1 quarry tile, or
-  - 1 face-up plantation
-- Each other player may then take 1 face-up plantation
-- Afterward:
-  - Unchosen face-up plantations are discarded
-  - Refill the face-up row with one more tile than the number of players
+After placement:
 
-### Notes
+- Plantations are the source of goods
+- Quarries do not produce goods, but they reduce building costs
 
-- Tile position on the island does not matter
-- Once a player fills all 12 island spaces, they can no longer take island tiles
-- If the quarry supply is empty, the Settler privilege cannot be used
+At the end of the phase, discard the untaken face-up plantations and refill the display to one more than the number of players.
 
-## 2. Mayor
+### 3. Mayor and Colonists
 
-### Effect
+The Mayor phase is one of the key parts of this deluxe ruleset:
 
-Colonists arrive and are placed onto plantations, quarries, or buildings.
+- The chooser first takes 1 colonist from the supply as the privilege
+- Then all players, in clockwise order, take colonists one at a time from the colony ship until it is empty
 
-### Resolution
+Colonists may be placed on:
 
-- The mayor first takes 1 colonist from the supply as the privilege
-- Players then take colonists from the colony ship one at a time, starting with the mayor
-- Players place all newly taken colonists, plus any stored on their windrose, on empty circles on their boards
-- After everyone is done, refill the colony ship based on the total number of empty building circles in play
-- The colony ship must always receive at least as many colonists as there are players
+- plantations
+- quarries
+- building circles
 
-### Occupation Rule
+Only occupied spaces are active.
 
-- A tile is occupied if it has at least one colonist on it
-- Only occupied tiles function
-- If a player has empty circles available, they cannot choose to keep colonists on the windrose
+If a player cannot place all colonists immediately, the excess stays on their player board until a later Mayor phase.
 
-## 3. Builder
+At the end of the Mayor phase:
 
-### Effect
+- count the empty building circles across all players
+- refill the colony ship from the supply with that many colonists
+- but always place at least a number of colonists equal to the number of players
 
-Players pay doubloons to construct buildings.
+### 4. Buildings and Quarries
 
-### Resolution
+During the Builder phase, players spend doubloons to construct buildings.  
+Quarries reduce the cost of some buildings, but only if:
 
-- The player who chose Builder gets a 1 doubloon discount on the building they construct
-- Each player may then build 1 building in clockwise order
+- the quarry is occupied by a colonist
+- the building column allows that amount of quarry reduction
 
-### Building Rules
+Buildings broadly fall into:
 
-- Pay the cost to the bank
-- Take the chosen building from the supply and place it in the city
-- Large buildings require 2 adjacent spaces
-- Quarries may reduce building costs where applicable
+- Production buildings: convert plantation output into goods
+- Small buildings: provide efficiency, storage, discounts, or timing effects
+- Large buildings: provide powerful endgame scoring or special abilities
 
-## 4. Craftsman
+### 5. Craftsman and Production
 
-### Effect
+During the Craftsman phase, each player checks their occupied plantations and matching occupied production buildings.
 
-Players produce goods from occupied plantations and occupied production buildings.
+- Corn produces without requiring a production building
+- Other goods require the correct production chain
 
-### Resolution
+Goods are placed in the player's area using the matching goods tokens.
 
-- Check each player’s occupied plantations and matching occupied production buildings
-- Each complete production line produces 1 good
-- Corn does not require a production building
-- The player who chose Craftsman gets 1 additional good they are allowed to produce this phase
+### 6. Trader and the Trading House
 
-## 5. Trader
+During the Trader phase, a player may sell one good to the Trading House for money.
 
-### Effect
+Trading House restrictions:
 
-Players sell 1 good to the trading house.
+- it has room for only 4 goods
+- it may not contain duplicate goods
+- if a good type is already present, players generally cannot sell another of that same type there
 
-### Resolution
+If the Trading House fills with 4 goods, it is emptied at the end of the phase.
 
-- The player who chose Trader sells first and gains +1 doubloon as the privilege
-- Each player may then sell 1 good in clockwise order
+### 7. Captain and Shipping
 
-### Restrictions
+The Captain phase is one of the main sources of victory points.
 
-- The trading house cannot contain duplicate goods
-- If the trading house already contains that good, or is full, that good cannot be sold there
+- If you can ship, you must ship
+- On a given turn in the phase, you load only 1 type of good onto 1 ship
+- Each ship may hold only one type of good
+- Every shipped good earns victory points
 
-## 6. Captain
+Full ships are emptied at the end of the phase.
 
-### Effect
+### 8. Prospector
 
-Players ship goods to cargo ships and gain victory points.
+The Prospector is the pure economy role.  
+The chooser simply gains money, with no broader action chain.  
+This deluxe ruleset normally includes two Prospector placards in the base setup.
 
-### Resolution
+## Role Overview
 
-- The captain ships first and gains +1 victory point as the privilege
-- Each other player then ships in clockwise order
+### Settler
 
-### Shipping Rules
+- Take plantations
+- The privilege is usually taking a quarry instead
 
-- If you can ship, you must ship as much as possible of one good type
-- Each cargo ship can hold only one type of good
-- On your turn, you choose one type of good to ship
-- Gain 1 victory point for each good shipped
+### Mayor
 
-### End of Captain Phase
+- Take colonists
+- Assign colonists to plantations, quarries, and buildings
+- Refill the colony ship at the end of the phase
 
-- Each player may keep only 1 good unless buildings allow them to keep more
-- All other unshipped goods are discarded
+### Builder
 
-## 7. Prospector
+- Spend money to build
+- The chooser usually gets an extra discount
 
-### Effect
+### Craftsman
 
-Only the chooser acts: take 1 doubloon from the bank.
+- Produce goods from completed production chains
+- The chooser usually gains one extra good
 
-### Notes
+### Trader
 
-- Other players do not resolve anything during Prospector
-- 4-player games usually use 1 Prospector
-- 5-player games use 2 Prospectors
+- Sell one good to the Trading House
+- The chooser usually gains one extra doubloon
 
-## Common Rules Reminders
+### Captain
 
-- Buildings only function if occupied
-- Quarries do not produce goods, but they reduce some building costs
-- Warehouses, Harbor, Wharf, and similar buildings only apply in their relevant phase
-- Goods cannot be double-counted across multiple effects in the same timing window
+- Ship goods for victory points
+- The chooser usually gains bonus points
 
-## End of the Game
+### Prospector
 
-The game ends at the end of the round in which one of the following happens:
+- Take direct money
 
-- The colonist supply runs out
-- The victory point chip supply runs out
-- Any player fills all 12 city spaces
+## Endgame and Victory
 
-## Final Scoring
+The game ends when one of the main end conditions is met, such as:
 
-Each player totals:
+- the victory point supply running low
+- a player filling the city
+- the colonist supply triggering the endgame
 
-- Victory points earned from shipping
-- Victory points printed on buildings
-- Bonus points from large buildings and special scoring buildings
+At the end, players score:
 
-The highest total wins. Ties are broken by the total value of remaining doubloons and goods.
+- victory points earned from shipping
+- printed building values
+- endgame points from large or special buildings
 
-## Quick Play Advice
+The highest total wins.
 
-- Build a reliable engine early
-- Watch which roles remain in the round, not only the one you want
-- Captain often decides tempo, so plan shipping in advance
-- The most common mistake is forgetting whether a tile is actually occupied
+## Common Mistakes
+
+- forgetting that only occupied plantations, quarries, and buildings are active
+- forgetting to refill the colony ship based on empty building circles after the Mayor phase
+- selling duplicate goods into the Trading House
+- mixing different goods on the same ship
+- skipping shipping when you still have a legal load

@@ -452,9 +452,16 @@ class _LanguageSheetState extends State<LanguageSheet> {
       showDialog<void>(
         context: context,
         builder: (context) {
+          final palette = widget.controller.palette;
           return AlertDialog(
             title: Text(widget.controller.copy.assetStatusDialogTitle),
-            content: Text(lines),
+            content: Text(
+              lines,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                height: 1.5,
+              ),
+            ),
             actions: <Widget>[
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),

@@ -85,6 +85,11 @@
       "slug": "manila",
       "order": 170,
       "enabled": true
+    },
+    {
+      "slug": "night_of_the_ninja",
+      "order": 180,
+      "enabled": true
     }
   ]
 }
