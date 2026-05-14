@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
@@ -82,6 +83,7 @@ class AppController extends ChangeNotifier {
   bool _homeAssetsLoading = false;
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
+  Future<void> _conversationSaveQueue = Future<void>.value();
   final Map<String, List<ChatMessage>> _conversationMessages =
       <String, List<ChatMessage>>{};
   late final http.Client _assetTestClient = IOClient(
@@ -146,6 +148,7 @@ class AppController extends ChangeNotifier {
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+    await _restoreConversations();
     debugPrint(
       '[updates] initialize loaded games: ${_games.map((g) => '${g.slug}:${g.title}').join(', ')}',
     );
@@ -166,6 +169,7 @@ class AppController extends ChangeNotifier {
     }
     await _ttsService.initialize(_language);
     _ensureGreeting();
+    _queueConversationSave();
     unawaited(prefetchHomeImages());
     _startAssetStatusPolling();
     unawaited(checkForLibraryUpdates());
@@ -383,6 +387,8 @@ class AppController extends ChangeNotifier {
         ),
       );
     await _ttsService.stop();
+    _trimConversationMessages(messages);
+    _queueConversationSave();
     notifyListeners();
   }
 
@@ -403,6 +409,8 @@ class AppController extends ChangeNotifier {
     );
 
     messages.add(userMessage);
+    _trimConversationMessages(messages);
+    _queueConversationSave();
     _isSending = true;
     notifyListeners();
 
@@ -434,6 +442,8 @@ class AppController extends ChangeNotifier {
       );
 
       messages.add(assistantMessage);
+      _trimConversationMessages(messages);
+      _queueConversationSave();
       if (_voiceReplyEnabled) {
         await speakMessage(reply);
       }
@@ -448,6 +458,8 @@ class AppController extends ChangeNotifier {
           timestamp: DateTime.now(),
         ),
       );
+      _trimConversationMessages(messages);
+      _queueConversationSave();
     } finally {
       _isSending = false;
       notifyListeners();
@@ -456,6 +468,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> disposeServices() async {
     _assetStatusTimer?.cancel();
+    await _conversationSaveQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
     _assetTestClient.close();
@@ -1040,6 +1053,8 @@ class AppController extends ChangeNotifier {
   }
 
   static const String _globalConversationKey = 'global';
+  static const int _conversationStoreVersion = 1;
+  static const int _maxMessagesPerConversation = 100;
 
   List<ChatMessage> _messagesForCurrentContext() {
     return _messagesForContext(useGlobalMode: false);
@@ -1053,4 +1068,80 @@ class AppController extends ChangeNotifier {
   }
 
   String _conversationKeyForGameId(String gameId) => 'game:$gameId';
+
+  void _trimConversationMessages(List<ChatMessage> messages) {
+    if (messages.length <= _maxMessagesPerConversation) {
+      return;
+    }
+    messages.removeRange(0, messages.length - _maxMessagesPerConversation);
+  }
+
+  void _queueConversationSave() {
+    _conversationSaveQueue = _conversationSaveQueue.then((_) async {
+      await _persistConversations();
+    }).catchError((Object error, StackTrace stackTrace) {
+      debugPrint('[chat] persist conversations failed: $error');
+      debugPrint('$stackTrace');
+    });
+  }
+
+  Future<void> _restoreConversations() async {
+    try {
+      final File file = await _conversationStoreFile();
+      if (!await file.exists()) {
+        return;
+      }
+      final Map<String, dynamic> json =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final Map<String, dynamic> conversations =
+          json['conversations'] as Map<String, dynamic>? ?? <String, dynamic>{};
+
+      _conversationMessages.clear();
+      for (final MapEntry<String, dynamic> entry in conversations.entries) {
+        final List<dynamic> rawMessages =
+            entry.value as List<dynamic>? ?? const <dynamic>[];
+        final List<ChatMessage> messages = rawMessages
+            .whereType<Map<String, dynamic>>()
+            .map(ChatMessage.fromMap)
+            .toList();
+        _trimConversationMessages(messages);
+        if (messages.isNotEmpty) {
+          _conversationMessages[entry.key] = messages;
+        }
+      }
+      debugPrint(
+        '[chat] restored conversations: ${_conversationMessages.keys.join(', ')}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[chat] restore conversations failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _persistConversations() async {
+    try {
+      final File file = await _conversationStoreFile();
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'version': _conversationStoreVersion,
+        'savedAt': DateTime.now().toIso8601String(),
+        'conversations': <String, dynamic>{
+          for (final MapEntry<String, List<ChatMessage>> entry
+              in _conversationMessages.entries)
+            entry.key: entry.value.map((ChatMessage m) => m.toMap()).toList(),
+        },
+      };
+      await file.parent.create(recursive: true);
+      await file.writeAsString(jsonEncode(payload), flush: true);
+    } catch (error, stackTrace) {
+      debugPrint('[chat] persist conversations failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<File> _conversationStoreFile() async {
+    final Directory support = await getApplicationSupportDirectory();
+    return File(
+      '${support.path}${Platform.pathSeparator}chat_conversations.json',
+    );
+  }
 }
