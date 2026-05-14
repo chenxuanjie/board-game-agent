@@ -15,7 +15,7 @@ class AppCopy {
   String get featuredLabel => isChinese ? '当前已装入' : 'Loaded now';
   String featuredGameCount(int count) =>
       isChinese ? '$count 个桌游' : '$count board games';
-  String get openSettings => isChinese ? '语言与语音' : 'Language and voice';
+  String get openSettings => isChinese ? '语言与设置' : 'Language and settings';
   String get languageTitle => isChinese ? '语言设置' : 'Language';
   String get colorSchemeTitle => isChinese ? '配色方案' : 'Color Scheme';
   String get colorSchemeHint => isChinese ? '切换不同视觉风格' : 'Switch visual styles';
@@ -106,9 +106,7 @@ class AppCopy {
               ? '《$gameTitle》是一款值得边玩边问的桌游。'
               : '$gameTitle is a board game worth exploring as you play.')
         : intro.trim();
-    return isChinese
-        ? '$normalizedIntro 这里是《$gameTitle》AI 助手，你可以继续提问规则、流程、术语或策略问题，也可以点击麦克风尝试语音输入。'
-        : '$normalizedIntro This is the $gameTitle assistant. You can continue asking about rules, flow, terminology, or strategy, and you can also use the microphone for speech input.';
+    return normalizedIntro;
   }
   String get messageHint => isChinese
       ? '问规则、流程、术语、策略...'

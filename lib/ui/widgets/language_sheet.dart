@@ -143,30 +143,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  _SectionTitle(title: copy.voiceReplyTitle),
-                  const SizedBox(height: 12),
-                  _SectionCard(
-                    palette: palette,
-                    child: SwitchListTile.adaptive(
-                      value: controller.voiceReplyEnabled,
-                      contentPadding: EdgeInsets.zero,
-                      activeThumbColor: palette.accentPrimary,
-                      activeTrackColor: palette.accentPrimary.withValues(
-                        alpha: 0.5,
-                      ),
-                      title: Text(copy.voiceReplyTitle),
-                      subtitle: Text(
-                        copy.voiceReplyHint,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: palette.homeTextPrimary.withValues(
-                            alpha: 0.72,
-                          ),
-                        ),
-                      ),
-                      onChanged: controller.setVoiceReplyEnabled,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
                   _SectionTitle(title: copy.assetPriorityTitle),
                   const SizedBox(height: 8),
                   Text(
