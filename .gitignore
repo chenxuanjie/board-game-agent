@@ -42,6 +42,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.gradle/
 
 # Local environment / IDE metadata
 .metadata
@@ -56,6 +57,9 @@ assets/games/**/docs/*.txt
 
 # Local game library payloads
 /assets/games/
+
+# Local scratch/cache files
+/tmp/
 
 # Optional local notes / logs
 /last-build.log
