@@ -46,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final controller = widget.controller;
     final copy = controller.copy;
     final palette = controller.palette;
+    final bool showAssetsLoadingBanner = controller.homeAssetsLoading;
     final query = _searchController.text.trim().toLowerCase();
     final games = controller.games.where((game) {
       if (_favouritesOnly && game.id != 'puerto-rico') {
@@ -69,22 +70,96 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+          child: Stack(
             children: <Widget>[
-              Row(
+              ListView(
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  12,
+                  18,
+                  showAssetsLoadingBanner ? 112 : 22,
+                ),
                 children: <Widget>[
-                  Expanded(
-                    child: _SearchBar(
-                      controller: _searchController,
-                      hintText: copy.homeSearchHint,
-                      onChanged: (_) => setState(() {}),
-                      palette: palette,
-                    ),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _SearchBar(
+                          controller: _searchController,
+                          hintText: copy.homeSearchHint,
+                          onChanged: (_) => setState(() {}),
+                          palette: palette,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      _AiOrbButton(
+                        palette: palette,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  UniversalAiScreen(controller: controller),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 14),
-                  _AiOrbButton(
+                  const SizedBox(height: 16),
+                  Row(
+                    children: <Widget>[
+                      IconButton(
+                        onPressed: () {
+                          showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: palette.homeSurface,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(30),
+                              ),
+                            ),
+                            builder: (_) => LanguageSheet(controller: controller),
+                          );
+                        },
+                        iconSize: 40,
+                        color: Colors.white,
+                        icon: const Icon(Icons.settings_rounded),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          copy.favouritesOnly,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                color: palette.homeTextPrimary,
+                                fontSize: 18,
+                              ),
+                        ),
+                      ),
+                      Switch.adaptive(
+                        value: _favouritesOnly,
+                        onChanged: (value) =>
+                            setState(() => _favouritesOnly = value),
+                        activeThumbColor: palette.accentPrimary,
+                        activeTrackColor: palette.accentPrimary.withValues(
+                          alpha: 0.55,
+                        ),
+                        inactiveThumbColor: palette.homeTextPrimary.withValues(
+                          alpha: 0.24,
+                        ),
+                        inactiveTrackColor: palette.homeTextPrimary.withValues(
+                          alpha: 0.12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _ConnectivityStrip(controller: controller),
+                  const SizedBox(height: 10),
+                  _GlobalAiCard(
                     palette: palette,
+                    title: copy.globalAiTitle,
+                    subtitle: copy.globalAiSubtitle,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -94,91 +169,35 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     },
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: <Widget>[
-                  IconButton(
-                    onPressed: () {
-                      showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: palette.homeSurface,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(30),
-                          ),
-                        ),
-                        builder: (_) => LanguageSheet(controller: controller),
-                      );
-                    },
-                    iconSize: 40,
-                    color: Colors.white,
-                    icon: const Icon(Icons.settings_rounded),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      copy.favouritesOnly,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: palette.homeTextPrimary,
-                        fontSize: 18,
+                  const SizedBox(height: 18),
+                  ...games.map(
+                    (game) => Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _GameListCard(
+                        controller: controller,
+                        game: game,
+                        palette: palette,
+                        onTap: () {
+                          controller.selectGame(game.id);
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  GameDetailScreen(controller: controller),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
-                  Switch.adaptive(
-                    value: _favouritesOnly,
-                    onChanged: (value) =>
-                        setState(() => _favouritesOnly = value),
-                    activeThumbColor: palette.accentPrimary,
-                    activeTrackColor: palette.accentPrimary.withValues(
-                      alpha: 0.55,
-                    ),
-                    inactiveThumbColor: palette.homeTextPrimary.withValues(
-                      alpha: 0.24,
-                    ),
-                    inactiveTrackColor: palette.homeTextPrimary.withValues(
-                      alpha: 0.12,
-                    ),
-                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              _ConnectivityStrip(controller: controller),
-              const SizedBox(height: 10),
-              _GlobalAiCard(
-                palette: palette,
-                title: copy.globalAiTitle,
-                subtitle: copy.globalAiSubtitle,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => UniversalAiScreen(controller: controller),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 18),
-              ...games.map(
-                (game) => Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _GameListCard(
-                    controller: controller,
-                    game: game,
-                    palette: palette,
-                    onTap: () {
-                      controller.selectGame(game.id);
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              GameDetailScreen(controller: controller),
-                        ),
-                      );
-                    },
-                  ),
+              if (showAssetsLoadingBanner)
+                Positioned(
+                  left: 18,
+                  right: 18,
+                  bottom: 16,
+                  child: _HomeAssetsLoadingBanner(controller: controller),
                 ),
-              ),
             ],
           ),
         ),
@@ -914,6 +933,78 @@ class _AssetCardImageState extends State<_AssetCardImage> {
     setState(() {
       _resolvedPath = path;
     });
+  }
+}
+
+class _HomeAssetsLoadingBanner extends StatelessWidget {
+  const _HomeAssetsLoadingBanner({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = controller.palette;
+    final copy = controller.copy;
+    final int total = controller.homeAssetsTotal;
+    final int loaded = controller.homeAssetsLoaded.clamp(0, total);
+    final double progress = total == 0 ? 0 : loaded / total;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: palette.cardSurface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: palette.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    palette.accentSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  copy.homeAssetsLoadingTitle,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: palette.homeTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                copy.homeAssetsLoadingProgress(loaded, total),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: palette.homeTextPrimary.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: palette.homeTextPrimary.withValues(alpha: 0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                palette.accentSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

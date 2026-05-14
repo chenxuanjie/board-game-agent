@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_api_config.dart';
+import '../models/ai_answer_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
@@ -11,6 +12,8 @@ class PreferencesService {
   static const _colorSchemeKey = 'color_scheme';
   static const _aiApiConfigKey = 'ai_api_config';
   static const _assetSourceOrderKey = 'asset_source_order';
+  static const _gameAnswerModeKey = 'game_answer_mode';
+  static const _globalAnswerModeKey = 'global_answer_mode';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -65,5 +68,31 @@ class PreferencesService {
       _assetSourceOrderKey,
       AssetSourceConfig.encodeList(configs),
     );
+  }
+
+  Future<AiAnswerMode> loadGameAnswerMode() async {
+    final prefs = await _prefs;
+    return AiAnswerModeX.fromCode(
+      prefs.getString(_gameAnswerModeKey),
+      fallback: AiAnswerMode.knowledgeOnly,
+    );
+  }
+
+  Future<void> saveGameAnswerMode(AiAnswerMode mode) async {
+    final prefs = await _prefs;
+    await prefs.setString(_gameAnswerModeKey, mode.code);
+  }
+
+  Future<AiAnswerMode> loadGlobalAnswerMode() async {
+    final prefs = await _prefs;
+    return AiAnswerModeX.fromCode(
+      prefs.getString(_globalAnswerModeKey),
+      fallback: AiAnswerMode.knowledgeThenDirect,
+    );
+  }
+
+  Future<void> saveGlobalAnswerMode(AiAnswerMode mode) async {
+    final prefs = await _prefs;
+    await prefs.setString(_globalAnswerModeKey, mode.code);
   }
 }

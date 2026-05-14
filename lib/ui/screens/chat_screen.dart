@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/ai_answer_mode.dart';
 import '../../models/chat_message.dart';
 import '../../state/app_controller.dart';
 import '../widgets/message_bubble.dart';
@@ -87,7 +88,10 @@ class _ChatScreenState extends State<ChatScreen> {
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: _StatusBanner(controller: controller),
+              child: _StatusBanner(
+                controller: controller,
+                useGlobalMode: widget.useGlobalMode,
+              ),
             ),
             Expanded(
               child: AnimatedBuilder(
@@ -96,7 +100,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                    itemCount: controller.messages.length + (controller.isSending ? 1 : 0),
+                    itemCount:
+                        controller.messages.length +
+                        (controller.isSending ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index >= controller.messages.length) {
                         return Align(
@@ -174,7 +180,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     _textController.clear();
-    await widget.controller.sendPrompt(text);
+    await widget.controller.sendPrompt(
+      text,
+      useGlobalMode: widget.useGlobalMode,
+    );
   }
 
   Future<void> _toggleListening() async {
@@ -183,9 +192,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(controller.copy.micUnavailable)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(controller.copy.micUnavailable)));
       return;
     }
 
@@ -206,15 +215,20 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _StatusBanner extends StatelessWidget {
-  const _StatusBanner({
-    required this.controller,
-  });
+  const _StatusBanner({required this.controller, required this.useGlobalMode});
 
   final AppController controller;
+  final bool useGlobalMode;
 
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
+    final AiAnswerMode mode = controller.chatAnswerMode(
+      useGlobalMode: useGlobalMode,
+    );
+    final bool smartSupplement = controller.allowSmartSupplement(
+      useGlobalMode: useGlobalMode,
+    );
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -228,34 +242,48 @@ class _StatusBanner extends StatelessWidget {
           Row(
             children: <Widget>[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: controller.palette.accentSecondary.withValues(alpha: 0.15),
+                  color: controller.palette.accentSecondary.withValues(
+                    alpha: 0.15,
+                  ),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  copy.mockBadge,
+                  mode == AiAnswerMode.knowledgeOnly
+                      ? copy.knowledgeOnlyLabel
+                      : copy.smartSupplementLabel,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: controller.palette.accentSecondary,
-                      ),
+                    color: controller.palette.accentSecondary,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: controller.voiceReplyEnabled
                       ? controller.palette.accentPrimary.withValues(alpha: 0.12)
-                      : controller.palette.homeTextPrimary.withValues(alpha: 0.08),
+                      : controller.palette.homeTextPrimary.withValues(
+                          alpha: 0.08,
+                        ),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  controller.voiceReplyEnabled ? copy.voiceReplyTitle : copy.voiceReplyOff,
+                  controller.voiceReplyEnabled
+                      ? copy.voiceReplyTitle
+                      : copy.voiceReplyOff,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: controller.voiceReplyEnabled
-                            ? controller.palette.accentPrimary
-                            : controller.palette.homeTextPrimary,
-                      ),
+                    color: controller.voiceReplyEnabled
+                        ? controller.palette.accentPrimary
+                        : controller.palette.homeTextPrimary,
+                  ),
                 ),
               ),
             ],
@@ -264,10 +292,31 @@ class _StatusBanner extends StatelessWidget {
           Text(copy.assistantModeHint),
           const SizedBox(height: 10),
           SwitchListTile.adaptive(
+            value: smartSupplement,
+            contentPadding: EdgeInsets.zero,
+            activeThumbColor: controller.palette.accentSecondary,
+            activeTrackColor: controller.palette.accentSecondary.withValues(
+              alpha: 0.45,
+            ),
+            title: Text(copy.smartSupplementSwitchLabel),
+            subtitle: Text(
+              smartSupplement
+                  ? copy.smartSupplementSwitchHintOn
+                  : copy.smartSupplementSwitchHintOff,
+            ),
+            onChanged: (value) => controller.setAllowSmartSupplement(
+              value,
+              useGlobalMode: useGlobalMode,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SwitchListTile.adaptive(
             value: controller.voiceReplyEnabled,
             contentPadding: EdgeInsets.zero,
             activeThumbColor: controller.palette.accentPrimary,
-            activeTrackColor: controller.palette.accentPrimary.withValues(alpha: 0.45),
+            activeTrackColor: controller.palette.accentPrimary.withValues(
+              alpha: 0.45,
+            ),
             title: Text(copy.voiceReplySwitchLabel),
             subtitle: Text(copy.voiceReplyHint),
             onChanged: controller.setVoiceReplyEnabled,
@@ -320,9 +369,9 @@ class _Composer extends StatelessWidget {
                 Expanded(
                   child: Text(
                     copy.tapToStop,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.white,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: Colors.white),
                   ),
                 ),
               ],
@@ -335,9 +384,7 @@ class _Composer extends StatelessWidget {
                 controller: textController,
                 minLines: 1,
                 maxLines: 4,
-                decoration: InputDecoration(
-                  hintText: copy.messageHint,
-                ),
+                decoration: InputDecoration(hintText: copy.messageHint),
               ),
             ),
             const SizedBox(width: 10),
@@ -358,7 +405,9 @@ class _Composer extends StatelessWidget {
               style: IconButton.styleFrom(
                 backgroundColor: canSend
                     ? controller.palette.accentSecondary
-                    : controller.palette.homeTextPrimary.withValues(alpha: 0.16),
+                    : controller.palette.homeTextPrimary.withValues(
+                        alpha: 0.16,
+                      ),
                 foregroundColor: canSend
                     ? Colors.white
                     : controller.palette.homeTextPrimary.withValues(alpha: 0.4),

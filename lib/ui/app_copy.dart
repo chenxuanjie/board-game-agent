@@ -13,7 +13,8 @@ class AppCopy {
       ? '像 Ludomentor 一样的桌游入口与统一 AI 助手'
       : 'A Ludomentor-style board game library with a unified AI helper';
   String get featuredLabel => isChinese ? '当前已装入' : 'Loaded now';
-  String featuredGameCount(int count) => isChinese ? '$count 个桌游' : '$count board games';
+  String featuredGameCount(int count) =>
+      isChinese ? '$count 个桌游' : '$count board games';
   String get openSettings => isChinese ? '语言与语音' : 'Language and voice';
   String get languageTitle => isChinese ? '语言设置' : 'Language';
   String get colorSchemeTitle => isChinese ? '配色方案' : 'Color Scheme';
@@ -27,6 +28,9 @@ class AppCopy {
   String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';
   String get aiApiSaved => isChinese ? 'AI 接口配置已保存' : 'AI API config saved';
   String get aiApiTestSuccess => isChinese ? '连接成功' : 'Connection successful';
+  String get aiReplyFailed => isChinese
+      ? '这次回答失败了，请稍后再试。'
+      : 'The assistant could not answer this time. Please try again.';
   String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
   String get assetPriorityTitle =>
       isChinese ? '资源访问优先级' : 'Asset Source Priority';
@@ -42,8 +46,7 @@ class AppCopy {
   String get statusFailedShort => isChinese ? '失败' : 'Failed';
   String get statusPendingShort => isChinese ? '待测' : 'Pending';
   String get statusLimitedShort => isChinese ? '受限' : 'Limited';
-  String get aiStatusDefaultReady =>
-      isChinese ? '默认可用' : 'Ready by default';
+  String get aiStatusDefaultReady => isChinese ? '默认可用' : 'Ready by default';
   String get assetTestDone =>
       isChinese ? '资源访问测试完成' : 'Asset access test completed';
   String get dialogClose => isChinese ? '关闭' : 'Close';
@@ -52,9 +55,8 @@ class AppCopy {
   String get libraryUpdateMessage => isChinese
       ? '检测到 catalog、背景图、规则书或相关资料有更新。是否现在下载并更新到本地？'
       : 'Catalog, images, rulebooks, or related content has been updated. Download and update local data now?';
-  String libraryUpdateGameListLabel(int count) => isChinese
-      ? '涉及 $count 个桌游：'
-      : 'Affected games ($count):';
+  String libraryUpdateGameListLabel(int count) =>
+      isChinese ? '涉及 $count 个桌游：' : 'Affected games ($count):';
   String get updateNow => isChinese ? '确定' : 'Update';
   String get updateLater => isChinese ? '取消' : 'Cancel';
   String get updatingNow => isChinese ? '正在更新资源…' : 'Updating content...';
@@ -64,10 +66,20 @@ class AppCopy {
       : 'When enabled, assistant replies are spoken aloud.';
   String get voiceReplySwitchLabel => isChinese ? '语音朗读' : 'Voice output';
   String get enterAssistant => isChinese ? '进入 AI 助手' : 'Open AI Assistant';
-  String get assistantMode => isChinese ? '模拟模式' : 'Mock mode';
+  String get assistantMode => isChinese ? '桌游助手' : 'Board Game Assistant';
   String get assistantModeHint => isChinese
-      ? '当前助手已接入真实 AI，可直接继续追问规则、流程和策略相关问题。'
-      : 'The assistant is connected to a live AI backend and can answer rules, flow, and strategy questions.';
+      ? '你可以先只按本桌游知识库回答；如果打开智能补充，知识不够时会再结合当前桌游详情直接作答。'
+      : 'You can keep answers limited to the local game knowledge base, or allow a direct fallback that uses the current game profile when knowledge is insufficient.';
+  String get knowledgeOnlyLabel => isChinese ? '仅知识库' : 'Knowledge Only';
+  String get smartSupplementLabel => isChinese ? '智能补充' : 'Smart Supplement';
+  String get smartSupplementSwitchLabel =>
+      isChinese ? '知识不足时智能补充' : 'Supplement when knowledge is insufficient';
+  String get smartSupplementSwitchHintOn => isChinese
+      ? '先按当前桌游知识库回答；若知识库没有足够信息，再结合这款桌游的详情直接回答。'
+      : 'Answer from the current game knowledge base first, then fall back to a direct answer that uses the current game profile when needed.';
+  String get smartSupplementSwitchHintOff => isChinese
+      ? '只依据当前桌游知识库回答；知识库没有写到的内容会直接回答不知道。'
+      : 'Answer only from the current game knowledge base, and say you do not know when the knowledge base does not cover the question.';
   String get askAnything => isChinese ? '现在就问它' : 'Ask anything now';
   String get helperSectionTitle =>
       isChinese ? '这个版本已经能做什么' : 'What this build already does';
@@ -77,12 +89,17 @@ class AppCopy {
   String get favouritesOnly => isChinese ? '只看收藏' : 'Show favourites only';
   String get globalAiTitle => isChinese ? '通用 AI 助手' : 'Global AI Assistant';
   String get globalAiSubtitle => isChinese
-      ? '后续可结合全部桌游知识库统一答疑'
-      : 'A unified AI entry for answers across every game knowledge base';
+      ? '独立 AI 入口，可切换知识库优先与智能补充'
+      : 'A standalone AI entry with knowledge-first and fallback modes';
   String get gameLibraryTitle => isChinese ? '桌游列表' : 'Game Library';
   String get allKnowledgeGreeting => isChinese
-      ? '这里是通用 AI 助手入口。它会结合不同桌游上下文，为你统一回答问题。'
-      : 'This is the global AI helper. It can answer questions across different board game contexts.';
+      ? '这里是独立 AI 入口。你可以切换为仅知识库回答，或允许在知识不足时做智能补充。'
+      : 'This is the standalone AI entry. You can keep answers knowledge-only or allow a smart fallback when the knowledge base is insufficient.';
+  String get homeAssetsLoadingTitle =>
+      isChinese ? '正在加载资源...' : 'Loading assets...';
+  String homeAssetsLoadingProgress(int loaded, int total) => isChinese
+      ? '已加载 $loaded / $total'
+      : 'Loaded $loaded / $total';
   String assistantGreetingFor(String gameTitle) => isChinese
       ? '欢迎来到《$gameTitle》AI 助手。你可以直接提问规则、流程、术语或策略相关问题，也可以点击麦克风尝试语音输入。'
       : 'Welcome to the $gameTitle assistant. Ask about rules, flow, terminology, or strategy, and use the microphone if speech input is available.';

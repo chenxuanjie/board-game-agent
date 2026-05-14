@@ -64,9 +64,6 @@ flutter:
     - assets/games/exploding_kittens/images/
     - assets/games/exploding_kittens/docs/
     - assets/games/exploding_kittens/game.json
-    - assets/games/castles_of_burgundy_special_edition/images/
-    - assets/games/castles_of_burgundy_special_edition/docs/
-    - assets/games/castles_of_burgundy_special_edition/game.json
     - assets/games/citadels/images/
     - assets/games/citadels/docs/
     - assets/games/citadels/game.json
@@ -82,3 +79,12 @@ flutter:
     - assets/games/night_of_the_ninja/images/
     - assets/games/night_of_the_ninja/docs/
     - assets/games/night_of_the_ninja/game.json
+    - assets/games/patchwork_10th_anniversary/images/
+    - assets/games/patchwork_10th_anniversary/docs/
+    - assets/games/patchwork_10th_anniversary/game.json
+    - assets/games/scout/images/
+    - assets/games/scout/docs/
+    - assets/games/scout/game.json
+    - assets/games/slay_the_spire/images/
+    - assets/games/slay_the_spire/docs/
+    - assets/games/slay_the_spire/game.json

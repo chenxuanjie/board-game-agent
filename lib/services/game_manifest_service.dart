@@ -4,12 +4,16 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../models/asset_source_config.dart';
+import '../models/cached_asset.dart';
 import '../models/game_catalog_manifest.dart';
 import 'remote_asset_service.dart';
 
 class GameManifestService {
   Future<List<GameManifest>> loadEnabledGames({
     required RemoteAssetService remoteAssetService,
+    List<AssetSourceConfig> sources = const [],
+    bool preferRemote = false,
   }) async {
     final GameCatalogManifest catalog = await loadMergedCatalogManifest(
       remoteAssetService: remoteAssetService,
@@ -21,16 +25,25 @@ class GameManifestService {
 
     final List<GameManifest> manifests = <GameManifest>[];
     for (final GameCatalogEntry entry in entries) {
+      if (!entry.enabled) {
+        continue;
+      }
       final String manifestPath = 'assets/games/${entry.slug}/game.json';
-      final String raw = await loadManifestSource(
-        remotePath: manifestPath,
-        remoteAssetService: remoteAssetService,
-      );
-      final GameManifest manifest = GameManifest.fromJson(
-        jsonDecode(raw) as Map<String, dynamic>,
-      );
-      if (entry.enabled) {
+      try {
+        final String raw = await loadManifestSource(
+          remotePath: manifestPath,
+          remoteAssetService: remoteAssetService,
+          sources: sources,
+          preferRemote: preferRemote,
+        );
+        final GameManifest manifest = GameManifest.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
         manifests.add(manifest);
+      } catch (error) {
+        debugPrint(
+          '[manifests] skipping ${entry.slug} because manifest could not be loaded: $error',
+        );
       }
     }
     return manifests;
@@ -48,12 +61,34 @@ class GameManifestService {
   Future<String> loadManifestSource({
     required String remotePath,
     required RemoteAssetService remoteAssetService,
+    List<AssetSourceConfig> sources = const [],
+    bool preferRemote = false,
   }) async {
+    // 1. Check local cache
     final File? cached = await remoteAssetService.cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {
       debugPrint('[manifests] using cached source: $remotePath');
       return cached.readAsString();
     }
+
+    // 2. Try fetching from remote only when explicitly requested.
+    if (preferRemote && sources.isNotEmpty) {
+      try {
+        final CachedAsset? asset = await remoteAssetService.ensureCached(
+          sources: sources,
+          remotePath: remotePath,
+          allowCachedFallback: false,
+        );
+        if (asset != null && asset.exists) {
+          debugPrint('[manifests] using remote source: $remotePath');
+          return File(asset.localPath).readAsString();
+        }
+      } catch (e) {
+        debugPrint('[manifests] remote fetch failed for $remotePath: $e');
+      }
+    }
+
+    // 3. Fall back to bundled
     debugPrint('[manifests] using bundled source: $remotePath');
     return rootBundle.loadString(remotePath);
   }

@@ -62,7 +62,7 @@
       "enabled": true
     },
     {
-      "slug": "castles_of_burgundy_special_edition",
+      "slug": "castles_of_burgundy_2019",
       "order": 130,
       "enabled": true
     },
@@ -89,6 +89,21 @@
     {
       "slug": "night_of_the_ninja",
       "order": 180,
+      "enabled": true
+    },
+    {
+      "slug": "patchwork_10th_anniversary",
+      "order": 190,
+      "enabled": true
+    },
+    {
+      "slug": "scout",
+      "order": 200,
+      "enabled": true
+    },
+    {
+      "slug": "slay_the_spire",
+      "order": 210,
       "enabled": true
     }
   ]
