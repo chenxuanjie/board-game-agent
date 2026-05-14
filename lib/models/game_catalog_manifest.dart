@@ -136,6 +136,7 @@ class GameManifest {
       faqAssetPath: _assetPath(faqPath),
       knowledgeAssetPaths: _resolveAssetList(knowledge),
       heroTagline: content.heroTagline,
+      assistantIntro: content.assistantIntro,
       summary: content.summary,
       mentorPitch: content.mentorPitch,
       playTime: content.playTime,
@@ -269,6 +270,7 @@ class GameLocaleContent {
     required this.languageRequirement,
     required this.rankBadges,
     required this.heroTagline,
+    required this.assistantIntro,
     required this.summary,
     required this.mentorPitch,
     required this.playTime,
@@ -290,6 +292,7 @@ class GameLocaleContent {
   final String languageRequirement;
   final List<String> rankBadges;
   final String heroTagline;
+  final String assistantIntro;
   final String summary;
   final String mentorPitch;
   final String playTime;
@@ -312,6 +315,7 @@ class GameLocaleContent {
       languageRequirement: json['languageRequirement'] as String? ?? '',
       rankBadges: GameManifest._stringList(json['rankBadges']),
       heroTagline: json['heroTagline'] as String? ?? '',
+      assistantIntro: json['assistantIntro'] as String? ?? '',
       summary: json['summary'] as String? ?? '',
       mentorPitch: json['mentorPitch'] as String? ?? '',
       playTime: json['playTime'] as String? ?? '',

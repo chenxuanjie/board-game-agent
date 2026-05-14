@@ -332,6 +332,14 @@ assets/games/<game_slug>/game.json
 - `documents.rulebook` / `documents.faq` 用于规则书和 FAQ 的主入口
 - `documents.knowledge` 用于 AI 检索时优先读取的本地 Markdown 摘要列表
 - `locales` 中至少应补 `zhHans` 和 `en` 两套基础元数据
+- `locales.<locale>.assistantIntro` 必须提供一句话的桌游简介，用于当前桌游 AI 助手的开场介绍
+
+关于 `assistantIntro`：
+
+- 必须是 1 句话
+- 目标是让用户一进入该桌游 AI 助手，就知道这款桌游大致是什么类型、核心体验是什么
+- 应和 `summary` 区分开
+- `summary` 可以更完整，`assistantIntro` 要更短、更适合直接当开场白
 
 如果某些资料尚未找到，也仍然应该建立 `game.json`，并通过：
 

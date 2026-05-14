@@ -383,8 +383,13 @@ class _Composer extends StatelessWidget {
               child: TextField(
                 controller: textController,
                 minLines: 1,
-                maxLines: 4,
-                decoration: InputDecoration(hintText: copy.messageHint),
+                maxLines: 1,
+                textInputAction: TextInputAction.send,
+                onSubmitted: canSend ? (_) => onSend() : null,
+                decoration: InputDecoration(
+                  hintText: copy.messageHint,
+                  isDense: true,
+                ),
               ),
             ),
             const SizedBox(width: 10),

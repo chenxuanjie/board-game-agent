@@ -100,12 +100,19 @@ class AppCopy {
   String homeAssetsLoadingProgress(int loaded, int total) => isChinese
       ? '已加载 $loaded / $total'
       : 'Loaded $loaded / $total';
-  String assistantGreetingFor(String gameTitle) => isChinese
-      ? '欢迎来到《$gameTitle》AI 助手。你可以直接提问规则、流程、术语或策略相关问题，也可以点击麦克风尝试语音输入。'
-      : 'Welcome to the $gameTitle assistant. Ask about rules, flow, terminology, or strategy, and use the microphone if speech input is available.';
+  String assistantGreetingFor(String gameTitle, String intro) {
+    final String normalizedIntro = intro.trim().isEmpty
+        ? (isChinese
+              ? '《$gameTitle》是一款值得边玩边问的桌游。'
+              : '$gameTitle is a board game worth exploring as you play.')
+        : intro.trim();
+    return isChinese
+        ? '$normalizedIntro 这里是《$gameTitle》AI 助手，你可以继续提问规则、流程、术语或策略问题，也可以点击麦克风尝试语音输入。'
+        : '$normalizedIntro This is the $gameTitle assistant. You can continue asking about rules, flow, terminology, or strategy, and you can also use the microphone for speech input.';
+  }
   String get messageHint => isChinese
-      ? '问规则、流程、建筑、殖民者...'
-      : 'Ask about rules, rounds, buildings, or colonists...';
+      ? '问规则、流程、术语、策略...'
+      : 'Ask about rules, flow, terms, or strategy...';
   String get listening => '...';
   String get tapToStop => isChinese ? '点击停止录音' : 'Tap to stop recording';
   String get micUnavailable => isChinese

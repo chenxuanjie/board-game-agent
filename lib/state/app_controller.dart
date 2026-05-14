@@ -352,7 +352,14 @@ class AppController extends ChangeNotifier {
         ChatMessage(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           role: ChatRole.assistant,
-          text: greeting ?? copy.assistantGreetingFor(selectedGame.title),
+          text:
+              greeting ??
+              copy.assistantGreetingFor(
+                selectedGame.title,
+                selectedGame.assistantIntro.isNotEmpty
+                    ? selectedGame.assistantIntro
+                    : selectedGame.summary,
+              ),
           timestamp: DateTime.now(),
         ),
       );
@@ -974,7 +981,12 @@ class AppController extends ChangeNotifier {
         ChatMessage(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           role: ChatRole.assistant,
-          text: copy.assistantGreetingFor(selectedGame.title),
+          text: copy.assistantGreetingFor(
+            selectedGame.title,
+            selectedGame.assistantIntro.isNotEmpty
+                ? selectedGame.assistantIntro
+                : selectedGame.summary,
+          ),
           timestamp: DateTime.now(),
         ),
       );

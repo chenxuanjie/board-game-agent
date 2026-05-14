@@ -24,6 +24,7 @@ class GameInfo {
     required this.faqAssetPath,
     List<String>? knowledgeAssetPaths,
     required this.heroTagline,
+    required this.assistantIntro,
     required this.summary,
     required this.mentorPitch,
     required this.playTime,
@@ -63,6 +64,7 @@ class GameInfo {
   final String faqAssetPath;
   final List<String> knowledgeAssetPaths;
   final String heroTagline;
+  final String assistantIntro;
   final String summary;
   final String mentorPitch;
   final String playTime;

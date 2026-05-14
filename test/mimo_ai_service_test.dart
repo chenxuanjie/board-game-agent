@@ -94,6 +94,7 @@ GameInfo _gameInfo() {
       'assets/games/cabo/docs/faq_zh.md',
     ],
     heroTagline: '记住低分牌。',
+    assistantIntro: '《Cabo》是一款节奏很快的记忆与推理卡牌游戏。',
     summary: '一款轻量记忆卡牌游戏。',
     mentorPitch: '适合边玩边问。',
     playTime: '15-30 分钟',
