@@ -82,7 +82,8 @@ class AppController extends ChangeNotifier {
   bool _homeAssetsLoading = false;
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
-  final List<ChatMessage> _messages = <ChatMessage>[];
+  final Map<String, List<ChatMessage>> _conversationMessages =
+      <String, List<ChatMessage>>{};
   late final http.Client _assetTestClient = IOClient(
     HttpClient()
       ..badCertificateCallback =
@@ -121,7 +122,12 @@ class AppController extends ChangeNotifier {
     orElse: () => games.first,
   );
   UnmodifiableListView<ChatMessage> get messages =>
-      UnmodifiableListView<ChatMessage>(_messages);
+      UnmodifiableListView<ChatMessage>(_messagesForCurrentContext());
+  UnmodifiableListView<ChatMessage> messagesForContext({
+    required bool useGlobalMode,
+  }) => UnmodifiableListView<ChatMessage>(
+    _messagesForContext(useGlobalMode: useGlobalMode),
+  );
 
   AiAnswerMode chatAnswerMode({required bool useGlobalMode}) =>
       useGlobalMode ? _globalAnswerMode : _gameAnswerMode;
@@ -345,8 +351,19 @@ class AppController extends ChangeNotifier {
     await resetConversation();
   }
 
-  Future<void> resetConversation({String? greeting}) async {
-    _messages
+  Future<void> clearConversationForContext({required bool useGlobalMode}) async {
+    await resetConversation(useGlobalMode: useGlobalMode);
+  }
+
+  Future<void> resetConversation({
+    String? greeting,
+    bool useGlobalMode = false,
+  }) async {
+    final List<ChatMessage> messages = _messagesForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    final GameInfo game = selectedGame;
+    messages
       ..clear()
       ..add(
         ChatMessage(
@@ -355,10 +372,12 @@ class AppController extends ChangeNotifier {
           text:
               greeting ??
               copy.assistantGreetingFor(
-                selectedGame.title,
-                selectedGame.assistantIntro.isNotEmpty
-                    ? selectedGame.assistantIntro
-                    : selectedGame.summary,
+                useGlobalMode ? copy.globalAiTitle : game.title,
+                useGlobalMode
+                    ? copy.allKnowledgeGreeting
+                    : game.assistantIntro.isNotEmpty
+                    ? game.assistantIntro
+                    : game.summary,
               ),
           timestamp: DateTime.now(),
         ),
@@ -372,6 +391,9 @@ class AppController extends ChangeNotifier {
     if (trimmed.isEmpty || _isSending) {
       return;
     }
+    final List<ChatMessage> messages = _messagesForContext(
+      useGlobalMode: useGlobalMode,
+    );
 
     final userMessage = ChatMessage(
       id: '${DateTime.now().microsecondsSinceEpoch}-user',
@@ -380,7 +402,7 @@ class AppController extends ChangeNotifier {
       timestamp: DateTime.now(),
     );
 
-    _messages.add(userMessage);
+    messages.add(userMessage);
     _isSending = true;
     notifyListeners();
 
@@ -411,14 +433,14 @@ class AppController extends ChangeNotifier {
         timestamp: DateTime.now(),
       );
 
-      _messages.add(assistantMessage);
+      messages.add(assistantMessage);
       if (_voiceReplyEnabled) {
         await speakMessage(reply);
       }
     } catch (error, stackTrace) {
       debugPrint('[chat] sendPrompt failed: $error');
       debugPrint('$stackTrace');
-      _messages.add(
+      messages.add(
         ChatMessage(
           id: '${DateTime.now().microsecondsSinceEpoch}-assistant-error',
           role: ChatRole.assistant,
@@ -976,21 +998,38 @@ class AppController extends ChangeNotifier {
   }
 
   void _ensureGreeting() {
-    if (_messages.isEmpty) {
-      _messages.add(
+    if (_games.isEmpty) {
+      return;
+    }
+    for (final GameInfo game in _games) {
+      _conversationMessages.putIfAbsent(
+        _conversationKeyForGameId(game.id),
+        () => <ChatMessage>[
+          ChatMessage(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            role: ChatRole.assistant,
+            text: copy.assistantGreetingFor(
+              game.title,
+              game.assistantIntro.isNotEmpty
+                  ? game.assistantIntro
+                  : game.summary,
+            ),
+            timestamp: DateTime.now(),
+          ),
+        ],
+      );
+    }
+    _conversationMessages.putIfAbsent(
+      _globalConversationKey,
+      () => <ChatMessage>[
         ChatMessage(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           role: ChatRole.assistant,
-          text: copy.assistantGreetingFor(
-            selectedGame.title,
-            selectedGame.assistantIntro.isNotEmpty
-                ? selectedGame.assistantIntro
-                : selectedGame.summary,
-          ),
+          text: copy.allKnowledgeGreeting,
           timestamp: DateTime.now(),
         ),
-      );
-    }
+      ],
+    );
   }
 
   void _handleListeningStopped() {
@@ -999,4 +1038,19 @@ class AppController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  static const String _globalConversationKey = 'global';
+
+  List<ChatMessage> _messagesForCurrentContext() {
+    return _messagesForContext(useGlobalMode: false);
+  }
+
+  List<ChatMessage> _messagesForContext({required bool useGlobalMode}) {
+    final String key = useGlobalMode
+        ? _globalConversationKey
+        : _conversationKeyForGameId(selectedGame.id);
+    return _conversationMessages.putIfAbsent(key, () => <ChatMessage>[]);
+  }
+
+  String _conversationKeyForGameId(String gameId) => 'game:$gameId';
 }

@@ -30,6 +30,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
+  bool _didInitializeConversation = false;
 
   @override
   void initState() {
@@ -39,8 +40,17 @@ class _ChatScreenState extends State<ChatScreen> {
     _textController.addListener(_onDraftChanged);
     widget.controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.customGreeting != null) {
-        widget.controller.resetConversation(greeting: widget.customGreeting);
+      if (_didInitializeConversation) {
+        return;
+      }
+      _didInitializeConversation = true;
+      if (widget.controller
+          .messagesForContext(useGlobalMode: widget.useGlobalMode)
+          .isEmpty) {
+        widget.controller.resetConversation(
+          greeting: widget.customGreeting,
+          useGlobalMode: widget.useGlobalMode,
+        );
       }
     });
   }
@@ -78,7 +88,9 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: <Widget>[
           IconButton(
             tooltip: copy.clearChat,
-            onPressed: controller.clearConversation,
+            onPressed: () => controller.clearConversationForContext(
+              useGlobalMode: widget.useGlobalMode,
+            ),
             icon: const Icon(Icons.delete_sweep_rounded),
           ),
         ],
@@ -97,14 +109,15 @@ class _ChatScreenState extends State<ChatScreen> {
               child: AnimatedBuilder(
                 animation: controller,
                 builder: (context, _) {
+                  final messages = controller.messagesForContext(
+                    useGlobalMode: widget.useGlobalMode,
+                  );
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                    itemCount:
-                        controller.messages.length +
-                        (controller.isSending ? 1 : 0),
+                    itemCount: messages.length + (controller.isSending ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (index >= controller.messages.length) {
+                      if (index >= messages.length) {
                         return Align(
                           alignment: Alignment.centerLeft,
                           child: Container(
@@ -122,7 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         );
                       }
 
-                      final ChatMessage message = controller.messages[index];
+                      final ChatMessage message = messages[index];
                       return MessageBubble(
                         message: message,
                         palette: palette,

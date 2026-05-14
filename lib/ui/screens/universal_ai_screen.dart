@@ -17,7 +17,6 @@ class UniversalAiScreen extends StatelessWidget {
       controller: controller,
       customTitle: controller.copy.globalAiTitle,
       customSubtitle: controller.copy.globalAiSubtitle,
-      customGreeting: controller.copy.allKnowledgeGreeting,
       useGlobalMode: true,
     );
   }
