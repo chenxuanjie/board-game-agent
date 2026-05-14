@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../models/ai_answer_mode.dart';
 import '../../models/chat_message.dart';
 import '../../state/app_controller.dart';
 import '../widgets/message_bubble.dart';
@@ -98,13 +97,6 @@ class _ChatScreenState extends State<ChatScreen> {
       body: SafeArea(
         child: Column(
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: _StatusBanner(
-                controller: controller,
-                useGlobalMode: widget.useGlobalMode,
-              ),
-            ),
             Expanded(
               child: AnimatedBuilder(
                 animation: controller,
@@ -154,6 +146,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 controller: controller,
                 textController: _textController,
                 canSend: canSend,
+                useGlobalMode: widget.useGlobalMode,
                 onSend: _sendCurrentText,
                 onMicTap: _toggleListening,
               ),
@@ -227,129 +220,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-class _StatusBanner extends StatelessWidget {
-  const _StatusBanner({required this.controller, required this.useGlobalMode});
-
-  final AppController controller;
-  final bool useGlobalMode;
-
-  @override
-  Widget build(BuildContext context) {
-    final copy = controller.copy;
-    final AiAnswerMode mode = controller.chatAnswerMode(
-      useGlobalMode: useGlobalMode,
-    );
-    final bool smartSupplement = controller.allowSmartSupplement(
-      useGlobalMode: useGlobalMode,
-    );
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: controller.palette.cardSurface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: controller.palette.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: controller.palette.accentSecondary.withValues(
-                    alpha: 0.15,
-                  ),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  mode == AiAnswerMode.knowledgeOnly
-                      ? copy.knowledgeOnlyLabel
-                      : copy.smartSupplementLabel,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: controller.palette.accentSecondary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: controller.voiceReplyEnabled
-                      ? controller.palette.accentPrimary.withValues(alpha: 0.12)
-                      : controller.palette.homeTextPrimary.withValues(
-                          alpha: 0.08,
-                        ),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  controller.voiceReplyEnabled
-                      ? copy.voiceReplyTitle
-                      : copy.voiceReplyOff,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: controller.voiceReplyEnabled
-                        ? controller.palette.accentPrimary
-                        : controller.palette.homeTextPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(copy.assistantModeHint),
-          const SizedBox(height: 10),
-          SwitchListTile.adaptive(
-            value: smartSupplement,
-            contentPadding: EdgeInsets.zero,
-            activeThumbColor: controller.palette.accentSecondary,
-            activeTrackColor: controller.palette.accentSecondary.withValues(
-              alpha: 0.45,
-            ),
-            title: Text(copy.smartSupplementSwitchLabel),
-            subtitle: Text(
-              smartSupplement
-                  ? copy.smartSupplementSwitchHintOn
-                  : copy.smartSupplementSwitchHintOff,
-            ),
-            onChanged: (value) => controller.setAllowSmartSupplement(
-              value,
-              useGlobalMode: useGlobalMode,
-            ),
-          ),
-          const SizedBox(height: 4),
-          SwitchListTile.adaptive(
-            value: controller.voiceReplyEnabled,
-            contentPadding: EdgeInsets.zero,
-            activeThumbColor: controller.palette.accentPrimary,
-            activeTrackColor: controller.palette.accentPrimary.withValues(
-              alpha: 0.45,
-            ),
-            title: Text(copy.voiceReplySwitchLabel),
-            subtitle: Text(copy.voiceReplyHint),
-            onChanged: controller.setVoiceReplyEnabled,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            controller.speechAvailable ? copy.speechReady : copy.micUnavailable,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.textController,
     required this.canSend,
+    required this.useGlobalMode,
     required this.onSend,
     required this.onMicTap,
   });
@@ -357,12 +233,39 @@ class _Composer extends StatelessWidget {
   final AppController controller;
   final TextEditingController textController;
   final bool canSend;
+  final bool useGlobalMode;
   final Future<void> Function() onSend;
   final Future<void> Function() onMicTap;
 
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
+    final palette = controller.palette;
+    final bool smartSupplement = controller.allowSmartSupplement(
+      useGlobalMode: useGlobalMode,
+    );
+    final List<Widget> activeFeatureChips = <Widget>[
+      if (smartSupplement)
+        _FeatureChip(
+          icon: Icons.auto_awesome_rounded,
+          label: copy.smartSupplementLabel,
+          foregroundColor: palette.accentSecondary,
+          backgroundColor: palette.accentSecondary.withValues(alpha: 0.14),
+          onRemove: () => controller.setAllowSmartSupplement(
+            false,
+            useGlobalMode: useGlobalMode,
+          ),
+        ),
+      if (controller.voiceReplyEnabled)
+        _FeatureChip(
+          icon: Icons.graphic_eq_rounded,
+          label: copy.voiceReplyTitle,
+          foregroundColor: palette.accentPrimary,
+          backgroundColor: palette.accentPrimary.withValues(alpha: 0.14),
+          onRemove: () => controller.setVoiceReplyEnabled(false),
+        ),
+    ];
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -390,8 +293,25 @@ class _Composer extends StatelessWidget {
               ],
             ),
           ),
+        if (activeFeatureChips.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: activeFeatureChips,
+              ),
+            ),
+          ),
         Row(
           children: <Widget>[
+            _ComposerActionsButton(
+              controller: controller,
+              useGlobalMode: useGlobalMode,
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: TextField(
                 controller: textController,
@@ -436,6 +356,150 @@ class _Composer extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+enum _ComposerAction { smartSupplement, voiceReply }
+
+class _ComposerActionsButton extends StatelessWidget {
+  const _ComposerActionsButton({
+    required this.controller,
+    required this.useGlobalMode,
+  });
+
+  final AppController controller;
+  final bool useGlobalMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    final bool smartSupplement = controller.allowSmartSupplement(
+      useGlobalMode: useGlobalMode,
+    );
+
+    return PopupMenuButton<_ComposerAction>(
+      tooltip: copy.askAnything,
+      color: palette.cardSurface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: palette.cardBorder),
+      ),
+      onSelected: (_ComposerAction action) async {
+        switch (action) {
+          case _ComposerAction.smartSupplement:
+            await controller.setAllowSmartSupplement(
+              !smartSupplement,
+              useGlobalMode: useGlobalMode,
+            );
+            break;
+          case _ComposerAction.voiceReply:
+            await controller.setVoiceReplyEnabled(!controller.voiceReplyEnabled);
+            break;
+        }
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<_ComposerAction>>[
+        CheckedPopupMenuItem<_ComposerAction>(
+          value: _ComposerAction.smartSupplement,
+          checked: smartSupplement,
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 18,
+                color: palette.accentSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(copy.smartSupplementSwitchLabel)),
+            ],
+          ),
+        ),
+        CheckedPopupMenuItem<_ComposerAction>(
+          value: _ComposerAction.voiceReply,
+          checked: controller.voiceReplyEnabled,
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.graphic_eq_rounded,
+                size: 18,
+                color: palette.accentPrimary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(copy.voiceReplySwitchLabel)),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: palette.inputFill,
+          shape: BoxShape.circle,
+          border: Border.all(color: palette.cardBorder),
+        ),
+        child: Icon(
+          Icons.add_rounded,
+          color: palette.homeTextPrimary.withValues(alpha: 0.9),
+          size: 28,
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  const _FeatureChip({
+    required this.icon,
+    required this.label,
+    required this.foregroundColor,
+    required this.backgroundColor,
+    required this.onRemove,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color foregroundColor;
+  final Color backgroundColor;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 18, color: foregroundColor),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: foregroundColor,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: onRemove,
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: foregroundColor,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import '../models/ai_api_config.dart';
@@ -432,16 +432,11 @@ $gameProfile$knowledgeBlock
       }
 
       try {
-        String? content;
-        try {
-          content = await rootBundle.loadString(remotePath);
-        } catch (_) {
-          content = null;
-        }
-        content ??= await remoteAssetService.loadTextFromAny(
+        String? content = await _loadLocalKnowledgeFile(remotePath);
+        content = await remoteAssetService.loadTextFromAny(
           sources: assetSourceConfigs,
           remotePaths: <String>[remotePath],
-        );
+        ) ?? content;
         if (content == null) {
           continue;
         }
@@ -483,6 +478,24 @@ $gameProfile$knowledgeBlock
         .replaceAll('\r', '\n')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
+  }
+
+  Future<String?> _loadLocalKnowledgeFile(String remotePath) async {
+    final List<File> candidates = <File>[
+      File(remotePath),
+      File('${Directory.current.path}${Platform.pathSeparator}$remotePath'),
+      File.fromUri(Uri.base.resolve(remotePath)),
+    ];
+    for (final File file in candidates) {
+      try {
+        if (await file.exists()) {
+          return file.readAsString();
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
   }
 
   String _englishTodayString() {
