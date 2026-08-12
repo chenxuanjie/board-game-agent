@@ -46,6 +46,12 @@ app.*.map.json
 
 # Local environment / IDE metadata
 .metadata
+/android/local.properties
+
+# Local release and publishing artifacts
+/release/*.apk
+/webdav.local.json
+/preview/
 
 # Device validation artifacts
 /emulator_*.png
