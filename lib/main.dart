@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:app_ai_client/app_ai_client.dart';
 
 import 'services/mimo_ai_service.dart';
 import 'services/game_manifest_service.dart';
@@ -15,7 +16,7 @@ void main() {
 
   final AppController controller = AppController(
     preferencesService: PreferencesService(),
-    aiService: MimoAiService(),
+    aiService: MimoAiService(aiClient: OpenAiDartAiClient()),
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(),
     speechService: SpeechService(),

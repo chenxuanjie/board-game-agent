@@ -1,9 +1,9 @@
-import 'dart:convert';
-
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
 import 'package:board_game_agent/models/ai_answer_mode.dart';
 import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/asset_source_config.dart';
+import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/services/mimo_ai_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
@@ -16,12 +16,15 @@ void main() {
   test(
     'knowledge-only mode returns unknown when knowledge pass says unknown',
     () async {
-      final _FakeHttpClient client = _FakeHttpClient(
-        responses: <Map<String, dynamic>>[
-          _chatResponse('{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}'),
+      final _FakeAiClient client = _FakeAiClient(
+        responses: <AiResponse>[
+          const AiResponse(
+            text: '{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}',
+            model: 'test-model',
+          ),
         ],
       );
-      final MimoAiService service = MimoAiService(client: client);
+      final MimoAiService service = MimoAiService(aiClient: client);
 
       final String reply = await service.generateReply(
         prompt: '这款桌游支持几个人玩合作模式？',
@@ -31,7 +34,8 @@ void main() {
         useGlobalMode: false,
         config: AiApiConfig.defaultMimo,
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: RemoteAssetService(client: _FakeHttpClient.empty()),
+        remoteAssetService: RemoteAssetService(client: http.Client()),
+        conversationHistory: const <ChatMessage>[],
       );
 
       expect(reply, '当前知识库没有足够信息回答这个问题。');
@@ -42,13 +46,16 @@ void main() {
   test(
     'smart supplement mode falls back to direct answer after unknown',
     () async {
-      final _FakeHttpClient client = _FakeHttpClient(
-        responses: <Map<String, dynamic>>[
-          _chatResponse('{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}'),
-          _chatResponse('这款游戏通常以竞争为主，不是合作玩法。'),
+      final _FakeAiClient client = _FakeAiClient(
+        responses: <AiResponse>[
+          const AiResponse(
+            text: '{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}',
+            model: 'test-model',
+          ),
+          const AiResponse(text: '这款游戏通常以竞争为主，不是合作玩法。', model: 'test-model'),
         ],
       );
-      final MimoAiService service = MimoAiService(client: client);
+      final MimoAiService service = MimoAiService(aiClient: client);
 
       final String reply = await service.generateReply(
         prompt: '这款桌游支持几个人玩合作模式？',
@@ -58,7 +65,8 @@ void main() {
         useGlobalMode: false,
         config: AiApiConfig.defaultMimo,
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: RemoteAssetService(client: _FakeHttpClient.empty()),
+        remoteAssetService: RemoteAssetService(client: http.Client()),
+        conversationHistory: const <ChatMessage>[],
       );
 
       expect(reply, '这款游戏通常以竞争为主，不是合作玩法。');
@@ -106,36 +114,40 @@ GameInfo _gameInfo() {
   );
 }
 
-Map<String, dynamic> _chatResponse(String content) {
-  return <String, dynamic>{
-    'choices': <Map<String, dynamic>>[
-      <String, dynamic>{
-        'message': <String, dynamic>{'content': content},
-      },
-    ],
-  };
-}
+class _FakeAiClient implements AiClient {
+  _FakeAiClient({required List<AiResponse> responses})
+    : _responses = List<AiResponse>.from(responses);
 
-class _FakeHttpClient extends http.BaseClient {
-  _FakeHttpClient({required List<Map<String, dynamic>> responses})
-    : _responses = List<Map<String, dynamic>>.from(responses);
-
-  _FakeHttpClient.empty() : _responses = <Map<String, dynamic>>[];
-
-  final List<Map<String, dynamic>> _responses;
+  final List<AiResponse> _responses;
   int requestCount = 0;
 
   @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    final Map<String, dynamic> body = requestCount < _responses.length
-        ? _responses[requestCount]
-        : _chatResponse('{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}');
+  Future<AiResponse> complete(AiRequest request) async {
+    if (_responses.isEmpty) {
+      throw StateError('No fake AI response is available.');
+    }
     requestCount += 1;
-    final List<int> bytes = utf8.encode(jsonEncode(body));
-    return http.StreamedResponse(
-      Stream<List<int>>.value(bytes),
-      200,
-      headers: const <String, String>{'content-type': 'application/json'},
+    return _responses.removeAt(0);
+  }
+
+  @override
+  Future<AiHealthResult> check(AiEndpointConfig endpoint) async {
+    return const AiHealthResult(
+      success: true,
+      message: 'ok',
+      latency: Duration.zero,
+      model: 'test-model',
     );
+  }
+
+  @override
+  void close() {}
+
+  @override
+  Stream<AiStreamEvent> stream(
+    AiRequest request, {
+    Future<void>? abortTrigger,
+  }) {
+    return const Stream<AiStreamEvent>.empty();
   }
 }
