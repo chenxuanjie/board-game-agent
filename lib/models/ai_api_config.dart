@@ -20,7 +20,7 @@ class AiApiConfig {
   static const AiApiConfig defaultMimo = AiApiConfig(
     name: 'MiMo',
     baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
-    apiKey: 'tp-cqrdq1go3g16pd4nhg05vd91dmh36vp0eq49i41qjmb4rdlb',
+    apiKey: '',
     model: 'mimo-v2.5-pro',
     apiKeyHeader: 'api-key',
     chatPath: '/chat/completions',

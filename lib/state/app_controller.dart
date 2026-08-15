@@ -218,33 +218,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String> testAiApiConfig(AiApiConfig config) async {
-    final String normalizedBaseUrl = config.baseUrl.endsWith('/')
-        ? config.baseUrl.substring(0, config.baseUrl.length - 1)
-        : config.baseUrl;
-    final String normalizedChatPath = config.chatPath.startsWith('/')
-        ? config.chatPath
-        : '/${config.chatPath}';
-    final Uri uri = Uri.parse('$normalizedBaseUrl$normalizedChatPath');
-    try {
-      final response = await http
-          .post(
-            uri,
-            headers: <String, String>{
-              config.apiKeyHeader: config.apiKey,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(<String, dynamic>{
-              'model': config.model,
-              'messages': const <Map<String, String>>[
-                <String, String>{'role': 'user', 'content': 'ping'},
-              ],
-              'max_completion_tokens': 8,
-              'stream': false,
-            }),
-          )
-          .timeout(const Duration(seconds: 20));
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
+    final result = await _aiService.checkConnection(config);
+    if (result.success) {
         _aiConnectivityStatus = ConnectivityStatus(
           state: ConnectivityState.success,
           message: copy.aiApiTestSuccess,
@@ -253,28 +228,17 @@ class AppController extends ChangeNotifier {
         debugPrint('[ai] ${_aiConnectivityStatus.message}');
         notifyListeners();
         return copy.aiApiTestSuccess;
-      }
-
-      final message = 'HTTP ${response.statusCode}: ${response.body}';
-      _aiConnectivityStatus = ConnectivityStatus(
-        state: ConnectivityState.failure,
-        message: message,
-        checkedAt: DateTime.now(),
-      );
-      debugPrint('[ai] $message');
-      notifyListeners();
-      return message;
-    } catch (error) {
-      final message = '连接失败: $error';
-      _aiConnectivityStatus = ConnectivityStatus(
-        state: ConnectivityState.failure,
-        message: message,
-        checkedAt: DateTime.now(),
-      );
-      debugPrint('[ai] $message');
-      notifyListeners();
-      return message;
     }
+
+    final String message = '连接失败: ${result.message}';
+    _aiConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.failure,
+      message: message,
+      checkedAt: DateTime.now(),
+    );
+    debugPrint('[ai] $message');
+    notifyListeners();
+    return message;
   }
 
   void selectGame(String gameId) {
@@ -432,6 +396,7 @@ class AppController extends ChangeNotifier {
         config: _aiApiConfig,
         assetSourceConfigs: _assetSourceConfigs,
         remoteAssetService: _remoteAssetService,
+        conversationHistory: List<ChatMessage>.unmodifiable(messages),
       );
 
       final assistantMessage = ChatMessage(
@@ -471,6 +436,7 @@ class AppController extends ChangeNotifier {
     await _conversationSaveQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
+    _aiService.dispose();
     _assetTestClient.close();
   }
 

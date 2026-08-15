@@ -1,7 +1,10 @@
+import 'package:app_ai_client/app_ai_client.dart';
+
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
+import '../models/chat_message.dart';
 import '../models/game_info.dart';
 import 'remote_asset_service.dart';
 
@@ -15,5 +18,10 @@ abstract class AiService {
     required AiApiConfig config,
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
+    required List<ChatMessage> conversationHistory,
   });
+
+  Future<AiHealthResult> checkConnection(AiApiConfig config);
+
+  void dispose();
 }

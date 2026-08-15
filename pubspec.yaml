@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  app_ai_client:
+    path: ../shared_packages/app_ai_client
   flutter_tts: ^4.2.3
   google_fonts: ^6.2.1
   http: ^1.6.0

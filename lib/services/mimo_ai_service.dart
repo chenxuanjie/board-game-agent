@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/app_language.dart';
 import '../models/asset_source_config.dart';
+import '../models/chat_message.dart';
 import '../models/game_info.dart';
 import 'ai_service.dart';
 import 'remote_asset_service.dart';
@@ -16,12 +17,13 @@ class MimoAiService implements AiService {
   static const int _maxKnowledgeCharsPerAsset = 6000;
   static const int _maxKnowledgeCharsTotal = 24000;
   static const int _maxKnowledgeCharsForDirectFallback = 12000;
+  static const int _maxConversationMessages = 12;
   static const String _statusAnswered = 'answered';
   static const String _statusUnknown = 'unknown';
 
-  final http.Client _client;
+  final AiClient _aiClient;
 
-  MimoAiService({http.Client? client}) : _client = client ?? http.Client();
+  MimoAiService({required AiClient aiClient}) : _aiClient = aiClient;
 
   @override
   Future<String> generateReply({
@@ -33,12 +35,16 @@ class MimoAiService implements AiService {
     required AiApiConfig config,
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
+    required List<ChatMessage> conversationHistory,
   }) async {
-    final Uri uri = _buildChatUri(config);
     final String knowledgeContext = await _buildKnowledgeContext(
       game,
       assetSourceConfigs,
       remoteAssetService,
+    );
+    final List<AiMessage> conversation = _buildConversationMessages(
+      conversationHistory,
+      prompt,
     );
 
     debugPrint(
@@ -51,23 +57,21 @@ class MimoAiService implements AiService {
         return _unknownReply(language);
       }
       return _answerDirectlyWithGameContext(
-        uri: uri,
-        prompt: prompt,
         language: language,
         game: game,
         config: config,
         useGlobalMode: useGlobalMode,
         knowledgeContext: '',
+        conversation: conversation,
       );
     }
 
     final _KnowledgeReply knowledgeReply = await _answerFromKnowledgeOnly(
-      uri: uri,
-      prompt: prompt,
       language: language,
       game: game,
       config: config,
       knowledgeContext: knowledgeContext,
+      conversation: conversation,
     );
 
     if (knowledgeReply.status == _statusAnswered) {
@@ -81,48 +85,46 @@ class MimoAiService implements AiService {
     }
 
     return _answerDirectlyWithGameContext(
-      uri: uri,
-      prompt: prompt,
       language: language,
       game: game,
       config: config,
       useGlobalMode: useGlobalMode,
       knowledgeContext: _truncateKnowledgeForDirectFallback(knowledgeContext),
+      conversation: conversation,
     );
   }
 
-  Uri _buildChatUri(AiApiConfig config) {
-    final String normalizedBaseUrl = config.baseUrl.endsWith('/')
-        ? config.baseUrl.substring(0, config.baseUrl.length - 1)
-        : config.baseUrl;
-    final String normalizedChatPath = config.chatPath.startsWith('/')
-        ? config.chatPath
-        : '/${config.chatPath}';
-    return Uri.parse('$normalizedBaseUrl$normalizedChatPath');
+  @override
+  Future<AiHealthResult> checkConnection(AiApiConfig config) {
+    return _aiClient.check(_endpointFor(config));
   }
 
+  @override
+  void dispose() => _aiClient.close();
+
   Future<_KnowledgeReply> _answerFromKnowledgeOnly({
-    required Uri uri,
-    required String prompt,
     required AppLanguage language,
     required GameInfo game,
     required AiApiConfig config,
     required String knowledgeContext,
+    required List<AiMessage> conversation,
   }) async {
     final String systemPrompt = _buildKnowledgeOnlySystemPrompt(
       language: language,
       game: game,
       knowledgeContext: knowledgeContext,
     );
-    final String raw = await _postChat(
-      uri: uri,
+    final String raw = await _complete(
       config: config,
-      messages: <Map<String, String>>[
-        <String, String>{'role': 'system', 'content': systemPrompt},
-        <String, String>{'role': 'user', 'content': prompt},
-      ],
-      temperature: 0.1,
-      maxCompletionTokens: 900,
+      systemPrompt: systemPrompt,
+      conversation: conversation,
+      options: const AiGenerationOptions(
+        temperature: 0.1,
+        topP: 0.95,
+        maxCompletionTokens: 900,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+      ),
     );
     final _KnowledgeReply parsed = _parseKnowledgeReply(
       raw,
@@ -135,13 +137,12 @@ class MimoAiService implements AiService {
   }
 
   Future<String> _answerDirectlyWithGameContext({
-    required Uri uri,
-    required String prompt,
     required AppLanguage language,
     required GameInfo game,
     required AiApiConfig config,
     required bool useGlobalMode,
     required String knowledgeContext,
+    required List<AiMessage> conversation,
   }) async {
     debugPrint('[ai] using direct fallback for ${game.slug}');
     final String systemPrompt = _buildDirectFallbackSystemPrompt(
@@ -150,64 +151,73 @@ class MimoAiService implements AiService {
       useGlobalMode: useGlobalMode,
       knowledgeContext: knowledgeContext,
     );
-    return _postChat(
-      uri: uri,
+    return _complete(
       config: config,
-      messages: <Map<String, String>>[
-        <String, String>{'role': 'system', 'content': systemPrompt},
-        <String, String>{'role': 'user', 'content': prompt},
-      ],
-      temperature: 0.7,
-      maxCompletionTokens: 1024,
+      systemPrompt: systemPrompt,
+      conversation: conversation,
+      options: const AiGenerationOptions(
+        temperature: 0.7,
+        topP: 0.95,
+        maxCompletionTokens: 1024,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+      ),
     );
   }
 
-  Future<String> _postChat({
-    required Uri uri,
+  Future<String> _complete({
     required AiApiConfig config,
-    required List<Map<String, String>> messages,
-    required double temperature,
-    required int maxCompletionTokens,
+    required String systemPrompt,
+    required List<AiMessage> conversation,
+    required AiGenerationOptions options,
   }) async {
-    final Map<String, dynamic> payload = <String, dynamic>{
-      'model': config.model,
-      'messages': messages,
-      'max_completion_tokens': maxCompletionTokens,
-      'temperature': temperature,
-      'top_p': 0.95,
-      'stream': false,
-      'frequency_penalty': 0,
-      'presence_penalty': 0,
-    };
-
-    final http.Response response = await _client.post(
-      uri,
-      headers: <String, String>{
-        config.apiKeyHeader: config.apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(payload),
+    final AiResponse response = await _aiClient.complete(
+      AiRequest(
+        endpoint: _endpointFor(config),
+        messages: <AiMessage>[
+          AiMessage.system(systemPrompt),
+          ...conversation,
+        ],
+        options: options,
+      ),
     );
+    return response.text;
+  }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('MiMo 接口请求失败：${response.statusCode} ${response.body}');
+  AiEndpointConfig _endpointFor(AiApiConfig config) {
+    return AiEndpointConfig(
+      name: config.name,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      apiKeyHeader: config.apiKeyHeader,
+      chatPath: config.chatPath,
+    );
+  }
+
+  List<AiMessage> _buildConversationMessages(
+    List<ChatMessage> history,
+    String prompt,
+  ) {
+    final List<AiMessage> messages = history
+        .where((ChatMessage message) => message.text.trim().isNotEmpty)
+        .map((ChatMessage message) {
+          return message.role == ChatRole.user
+              ? AiMessage.user(message.text.trim())
+              : AiMessage.assistant(message.text.trim());
+        })
+        .toList();
+
+    if (messages.isEmpty ||
+        messages.last.role != AiMessageRole.user ||
+        messages.last.content != prompt) {
+      messages.add(AiMessage.user(prompt));
     }
 
-    final Map<String, dynamic> json =
-        jsonDecode(response.body) as Map<String, dynamic>;
-    final List<dynamic>? choices = json['choices'] as List<dynamic>?;
-    if (choices == null || choices.isEmpty) {
-      throw Exception('MiMo 接口没有返回可用回答。');
-    }
-
-    final Map<String, dynamic>? message =
-        choices.first['message'] as Map<String, dynamic>?;
-    final String? content = message?['content'] as String?;
-    if (content == null || content.trim().isEmpty) {
-      throw Exception('MiMo 接口返回内容为空。');
-    }
-
-    return content.trim();
+    final int firstIndex = messages.length > _maxConversationMessages
+        ? messages.length - _maxConversationMessages
+        : 0;
+    return List<AiMessage>.unmodifiable(messages.sublist(firstIndex));
   }
 
   String _buildKnowledgeOnlySystemPrompt({
