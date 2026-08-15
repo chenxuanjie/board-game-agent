@@ -17,12 +17,7 @@ void main() {
     'knowledge-only mode returns unknown when knowledge pass says unknown',
     () async {
       final _FakeAiClient client = _FakeAiClient(
-        responses: <AiResponse>[
-          const AiResponse(
-            text: '{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}',
-            model: 'test-model',
-          ),
-        ],
+        responses: const <AiResponse>[],
       );
       final MimoAiService service = MimoAiService(aiClient: client);
 
@@ -39,7 +34,7 @@ void main() {
       );
 
       expect(reply, '当前知识库没有足够信息回答这个问题。');
-      expect(client.requestCount, 1);
+      expect(client.requestCount, 0);
     },
   );
 
@@ -47,12 +42,8 @@ void main() {
     'smart supplement mode falls back to direct answer after unknown',
     () async {
       final _FakeAiClient client = _FakeAiClient(
-        responses: <AiResponse>[
-          const AiResponse(
-            text: '{"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。"}',
-            model: 'test-model',
-          ),
-          const AiResponse(text: '这款游戏通常以竞争为主，不是合作玩法。', model: 'test-model'),
+        responses: const <AiResponse>[
+          AiResponse(text: '这款游戏通常以竞争为主，不是合作玩法。', model: 'test-model'),
         ],
       );
       final MimoAiService service = MimoAiService(aiClient: client);
@@ -70,7 +61,7 @@ void main() {
       );
 
       expect(reply, '这款游戏通常以竞争为主，不是合作玩法。');
-      expect(client.requestCount, 2);
+      expect(client.requestCount, 1);
     },
   );
 }

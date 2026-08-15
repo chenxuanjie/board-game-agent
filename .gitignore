@@ -69,3 +69,7 @@ assets/games/**/docs/*.txt
 
 # Optional local notes / logs
 /last-build.log
+# Local Flutter release materials
+/android/key.properties
+/android/keystore/
+/android/.kotlin/

@@ -55,6 +55,7 @@ class AppController extends ChangeNotifier {
   AppLanguage _language = AppLanguage.zhHans;
   ColorSchemeOption _colorScheme = ColorSchemeOption.classic;
   bool _voiceReplyEnabled = true;
+  bool _checkForUpdates = true;
   bool _speechAvailable = false;
   bool _isListening = false;
   bool _isSending = false;
@@ -96,6 +97,7 @@ class AppController extends ChangeNotifier {
   ColorSchemeOption get colorScheme => _colorScheme;
   AppPalette get palette => PaletteRegistry.of(_colorScheme);
   bool get voiceReplyEnabled => _voiceReplyEnabled;
+  bool get checkForUpdates => _checkForUpdates;
   bool get speechAvailable => _speechAvailable;
   bool get isListening => _isListening;
   bool get isSending => _isSending;
@@ -142,6 +144,7 @@ class AppController extends ChangeNotifier {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
+    _checkForUpdates = await _preferencesService.loadCheckForUpdates();
     _gameAnswerMode = await _preferencesService.loadGameAnswerMode();
     _globalAnswerMode = await _preferencesService.loadGlobalAnswerMode();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
@@ -199,6 +202,13 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setCheckForUpdates(bool enabled) async {
+    if (_checkForUpdates == enabled) return;
+    _checkForUpdates = enabled;
+    await _preferencesService.saveCheckForUpdates(enabled);
+    notifyListeners();
+  }
+
   Future<void> saveAiApiConfig(AiApiConfig next) async {
     _aiApiConfig = next;
     await _preferencesService.saveAiApiConfig(next);
@@ -220,14 +230,14 @@ class AppController extends ChangeNotifier {
   Future<String> testAiApiConfig(AiApiConfig config) async {
     final result = await _aiService.checkConnection(config);
     if (result.success) {
-        _aiConnectivityStatus = ConnectivityStatus(
-          state: ConnectivityState.success,
-          message: copy.aiApiTestSuccess,
-          checkedAt: DateTime.now(),
-        );
-        debugPrint('[ai] ${_aiConnectivityStatus.message}');
-        notifyListeners();
-        return copy.aiApiTestSuccess;
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.success,
+        message: copy.aiApiTestSuccess,
+        checkedAt: DateTime.now(),
+      );
+      debugPrint('[ai] ${_aiConnectivityStatus.message}');
+      notifyListeners();
+      return copy.aiApiTestSuccess;
     }
 
     final String message = '连接失败: ${result.message}';
@@ -319,7 +329,9 @@ class AppController extends ChangeNotifier {
     await resetConversation();
   }
 
-  Future<void> clearConversationForContext({required bool useGlobalMode}) async {
+  Future<void> clearConversationForContext({
+    required bool useGlobalMode,
+  }) async {
     await resetConversation(useGlobalMode: useGlobalMode);
   }
 
@@ -1043,12 +1055,14 @@ class AppController extends ChangeNotifier {
   }
 
   void _queueConversationSave() {
-    _conversationSaveQueue = _conversationSaveQueue.then((_) async {
-      await _persistConversations();
-    }).catchError((Object error, StackTrace stackTrace) {
-      debugPrint('[chat] persist conversations failed: $error');
-      debugPrint('$stackTrace');
-    });
+    _conversationSaveQueue = _conversationSaveQueue
+        .then((_) async {
+          await _persistConversations();
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[chat] persist conversations failed: $error');
+          debugPrint('$stackTrace');
+        });
   }
 
   Future<void> _restoreConversations() async {
