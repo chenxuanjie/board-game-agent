@@ -44,12 +44,16 @@ app.*.map.json
 /android/app/release
 /android/.gradle/
 
+# Local Android release signing materials
+/android/key.properties
+/android/keystore/
+
 # Local environment / IDE metadata
 .metadata
 /android/local.properties
 
 # Local release and publishing artifacts
-/release/*.apk
+/release/
 /webdav.local.json
 /preview/
 
