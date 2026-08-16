@@ -34,7 +34,7 @@ void main() {
         useGlobalMode: false,
         config: AiApiConfig.defaultMimo,
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: RemoteAssetService(client: http.Client()),
+        remoteAssetService: _FakeRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
       );
 
@@ -65,7 +65,7 @@ void main() {
         useGlobalMode: false,
         config: AiApiConfig.defaultMimo,
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: RemoteAssetService(client: http.Client()),
+        remoteAssetService: _FakeRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
       );
 
@@ -149,5 +149,17 @@ class _FakeAiClient implements AiClient {
     Future<void>? abortTrigger,
   }) {
     return const Stream<AiStreamEvent>.empty();
+  }
+}
+
+class _FakeRemoteAssetService extends RemoteAssetService {
+  _FakeRemoteAssetService() : super(client: http.Client());
+
+  @override
+  Future<String?> loadTextFromAny({
+    required List<AssetSourceConfig> sources,
+    required List<String> remotePaths,
+  }) async {
+    return '# Cabo test knowledge\nCabo is a competitive card game.';
   }
 }
