@@ -148,7 +148,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             subtitle: '桌游入口与统一 AI 助手',
             appIcon: _BoardGameAppMark(),
             fallbackVersion: '1.0.0',
-            fallbackBuild: '1',
+            fallbackBuild: '2',
           ),
           updateService: _createUpdateService(),
         ),
@@ -162,7 +162,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       appId: 'board_game_agent',
       manifestPath: 'apps/board_game_agent/updates/manifest.json',
       fallbackVersion: '1.0.0',
-      fallbackBuild: 1,
+      fallbackBuild: 2,
       directoryName: 'board_game_agent_updates',
     ),
   );
