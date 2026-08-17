@@ -102,7 +102,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             );
           }
 
-          _scheduleStartupUpdateCheck();
+          _scheduleStartupUpdateCheck(context);
           return HomeScreen(
             controller: widget.controller,
             onOpenAbout: _openAbout,
@@ -124,18 +124,16 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     await widget.controller.initialize();
   }
 
-  void _scheduleStartupUpdateCheck() {
+  void _scheduleStartupUpdateCheck(BuildContext context) {
     if (_startupUpdateCheckScheduled || !widget.controller.checkForUpdates) {
       return;
     }
     _startupUpdateCheckScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final navigatorContext = _navigatorKey.currentContext;
-      if (navigatorContext == null) return;
+      if (!mounted || !context.mounted) return;
       unawaited(
         checkForUpdateOnStartup(
-          context: navigatorContext,
+          context: context,
           appId: 'board_game_agent',
           updateService: _createUpdateService(),
         ),
@@ -154,7 +152,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             subtitle: '桌游入口与统一 AI 助手',
             appIcon: _BoardGameAppMark(),
             fallbackVersion: '1.0.0',
-            fallbackBuild: '3',
+            fallbackBuild: '5',
           ),
           updateService: _createUpdateService(),
         ),
@@ -168,8 +166,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       appId: 'board_game_agent',
       manifestPath: 'apps/board_game_agent/updates/manifest.json',
       fallbackVersion: '1.0.0',
-      fallbackBuild: 3,
+      fallbackBuild: 5,
       directoryName: 'board_game_agent_updates',
+      trustedCertificateAssetPaths: <String>[
+        'assets/certificates/lets_encrypt_yr2.pem',
+      ],
     ),
   );
 
