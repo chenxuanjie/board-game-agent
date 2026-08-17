@@ -14,6 +14,7 @@ class PreferencesService {
   static const _assetSourceOrderKey = 'asset_source_order';
   static const _gameAnswerModeKey = 'game_answer_mode';
   static const _globalAnswerModeKey = 'global_answer_mode';
+  static const _checkForUpdatesKey = 'check_for_updates';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -94,5 +95,15 @@ class PreferencesService {
   Future<void> saveGlobalAnswerMode(AiAnswerMode mode) async {
     final prefs = await _prefs;
     await prefs.setString(_globalAnswerModeKey, mode.code);
+  }
+
+  Future<bool> loadCheckForUpdates() async {
+    final prefs = await _prefs;
+    return prefs.getBool(_checkForUpdatesKey) ?? true;
+  }
+
+  Future<void> saveCheckForUpdates(bool enabled) async {
+    final prefs = await _prefs;
+    await prefs.setBool(_checkForUpdatesKey, enabled);
   }
 }

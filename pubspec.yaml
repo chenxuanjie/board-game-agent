@@ -4,11 +4,13 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.8.0 <4.0.0'
+  sdk: '>=3.11.5 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
+  app_about:
+    path: ../shared_packages/app_about
   app_ai_client:
     path: ../shared_packages/app_ai_client
   flutter_tts: ^4.2.3
@@ -19,6 +21,8 @@ dependencies:
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
   speech_to_text: ^7.3.0
+  webdav_settings:
+    path: ../shared_packages/webdav_settings
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -44,13 +48,11 @@ flutter:
     - assets/games/harmonies/game.json
     - assets/games/war_chest/images/
     - assets/games/war_chest/game.json
-    - assets/games/decrypto/images/
     - assets/games/decrypto/game.json
     - assets/games/seven_wonders_duel/images/
     - assets/games/seven_wonders_duel/game.json
     - assets/games/splendor/images/
     - assets/games/splendor/game.json
-    - assets/games/splendor_duel/images/
     - assets/games/splendor_duel/game.json
     - assets/games/exploding_kittens/images/
     - assets/games/exploding_kittens/game.json

@@ -1,0 +1,4 @@
+storeFile=keystore/board_game_agent-release.jks
+storePassword=
+keyAlias=board_game_agent
+keyPassword=

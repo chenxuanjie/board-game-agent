@@ -14,9 +14,14 @@ import 'game_detail_screen.dart';
 import 'universal_ai_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.controller});
+  const HomeScreen({
+    super.key,
+    required this.controller,
+    required this.onOpenAbout,
+  });
 
   final AppController controller;
+  final VoidCallback onOpenAbout;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -118,7 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 top: Radius.circular(30),
                               ),
                             ),
-                            builder: (_) => LanguageSheet(controller: controller),
+                            builder: (_) => LanguageSheet(
+                              controller: controller,
+                              onOpenAbout: widget.onOpenAbout,
+                            ),
                           );
                         },
                         iconSize: 40,
@@ -220,7 +228,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _showingLibraryUpdateDialog = true;
     final copy = controller.copy;
     final palette = controller.palette;
-    final titles = controller.pendingLibraryUpdate?.changedGameTitles ?? const <String>[];
+    final titles =
+        controller.pendingLibraryUpdate?.changedGameTitles ?? const <String>[];
     debugPrint('show update dialog: [${titles.join(', ')}]');
     final bool? shouldUpdate = await showDialog<bool>(
       context: context,
@@ -241,10 +250,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 1.55,
                 ),
               ),
-              if (update != null && update.changedGameTitles.isNotEmpty) ...<Widget>[
+              if (update != null &&
+                  update.changedGameTitles.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 14),
                 Text(
-                  copy.libraryUpdateGameListLabel(update.changedGameTitles.length),
+                  copy.libraryUpdateGameListLabel(
+                    update.changedGameTitles.length,
+                  ),
                   style: textTheme.titleSmall?.copyWith(
                     color: palette.homeTextPrimary,
                     fontWeight: FontWeight.w800,
@@ -287,9 +299,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (shouldUpdate == true) {
       debugPrint('[updates-ui] user confirmed update');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(copy.updatingNow)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(copy.updatingNow)));
       await controller.applyPendingLibraryUpdate();
       if (mounted) {
         setState(() {});

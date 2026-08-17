@@ -1,3 +1,4 @@
+import 'package:app_about/app_about.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_api_config.dart';
@@ -9,9 +10,14 @@ import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 
 class LanguageSheet extends StatefulWidget {
-  const LanguageSheet({super.key, required this.controller});
+  const LanguageSheet({
+    super.key,
+    required this.controller,
+    required this.onOpenAbout,
+  });
 
   final AppController controller;
+  final VoidCallback onOpenAbout;
 
   @override
   State<LanguageSheet> createState() => _LanguageSheetState();
@@ -301,6 +307,22 @@ class _LanguageSheetState extends State<LanguageSheet> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  _SectionTitle(title: copy.appUpdateTitle),
+                  const SizedBox(height: 12),
+                  _SectionCard(
+                    palette: palette,
+                    child: SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: controller.checkForUpdates,
+                      onChanged: controller.setCheckForUpdates,
+                      title: Text(copy.checkForUpdatesTitle),
+                      subtitle: Text(copy.checkForUpdatesHint),
+                      secondary: const Icon(Icons.system_update_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  AppAboutSettingsTile(onTap: widget.onOpenAbout),
                 ],
               ),
             ),

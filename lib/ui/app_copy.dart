@@ -97,9 +97,8 @@ class AppCopy {
       : 'This is the standalone AI entry. You can keep answers knowledge-only or allow a smart fallback when the knowledge base is insufficient.';
   String get homeAssetsLoadingTitle =>
       isChinese ? '正在加载资源...' : 'Loading assets...';
-  String homeAssetsLoadingProgress(int loaded, int total) => isChinese
-      ? '已加载 $loaded / $total'
-      : 'Loaded $loaded / $total';
+  String homeAssetsLoadingProgress(int loaded, int total) =>
+      isChinese ? '已加载 $loaded / $total' : 'Loaded $loaded / $total';
   String assistantGreetingFor(String gameTitle, String intro) {
     final String normalizedIntro = intro.trim().isEmpty
         ? (isChinese
@@ -108,6 +107,7 @@ class AppCopy {
         : intro.trim();
     return normalizedIntro;
   }
+
   String get messageHint => isChinese
       ? '问规则、流程、术语、策略...'
       : 'Ask about rules, flow, terms, or strategy...';
@@ -153,6 +153,12 @@ class AppCopy {
   String get homeStatTime => isChinese ? '时长' : 'Play time';
   String get homeStatWeight => isChinese ? '复杂度' : 'Weight';
   String get switchLanguage => isChinese ? '切换英文' : 'Switch to Chinese';
+  String get checkForUpdatesTitle =>
+      isChinese ? '启动时检查更新' : 'Check for updates on startup';
+  String get appUpdateTitle => isChinese ? '应用更新' : 'App updates';
+  String get checkForUpdatesHint => isChinese
+      ? '打开后，启动应用时会检查 Android APK 是否有新版本。'
+      : 'Check for a newer Android APK when the app starts.';
 
   String colorSchemeName(ColorSchemeOption scheme) {
     switch (scheme) {
