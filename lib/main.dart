@@ -59,6 +59,7 @@ class BoardGameAgentApp extends StatefulWidget {
 
 class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   late Future<void> _initialization;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _startupUpdateCheckScheduled = false;
 
   @override
@@ -79,6 +80,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: widget.controller.copy.appTitle,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.buildTheme(widget.controller.palette),
@@ -129,9 +131,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     _startupUpdateCheckScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final navigatorContext = _navigatorKey.currentContext;
+      if (navigatorContext == null) return;
       unawaited(
         checkForUpdateOnStartup(
-          context: context,
+          context: navigatorContext,
           appId: 'board_game_agent',
           updateService: _createUpdateService(),
         ),
@@ -140,7 +144,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   Future<void> _openAbout() async {
-    await Navigator.of(context).push<void>(
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    await navigator.push<void>(
       MaterialPageRoute<void>(
         builder: (_) => AppAboutPage(
           config: const AppAboutConfig(
@@ -148,7 +154,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             subtitle: '桌游入口与统一 AI 助手',
             appIcon: _BoardGameAppMark(),
             fallbackVersion: '1.0.0',
-            fallbackBuild: '2',
+            fallbackBuild: '3',
           ),
           updateService: _createUpdateService(),
         ),
@@ -162,7 +168,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       appId: 'board_game_agent',
       manifestPath: 'apps/board_game_agent/updates/manifest.json',
       fallbackVersion: '1.0.0',
-      fallbackBuild: 2,
+      fallbackBuild: 3,
       directoryName: 'board_game_agent_updates',
     ),
   );

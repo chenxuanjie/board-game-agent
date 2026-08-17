@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 1.0.0+2
+version: 1.0.0+3
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
