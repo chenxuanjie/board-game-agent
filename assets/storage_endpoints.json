@@ -10,12 +10,12 @@
   },
   "sources": [
     {
-      "id": "canas_webdav",
+      "id": "cznas_webdav",
       "type": "webdav",
-      "host": "canas.dev",
+      "host": "cznas.dev",
       "port": 5006,
       "scheme": "https",
-      "path": "/friend/board-game-lib",
+      "path": "/friend/",
       "status": "timeout_in_3s"
     },
     {
@@ -24,19 +24,19 @@
       "host": "192.168.1.55",
       "port": 5006,
       "scheme": "https",
-      "path": "/friend/board-game-lib",
+      "path": "/friend/",
       "status": "https_reachable_root_404"
     },
     {
       "id": "lan_share",
       "type": "smb",
-      "path": "\\\\192.168.1.55\\friend\\board-game-lib",
+      "path": "\\\\192.168.1.55\\friend",
       "status": "reachable"
     },
     {
       "id": "cznas_share",
       "type": "smb",
-      "path": "\\\\cznas.dev\\friend\\board-game-lib",
+      "path": "\\\\cznas.dev\\friend",
       "status": "not_found"
     }
   ]

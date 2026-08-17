@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:webdav_settings/webdav_settings.dart';
 
 import '../models/asset_source_config.dart';
+import 'board_game_remote_layout.dart';
 
 class BoardGameUpdateSettingsLoader {
   const BoardGameUpdateSettingsLoader._();
@@ -20,7 +21,7 @@ class BoardGameUpdateSettingsLoader {
     final auth = await _loadAuth();
     return WebDavSettings(
       mode: ExternalStorageMode.webDav,
-      baseUrl: _updateRootUri(sourceUri).toString(),
+      baseUrl: BoardGameRemoteLayout.normalizeBaseUri(sourceUri).toString(),
       username: auth.$1,
       password: auth.$2,
     );
@@ -43,16 +44,6 @@ class BoardGameUpdateSettingsLoader {
       address: '',
       testUrl: '',
     );
-  }
-
-  static Uri _updateRootUri(Uri resourceUri) {
-    final segments = resourceUri.path
-        .split('/')
-        .where((segment) => segment.isNotEmpty)
-        .toList();
-    if (segments.isNotEmpty) segments.removeLast();
-    final path = segments.isEmpty ? '/' : '/${segments.join('/')}/';
-    return resourceUri.replace(path: path, query: '', fragment: '');
   }
 
   static Future<(String, String)> _loadAuth() async {

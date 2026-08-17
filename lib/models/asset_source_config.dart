@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../services/board_game_remote_layout.dart';
+
 class AssetSourceConfig {
   const AssetSourceConfig({
     required this.id,
@@ -13,6 +15,20 @@ class AssetSourceConfig {
   final String address;
   final String testUrl;
 
+  AssetSourceConfig copyWith({
+    String? id,
+    String? name,
+    String? address,
+    String? testUrl,
+  }) {
+    return AssetSourceConfig(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      testUrl: testUrl ?? this.testUrl,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
       'id': id,
@@ -23,11 +39,28 @@ class AssetSourceConfig {
   }
 
   static AssetSourceConfig fromMap(Map<String, dynamic> map) {
-    return AssetSourceConfig(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      address: map['address'] as String,
-      testUrl: map['testUrl'] as String,
+    return normalize(
+      AssetSourceConfig(
+        id: map['id'] as String,
+        name: map['name'] as String,
+        address: map['address'] as String,
+        testUrl: map['testUrl'] as String,
+      ),
+    );
+  }
+
+  static AssetSourceConfig normalize(AssetSourceConfig source) {
+    final uri = Uri.tryParse(source.testUrl.trim());
+    final normalizedUri = uri == null || !uri.hasScheme || !uri.hasAuthority
+        ? null
+        : BoardGameRemoteLayout.normalizeBaseUri(uri);
+    final normalizedAddress = source.address.replaceFirst(
+      RegExp(r'[\\/]board-game-lib[\\/]?$'),
+      '',
+    );
+    return source.copyWith(
+      address: normalizedAddress,
+      testUrl: normalizedUri?.toString() ?? source.testUrl,
     );
   }
 
@@ -35,14 +68,14 @@ class AssetSourceConfig {
     AssetSourceConfig(
       id: 'lan_share',
       name: '内网访问',
-      address: r'\\192.168.1.55\friend\board-game-lib',
-      testUrl: 'https://192.168.1.55:5006/friend/board-game-lib/',
+      address: r'\\192.168.1.55\friend',
+      testUrl: 'https://192.168.1.55:5006/friend/',
     ),
     AssetSourceConfig(
       id: 'cznas_dev',
       name: 'cznas.dev',
-      address: r'\\cznas.dev\friend\board-game-lib',
-      testUrl: 'https://cznas.dev:5006/friend/board-game-lib/',
+      address: r'\\cznas.dev\friend',
+      testUrl: 'https://cznas.dev:5006/friend/',
     ),
   ];
 

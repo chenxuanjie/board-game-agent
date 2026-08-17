@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
+import 'board_game_remote_layout.dart';
 
 class RemoteAssetService {
   RemoteAssetService({http.Client? client})
@@ -305,9 +306,7 @@ class RemoteAssetService {
       RegExp(r'/$'),
       '',
     );
-    final String relativePath = remotePath.startsWith('/')
-        ? remotePath.substring(1)
-        : remotePath;
+    final String relativePath = BoardGameRemoteLayout.assetPath(remotePath);
     final String uriPath = '$basePath/$relativePath'.replaceAll('//', '/');
     return Uri(
       scheme: source.testUrl.startsWith('https://') ? 'https' : 'http',

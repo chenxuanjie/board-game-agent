@@ -10,6 +10,8 @@ import 'services/game_manifest_service.dart';
 import 'services/preferences_service.dart';
 import 'services/remote_asset_service.dart';
 import 'services/board_game_update_settings.dart';
+import 'services/board_game_remote_layout.dart';
+import 'services/insecure_android_certificate_trust.dart';
 import 'services/speech_service.dart';
 import 'services/tts_service.dart';
 import 'state/app_controller.dart';
@@ -17,13 +19,14 @@ import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
 
 Future<void> main() async {
+  enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
 
-  final updateSettings = await BoardGameUpdateSettingsLoader.load();
+  final updateStore = SecureWebDavSettingsStore(appId: 'board_game_agent');
+  await _prepareUpdateSettings(updateStore);
   final updateSettingsController = WebDavSettingsController(
-    store: SecureWebDavSettingsStore(appId: 'board_game_agent'),
+    store: updateStore,
     connectionTester: DefaultWebDavConnectionTester(appId: 'board_game_agent'),
-    legacySettings: updateSettings,
   );
 
   final AppController controller = AppController(
@@ -39,6 +42,27 @@ Future<void> main() async {
     BoardGameAgentApp(
       controller: controller,
       updateSettingsController: updateSettingsController,
+    ),
+  );
+}
+
+Future<void> _prepareUpdateSettings(
+  SecureWebDavSettingsStore updateStore,
+) async {
+  final stored = await updateStore.load();
+  if (stored != null) {
+    final normalized = BoardGameRemoteLayout.normalizeSettings(stored);
+    if (normalized.baseUrl != stored.baseUrl) {
+      await updateStore.save(normalized);
+    }
+    return;
+  }
+
+  final legacy = await BoardGameUpdateSettingsLoader.load();
+  if (!legacy.isComplete) return;
+  await updateStore.save(
+    BoardGameRemoteLayout.normalizeSettings(
+      legacy.copyWith(mode: ExternalStorageMode.webDav),
     ),
   );
 }
@@ -114,13 +138,6 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
 
   Future<void> _initialize() async {
     await widget.updateSettingsController.load();
-    if (widget.updateSettingsController.hasLegacyConfiguration) {
-      await widget.updateSettingsController.store.save(
-        widget.updateSettingsController.draft.copyWith(
-          mode: ExternalStorageMode.webDav,
-        ),
-      );
-    }
     await widget.controller.initialize();
   }
 
@@ -152,7 +169,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             subtitle: '桌游入口与统一 AI 助手',
             appIcon: _BoardGameAppMark(),
             fallbackVersion: '1.0.0',
-            fallbackBuild: '5',
+            fallbackBuild: '7',
           ),
           updateService: _createUpdateService(),
         ),
@@ -161,24 +178,15 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   AppUpdateService _createUpdateService() => createWebDavAndroidUpdateService(
-    settingsProvider: _currentUpdateSettings,
+    settingsProvider: () => widget.updateSettingsController.saved,
     config: const WebDavAndroidUpdateConfig(
       appId: 'board_game_agent',
-      manifestPath: 'apps/board_game_agent/updates/manifest.json',
+      manifestPath: BoardGameRemoteLayout.updateManifestPath,
       fallbackVersion: '1.0.0',
-      fallbackBuild: 5,
+      fallbackBuild: 7,
       directoryName: 'board_game_agent_updates',
-      trustedCertificateAssetPaths: <String>[
-        'assets/certificates/lets_encrypt_yr2.pem',
-      ],
     ),
   );
-
-  WebDavSettings _currentUpdateSettings() {
-    final saved = widget.updateSettingsController.saved;
-    if (saved.isComplete) return saved;
-    return widget.updateSettingsController.draft;
-  }
 
   void _handleControllerChange() {
     if (mounted) {

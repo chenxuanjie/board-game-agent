@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 1.0.0+6
+version: 1.0.0+8
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
@@ -34,7 +34,6 @@ flutter:
   assets:
     - assets/catalog.json
     - assets/storage_endpoints.json
-    - assets/certificates/lets_encrypt_yr2.pem
     - assets/games/puerto_rico/images/
     - assets/games/puerto_rico/game.json
     - assets/games/arkham_horror_lcg/images/
