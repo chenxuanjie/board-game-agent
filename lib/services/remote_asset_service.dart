@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -13,11 +14,13 @@ class RemoteAssetService {
   RemoteAssetService({http.Client? client})
     : _client =
           client ??
-          IOClient(
-            HttpClient()
-              ..badCertificateCallback =
-                  (X509Certificate cert, String host, int port) => true,
-          );
+          (kIsWeb
+              ? http.Client()
+              : IOClient(
+                  HttpClient()
+                    ..badCertificateCallback =
+                        (X509Certificate cert, String host, int port) => true,
+                ));
 
   final http.Client _client;
 
@@ -34,6 +37,9 @@ class RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async {
+    if (kIsWeb) {
+      return null;
+    }
     final File localFile = await _fileFor(remotePath);
     if (!forceRefresh && await localFile.exists()) {
       return CachedAsset(
@@ -113,9 +119,7 @@ class RemoteAssetService {
     return null;
   }
 
-  Future<String?> loadCachedOrBundledText({
-    required String remotePath,
-  }) async {
+  Future<String?> loadCachedOrBundledText({required String remotePath}) async {
     final File? cached = await cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {
       return cached.readAsString();
@@ -127,6 +131,9 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    if (kIsWeb) {
+      return false;
+    }
     final Map<String, dynamic>? remote = await _probeRemoteVersion(
       sources: sources,
       remotePath: remotePath,
@@ -174,6 +181,9 @@ class RemoteAssetService {
   }
 
   Future<File?> cachedFileFor(String remotePath) async {
+    if (kIsWeb) {
+      return null;
+    }
     final File file = await _fileFor(remotePath);
     if (await file.exists()) {
       return file;
@@ -288,8 +298,13 @@ class RemoteAssetService {
       return null;
     }
     final String host = match.group(1)!;
-    final int? port = match.group(2) == null ? null : int.parse(match.group(2)!);
-    final String basePath = (match.group(3) ?? '').replaceFirst(RegExp(r'/$'), '');
+    final int? port = match.group(2) == null
+        ? null
+        : int.parse(match.group(2)!);
+    final String basePath = (match.group(3) ?? '').replaceFirst(
+      RegExp(r'/$'),
+      '',
+    );
     final String relativePath = remotePath.startsWith('/')
         ? remotePath.substring(1)
         : remotePath;
@@ -305,7 +320,9 @@ class RemoteAssetService {
   Future<Map<String, String>> _headers() async {
     await _ensureAuthLoaded();
     final String encoded = base64Encode(
-      utf8.encode('${_username ?? _defaultUsername}:${_password ?? _defaultPassword}'),
+      utf8.encode(
+        '${_username ?? _defaultUsername}:${_password ?? _defaultPassword}',
+      ),
     );
     return <String, String>{'Authorization': 'Basic $encoded'};
   }
@@ -319,7 +336,8 @@ class RemoteAssetService {
       final String source = await rootBundle.loadString(
         'assets/storage_endpoints.json',
       );
-      final Map<String, dynamic> json = jsonDecode(source) as Map<String, dynamic>;
+      final Map<String, dynamic> json =
+          jsonDecode(source) as Map<String, dynamic>;
       final Map<String, dynamic>? auth = json['auth'] as Map<String, dynamic>?;
       final String? username = auth?['username'] as String?;
       final String? password = auth?['password'] as String?;
@@ -329,7 +347,9 @@ class RemoteAssetService {
       if (password != null && password.isNotEmpty) {
         _password = password;
       }
-      print('[assets] auth loaded for remote library: ${_username ?? _defaultUsername}');
+      print(
+        '[assets] auth loaded for remote library: ${_username ?? _defaultUsername}',
+      );
     } catch (_) {
       _username = _defaultUsername;
       _password = _defaultPassword;
