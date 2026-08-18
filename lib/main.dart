@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
-import 'services/mimo_ai_service.dart';
+import 'services/board_game_ai_service.dart';
 import 'services/game_manifest_service.dart';
 import 'services/preferences_service.dart';
 import 'services/remote_asset_service.dart';
@@ -31,7 +31,7 @@ Future<void> main() async {
 
   final AppController controller = AppController(
     preferencesService: PreferencesService(),
-    aiService: MimoAiService(aiClient: OpenAiDartAiClient()),
+    aiService: BoardGameAiService(aiClient: OpenAiDartAiClient()),
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(),
     speechService: SpeechService(),
@@ -199,15 +199,16 @@ class _BoardGameAppMark extends StatelessWidget {
   const _BoardGameAppMark();
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 88,
-    height: 88,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.primary,
-      borderRadius: const BorderRadius.all(Radius.circular(22)),
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(22),
+    child: Image.asset(
+      'branding/app_icon.png',
+      width: 88,
+      height: 88,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
+      semanticLabel: '桌游导师应用图标',
     ),
-    child: const Icon(Icons.casino_rounded, color: Colors.white, size: 50),
   );
 }
 

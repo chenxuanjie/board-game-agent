@@ -118,6 +118,26 @@ class AppCopy {
       : 'Speech recognition is unavailable on this device right now.';
   String get clearChat => isChinese ? '清空对话' : 'Clear chat';
   String get quickPromptsTitle => isChinese ? '快速提问' : 'Quick prompts';
+  String get quickPromptRule =>
+      isChinese ? '这个规则怎么处理？' : 'How does this rule work?';
+  String get quickPromptFlow =>
+      isChinese ? '下一步应该做什么？' : 'What should happen next?';
+  String get quickPromptTerm =>
+      isChinese ? '这个术语是什么意思？' : 'What does this term mean?';
+  String get assistantContextTitle =>
+      isChinese ? '问法与上下文' : 'Context and answer style';
+  String get assistantContextHint => isChinese
+      ? '不离开聊天页，也能调整本次对话的回答方式。'
+      : 'Tune this conversation without leaving the chat.';
+  String get assistantKnowledgeHint => isChinese
+      ? '优先依据当前桌游的规则书与 FAQ。'
+      : 'Prioritize the current game rulebook and FAQ.';
+  String get assistantRecordingTitle => isChinese ? '正在听你说' : 'Listening';
+  String get assistantRecordingHint => isChinese
+      ? '说完后点击停止，识别结果会回到输入框。'
+      : 'Tap stop when you are done; the transcript returns to the composer.';
+  String get assistantGeneratingTitle =>
+      isChinese ? '正在整理规则…' : 'Preparing an answer…';
   String get overviewTitle => isChinese ? '桌游简介' : 'Overview';
   String get flowTitle => isChinese ? '一局流程' : 'Round flow';
   String get skillTitle => isChinese ? 'AI 能帮你什么' : 'What the AI can help with';

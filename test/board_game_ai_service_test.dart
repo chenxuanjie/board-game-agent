@@ -1,11 +1,13 @@
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
 import 'package:board_game_agent/models/ai_answer_mode.dart';
+import 'package:board_game_agent/models/answer_source.dart';
 import 'package:board_game_agent/models/app_language.dart';
+import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/game_info.dart';
-import 'package:board_game_agent/services/mimo_ai_service.dart';
+import 'package:board_game_agent/services/board_game_ai_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -24,9 +26,9 @@ void main() {
           ),
         ],
       );
-      final MimoAiService service = MimoAiService(aiClient: client);
+      final BoardGameAiService service = BoardGameAiService(aiClient: client);
 
-      final String reply = await service.generateReply(
+      final BoardGameAiAnswer reply = await service.generateReply(
         prompt: '这款桌游支持几个人玩合作模式？',
         language: AppLanguage.zhHans,
         game: _gameInfo(),
@@ -38,7 +40,8 @@ void main() {
         conversationHistory: const <ChatMessage>[],
       );
 
-      expect(reply, '当前知识库没有足够信息回答这个问题。');
+      expect(reply.text, '当前知识库没有足够信息回答这个问题。');
+      expect(reply.source, AnswerSource.insufficient);
       expect(client.requestCount, 1);
     },
   );
@@ -55,9 +58,9 @@ void main() {
           const AiResponse(text: '这款游戏通常以竞争为主，不是合作玩法。', model: 'test-model'),
         ],
       );
-      final MimoAiService service = MimoAiService(aiClient: client);
+      final BoardGameAiService service = BoardGameAiService(aiClient: client);
 
-      final String reply = await service.generateReply(
+      final BoardGameAiAnswer reply = await service.generateReply(
         prompt: '这款桌游支持几个人玩合作模式？',
         language: AppLanguage.zhHans,
         game: _gameInfo(),
@@ -69,10 +72,41 @@ void main() {
         conversationHistory: const <ChatMessage>[],
       );
 
-      expect(reply, '这款游戏通常以竞争为主，不是合作玩法。');
+      expect(reply.text, '这款游戏通常以竞争为主，不是合作玩法。');
+      expect(reply.source, AnswerSource.generalAdvice);
       expect(client.requestCount, 2);
     },
   );
+
+  test('knowledge answer returns rulebook source and matched evidence', () async {
+    final _FakeAiClient client = _FakeAiClient(
+      responses: <AiResponse>[
+        const AiResponse(
+          text:
+              '{"status":"answered","answer":"Cabo 是竞争类游戏。","evidence":["faq_zh.md"]}',
+          model: 'test-model',
+        ),
+      ],
+    );
+    final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+    final BoardGameAiAnswer reply = await service.generateReply(
+      prompt: 'Cabo 是合作游戏吗？',
+      language: AppLanguage.zhHans,
+      game: _gameInfo(),
+      answerMode: AiAnswerMode.knowledgeOnly,
+      useGlobalMode: false,
+      config: AiApiConfig.defaultMimo,
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _FakeRemoteAssetService(),
+      conversationHistory: const <ChatMessage>[],
+    );
+
+    expect(reply.source, AnswerSource.rulebook);
+    expect(reply.text, 'Cabo 是竞争类游戏。');
+    expect(reply.evidence, hasLength(1));
+    expect(reply.evidence.single.sourceName, 'faq_zh.md');
+  });
 }
 
 GameInfo _gameInfo() {

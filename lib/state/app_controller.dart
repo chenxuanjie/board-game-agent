@@ -12,6 +12,7 @@ import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
+import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
 import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
@@ -399,7 +400,7 @@ class AppController extends ChangeNotifier {
     );
 
     try {
-      final reply = await _aiService.generateReply(
+      final BoardGameAiAnswer reply = await _aiService.generateReply(
         prompt: trimmed,
         language: _language,
         game: game,
@@ -414,7 +415,7 @@ class AppController extends ChangeNotifier {
       final assistantMessage = ChatMessage(
         id: '${DateTime.now().microsecondsSinceEpoch}-assistant',
         role: ChatRole.assistant,
-        text: reply,
+        text: reply.text,
         timestamp: DateTime.now(),
       );
 
@@ -422,7 +423,7 @@ class AppController extends ChangeNotifier {
       _trimConversationMessages(messages);
       _queueConversationSave();
       if (_voiceReplyEnabled) {
-        await speakMessage(reply);
+        await speakMessage(reply.text);
       }
     } catch (error, stackTrace) {
       debugPrint('[chat] sendPrompt failed: $error');

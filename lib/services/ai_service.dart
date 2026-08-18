@@ -4,12 +4,13 @@ import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
+import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
 import '../models/game_info.dart';
 import 'remote_asset_service.dart';
 
 abstract class AiService {
-  Future<String> generateReply({
+  Future<BoardGameAiAnswer> generateReply({
     required String prompt,
     required AppLanguage language,
     required GameInfo game,

@@ -7,7 +7,7 @@ import '../../models/game_info.dart';
 import '../../models/resolved_document.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
-import 'chat_screen.dart';
+import 'assistant_chat_screen.dart';
 import 'markdown_document_screen.dart';
 import 'pdf_document_screen.dart';
 
@@ -181,7 +181,8 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => ChatScreen(controller: controller),
+                        builder: (_) =>
+                            AssistantChatScreen(controller: controller),
                       ),
                     );
                   },
@@ -201,8 +202,8 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   ) async {
     setState(() => _openingRulebook = true);
     try {
-      final ResolvedDocument? document =
-          await controller.resolveRulebookDocument(game);
+      final ResolvedDocument? document = await controller
+          .resolveRulebookDocument(game);
       if (!mounted || document == null) {
         return;
       }

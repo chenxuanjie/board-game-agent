@@ -1,0 +1,874 @@
+import 'package:flutter/material.dart';
+
+import '../../models/chat_message.dart';
+import '../../state/app_controller.dart';
+import '../widgets/message_bubble.dart';
+
+class AssistantChatScreen extends StatefulWidget {
+  const AssistantChatScreen({
+    super.key,
+    required this.controller,
+    this.initialDraft,
+    this.customTitle,
+    this.customSubtitle,
+    this.customGreeting,
+    this.useGlobalMode = false,
+  });
+
+  final AppController controller;
+  final String? initialDraft;
+  final String? customTitle;
+  final String? customSubtitle;
+  final String? customGreeting;
+  final bool useGlobalMode;
+
+  @override
+  State<AssistantChatScreen> createState() => _AssistantChatScreenState();
+}
+
+class _AssistantChatScreenState extends State<AssistantChatScreen> {
+  late final TextEditingController _textController;
+  late final ScrollController _scrollController;
+  bool _didInitializeConversation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(text: widget.initialDraft ?? '');
+    _scrollController = ScrollController();
+    _textController.addListener(_onDraftChanged);
+    widget.controller.addListener(_onControllerChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_didInitializeConversation) {
+        return;
+      }
+      _didInitializeConversation = true;
+      if (widget.controller
+          .messagesForContext(useGlobalMode: widget.useGlobalMode)
+          .isEmpty) {
+        widget.controller.resetConversation(
+          greeting: widget.customGreeting,
+          useGlobalMode: widget.useGlobalMode,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.controller.stopSpeaking();
+    widget.controller.removeListener(_onControllerChanged);
+    _textController.removeListener(_onDraftChanged);
+    _textController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final copy = controller.copy;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final canSend =
+        _textController.text.trim().isNotEmpty && !controller.isSending;
+
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 72,
+        titleSpacing: 6,
+        title: _AssistantAppBarTitle(
+          controller: controller,
+          title: widget.customTitle ?? controller.featuredGame.title,
+          subtitle: widget.customSubtitle ?? copy.assistantMode,
+        ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: copy.clearChat,
+            onPressed: () => controller.clearConversationForContext(
+              useGlobalMode: widget.useGlobalMode,
+            ),
+            icon: const Icon(Icons.delete_sweep_rounded),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: screenWidth >= 980 ? 960 : double.infinity,
+            ),
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    screenWidth >= 720 ? 28 : 16,
+                    4,
+                    screenWidth >= 720 ? 28 : 16,
+                    8,
+                  ),
+                  child: _ContextStrip(
+                    controller: controller,
+                    useGlobalMode: widget.useGlobalMode,
+                    onTap: _openContextSheet,
+                  ),
+                ),
+                Expanded(
+                  child: AnimatedBuilder(
+                    animation: controller,
+                    builder: (context, _) {
+                      final messages = controller.messagesForContext(
+                        useGlobalMode: widget.useGlobalMode,
+                      );
+                      return _MessageList(
+                        controller: controller,
+                        messages: messages,
+                        scrollController: _scrollController,
+                        onQuickPrompt: _sendQuickPrompt,
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    screenWidth >= 720 ? 28 : 16,
+                    8,
+                    screenWidth >= 720 ? 28 : 16,
+                    18,
+                  ),
+                  child: _Composer(
+                    controller: controller,
+                    textController: _textController,
+                    canSend: canSend,
+                    useGlobalMode: widget.useGlobalMode,
+                    onSend: _sendCurrentText,
+                    onMicTap: _toggleListening,
+                    onOpenContext: _openContextSheet,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onControllerChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent + 96,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _onDraftChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _sendCurrentText() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty || widget.controller.isSending) {
+      return;
+    }
+
+    _textController.clear();
+    await widget.controller.sendPrompt(
+      text,
+      useGlobalMode: widget.useGlobalMode,
+    );
+  }
+
+  Future<void> _sendQuickPrompt(String prompt) async {
+    _textController.text = prompt;
+    await _sendCurrentText();
+  }
+
+  Future<void> _toggleListening() async {
+    final controller = widget.controller;
+    if (!controller.speechAvailable) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(controller.copy.micUnavailable)));
+      return;
+    }
+
+    if (controller.isListening) {
+      await controller.stopListening();
+      return;
+    }
+
+    await controller.startListening(
+      onRecognizedText: (String value) {
+        _textController.value = TextEditingValue(
+          text: value,
+          selection: TextSelection.collapsed(offset: value.length),
+        );
+      },
+    );
+  }
+
+  Future<void> _openContextSheet() async {
+    final controller = widget.controller;
+    final copy = controller.copy;
+    final palette = controller.palette;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: palette.cardSurface,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
+            child: AnimatedBuilder(
+              animation: controller,
+              builder: (context, _) {
+                final smartSupplement = controller.allowSmartSupplement(
+                  useGlobalMode: widget.useGlobalMode,
+                );
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      copy.assistantContextTitle,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      copy.assistantContextHint,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        Icons.menu_book_rounded,
+                        color: palette.accentPrimary,
+                      ),
+                      title: Text(copy.knowledgeOnlyLabel),
+                      subtitle: Text(copy.assistantKnowledgeHint),
+                      value: !smartSupplement,
+                      onChanged: (value) {
+                        if (value) {
+                          controller.setAllowSmartSupplement(
+                            false,
+                            useGlobalMode: widget.useGlobalMode,
+                          );
+                        }
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        Icons.auto_awesome_rounded,
+                        color: palette.accentSecondary,
+                      ),
+                      title: Text(copy.smartSupplementLabel),
+                      subtitle: Text(
+                        smartSupplement
+                            ? copy.smartSupplementSwitchHintOn
+                            : copy.smartSupplementSwitchHintOff,
+                      ),
+                      value: smartSupplement,
+                      onChanged: (value) {
+                        controller.setAllowSmartSupplement(
+                          value,
+                          useGlobalMode: widget.useGlobalMode,
+                        );
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        Icons.graphic_eq_rounded,
+                        color: palette.accentPrimary,
+                      ),
+                      title: Text(copy.voiceReplySwitchLabel),
+                      subtitle: Text(copy.voiceReplyHint),
+                      value: controller.voiceReplyEnabled,
+                      onChanged: (value) {
+                        controller.setVoiceReplyEnabled(value);
+                      },
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AssistantAppBarTitle extends StatelessWidget {
+  const _AssistantAppBarTitle({
+    required this.controller,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final AppController controller;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        const _AssistantAvatar(size: 38),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              Text(
+                subtitle,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: controller.palette.homeTextSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContextStrip extends StatelessWidget {
+  const _ContextStrip({
+    required this.controller,
+    required this.useGlobalMode,
+    required this.onTap,
+  });
+
+  final AppController controller;
+  final bool useGlobalMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    final smart = controller.allowSmartSupplement(useGlobalMode: useGlobalMode);
+    final modeLabel = smart
+        ? copy.smartSupplementLabel
+        : copy.knowledgeOnlyLabel;
+
+    return Material(
+      color: palette.aiPrimary.withValues(alpha: 0.32),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: smart
+                      ? palette.accentSecondary
+                      : palette.accentPrimary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  modeLabel,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              Text(
+                controller.speechAvailable
+                    ? copy.speechReady
+                    : copy.speechUnavailableShort,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: palette.homeTextSecondary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.tune_rounded,
+                size: 18,
+                color: palette.homeTextSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageList extends StatelessWidget {
+  const _MessageList({
+    required this.controller,
+    required this.messages,
+    required this.scrollController,
+    required this.onQuickPrompt,
+  });
+
+  final AppController controller;
+  final List<ChatMessage> messages;
+  final ScrollController scrollController;
+  final Future<void> Function(String prompt) onQuickPrompt;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final showQuickPrompts = messages.length <= 1 && !controller.isSending;
+
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      children: <Widget>[
+        for (final ChatMessage message in messages)
+          MessageBubble(
+            message: message,
+            palette: controller.palette,
+            onSpeak: message.role == ChatRole.assistant
+                ? () => controller.speakMessage(message.text)
+                : () {},
+            speakTooltip: copy.speakAgain,
+          ),
+        if (showQuickPrompts)
+          _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),
+        if (controller.isSending) _ThinkingBubble(controller: controller),
+      ],
+    );
+  }
+}
+
+class _QuickPromptCard extends StatelessWidget {
+  const _QuickPromptCard({required this.controller, required this.onPrompt});
+
+  final AppController controller;
+  final Future<void> Function(String prompt) onPrompt;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    final prompts = <String>[
+      copy.quickPromptRule,
+      copy.quickPromptFlow,
+      copy.quickPromptTerm,
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12, bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: palette.cardSurface.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: palette.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            copy.quickPromptsTitle,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: prompts
+                .map(
+                  (prompt) => ActionChip(
+                    avatar: Icon(
+                      Icons.arrow_outward_rounded,
+                      size: 15,
+                      color: palette.accentPrimary,
+                    ),
+                    label: Text(prompt),
+                    onPressed: () {
+                      onPrompt(prompt);
+                    },
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThinkingBubble extends StatelessWidget {
+  const _ThinkingBubble({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: palette.messageAssistantBubble,
+          borderRadius: BorderRadius.circular(
+            20,
+          ).copyWith(bottomLeft: const Radius.circular(7)),
+          border: Border.all(color: palette.cardBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: palette.accentPrimary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(copy.assistantGeneratingTitle),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Composer extends StatelessWidget {
+  const _Composer({
+    required this.controller,
+    required this.textController,
+    required this.canSend,
+    required this.useGlobalMode,
+    required this.onSend,
+    required this.onMicTap,
+    required this.onOpenContext,
+  });
+
+  final AppController controller;
+  final TextEditingController textController;
+  final bool canSend;
+  final bool useGlobalMode;
+  final Future<void> Function() onSend;
+  final Future<void> Function() onMicTap;
+  final VoidCallback onOpenContext;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    final smartSupplement = controller.allowSmartSupplement(
+      useGlobalMode: useGlobalMode,
+    );
+    final activeFeatures = <Widget>[
+      _FeatureChip(
+        icon: smartSupplement
+            ? Icons.auto_awesome_rounded
+            : Icons.menu_book_rounded,
+        label: smartSupplement
+            ? copy.smartSupplementLabel
+            : copy.knowledgeOnlyLabel,
+        foregroundColor: smartSupplement
+            ? palette.accentSecondary
+            : palette.accentPrimary,
+        backgroundColor:
+            (smartSupplement ? palette.accentSecondary : palette.accentPrimary)
+                .withValues(alpha: 0.14),
+        onRemove: onOpenContext,
+      ),
+      if (controller.voiceReplyEnabled)
+        _FeatureChip(
+          icon: Icons.graphic_eq_rounded,
+          label: copy.voiceReplySwitchLabel,
+          foregroundColor: palette.accentPrimary,
+          backgroundColor: palette.accentPrimary.withValues(alpha: 0.14),
+          onRemove: () {
+            controller.setVoiceReplyEnabled(false);
+          },
+        ),
+    ];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (controller.isListening)
+          _RecordingBanner(
+            controller: controller,
+            transcript: textController.text,
+            onStop: onMicTap,
+          ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(spacing: 8, runSpacing: 8, children: activeFeatures),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: palette.inputFill,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: palette.cardBorder),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: palette.cardShadow.withValues(alpha: 0.22),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                IconButton(
+                  tooltip: copy.assistantContextTitle,
+                  onPressed: onOpenContext,
+                  icon: const Icon(Icons.add_rounded),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: textController,
+                    minLines: 1,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: canSend
+                        ? (_) {
+                            onSend();
+                          }
+                        : null,
+                    decoration: InputDecoration(
+                      hintText: copy.messageHint,
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: controller.isListening
+                      ? copy.tapToStop
+                      : copy.speechReady,
+                  onPressed: controller.isSending
+                      ? null
+                      : () {
+                          onMicTap();
+                        },
+                  style: IconButton.styleFrom(
+                    backgroundColor: controller.isListening
+                        ? palette.accentSecondary
+                        : palette.accentPrimary,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: Icon(
+                    controller.isListening
+                        ? Icons.stop_rounded
+                        : Icons.mic_rounded,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                IconButton(
+                  tooltip: copy.send,
+                  onPressed: canSend
+                      ? () {
+                          onSend();
+                        }
+                      : null,
+                  style: IconButton.styleFrom(
+                    backgroundColor: canSend
+                        ? palette.accentSecondary
+                        : palette.homeTextPrimary.withValues(alpha: 0.14),
+                    foregroundColor: canSend
+                        ? Colors.white
+                        : palette.homeTextPrimary.withValues(alpha: 0.38),
+                  ),
+                  icon: controller.isSending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.arrow_upward_rounded),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecordingBanner extends StatelessWidget {
+  const _RecordingBanner({
+    required this.controller,
+    required this.transcript,
+    required this.onStop,
+  });
+
+  final AppController controller;
+  final String transcript;
+  final Future<void> Function() onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: palette.accentPrimary,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.mic_rounded, color: Colors.white),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  copy.assistantRecordingTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  transcript.trim().isEmpty
+                      ? copy.assistantRecordingHint
+                      : transcript,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.82),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              onStop();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+            child: Text(copy.tapToStop),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  const _FeatureChip({
+    required this.icon,
+    required this.label,
+    required this.foregroundColor,
+    required this.backgroundColor,
+    required this.onRemove,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color foregroundColor;
+  final Color backgroundColor;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onRemove,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 16, color: foregroundColor),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: foregroundColor),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.close_rounded, size: 15, color: foregroundColor),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantAvatar extends StatelessWidget {
+  const _AssistantAvatar({this.size = 32});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.28),
+      child: Image.asset(
+        'branding/app_icon.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) => Container(
+          width: size,
+          height: size,
+          color: Theme.of(context).colorScheme.primary,
+          alignment: Alignment.center,
+          child: Icon(Icons.casino_rounded, size: size * 0.56),
+        ),
+      ),
+    );
+  }
+}
