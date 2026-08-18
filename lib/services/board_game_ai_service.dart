@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 
@@ -120,6 +122,120 @@ class BoardGameAiService implements AiService {
   }
 
   @override
+  Stream<BoardGameAiStreamEvent> streamReply({
+    required String prompt,
+    required AppLanguage language,
+    required GameInfo game,
+    required AiAnswerMode answerMode,
+    required bool useGlobalMode,
+    required AiApiConfig config,
+    required List<AssetSourceConfig> assetSourceConfigs,
+    required RemoteAssetService remoteAssetService,
+    required List<ChatMessage> conversationHistory,
+    Future<void>? abortTrigger,
+  }) async* {
+    final List<EvidenceChunk> evidence = await _knowledgeRetriever.retrieve(
+      game: game,
+      assetSourceConfigs: assetSourceConfigs,
+      remoteAssetService: remoteAssetService,
+    );
+    final String knowledgeContext = _knowledgeRetriever.formatForPrompt(
+      evidence,
+    );
+    final List<AiMessage> conversation = _buildConversationMessages(
+      conversationHistory,
+      prompt,
+    );
+
+    if (evidence.isNotEmpty) {
+      final String systemPrompt = _promptBuilder.buildKnowledgeOnlySystemPrompt(
+        language: language,
+        game: game,
+        knowledgeContext: knowledgeContext,
+      );
+      final StringBuffer rawKnowledge = StringBuffer();
+      String emittedKnowledgeAnswer = '';
+
+      await for (final AiStreamEvent event in _aiClient.stream(
+        AiRequest(
+          endpoint: _endpointFor(config),
+          messages: <AiMessage>[
+            AiMessage.system(systemPrompt),
+            ...conversation,
+          ],
+          options: const AiGenerationOptions(
+            temperature: 0.1,
+            topP: 0.95,
+            maxCompletionTokens: 900,
+            frequencyPenalty: 0,
+            presencePenalty: 0,
+          ),
+        ),
+        abortTrigger: abortTrigger,
+      )) {
+        rawKnowledge.write(event.delta);
+        final String partial = _partialKnowledgeAnswer(rawKnowledge.toString());
+        if (partial.length > emittedKnowledgeAnswer.length) {
+          final String delta = partial.substring(emittedKnowledgeAnswer.length);
+          emittedKnowledgeAnswer = partial;
+          yield BoardGameAiStreamEvent(delta: delta);
+        }
+      }
+
+      final BoardGameAiAnswer knowledgeAnswer = _answerParser.parse(
+        rawKnowledge.toString(),
+        language: language,
+        availableEvidence: evidence,
+      );
+      if (knowledgeAnswer.source == AnswerSource.rulebook) {
+        final String remaining =
+            knowledgeAnswer.text.length > emittedKnowledgeAnswer.length
+            ? knowledgeAnswer.text.substring(emittedKnowledgeAnswer.length)
+            : '';
+        yield BoardGameAiStreamEvent(
+          delta: remaining,
+          answer: knowledgeAnswer,
+          isDone: true,
+        );
+        return;
+      }
+
+      if (answerMode == AiAnswerMode.knowledgeOnly) {
+        yield BoardGameAiStreamEvent(
+          delta: knowledgeAnswer.text,
+          answer: knowledgeAnswer,
+          isDone: true,
+        );
+        return;
+      }
+    } else if (answerMode == AiAnswerMode.knowledgeOnly) {
+      final BoardGameAiAnswer answer = _unknownAnswer(language);
+      yield BoardGameAiStreamEvent(
+        delta: answer.text,
+        answer: answer,
+        isDone: true,
+      );
+      return;
+    }
+
+    yield* _streamDirectAnswer(
+      language: language,
+      game: game,
+      config: config,
+      useGlobalMode: useGlobalMode,
+      knowledgeContext: evidence.isEmpty
+          ? ''
+          : _knowledgeRetriever.formatForPrompt(
+              evidence,
+              maxChars: _maxKnowledgeCharsForDirectFallback,
+            ),
+      evidence: evidence,
+      conversation: conversation,
+      abortTrigger: abortTrigger,
+    );
+  }
+
+  @override
   Future<AiHealthResult> checkConnection(AiApiConfig config) {
     return _aiClient.check(_endpointFor(config));
   }
@@ -212,6 +328,111 @@ class BoardGameAiService implements AiService {
       ),
     );
     return response.text;
+  }
+
+  Stream<BoardGameAiStreamEvent> _streamDirectAnswer({
+    required AppLanguage language,
+    required GameInfo game,
+    required AiApiConfig config,
+    required bool useGlobalMode,
+    required String knowledgeContext,
+    required List<EvidenceChunk> evidence,
+    required List<AiMessage> conversation,
+    Future<void>? abortTrigger,
+  }) async* {
+    final String systemPrompt = _promptBuilder.buildDirectFallbackSystemPrompt(
+      language: language,
+      game: game,
+      useGlobalMode: useGlobalMode,
+      knowledgeContext: knowledgeContext,
+    );
+    final StringBuffer answerText = StringBuffer();
+    await for (final AiStreamEvent event in _aiClient.stream(
+      AiRequest(
+        endpoint: _endpointFor(config),
+        messages: <AiMessage>[AiMessage.system(systemPrompt), ...conversation],
+        options: const AiGenerationOptions(
+          temperature: 0.7,
+          topP: 0.95,
+          maxCompletionTokens: 1024,
+          frequencyPenalty: 0,
+          presencePenalty: 0,
+        ),
+      ),
+      abortTrigger: abortTrigger,
+    )) {
+      if (event.delta.isEmpty) {
+        continue;
+      }
+      answerText.write(event.delta);
+      yield BoardGameAiStreamEvent(delta: event.delta);
+    }
+
+    final String text = answerText.toString().trim();
+    if (text.isEmpty) {
+      throw StateError('The AI streaming response was empty.');
+    }
+    yield BoardGameAiStreamEvent(
+      answer: BoardGameAiAnswer(
+        text: text,
+        source: AnswerSource.generalAdvice,
+        evidence: evidence,
+      ),
+      isDone: true,
+    );
+  }
+
+  String _partialKnowledgeAnswer(String raw) {
+    final RegExpMatch? statusMatch = RegExp(
+      r'"status"\s*:\s*"([^"]+)"',
+      caseSensitive: false,
+    ).firstMatch(raw);
+    if (statusMatch?.group(1)?.toLowerCase() != 'answered') {
+      return '';
+    }
+
+    final RegExpMatch? answerMatch = RegExp(
+      r'"answer"\s*:\s*"',
+      caseSensitive: false,
+    ).firstMatch(raw);
+    if (answerMatch == null) {
+      return '';
+    }
+
+    final int start = answerMatch.end;
+    final StringBuffer encoded = StringBuffer();
+    bool escaped = false;
+    for (int index = start; index < raw.length; index += 1) {
+      final String character = raw[index];
+      if (escaped) {
+        encoded.write(character);
+        escaped = false;
+        continue;
+      }
+      if (character == r'\') {
+        encoded.write(character);
+        escaped = true;
+        continue;
+      }
+      if (character == '"') {
+        break;
+      }
+      encoded.write(character);
+    }
+
+    final String value = encoded.toString();
+    if (value.isEmpty) {
+      return '';
+    }
+    try {
+      return (jsonDecode('"$value"') as String);
+    } catch (_) {
+      return value
+          .replaceAll(r'\n', '\n')
+          .replaceAll(r'\r', '\r')
+          .replaceAll(r'\"', '"')
+          .replaceAll(r'\\', r'\');
+    }
   }
 
   AiEndpointConfig _endpointFor(AiApiConfig config) {

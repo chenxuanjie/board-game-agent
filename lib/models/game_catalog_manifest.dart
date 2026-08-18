@@ -2,10 +2,7 @@ import 'app_language.dart';
 import 'game_info.dart';
 
 class GameCatalogManifest {
-  GameCatalogManifest({
-    required this.version,
-    required this.games,
-  });
+  GameCatalogManifest({required this.version, required this.games});
 
   final int version;
   final List<GameCatalogEntry> games;
@@ -16,7 +13,9 @@ class GameCatalogManifest {
     return GameCatalogManifest(
       version: json['version'] as int? ?? 1,
       games: gamesJson
-          .map((item) => GameCatalogEntry.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => GameCatalogEntry.fromJson(item as Map<String, dynamic>),
+          )
           .toList(),
     );
   }
@@ -109,14 +108,20 @@ class GameManifest {
     final GameLocaleContent content = _resolveLocaleContent(localeKey);
     final String rulebookPath = _resolveLocalizedPath(rulebookPaths, localeKey);
     final String faqPath = _resolveLocalizedPath(faqPaths, localeKey);
-    final List<String> knowledge = _resolveLocalizedList(knowledgePaths, localeKey);
+    final List<String> knowledge = _resolveLocalizedList(
+      knowledgePaths,
+      localeKey,
+    );
 
     return GameInfo(
       id: id,
       slug: slug,
       title: content.title,
       subtitle: content.subtitle,
-      editionLabel: editionLabels[localeKey] ?? editionLabels['en'] ?? editionLabels['zhHans'],
+      editionLabel:
+          editionLabels[localeKey] ??
+          editionLabels['en'] ??
+          editionLabels['zhHans'],
       coverAssetPath: _assetPath(coverAsset),
       bannerAssetPath: _assetPath(bannerAsset),
       galleryAssetPaths: _resolveAssetList(galleryAssets),
@@ -149,7 +154,10 @@ class GameManifest {
   }
 
   GameLocaleContent _resolveLocaleContent(String localeKey) {
-    return locales[localeKey] ?? locales['en'] ?? locales['zhHans'] ?? locales.values.first;
+    return locales[localeKey] ??
+        locales['en'] ??
+        locales['zhHans'] ??
+        locales.values.first;
   }
 
   String _resolveLocalizedPath(Map<String, String> source, String localeKey) {
@@ -221,15 +229,15 @@ class GameManifest {
   }
 
   static Map<String, String> _localizedStringMap(dynamic value) {
-    final Map<String, dynamic> map = value as Map<String, dynamic>? ?? <String, dynamic>{};
+    final Map<String, dynamic> map =
+        value as Map<String, dynamic>? ?? <String, dynamic>{};
     return map.map((key, dynamic value) => MapEntry(key, value as String));
   }
 
   static Map<String, List<String>> _localizedStringListMap(dynamic value) {
-    final Map<String, dynamic> map = value as Map<String, dynamic>? ?? <String, dynamic>{};
-    return map.map(
-      (key, dynamic value) => MapEntry(key, _stringList(value)),
-    );
+    final Map<String, dynamic> map =
+        value as Map<String, dynamic>? ?? <String, dynamic>{};
+    return map.map((key, dynamic value) => MapEntry(key, _stringList(value)));
   }
 
   static List<String> _stringList(dynamic value) {

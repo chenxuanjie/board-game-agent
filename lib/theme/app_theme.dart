@@ -89,15 +89,11 @@ class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
-          side: BorderSide(
-            color: palette.cardBorder,
-          ),
+          side: BorderSide(color: palette.cardBorder),
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: palette.accentSecondary.withValues(alpha: 0.22),
         selectedColor: palette.accentPrimary.withValues(alpha: 0.12),
         side: BorderSide.none,
@@ -118,16 +114,11 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide(
-            color: palette.cardBorder,
-          ),
+          borderSide: BorderSide(color: palette.cardBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide(
-            color: palette.accentPrimary,
-            width: 1.4,
-          ),
+          borderSide: BorderSide(color: palette.accentPrimary, width: 1.4),
         ),
       ),
       dialogTheme: DialogThemeData(

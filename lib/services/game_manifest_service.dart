@@ -133,7 +133,9 @@ class GameManifestService {
       );
       return mergeCatalogs(base: local, overlay: remote);
     } catch (_) {
-      debugPrint('[manifests] failed to parse cached remote catalog, falling back to bundled');
+      debugPrint(
+        '[manifests] failed to parse cached remote catalog, falling back to bundled',
+      );
       return local;
     }
   }

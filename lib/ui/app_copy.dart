@@ -31,6 +31,13 @@ class AppCopy {
   String get aiReplyFailed => isChinese
       ? '这次回答失败了，请稍后再试。'
       : 'The assistant could not answer this time. Please try again.';
+  String get retry => isChinese ? '重试' : 'Retry';
+  String get stopGenerating => isChinese ? '停止生成' : 'Stop generating';
+  String get answerSourceRulebook => isChinese ? '规则库' : 'Rulebook';
+  String get answerSourceGeneral => isChinese ? '智能补充' : 'AI supplement';
+  String get answerSourceInsufficient => isChinese ? '信息不足' : 'Insufficient';
+  String get evidenceTitle => isChinese ? '参考来源' : 'Sources';
+  String get streaming => isChinese ? '正在回答…' : 'Answering…';
   String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
   String get assetPriorityTitle =>
       isChinese ? '资源访问优先级' : 'Asset Source Priority';
@@ -116,6 +123,9 @@ class AppCopy {
   String get micUnavailable => isChinese
       ? '当前设备未就绪，语音识别不可用。'
       : 'Speech recognition is unavailable on this device right now.';
+  String get micPermissionHint => isChinese
+      ? '请在系统设置中允许“桌游导师”使用麦克风。'
+      : 'Allow Board Game Agent to use the microphone in system settings.';
   String get clearChat => isChinese ? '清空对话' : 'Clear chat';
   String get quickPromptsTitle => isChinese ? '快速提问' : 'Quick prompts';
   String get quickPromptRule =>

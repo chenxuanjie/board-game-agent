@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
+import '../../models/answer_source.dart';
 import '../../models/chat_message.dart';
 import '../../theme/app_palette.dart';
+import '../app_copy.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -11,12 +13,18 @@ class MessageBubble extends StatelessWidget {
     required this.onSpeak,
     required this.palette,
     this.speakTooltip = 'Speak',
+    this.onRetry,
+    this.retryTooltip = 'Retry',
+    required this.copy,
   });
 
   final ChatMessage message;
   final VoidCallback onSpeak;
   final AppPalette palette;
   final String speakTooltip;
+  final VoidCallback? onRetry;
+  final String retryTooltip;
+  final AppCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +87,12 @@ class MessageBubble extends StatelessWidget {
                       children: <Widget>[
                         if (isUser)
                           SelectableText(message.text, style: bodyStyle)
+                        else if (message.text.trim().isEmpty &&
+                            message.isStreaming)
+                          _StreamingPlaceholder(
+                            palette: palette,
+                            label: copy.streaming,
+                          )
                         else
                           MarkdownBody(
                             data: message.text,
@@ -110,6 +124,48 @@ class MessageBubble extends StatelessWidget {
                                   listBullet: bodyStyle,
                                 ),
                           ),
+                        if (!isUser && message.source != null) ...<Widget>[
+                          const SizedBox(height: 10),
+                          _SourceLabel(
+                            source: message.source!,
+                            palette: palette,
+                            copy: copy,
+                          ),
+                        ],
+                        if (!isUser && message.evidence.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: message.evidence
+                                .map(
+                                  (evidence) => Chip(
+                                    avatar: Icon(
+                                      Icons.menu_book_rounded,
+                                      size: 15,
+                                      color: palette.accentPrimary,
+                                    ),
+                                    label: Text(evidence.sourceName),
+                                    visualDensity: VisualDensity.compact,
+                                    side: BorderSide.none,
+                                    backgroundColor: palette.aiPrimary
+                                        .withValues(alpha: 0.18),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
+                        if (!isUser && message.isFailed) ...<Widget>[
+                          const SizedBox(height: 8),
+                          Text(
+                            'AI',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: palette.messageAssistantText.withValues(
+                                alpha: 0.58,
+                              ),
+                            ),
+                          ),
+                        ],
                         if (!isUser) ...<Widget>[
                           const SizedBox(height: 6),
                           Row(
@@ -123,21 +179,38 @@ class MessageBubble extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              IconButton(
-                                tooltip: speakTooltip,
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
+                              if (!message.isStreaming && !message.isFailed)
+                                IconButton(
+                                  tooltip: speakTooltip,
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 28,
+                                    minHeight: 28,
+                                  ),
+                                  onPressed: onSpeak,
+                                  icon: Icon(
+                                    Icons.volume_up_rounded,
+                                    size: 17,
+                                    color: palette.buttonOutline,
+                                  ),
                                 ),
-                                onPressed: onSpeak,
-                                icon: Icon(
-                                  Icons.volume_up_rounded,
-                                  size: 17,
-                                  color: palette.buttonOutline,
+                              if (message.isFailed && onRetry != null)
+                                TextButton.icon(
+                                  onPressed: onRetry,
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(retryTooltip),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: palette.accentPrimary,
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ] else
@@ -163,6 +236,72 @@ class MessageBubble extends StatelessWidget {
     final String hour = value.hour.toString().padLeft(2, '0');
     final String minute = value.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+class _StreamingPlaceholder extends StatelessWidget {
+  const _StreamingPlaceholder({required this.palette, required this.label});
+
+  final AppPalette palette;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: palette.accentPrimary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(label),
+      ],
+    );
+  }
+}
+
+class _SourceLabel extends StatelessWidget {
+  const _SourceLabel({
+    required this.source,
+    required this.palette,
+    required this.copy,
+  });
+
+  final AnswerSource source;
+  final AppPalette palette;
+  final AppCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    final String label = switch (source) {
+      AnswerSource.rulebook => copy.answerSourceRulebook,
+      AnswerSource.generalAdvice => copy.answerSourceGeneral,
+      AnswerSource.insufficient => copy.answerSourceInsufficient,
+    };
+    final IconData icon = switch (source) {
+      AnswerSource.rulebook => Icons.menu_book_rounded,
+      AnswerSource.generalAdvice => Icons.auto_awesome_rounded,
+      AnswerSource.insufficient => Icons.info_outline_rounded,
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(icon, size: 15, color: palette.accentPrimary),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: palette.accentPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
   }
 }
 

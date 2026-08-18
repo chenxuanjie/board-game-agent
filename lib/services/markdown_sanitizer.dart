@@ -3,7 +3,10 @@ class MarkdownSanitizer {
     var text = input;
     text = text.replaceAll(RegExp(r'```[\s\S]*?```'), ' ');
     text = text.replaceAll(RegExp(r'`([^`]*)`'), r'$1');
-    text = text.replaceAll(RegExp(r'(^|\n)\s{0,3}#{1,6}\s*', multiLine: true), '\n');
+    text = text.replaceAll(
+      RegExp(r'(^|\n)\s{0,3}#{1,6}\s*', multiLine: true),
+      '\n',
+    );
     text = text.replaceAll(RegExp(r'\*\*(.*?)\*\*'), r'$1');
     text = text.replaceAll(RegExp(r'\*(.*?)\*'), r'$1');
     text = text.replaceAll(RegExp(r'_(.*?)_'), r'$1');

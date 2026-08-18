@@ -1,7 +1,4 @@
-enum ColorSchemeOption {
-  classic,
-  gradientBluePink,
-}
+enum ColorSchemeOption { classic, gradientBluePink }
 
 extension ColorSchemeOptionX on ColorSchemeOption {
   String get code {

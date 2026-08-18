@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
+import '../models/answer_source.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/board_game_ai_answer.dart';
@@ -21,6 +22,7 @@ import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
 import '../models/remote_library_update.dart';
 import '../models/resolved_document.dart';
+import '../models/evidence_chunk.dart';
 import '../services/ai_service.dart';
 import '../services/preferences_service.dart';
 import '../services/game_manifest_service.dart';
@@ -59,6 +61,7 @@ class AppController extends ChangeNotifier {
   bool _checkForUpdates = true;
   bool _speechAvailable = false;
   bool _isListening = false;
+  double _speechLevel = 0;
   bool _isSending = false;
   String _selectedGameId = 'puerto-rico';
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
@@ -88,6 +91,8 @@ class AppController extends ChangeNotifier {
   Future<void> _conversationSaveQueue = Future<void>.value();
   final Map<String, List<ChatMessage>> _conversationMessages =
       <String, List<ChatMessage>>{};
+  Completer<void>? _generationAbort;
+  bool _generationWasStopped = false;
   late final http.Client _assetTestClient = IOClient(
     HttpClient()
       ..badCertificateCallback =
@@ -101,6 +106,8 @@ class AppController extends ChangeNotifier {
   bool get checkForUpdates => _checkForUpdates;
   bool get speechAvailable => _speechAvailable;
   bool get isListening => _isListening;
+  double get speechLevel => _speechLevel;
+  String? get speechError => _speechService.lastError;
   bool get isSending => _isSending;
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
@@ -307,23 +314,51 @@ class AppController extends ChangeNotifier {
   Future<void> startListening({
     required ValueChanged<String> onRecognizedText,
   }) async {
-    if (!_speechAvailable || _isListening) {
+    if (_isListening) {
       return;
     }
 
+    if (!_speechAvailable) {
+      _speechAvailable = await _speechService.reinitialize(
+        onListeningStopped: _handleListeningStopped,
+      );
+      if (!_speechAvailable) {
+        notifyListeners();
+        return;
+      }
+    }
+
     _isListening = true;
+    _speechLevel = 0;
     notifyListeners();
 
-    await _speechService.startListening(
+    final bool started = await _speechService.startListening(
       language: _language,
       onResult: onRecognizedText,
       onListeningStopped: _handleListeningStopped,
+      onSoundLevel: _handleSpeechLevel,
     );
+    if (!started) {
+      _isListening = false;
+      _speechLevel = 0;
+      notifyListeners();
+    }
   }
 
   Future<void> stopListening() async {
     await _speechService.stopListening();
     _handleListeningStopped();
+  }
+
+  Future<void> stopGenerating() async {
+    if (!_isSending) {
+      return;
+    }
+    _generationWasStopped = true;
+    final Completer<void>? abort = _generationAbort;
+    if (abort != null && !abort.isCompleted) {
+      abort.complete();
+    }
   }
 
   Future<void> clearConversation() async {
@@ -389,6 +424,18 @@ class AppController extends ChangeNotifier {
     _trimConversationMessages(messages);
     _queueConversationSave();
     _isSending = true;
+    _generationWasStopped = false;
+    final Completer<void> generationAbort = Completer<void>();
+    _generationAbort = generationAbort;
+    final String draftId = '${DateTime.now().microsecondsSinceEpoch}-assistant';
+    final ChatMessage draftMessage = ChatMessage(
+      id: draftId,
+      role: ChatRole.assistant,
+      text: '',
+      timestamp: DateTime.now(),
+      state: ChatMessageState.streaming,
+    );
+    messages.add(draftMessage);
     notifyListeners();
 
     final GameInfo game = featuredGame;
@@ -400,7 +447,8 @@ class AppController extends ChangeNotifier {
     );
 
     try {
-      final BoardGameAiAnswer reply = await _aiService.generateReply(
+      BoardGameAiAnswer? finalAnswer;
+      await for (final BoardGameAiStreamEvent event in _aiService.streamReply(
         prompt: trimmed,
         language: _language,
         game: game,
@@ -409,43 +457,159 @@ class AppController extends ChangeNotifier {
         config: _aiApiConfig,
         assetSourceConfigs: _assetSourceConfigs,
         remoteAssetService: _remoteAssetService,
-        conversationHistory: List<ChatMessage>.unmodifiable(messages),
-      );
+        conversationHistory: List<ChatMessage>.unmodifiable(
+          messages.where((ChatMessage item) => item.id != draftId),
+        ),
+        abortTrigger: generationAbort.future,
+      )) {
+        if (_generationWasStopped) {
+          break;
+        }
+        if (event.delta.isNotEmpty) {
+          _replaceMessage(
+            messages,
+            draftMessage.copyWith(
+              text:
+                  '${_messageById(messages, draftId)?.text ?? ''}${event.delta}',
+            ),
+          );
+          notifyListeners();
+        }
+        if (event.answer != null) {
+          finalAnswer = event.answer;
+        }
+      }
 
-      final assistantMessage = ChatMessage(
-        id: '${DateTime.now().microsecondsSinceEpoch}-assistant',
-        role: ChatRole.assistant,
-        text: reply.text,
-        timestamp: DateTime.now(),
-      );
-
-      messages.add(assistantMessage);
-      _trimConversationMessages(messages);
-      _queueConversationSave();
-      if (_voiceReplyEnabled) {
-        await speakMessage(reply.text);
+      final ChatMessage? currentDraft = _messageById(messages, draftId);
+      if (_generationWasStopped) {
+        if (currentDraft != null && currentDraft.text.trim().isNotEmpty) {
+          _replaceMessage(
+            messages,
+            currentDraft.copyWith(
+              state: ChatMessageState.complete,
+              source: finalAnswer?.source ?? AnswerSource.generalAdvice,
+              evidence: finalAnswer?.evidence ?? const <EvidenceChunk>[],
+            ),
+          );
+        } else {
+          messages.removeWhere((ChatMessage item) => item.id == draftId);
+        }
+        _trimConversationMessages(messages);
+        _queueConversationSave();
+      } else if (finalAnswer != null) {
+        final BoardGameAiAnswer answer = finalAnswer;
+        final ChatMessage nextMessage = (currentDraft ?? draftMessage).copyWith(
+          text: answer.text,
+          source: answer.source,
+          evidence: answer.evidence,
+          state: ChatMessageState.complete,
+          canRetry: false,
+          retryPrompt: null,
+        );
+        _replaceMessage(messages, nextMessage);
+        _trimConversationMessages(messages);
+        _queueConversationSave();
+        if (_voiceReplyEnabled) {
+          await speakMessage(answer.text);
+        }
+      } else {
+        throw StateError('The AI stream ended without an answer.');
       }
     } catch (error, stackTrace) {
       debugPrint('[chat] sendPrompt failed: $error');
       debugPrint('$stackTrace');
-      messages.add(
-        ChatMessage(
-          id: '${DateTime.now().microsecondsSinceEpoch}-assistant-error',
-          role: ChatRole.assistant,
-          text: copy.aiReplyFailed,
-          timestamp: DateTime.now(),
-        ),
-      );
+      if (_generationWasStopped) {
+        final ChatMessage? currentDraft = _messageById(messages, draftId);
+        if (currentDraft != null && currentDraft.text.trim().isNotEmpty) {
+          _replaceMessage(
+            messages,
+            currentDraft.copyWith(
+              state: ChatMessageState.complete,
+              source: AnswerSource.generalAdvice,
+            ),
+          );
+        } else {
+          messages.removeWhere((ChatMessage item) => item.id == draftId);
+        }
+      } else {
+        _replaceMessage(
+          messages,
+          ChatMessage(
+            id: draftId,
+            role: ChatRole.assistant,
+            text: copy.aiReplyFailed,
+            timestamp: DateTime.now(),
+            state: ChatMessageState.failed,
+            canRetry: true,
+            retryPrompt: trimmed,
+          ),
+        );
+      }
       _trimConversationMessages(messages);
       _queueConversationSave();
     } finally {
+      _generationAbort = null;
       _isSending = false;
       notifyListeners();
     }
   }
 
+  Future<void> retryMessage(
+    ChatMessage message, {
+    required bool useGlobalMode,
+  }) async {
+    final String? prompt = message.retryPrompt;
+    if (!message.canRetry ||
+        prompt == null ||
+        prompt.trim().isEmpty ||
+        _isSending) {
+      return;
+    }
+    final List<ChatMessage> messages = _messagesForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    final int failedIndex = messages.indexWhere(
+      (ChatMessage item) => item.id == message.id,
+    );
+    if (failedIndex >= 0) {
+      if (failedIndex > 0 &&
+          messages[failedIndex - 1].role == ChatRole.user &&
+          messages[failedIndex - 1].text.trim() == prompt.trim()) {
+        messages.removeRange(failedIndex - 1, failedIndex + 1);
+      } else {
+        messages.removeAt(failedIndex);
+      }
+      _queueConversationSave();
+      notifyListeners();
+    }
+    await sendPrompt(prompt, useGlobalMode: useGlobalMode);
+  }
+
+  ChatMessage? _messageById(List<ChatMessage> messages, String id) {
+    for (final ChatMessage message in messages) {
+      if (message.id == id) return message;
+    }
+    return null;
+  }
+
+  void _replaceMessage(List<ChatMessage> messages, ChatMessage replacement) {
+    final int index = messages.indexWhere(
+      (ChatMessage message) => message.id == replacement.id,
+    );
+    if (index >= 0) {
+      messages[index] = replacement;
+    } else {
+      messages.add(replacement);
+    }
+  }
+
   Future<void> disposeServices() async {
     _assetStatusTimer?.cancel();
+    _generationWasStopped = true;
+    final Completer<void>? generationAbort = _generationAbort;
+    if (generationAbort != null && !generationAbort.isCompleted) {
+      generationAbort.complete();
+    }
     await _conversationSaveQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
@@ -1025,10 +1189,20 @@ class AppController extends ChangeNotifier {
   }
 
   void _handleListeningStopped() {
-    if (_isListening) {
+    if (_isListening || _speechLevel != 0) {
       _isListening = false;
+      _speechLevel = 0;
       notifyListeners();
     }
+  }
+
+  void _handleSpeechLevel(double level) {
+    final double normalized = ((level + 2) / 12).clamp(0.05, 1.0).toDouble();
+    if ((normalized - _speechLevel).abs() < 0.02) {
+      return;
+    }
+    _speechLevel = normalized;
+    notifyListeners();
   }
 
   static const String _globalConversationKey = 'global';

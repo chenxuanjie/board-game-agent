@@ -125,6 +125,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         messages: messages,
                         scrollController: _scrollController,
                         onQuickPrompt: _sendQuickPrompt,
+                        useGlobalMode: widget.useGlobalMode,
                       );
                     },
                   ),
@@ -203,7 +204,15 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(controller.copy.micUnavailable)));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            controller.speechError == null
+                ? controller.copy.micUnavailable
+                : '${controller.copy.micUnavailable} ${controller.speechError}',
+          ),
+        ),
+      );
       return;
     }
 
@@ -220,6 +229,11 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         );
       },
     );
+    if (!controller.isListening && controller.speechError != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(controller.speechError!)),
+      );
+    }
   }
 
   Future<void> _openContextSheet() async {
@@ -434,12 +448,14 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.scrollController,
     required this.onQuickPrompt,
+    required this.useGlobalMode,
   });
 
   final AppController controller;
   final List<ChatMessage> messages;
   final ScrollController scrollController;
   final Future<void> Function(String prompt) onQuickPrompt;
+  final bool useGlobalMode;
 
   @override
   Widget build(BuildContext context) {
@@ -454,14 +470,21 @@ class _MessageList extends StatelessWidget {
           MessageBubble(
             message: message,
             palette: controller.palette,
+            copy: copy,
             onSpeak: message.role == ChatRole.assistant
                 ? () => controller.speakMessage(message.text)
                 : () {},
             speakTooltip: copy.speakAgain,
+            onRetry: message.canRetry
+                ? () => controller.retryMessage(
+                    message,
+                    useGlobalMode: useGlobalMode,
+                  )
+                : null,
+            retryTooltip: copy.retry,
           ),
         if (showQuickPrompts)
           _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),
-        if (controller.isSending) _ThinkingBubble(controller: controller),
       ],
     );
   }
@@ -519,47 +542,6 @@ class _QuickPromptCard extends StatelessWidget {
                 .toList(),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ThinkingBubble extends StatelessWidget {
-  const _ThinkingBubble({required this.controller});
-
-  final AppController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final copy = controller.copy;
-    final palette = controller.palette;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: palette.messageAssistantBubble,
-          borderRadius: BorderRadius.circular(
-            20,
-          ).copyWith(bottomLeft: const Radius.circular(7)),
-          border: Border.all(color: palette.cardBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: palette.accentPrimary,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Text(copy.assistantGeneratingTitle),
-          ],
-        ),
       ),
     );
   }
@@ -705,26 +687,30 @@ class _Composer extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 IconButton(
-                  tooltip: copy.send,
-                  onPressed: canSend
+                  tooltip: controller.isSending
+                      ? copy.stopGenerating
+                      : copy.send,
+                  onPressed: controller.isSending
+                      ? () {
+                          controller.stopGenerating();
+                        }
+                      : canSend
                       ? () {
                           onSend();
                         }
                       : null,
                   style: IconButton.styleFrom(
-                    backgroundColor: canSend
+                    backgroundColor: controller.isSending
+                        ? palette.accentPrimary
+                        : canSend
                         ? palette.accentSecondary
                         : palette.homeTextPrimary.withValues(alpha: 0.14),
-                    foregroundColor: canSend
+                    foregroundColor: controller.isSending || canSend
                         ? Colors.white
                         : palette.homeTextPrimary.withValues(alpha: 0.38),
                   ),
                   icon: controller.isSending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const Icon(Icons.stop_rounded)
                       : const Icon(Icons.arrow_upward_rounded),
                 ),
               ],
@@ -763,6 +749,12 @@ class _RecordingBanner extends StatelessWidget {
         children: <Widget>[
           const Icon(Icons.mic_rounded, color: Colors.white),
           const SizedBox(width: 10),
+          SizedBox(
+            width: 70,
+            height: 28,
+            child: _SpeechWaveform(level: controller.speechLevel),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -798,6 +790,60 @@ class _RecordingBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SpeechWaveform extends StatelessWidget {
+  const _SpeechWaveform({required this.level});
+
+  final double level;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _SpeechWaveformPainter(level: level),
+      child: const SizedBox.expand(),
+    );
+  }
+}
+
+class _SpeechWaveformPainter extends CustomPainter {
+  const _SpeechWaveformPainter({required this.level});
+
+  final double level;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.9)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    const List<double> profile = <double>[
+      0.34,
+      0.56,
+      0.82,
+      1,
+      0.68,
+      0.45,
+      0.78,
+      0.54,
+      0.32,
+    ];
+    final double center = size.height / 2;
+    final double spacing = size.width / (profile.length - 1);
+    for (int index = 0; index < profile.length; index += 1) {
+      final double height = 5 + (size.height * 0.42 * profile[index] * level);
+      final double x = spacing * index;
+      canvas.drawLine(
+        Offset(x, center - height / 2),
+        Offset(x, center + height / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SpeechWaveformPainter oldDelegate) =>
+      (oldDelegate.level - level).abs() > 0.01;
 }
 
 class _FeatureChip extends StatelessWidget {

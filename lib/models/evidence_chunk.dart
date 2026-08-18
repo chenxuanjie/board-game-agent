@@ -18,4 +18,19 @@ class EvidenceChunk {
     final String normalized = sourcePath.replaceAll('\\', '/');
     return normalized.split('/').last;
   }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'sourcePath': sourcePath,
+      if (title != null) 'title': title,
+    };
+  }
+
+  factory EvidenceChunk.fromMap(Map<String, dynamic> map) {
+    return EvidenceChunk(
+      sourcePath: map['sourcePath'] as String? ?? map['path'] as String? ?? '',
+      content: map['content'] as String? ?? '',
+      title: map['title'] as String?,
+    );
+  }
 }

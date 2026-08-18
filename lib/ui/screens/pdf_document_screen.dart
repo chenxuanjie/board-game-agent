@@ -45,9 +45,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
           }
           if (snapshot.hasError || snapshot.data == null) {
             return Center(
-              child: Text(
-                'PDF 加载失败：${snapshot.error ?? '未找到缓存或远端资源'}',
-              ),
+              child: Text('PDF 加载失败：${snapshot.error ?? '未找到缓存或远端资源'}'),
             );
           }
           return DecoratedBox(

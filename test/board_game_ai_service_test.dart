@@ -8,6 +8,7 @@ import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/services/board_game_ai_service.dart';
+import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -107,6 +108,74 @@ void main() {
     expect(reply.evidence, hasLength(1));
     expect(reply.evidence.single.sourceName, 'faq_zh.md');
   });
+
+  test(
+    'streaming knowledge answer emits visible deltas and provenance',
+    () async {
+      final _FakeAiClient client = _FakeAiClient(
+        streams: <List<AiStreamEvent>>[
+          <AiStreamEvent>[
+            const AiStreamEvent(delta: '{"status":"answered","answer":"Cabo '),
+            const AiStreamEvent(delta: '是竞争类游戏。","evidence":["faq_zh.md"]}'),
+          ],
+        ],
+      );
+      final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+      final List<BoardGameAiStreamEvent> events = await service
+          .streamReply(
+            prompt: 'Cabo 是合作游戏吗？',
+            language: AppLanguage.zhHans,
+            game: _gameInfo(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: AiApiConfig.defaultMimo,
+            assetSourceConfigs: const <AssetSourceConfig>[],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: const <ChatMessage>[],
+          )
+          .toList();
+
+      expect(events.map((event) => event.delta).join(), 'Cabo 是竞争类游戏。');
+      expect(events.last.isDone, isTrue);
+      expect(events.last.answer?.source, AnswerSource.rulebook);
+      expect(events.last.answer?.evidence.single.sourceName, 'faq_zh.md');
+    },
+  );
+
+  test(
+    'streaming smart supplement falls back after knowledge stream is unknown',
+    () async {
+      final _FakeAiClient client = _FakeAiClient(
+        streams: <List<AiStreamEvent>>[
+          <AiStreamEvent>[const AiStreamEvent(delta: '{"status":"unknown"}')],
+          <AiStreamEvent>[
+            const AiStreamEvent(delta: '这款游戏通常以竞争为主'),
+            const AiStreamEvent(delta: '，不是合作玩法。'),
+          ],
+        ],
+      );
+      final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+      final List<BoardGameAiStreamEvent> events = await service
+          .streamReply(
+            prompt: '这款桌游支持几个人玩合作模式？',
+            language: AppLanguage.zhHans,
+            game: _gameInfo(),
+            answerMode: AiAnswerMode.knowledgeThenDirect,
+            useGlobalMode: false,
+            config: AiApiConfig.defaultMimo,
+            assetSourceConfigs: const <AssetSourceConfig>[],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: const <ChatMessage>[],
+          )
+          .toList();
+
+      expect(events.map((event) => event.delta).join(), '这款游戏通常以竞争为主，不是合作玩法。');
+      expect(events.last.answer?.source, AnswerSource.generalAdvice);
+      expect(client.streamRequestCount, 2);
+    },
+  );
 }
 
 GameInfo _gameInfo() {
@@ -149,11 +218,16 @@ GameInfo _gameInfo() {
 }
 
 class _FakeAiClient implements AiClient {
-  _FakeAiClient({required List<AiResponse> responses})
-    : _responses = List<AiResponse>.from(responses);
+  _FakeAiClient({
+    List<AiResponse> responses = const <AiResponse>[],
+    List<List<AiStreamEvent>> streams = const <List<AiStreamEvent>>[],
+  }) : _responses = List<AiResponse>.from(responses),
+       _streams = List<List<AiStreamEvent>>.from(streams);
 
   final List<AiResponse> _responses;
+  final List<List<AiStreamEvent>> _streams;
   int requestCount = 0;
+  int streamRequestCount = 0;
 
   @override
   Future<AiResponse> complete(AiRequest request) async {
@@ -182,7 +256,11 @@ class _FakeAiClient implements AiClient {
     AiRequest request, {
     Future<void>? abortTrigger,
   }) {
-    return const Stream<AiStreamEvent>.empty();
+    streamRequestCount += 1;
+    if (_streams.isEmpty) {
+      return const Stream<AiStreamEvent>.empty();
+    }
+    return Stream<AiStreamEvent>.fromIterable(_streams.removeAt(0));
   }
 }
 
