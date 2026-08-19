@@ -59,6 +59,7 @@ app.*.map.json
 
 # Device validation artifacts
 /emulator_*.png
+/emulator-*.png
 /samsung_*.png
 /samsung_*.apk
 

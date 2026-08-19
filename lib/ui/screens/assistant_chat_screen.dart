@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../models/assistant_mode.dart';
 import '../../models/chat_message.dart';
 import '../../state/app_controller.dart';
+import '../../theme/app_palette.dart';
 import '../widgets/message_bubble.dart';
 
 class AssistantChatScreen extends StatefulWidget {
@@ -113,6 +115,18 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     onTap: _openContextSheet,
                   ),
                 ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    screenWidth >= 720 ? 28 : 16,
+                    0,
+                    screenWidth >= 720 ? 28 : 16,
+                    8,
+                  ),
+                  child: _AssistantModeStrip(
+                    controller: controller,
+                    onSelect: _selectAssistantMode,
+                  ),
+                ),
                 Expanded(
                   child: AnimatedBuilder(
                     animation: controller,
@@ -198,13 +212,19 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
 
   Future<void> _toggleListening() async {
     final controller = widget.controller;
+    if (controller.assistantMode == AssistantMode.realtimeVoice) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(controller.copy.assistantRealtimeUnavailable)),
+        );
+      }
+      return;
+    }
     if (!controller.speechAvailable) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             controller.speechError == null
@@ -230,10 +250,27 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       },
     );
     if (!controller.isListening && controller.speechError != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(controller.speechError!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(controller.speechError!)));
     }
+  }
+
+  Future<void> _selectAssistantMode(AssistantMode mode) async {
+    final controller = widget.controller;
+    final bool changed = await controller.setAssistantMode(mode);
+    if (!mounted) {
+      return;
+    }
+    if (!changed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(controller.copy.assistantRealtimeUnavailable)),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(controller.copy.assistantModeChanged)),
+    );
   }
 
   Future<void> _openContextSheet() async {
@@ -435,6 +472,133 @@ class _ContextStrip extends StatelessWidget {
                 color: palette.homeTextSecondary,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantModeStrip extends StatelessWidget {
+  const _AssistantModeStrip({required this.controller, required this.onSelect});
+
+  final AppController controller;
+  final Future<void> Function(AssistantMode mode) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = controller.copy;
+    final palette = controller.palette;
+    final bool realtimeAvailable = controller.realtimeVoiceAvailable;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: palette.cardSurface.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: palette.cardBorder),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _AssistantModeChoice(
+              palette: palette,
+              selected:
+                  controller.assistantMode == AssistantMode.textAndDictation,
+              icon: Icons.keyboard_voice_rounded,
+              label: copy.assistantTextModeLabel,
+              onTap: () => onSelect(AssistantMode.textAndDictation),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: _AssistantModeChoice(
+              palette: palette,
+              selected: controller.assistantMode == AssistantMode.realtimeVoice,
+              enabled: realtimeAvailable,
+              icon: Icons.record_voice_over_rounded,
+              label: copy.assistantRealtimeModeLabel,
+              onTap: () => onSelect(AssistantMode.realtimeVoice),
+              badge: realtimeAvailable ? null : Icons.lock_outline_rounded,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantModeChoice extends StatelessWidget {
+  const _AssistantModeChoice({
+    required this.palette,
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+    this.badge,
+  });
+
+  final AppPalette palette;
+  final bool selected;
+  final bool enabled;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final IconData? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color foreground = !enabled
+        ? palette.homeTextSecondary
+        : selected
+        ? Colors.white
+        : palette.homeTextPrimary;
+    final Color background = !enabled
+        ? palette.cardBorder.withValues(alpha: 0.16)
+        : selected
+        ? palette.accentPrimary
+        : Colors.transparent;
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: selected,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: Material(
+          color: background,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: enabled ? onTap : onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(icon, size: 17, color: foreground),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: foreground,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (badge != null) ...<Widget>[
+                    const SizedBox(width: 4),
+                    Icon(badge, size: 14, color: foreground),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/answer_source.dart';
+import '../models/assistant_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/board_game_ai_answer.dart';
@@ -29,6 +30,7 @@ import '../services/game_manifest_service.dart';
 import '../services/remote_asset_service.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
+import '../services/realtime_voice_service.dart';
 import '../theme/app_palette.dart';
 import '../theme/palette_registry.dart';
 import '../ui/app_copy.dart';
@@ -41,12 +43,15 @@ class AppController extends ChangeNotifier {
     required RemoteAssetService remoteAssetService,
     required SpeechService speechService,
     required TtsService ttsService,
+    RealtimeVoiceService? realtimeVoiceService,
   }) : _preferencesService = preferencesService,
        _aiService = aiService,
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
        _speechService = speechService,
-       _ttsService = ttsService;
+       _ttsService = ttsService,
+       _realtimeVoiceService =
+           realtimeVoiceService ?? const UnconfiguredRealtimeVoiceService();
 
   final PreferencesService _preferencesService;
   final AiService _aiService;
@@ -54,10 +59,12 @@ class AppController extends ChangeNotifier {
   final RemoteAssetService _remoteAssetService;
   final SpeechService _speechService;
   final TtsService _ttsService;
+  final RealtimeVoiceService _realtimeVoiceService;
 
   AppLanguage _language = AppLanguage.zhHans;
   ColorSchemeOption _colorScheme = ColorSchemeOption.classic;
   bool _voiceReplyEnabled = true;
+  AssistantMode _assistantMode = AssistantMode.textAndDictation;
   bool _checkForUpdates = true;
   bool _speechAvailable = false;
   bool _isListening = false;
@@ -66,7 +73,7 @@ class AppController extends ChangeNotifier {
   String _selectedGameId = 'puerto-rico';
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
-  AiApiConfig _aiApiConfig = AiApiConfig.defaultMimo;
+  AiApiConfig _aiApiConfig = AiApiConfig.defaultOpenAi;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
@@ -103,6 +110,11 @@ class AppController extends ChangeNotifier {
   ColorSchemeOption get colorScheme => _colorScheme;
   AppPalette get palette => PaletteRegistry.of(_colorScheme);
   bool get voiceReplyEnabled => _voiceReplyEnabled;
+  AssistantMode get assistantMode => _assistantMode;
+  bool get realtimeVoiceAvailable =>
+      _realtimeVoiceService.availability == RealtimeVoiceAvailability.available;
+  String get realtimeVoiceAvailabilityMessage =>
+      _realtimeVoiceService.availabilityMessage;
   bool get checkForUpdates => _checkForUpdates;
   bool get speechAvailable => _speechAvailable;
   bool get isListening => _isListening;
@@ -152,6 +164,13 @@ class AppController extends ChangeNotifier {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
+    final AssistantMode savedAssistantMode = await _preferencesService
+        .loadAssistantMode();
+    _assistantMode =
+        savedAssistantMode == AssistantMode.realtimeVoice &&
+            !realtimeVoiceAvailable
+        ? AssistantMode.textAndDictation
+        : savedAssistantMode;
     _checkForUpdates = await _preferencesService.loadCheckForUpdates();
     _gameAnswerMode = await _preferencesService.loadGameAnswerMode();
     _globalAnswerMode = await _preferencesService.loadGlobalAnswerMode();
@@ -274,6 +293,23 @@ class AppController extends ChangeNotifier {
       await _ttsService.stop();
     }
     notifyListeners();
+  }
+
+  Future<bool> setAssistantMode(AssistantMode mode) async {
+    if (_assistantMode == mode) {
+      return true;
+    }
+    if (mode == AssistantMode.realtimeVoice && !realtimeVoiceAvailable) {
+      return false;
+    }
+    if (_isListening) {
+      await stopListening();
+    }
+    await stopSpeaking();
+    _assistantMode = mode;
+    await _preferencesService.saveAssistantMode(mode);
+    notifyListeners();
+    return true;
   }
 
   Future<void> setAllowSmartSupplement(

@@ -27,7 +27,11 @@ class _LanguageSheetState extends State<LanguageSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _keyController;
+  late final TextEditingController _modelController;
+  late final TextEditingController _apiKeyHeaderController;
+  late final TextEditingController _pathController;
   late List<AssetSourceConfig> _assetSourceConfigs;
+  late AiProviderPreset _selectedPreset;
   bool _isTesting = false;
   bool _isTestingAssets = false;
   String? _lastTestMessage;
@@ -40,6 +44,10 @@ class _LanguageSheetState extends State<LanguageSheet> {
     _nameController = TextEditingController(text: config.name);
     _urlController = TextEditingController(text: config.baseUrl);
     _keyController = TextEditingController(text: config.apiKey);
+    _modelController = TextEditingController(text: config.model);
+    _apiKeyHeaderController = TextEditingController(text: config.apiKeyHeader);
+    _pathController = TextEditingController(text: config.chatPath);
+    _selectedPreset = config.providerPreset;
     _assetSourceConfigs = widget.controller.assetSourceConfigs;
   }
 
@@ -48,6 +56,9 @@ class _LanguageSheetState extends State<LanguageSheet> {
     _nameController.dispose();
     _urlController.dispose();
     _keyController.dispose();
+    _modelController.dispose();
+    _apiKeyHeaderController.dispose();
+    _pathController.dispose();
     super.dispose();
   }
 
@@ -247,6 +258,40 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           keyboardType: TextInputType.url,
                         ),
                         const SizedBox(height: 12),
+                        _ApiDropdownField<AiProviderPreset>(
+                          label: copy.aiApiPresetLabel,
+                          value: _selectedPreset,
+                          values: AiProviderPreset.values,
+                          itemLabel: copy.aiProviderPresetName,
+                          onChanged: _applyPreset,
+                        ),
+                        const SizedBox(height: 12),
+                        _ApiField(
+                          label: copy.aiApiModelLabel,
+                          controller: _modelController,
+                        ),
+                        const SizedBox(height: 12),
+                        _ApiField(
+                          label: copy.aiApiAuthHeaderLabel,
+                          controller: _apiKeyHeaderController,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          copy.aiApiAuthHeaderHint,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: palette.homeTextPrimary.withValues(
+                                  alpha: 0.68,
+                                ),
+                              ),
+                        ),
+                        const SizedBox(height: 12),
+                        _ApiField(
+                          label: copy.aiApiPathLabel,
+                          controller: _pathController,
+                          keyboardType: TextInputType.url,
+                        ),
+                        const SizedBox(height: 12),
                         _ApiField(
                           label: copy.aiApiKeyLabel,
                           controller: _keyController,
@@ -335,17 +380,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
   Future<void> _saveConfig() async {
     final controller = widget.controller;
     final copy = controller.copy;
-    final next = AiApiConfig.defaultMimo.copyWith(
-      name: _nameController.text.trim().isEmpty
-          ? AiApiConfig.defaultMimo.name
-          : _nameController.text.trim(),
-      baseUrl: _urlController.text.trim().isEmpty
-          ? AiApiConfig.defaultMimo.baseUrl
-          : _urlController.text.trim(),
-      apiKey: _keyController.text.trim().isEmpty
-          ? AiApiConfig.defaultMimo.apiKey
-          : _keyController.text.trim(),
-    );
+    final next = _draftConfig();
     await controller.saveAiApiConfig(next);
     if (!mounted) {
       return;
@@ -360,26 +395,13 @@ class _LanguageSheetState extends State<LanguageSheet> {
   }
 
   void _resetDefault() {
-    final config = AiApiConfig.defaultMimo;
-    _nameController.text = config.name;
-    _urlController.text = config.baseUrl;
-    _keyController.text = config.apiKey;
+    _applyPreset(AiProviderPreset.openAi);
     _saveConfig();
   }
 
   Future<void> _testConfig() async {
     final controller = widget.controller;
-    final config = AiApiConfig.defaultMimo.copyWith(
-      name: _nameController.text.trim().isEmpty
-          ? AiApiConfig.defaultMimo.name
-          : _nameController.text.trim(),
-      baseUrl: _urlController.text.trim().isEmpty
-          ? AiApiConfig.defaultMimo.baseUrl
-          : _urlController.text.trim(),
-      apiKey: _keyController.text.trim().isEmpty
-          ? AiApiConfig.defaultMimo.apiKey
-          : _keyController.text.trim(),
-    );
+    final config = _draftConfig();
     setState(() => _isTesting = true);
     try {
       final result = await controller.testAiApiConfig(config);
@@ -409,6 +431,48 @@ class _LanguageSheetState extends State<LanguageSheet> {
         setState(() => _isTesting = false);
       }
     }
+  }
+
+  AiApiConfig _draftConfig() {
+    final current = widget.controller.aiApiConfig;
+    return current.copyWith(
+      name: _nameController.text.trim().isEmpty
+          ? current.name
+          : _nameController.text.trim(),
+      baseUrl: _urlController.text.trim().isEmpty
+          ? current.baseUrl
+          : _urlController.text.trim(),
+      apiKey: _keyController.text.trim(),
+      model: _modelController.text.trim().isEmpty
+          ? current.model
+          : _modelController.text.trim(),
+      apiKeyHeader: _apiKeyHeaderController.text.trim().isEmpty
+          ? current.apiKeyHeader
+          : _apiKeyHeaderController.text.trim(),
+      chatPath: _pathController.text.trim().isEmpty
+          ? current.chatPath
+          : _pathController.text.trim(),
+    );
+  }
+
+  void _applyPreset(AiProviderPreset? preset) {
+    if (preset == null) {
+      return;
+    }
+    if (preset == AiProviderPreset.custom) {
+      setState(() => _selectedPreset = preset);
+      return;
+    }
+    final config = preset.template;
+    setState(() {
+      _selectedPreset = preset;
+      _nameController.text = config.name;
+      _urlController.text = config.baseUrl;
+      _keyController.clear();
+      _modelController.text = config.model;
+      _pathController.text = config.chatPath;
+      _apiKeyHeaderController.text = config.apiKeyHeader;
+    });
   }
 
   Future<void> _reorderSources(int oldIndex, int newIndex) async {
@@ -649,6 +713,63 @@ class _ApiField extends StatelessWidget {
             filled: true,
             fillColor: Colors.white,
             hintStyle: TextStyle(color: Color(0xFF7B99AD)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ApiDropdownField<T> extends StatelessWidget {
+  const _ApiDropdownField({
+    required this.label,
+    required this.value,
+    required this.values,
+    required this.itemLabel,
+    required this.onChanged,
+  });
+
+  final String label;
+  final T value;
+  final List<T> values;
+  final String Function(T value) itemLabel;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: const Color(0xFFB1C6D8),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        InputDecorator(
+          decoration: const InputDecoration(
+            filled: true,
+            fillColor: Colors.white,
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              value: value,
+              isExpanded: true,
+              onChanged: onChanged,
+              items: values
+                  .map(
+                    (item) => DropdownMenuItem<T>(
+                      value: item,
+                      child: Text(
+                        itemLabel(item),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
           ),
         ),
       ],

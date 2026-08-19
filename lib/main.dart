@@ -14,6 +14,7 @@ import 'services/board_game_remote_layout.dart';
 import 'services/insecure_android_certificate_trust.dart';
 import 'services/speech_service.dart';
 import 'services/tts_service.dart';
+import 'services/realtime_voice_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
@@ -36,6 +37,7 @@ Future<void> main() async {
     remoteAssetService: RemoteAssetService(),
     speechService: SpeechService(),
     ttsService: TtsService(),
+    realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
   );
 
   runApp(

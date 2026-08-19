@@ -1,4 +1,5 @@
 import '../models/app_language.dart';
+import '../models/ai_api_config.dart';
 import '../models/color_scheme_option.dart';
 
 class AppCopy {
@@ -23,11 +24,32 @@ class AppCopy {
   String get aiApiNameLabel => isChinese ? '配置名称' : 'Config Name';
   String get aiApiUrlLabel => isChinese ? '接口地址' : 'Base URL';
   String get aiApiKeyLabel => isChinese ? '接口密钥' : 'API Key';
+  String get aiApiPresetLabel => isChinese ? '常用服务预设' : 'Provider preset';
+  String get aiApiModelLabel => isChinese ? '模型名称' : 'Model';
+  String get aiApiAuthHeaderLabel => isChinese ? '密钥请求头' : 'API key header';
+  String get aiApiPathLabel => isChinese
+      ? 'Chat Completions 路径（当前仅支持 /chat/completions）'
+      : 'Chat Completions path (only /chat/completions is supported)';
+  String get aiApiAuthHeaderHint => isChinese
+      ? 'Authorization 会自动发送为 Bearer <密钥>；api-key 则直接发送密钥。'
+      : 'Authorization is sent as Bearer <key>; api-key sends the key directly.';
   String get aiApiSave => isChinese ? '保存配置' : 'Save Config';
   String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
   String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';
   String get aiApiSaved => isChinese ? 'AI 接口配置已保存' : 'AI API config saved';
   String get aiApiTestSuccess => isChinese ? '连接成功' : 'Connection successful';
+
+  String aiProviderPresetName(AiProviderPreset preset) {
+    switch (preset) {
+      case AiProviderPreset.openAi:
+        return 'OpenAI';
+      case AiProviderPreset.deepSeek:
+        return 'DeepSeek';
+      case AiProviderPreset.custom:
+        return isChinese ? '自定义 OpenAI 兼容接口' : 'Custom OpenAI-compatible';
+    }
+  }
+
   String get aiReplyFailed => isChinese
       ? '这次回答失败了，请稍后再试。'
       : 'The assistant could not answer this time. Please try again.';
@@ -72,6 +94,22 @@ class AppCopy {
       ? '打开后，AI 回复会自动朗读。'
       : 'When enabled, assistant replies are spoken aloud.';
   String get voiceReplySwitchLabel => isChinese ? '语音朗读' : 'Voice output';
+  String get assistantModeTitle => isChinese ? '助手交互方式' : 'Assistant mode';
+  String get assistantTextModeLabel =>
+      isChinese ? '文字 / 语音转文字' : 'Text / Dictation';
+  String get assistantTextModeHint => isChinese
+      ? '键盘输入，或先用麦克风转成文字后确认发送。'
+      : 'Type, or dictate into the composer before sending.';
+  String get assistantRealtimeModeLabel =>
+      isChinese ? '直接语音对话' : 'Realtime voice';
+  String get assistantRealtimeModeHint => isChinese
+      ? '实时语音 Agent 尚未配置，暂时不可用。'
+      : 'The realtime voice Agent is not configured yet.';
+  String get assistantRealtimeUnavailable => isChinese
+      ? '直接语音对话暂不可用：还没有配置实时语音服务。请先使用文字 / 语音转文字模式。'
+      : 'Realtime voice is unavailable because no voice service is configured. Use text or dictation for now.';
+  String get assistantModeChanged =>
+      isChinese ? '助手交互方式已切换' : 'Assistant mode changed';
   String get enterAssistant => isChinese ? '进入 AI 助手' : 'Open AI Assistant';
   String get assistantMode => isChinese ? '桌游助手' : 'Board Game Assistant';
   String get assistantModeHint => isChinese

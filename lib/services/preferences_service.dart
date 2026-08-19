@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
+import '../models/assistant_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
@@ -15,6 +16,7 @@ class PreferencesService {
   static const _gameAnswerModeKey = 'game_answer_mode';
   static const _globalAnswerModeKey = 'global_answer_mode';
   static const _checkForUpdatesKey = 'check_for_updates';
+  static const _assistantModeKey = 'assistant_mode';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -50,7 +52,15 @@ class PreferencesService {
 
   Future<AiApiConfig> loadAiApiConfig() async {
     final prefs = await _prefs;
-    return AiApiConfig.fromJson(prefs.getString(_aiApiConfigKey));
+    final String? stored = prefs.getString(_aiApiConfigKey);
+    final AiApiConfig config = AiApiConfig.fromJson(stored);
+    if (stored != null && stored.trim().isNotEmpty) {
+      final String normalized = config.toJson();
+      if (stored != normalized) {
+        await prefs.setString(_aiApiConfigKey, normalized);
+      }
+    }
+    return config;
   }
 
   Future<void> saveAiApiConfig(AiApiConfig config) async {
@@ -105,5 +115,15 @@ class PreferencesService {
   Future<void> saveCheckForUpdates(bool enabled) async {
     final prefs = await _prefs;
     await prefs.setBool(_checkForUpdatesKey, enabled);
+  }
+
+  Future<AssistantMode> loadAssistantMode() async {
+    final prefs = await _prefs;
+    return AssistantModeX.fromCode(prefs.getString(_assistantModeKey));
+  }
+
+  Future<void> saveAssistantMode(AssistantMode mode) async {
+    final prefs = await _prefs;
+    await prefs.setString(_assistantModeKey, mode.code);
   }
 }
