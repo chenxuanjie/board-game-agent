@@ -230,6 +230,11 @@ class _FakeAiClient implements AiClient {
   int streamRequestCount = 0;
 
   @override
+  Future<List<AiModel>> listModels(AiEndpointConfig endpoint) async {
+    return const <AiModel>[AiModel(id: 'test-model')];
+  }
+
+  @override
   Future<AiResponse> complete(AiRequest request) async {
     if (_responses.isEmpty) {
       throw StateError('No fake AI response is available.');

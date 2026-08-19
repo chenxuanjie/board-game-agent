@@ -236,6 +236,11 @@ class BoardGameAiService implements AiService {
   }
 
   @override
+  Future<List<AiModel>> listModels(AiApiConfig config) {
+    return _aiClient.listModels(_endpointFor(config));
+  }
+
+  @override
   Future<AiHealthResult> checkConnection(AiApiConfig config) {
     return _aiClient.check(_endpointFor(config));
   }
@@ -441,8 +446,8 @@ class BoardGameAiService implements AiService {
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       model: config.model,
-      apiKeyHeader: config.apiKeyHeader,
-      chatPath: config.chatPath,
+      apiKeyHeader: 'Authorization',
+      chatPath: '/chat/completions',
     );
   }
 

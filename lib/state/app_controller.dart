@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -34,6 +35,8 @@ import '../services/realtime_voice_service.dart';
 import '../theme/app_palette.dart';
 import '../theme/palette_registry.dart';
 import '../ui/app_copy.dart';
+
+enum AiModelLoadState { idle, loading, success, empty, failure }
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -74,6 +77,12 @@ class AppController extends ChangeNotifier {
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
   AiApiConfig _aiApiConfig = AiApiConfig.defaultOpenAi;
+  List<AiModel> _availableAiModels = <AiModel>[];
+  AiModelLoadState _aiModelLoadState = AiModelLoadState.idle;
+  String? _aiModelLoadError;
+  Future<List<AiModel>>? _aiModelRefreshFuture;
+  String? _aiModelRefreshSignature;
+  int _aiModelRefreshGeneration = 0;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
@@ -124,6 +133,10 @@ class AppController extends ChangeNotifier {
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
   AiApiConfig get aiApiConfig => _aiApiConfig;
+  List<AiModel> get availableAiModels =>
+      List<AiModel>.unmodifiable(_availableAiModels);
+  AiModelLoadState get aiModelLoadState => _aiModelLoadState;
+  String? get aiModelLoadError => _aiModelLoadError;
   List<AssetSourceConfig> get assetSourceConfigs =>
       List<AssetSourceConfig>.unmodifiable(_assetSourceConfigs);
   ConnectivityStatus get aiConnectivityStatus => _aiConnectivityStatus;
@@ -203,6 +216,10 @@ class AppController extends ChangeNotifier {
     unawaited(prefetchHomeImages());
     _startAssetStatusPolling();
     unawaited(checkForLibraryUpdates());
+    if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
+        _aiApiConfig.apiKey.trim().isNotEmpty) {
+      unawaited(_refreshAiModelsOnInitialize());
+    }
     notifyListeners();
   }
 
@@ -240,6 +257,96 @@ class AppController extends ChangeNotifier {
     _aiApiConfig = next;
     await _preferencesService.saveAiApiConfig(next);
     notifyListeners();
+  }
+
+  Future<List<AiModel>> refreshAiModels({
+    AiApiConfig? config,
+    bool persistSelection = false,
+  }) {
+    final AiApiConfig target = config ?? _aiApiConfig;
+    final String signature = _aiModelSignature(target);
+    final Future<List<AiModel>>? active = _aiModelRefreshFuture;
+    if (active != null && _aiModelRefreshSignature == signature) {
+      return active;
+    }
+
+    final int generation = ++_aiModelRefreshGeneration;
+    _aiModelRefreshSignature = signature;
+    _aiModelLoadState = AiModelLoadState.loading;
+    _aiModelLoadError = null;
+    notifyListeners();
+
+    final Future<List<AiModel>> future = _aiService
+        .listModels(target)
+        .then((List<AiModel> models) async {
+          if (generation != _aiModelRefreshGeneration) {
+            return models;
+          }
+          _availableAiModels = List<AiModel>.from(models);
+          _aiModelLoadState = models.isEmpty
+              ? AiModelLoadState.empty
+              : AiModelLoadState.success;
+          _aiModelLoadError = null;
+          if (persistSelection && identical(config, null)) {
+            final String selected = _aiApiConfig.model.trim();
+            final bool stillAvailable = models.any(
+              (AiModel model) => model.id == selected,
+            );
+            if (selected.isNotEmpty && !stillAvailable) {
+              _aiApiConfig = _aiApiConfig.copyWith(model: '');
+              await _preferencesService.saveAiApiConfig(_aiApiConfig);
+            }
+          }
+          notifyListeners();
+          return models;
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          if (generation != _aiModelRefreshGeneration) {
+            return Future<List<AiModel>>.error(error, stackTrace);
+          }
+          final bool empty =
+              error is AiProtocolException &&
+              error.message.toLowerCase().contains('empty model list');
+          _aiModelLoadState = empty
+              ? AiModelLoadState.empty
+              : AiModelLoadState.failure;
+          _aiModelLoadError = error.toString();
+          _availableAiModels = <AiModel>[];
+          notifyListeners();
+          return Future<List<AiModel>>.error(error, stackTrace);
+        });
+    _aiModelRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_aiModelRefreshFuture, future)) {
+            _aiModelRefreshFuture = null;
+            _aiModelRefreshSignature = null;
+          }
+        })
+        .catchError((Object _) => <AiModel>[]);
+    return future;
+  }
+
+  Future<void> _refreshAiModelsOnInitialize() async {
+    try {
+      await refreshAiModels(persistSelection: true);
+    } catch (_) {
+      // The settings screen exposes the retryable failure state.
+    }
+  }
+
+  void invalidateAiModels() {
+    ++_aiModelRefreshGeneration;
+    _aiModelRefreshFuture = null;
+    _aiModelRefreshSignature = null;
+    _availableAiModels = <AiModel>[];
+    _aiModelLoadState = AiModelLoadState.idle;
+    _aiModelLoadError = null;
+    notifyListeners();
+  }
+
+  String _aiModelSignature(AiApiConfig config) {
+    return '${config.baseUrl.trim()}\n${config.apiKey.trim()}';
   }
 
   Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> next) async {
@@ -443,6 +550,15 @@ class AppController extends ChangeNotifier {
   Future<void> sendPrompt(String prompt, {bool useGlobalMode = false}) async {
     final trimmed = prompt.trim();
     if (trimmed.isEmpty || _isSending) {
+      return;
+    }
+    if (_aiApiConfig.model.trim().isEmpty) {
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: copy.aiApiModelRequired,
+        checkedAt: DateTime.now(),
+      );
+      notifyListeners();
       return;
     }
     final List<ChatMessage> messages = _messagesForContext(
@@ -704,13 +820,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> prefetchHomeImages() async {
-    final List<String> imagePaths = [
+    final imagePaths = <String>{
       for (final game in games) ...[
         game.coverAssetPath,
         game.bannerAssetPath,
         ...game.galleryAssetPaths,
       ],
-    ].toSet().toList();
+    }.toList();
 
     _homeAssetsLoading = imagePaths.isNotEmpty;
     _homeAssetsLoaded = 0;

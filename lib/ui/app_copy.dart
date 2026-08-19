@@ -26,13 +26,22 @@ class AppCopy {
   String get aiApiKeyLabel => isChinese ? '接口密钥' : 'API Key';
   String get aiApiPresetLabel => isChinese ? '常用服务预设' : 'Provider preset';
   String get aiApiModelLabel => isChinese ? '模型名称' : 'Model';
-  String get aiApiAuthHeaderLabel => isChinese ? '密钥请求头' : 'API key header';
-  String get aiApiPathLabel => isChinese
-      ? 'Chat Completions 路径（当前仅支持 /chat/completions）'
-      : 'Chat Completions path (only /chat/completions is supported)';
-  String get aiApiAuthHeaderHint => isChinese
-      ? 'Authorization 会自动发送为 Bearer <密钥>；api-key 则直接发送密钥。'
-      : 'Authorization is sent as Bearer <key>; api-key sends the key directly.';
+  String get aiApiModelSelectHint =>
+      isChinese ? '请选择接口返回的模型' : 'Select a model returned by the endpoint';
+  String get aiApiModelRequired =>
+      isChinese ? '请先获取并选择一个模型' : 'Fetch and select a model first';
+  String get aiApiModelsNotLoaded => isChinese
+      ? '点击刷新，从 /models 获取可用模型'
+      : 'Refresh to load models from /models';
+  String get aiApiModelsLoading => isChinese ? '正在加载模型列表…' : 'Loading models…';
+  String aiApiModelsLoaded(int count) =>
+      isChinese ? '已加载 $count 个模型' : '$count models loaded';
+  String get aiApiModelsEmpty =>
+      isChinese ? '接口返回了空模型列表' : 'The endpoint returned no models';
+  String get aiApiModelsFailed =>
+      isChinese ? '模型列表加载失败' : 'Could not load models';
+  String get aiApiModelsRefresh => isChinese ? '刷新模型列表' : 'Refresh model list';
+  String get aiApiModelsRetry => isChinese ? '重试获取模型' : 'Retry model discovery';
   String get aiApiSave => isChinese ? '保存配置' : 'Save Config';
   String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
   String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';

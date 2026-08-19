@@ -26,6 +26,8 @@ class BoardGameAiStreamEvent {
 }
 
 abstract class AiService {
+  Future<List<AiModel>> listModels(AiApiConfig config);
+
   Future<BoardGameAiAnswer> generateReply({
     required String prompt,
     required AppLanguage language,

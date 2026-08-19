@@ -8,10 +8,10 @@ void main() {
       AiProviderPreset.deepSeek,
       AiProviderPreset.custom,
     ]);
-    expect(AiApiConfig.defaultOpenAi.model, 'gpt-4o-mini');
+    expect(AiApiConfig.defaultOpenAi.model, isEmpty);
     expect(AiApiConfig.defaultOpenAi.apiKeyHeader, 'Authorization');
     expect(AiApiConfig.defaultDeepSeek.apiKeyHeader, 'Authorization');
-    expect(AiApiConfig.defaultDeepSeek.model, 'deepseek-chat');
+    expect(AiApiConfig.defaultDeepSeek.model, isEmpty);
     expect(AiApiConfig.defaultDeepSeek.chatPath, '/chat/completions');
   });
 
@@ -67,14 +67,14 @@ void main() {
     expect(config.apiKeyHeader, 'Authorization');
   });
 
-  test('round trips custom model and authentication settings', () {
+  test('round trips a saved model while normalizing transport settings', () {
     const AiApiConfig original = AiApiConfig(
       name: 'Gateway',
       baseUrl: 'https://gateway.example/v1',
       apiKey: 'key',
       model: 'gateway-model',
       apiKeyHeader: 'x-api-key',
-      chatPath: '/chat/completions',
+      chatPath: '/custom-path',
     );
 
     final AiApiConfig restored = AiApiConfig.fromJson(original.toJson());
@@ -82,7 +82,7 @@ void main() {
     expect(restored.name, original.name);
     expect(restored.baseUrl, original.baseUrl);
     expect(restored.model, original.model);
-    expect(restored.apiKeyHeader, original.apiKeyHeader);
-    expect(restored.chatPath, original.chatPath);
+    expect(restored.apiKeyHeader, 'Authorization');
+    expect(restored.chatPath, '/chat/completions');
   });
 }

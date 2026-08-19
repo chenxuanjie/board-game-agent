@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:app_about/app_about.dart';
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_api_config.dart';
@@ -8,6 +11,7 @@ import '../../models/connectivity_status.dart';
 import '../../models/color_scheme_option.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../app_copy.dart';
 
 class LanguageSheet extends StatefulWidget {
   const LanguageSheet({
@@ -24,14 +28,11 @@ class LanguageSheet extends StatefulWidget {
 }
 
 class _LanguageSheetState extends State<LanguageSheet> {
-  late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _keyController;
-  late final TextEditingController _modelController;
-  late final TextEditingController _apiKeyHeaderController;
-  late final TextEditingController _pathController;
   late List<AssetSourceConfig> _assetSourceConfigs;
   late AiProviderPreset _selectedPreset;
+  String? _selectedModel;
   bool _isTesting = false;
   bool _isTestingAssets = false;
   String? _lastTestMessage;
@@ -41,24 +42,22 @@ class _LanguageSheetState extends State<LanguageSheet> {
   void initState() {
     super.initState();
     final config = widget.controller.aiApiConfig;
-    _nameController = TextEditingController(text: config.name);
     _urlController = TextEditingController(text: config.baseUrl);
     _keyController = TextEditingController(text: config.apiKey);
-    _modelController = TextEditingController(text: config.model);
-    _apiKeyHeaderController = TextEditingController(text: config.apiKeyHeader);
-    _pathController = TextEditingController(text: config.chatPath);
     _selectedPreset = config.providerPreset;
+    _selectedModel = config.model.trim().isEmpty ? null : config.model.trim();
     _assetSourceConfigs = widget.controller.assetSourceConfigs;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_refreshModels());
+      }
+    });
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
     _urlController.dispose();
     _keyController.dispose();
-    _modelController.dispose();
-    _apiKeyHeaderController.dispose();
-    _pathController.dispose();
     super.dispose();
   }
 
@@ -247,17 +246,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        _ApiField(
-                          label: copy.aiApiNameLabel,
-                          controller: _nameController,
-                        ),
-                        const SizedBox(height: 12),
-                        _ApiField(
-                          label: copy.aiApiUrlLabel,
-                          controller: _urlController,
-                          keyboardType: TextInputType.url,
-                        ),
-                        const SizedBox(height: 12),
                         _ApiDropdownField<AiProviderPreset>(
                           label: copy.aiApiPresetLabel,
                           value: _selectedPreset,
@@ -267,35 +255,27 @@ class _LanguageSheetState extends State<LanguageSheet> {
                         ),
                         const SizedBox(height: 12),
                         _ApiField(
-                          label: copy.aiApiModelLabel,
-                          controller: _modelController,
-                        ),
-                        const SizedBox(height: 12),
-                        _ApiField(
-                          label: copy.aiApiAuthHeaderLabel,
-                          controller: _apiKeyHeaderController,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          copy.aiApiAuthHeaderHint,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: palette.homeTextPrimary.withValues(
-                                  alpha: 0.68,
-                                ),
-                              ),
-                        ),
-                        const SizedBox(height: 12),
-                        _ApiField(
-                          label: copy.aiApiPathLabel,
-                          controller: _pathController,
+                          label: copy.aiApiUrlLabel,
+                          controller: _urlController,
                           keyboardType: TextInputType.url,
+                          readOnly: _selectedPreset != AiProviderPreset.custom,
+                          onChanged: (_) => _invalidateModels(),
                         ),
                         const SizedBox(height: 12),
                         _ApiField(
                           label: copy.aiApiKeyLabel,
                           controller: _keyController,
                           obscureText: true,
+                          onChanged: (_) => _invalidateModels(),
+                        ),
+                        const SizedBox(height: 14),
+                        _ModelDiscoveryPanel(
+                          controller: controller,
+                          selectedModel: _selectedModel,
+                          onRefresh: _refreshModels,
+                          onChanged: (String? model) {
+                            setState(() => _selectedModel = model);
+                          },
                         ),
                         const SizedBox(height: 14),
                         Row(
@@ -380,6 +360,12 @@ class _LanguageSheetState extends State<LanguageSheet> {
   Future<void> _saveConfig() async {
     final controller = widget.controller;
     final copy = controller.copy;
+    if (_selectedModel == null || _selectedModel!.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(copy.aiApiModelRequired)));
+      return;
+    }
     final next = _draftConfig();
     await controller.saveAiApiConfig(next);
     if (!mounted) {
@@ -402,6 +388,13 @@ class _LanguageSheetState extends State<LanguageSheet> {
   Future<void> _testConfig() async {
     final controller = widget.controller;
     final config = _draftConfig();
+    if (config.model.trim().isEmpty) {
+      setState(() {
+        _lastTestMessage = controller.copy.aiApiModelRequired;
+        _lastTestSucceeded = false;
+      });
+      return;
+    }
     setState(() => _isTesting = true);
     try {
       final result = await controller.testAiApiConfig(config);
@@ -436,22 +429,12 @@ class _LanguageSheetState extends State<LanguageSheet> {
   AiApiConfig _draftConfig() {
     final current = widget.controller.aiApiConfig;
     return current.copyWith(
-      name: _nameController.text.trim().isEmpty
-          ? current.name
-          : _nameController.text.trim(),
+      name: _selectedPreset.template.name,
       baseUrl: _urlController.text.trim().isEmpty
           ? current.baseUrl
           : _urlController.text.trim(),
       apiKey: _keyController.text.trim(),
-      model: _modelController.text.trim().isEmpty
-          ? current.model
-          : _modelController.text.trim(),
-      apiKeyHeader: _apiKeyHeaderController.text.trim().isEmpty
-          ? current.apiKeyHeader
-          : _apiKeyHeaderController.text.trim(),
-      chatPath: _pathController.text.trim().isEmpty
-          ? current.chatPath
-          : _pathController.text.trim(),
+      model: _selectedModel ?? '',
     );
   }
 
@@ -460,19 +443,54 @@ class _LanguageSheetState extends State<LanguageSheet> {
       return;
     }
     if (preset == AiProviderPreset.custom) {
-      setState(() => _selectedPreset = preset);
+      setState(() {
+        _selectedPreset = preset;
+        _urlController.clear();
+        _keyController.clear();
+        _selectedModel = null;
+      });
+      widget.controller.invalidateAiModels();
       return;
     }
     final config = preset.template;
     setState(() {
       _selectedPreset = preset;
-      _nameController.text = config.name;
       _urlController.text = config.baseUrl;
       _keyController.clear();
-      _modelController.text = config.model;
-      _pathController.text = config.chatPath;
-      _apiKeyHeaderController.text = config.apiKeyHeader;
+      _selectedModel = null;
     });
+    widget.controller.invalidateAiModels();
+  }
+
+  void _invalidateModels() {
+    if (_selectedModel != null) {
+      setState(() => _selectedModel = null);
+    }
+    widget.controller.invalidateAiModels();
+  }
+
+  Future<void> _refreshModels() async {
+    final AiApiConfig config = _draftConfig().copyWith(model: '');
+    if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
+      widget.controller.invalidateAiModels();
+      return;
+    }
+    try {
+      final List<AiModel> models = await widget.controller.refreshAiModels(
+        config: config,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (_selectedModel != null &&
+            models.every((AiModel model) => model.id != _selectedModel)) {
+          _selectedModel = null;
+        }
+      });
+    } catch (_) {
+      // The controller exposes the retryable failure state in the panel.
+    }
   }
 
   Future<void> _reorderSources(int oldIndex, int newIndex) async {
@@ -674,18 +692,149 @@ class _ChoiceTile extends StatelessWidget {
   }
 }
 
+class _ModelDiscoveryPanel extends StatelessWidget {
+  const _ModelDiscoveryPanel({
+    required this.controller,
+    required this.selectedModel,
+    required this.onRefresh,
+    required this.onChanged,
+  });
+
+  final AppController controller;
+  final String? selectedModel;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppCopy copy = controller.copy;
+    final AppPalette palette = controller.palette;
+    final List<AiModel> models = controller.availableAiModels;
+    final String? validSelection =
+        models.any((AiModel model) => model.id == selectedModel)
+        ? selectedModel
+        : null;
+
+    Widget status = const SizedBox.shrink();
+    switch (controller.aiModelLoadState) {
+      case AiModelLoadState.idle:
+        status = Text(
+          copy.aiApiModelsNotLoaded,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: palette.homeTextPrimary.withValues(alpha: 0.68),
+          ),
+        );
+      case AiModelLoadState.loading:
+        status = Row(
+          children: <Widget>[
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text(copy.aiApiModelsLoading),
+          ],
+        );
+      case AiModelLoadState.success:
+        status = Text(
+          copy.aiApiModelsLoaded(models.length),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: palette.homeTextPrimary.withValues(alpha: 0.68),
+          ),
+        );
+      case AiModelLoadState.empty:
+        status = Text(
+          copy.aiApiModelsEmpty,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.orange.shade700),
+        );
+      case AiModelLoadState.failure:
+        status = Text(
+          '${copy.aiApiModelsFailed}: ${controller.aiModelLoadError ?? ''}',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.red.shade700),
+        );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                copy.aiApiModelLabel,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFFB1C6D8),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: copy.aiApiModelsRefresh,
+              onPressed: controller.aiModelLoadState == AiModelLoadState.loading
+                  ? null
+                  : onRefresh,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        if (models.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: validSelection,
+            isExpanded: true,
+            onChanged: onChanged,
+            items: models
+                .map(
+                  (AiModel model) => DropdownMenuItem<String>(
+                    value: model.id,
+                    child: Text(model.label, overflow: TextOverflow.ellipsis),
+                  ),
+                )
+                .toList(growable: false),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white,
+              hintText: copy.aiApiModelSelectHint,
+            ),
+          ),
+        ],
+        const SizedBox(height: 6),
+        status,
+        if (controller.aiModelLoadState == AiModelLoadState.failure ||
+            controller.aiModelLoadState == AiModelLoadState.empty) ...<Widget>[
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(copy.aiApiModelsRetry),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _ApiField extends StatelessWidget {
   const _ApiField({
     required this.label,
     required this.controller,
     this.keyboardType,
     this.obscureText = false,
+    this.readOnly = false,
+    this.onChanged,
   });
 
   final String label;
   final TextEditingController controller;
   final TextInputType? keyboardType;
   final bool obscureText;
+  final bool readOnly;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -704,6 +853,8 @@ class _ApiField extends StatelessWidget {
           controller: controller,
           keyboardType: keyboardType,
           obscureText: obscureText,
+          readOnly: readOnly,
+          onChanged: onChanged,
           style: const TextStyle(
             color: Color(0xFF183D57),
             fontSize: 16,

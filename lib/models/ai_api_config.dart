@@ -23,7 +23,7 @@ class AiApiConfig {
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
-    model: 'gpt-4o-mini',
+    model: '',
     apiKeyHeader: 'Authorization',
     chatPath: '/chat/completions',
   );
@@ -32,7 +32,7 @@ class AiApiConfig {
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     apiKey: '',
-    model: 'deepseek-chat',
+    model: '',
     apiKeyHeader: 'Authorization',
     chatPath: '/chat/completions',
   );
@@ -104,8 +104,6 @@ class AiApiConfig {
         ),
       ).template;
       final String? storedModel = (json['model'] as String?)?.trim();
-      final String? storedApiKeyHeader = (json['apiKeyHeader'] as String?)
-          ?.trim();
       final bool hasRemovedMimoModel = _isRemovedMimoModel(storedModel);
       return AiApiConfig(
         name: (json['name'] as String?)?.trim().isNotEmpty == true
@@ -119,15 +117,8 @@ class AiApiConfig {
                 !hasRemovedMimoModel
             ? storedModel
             : providerTemplate.model,
-        apiKeyHeader:
-            storedApiKeyHeader != null &&
-                storedApiKeyHeader.isNotEmpty &&
-                !hasRemovedMimoModel
-            ? storedApiKeyHeader
-            : providerTemplate.apiKeyHeader,
-        chatPath: (json['chatPath'] as String?)?.trim().isNotEmpty == true
-            ? json['chatPath'] as String
-            : providerTemplate.chatPath,
+        apiKeyHeader: providerTemplate.apiKeyHeader,
+        chatPath: providerTemplate.chatPath,
       );
     } catch (_) {
       return defaultOpenAi;
