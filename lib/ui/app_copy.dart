@@ -42,6 +42,9 @@ class AppCopy {
       isChinese ? '模型列表加载失败' : 'Could not load models';
   String get aiApiModelsRefresh => isChinese ? '刷新模型列表' : 'Refresh model list';
   String get aiApiModelsRetry => isChinese ? '重试获取模型' : 'Retry model discovery';
+  String get aiApiWebCorsHint => isChinese
+      ? 'Web 浏览器可能拦截跨域请求。若使用本地预览代理，请将地址改为 http://127.0.0.1:8081/v1。'
+      : 'Browsers may block cross-origin requests. For the local preview proxy, use http://127.0.0.1:8081/v1.';
   String get aiApiSave => isChinese ? '保存配置' : 'Save Config';
   String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
   String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';

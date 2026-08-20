@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_about/app_about.dart';
 import 'package:app_ai_client/app_ai_client.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_api_config.dart';
@@ -37,6 +38,8 @@ class _LanguageSheetState extends State<LanguageSheet> {
   bool _isTestingAssets = false;
   String? _lastTestMessage;
   bool? _lastTestSucceeded;
+  Timer? _modelRefreshDebounce;
+  int _modelInputRevision = 0;
 
   @override
   void initState() {
@@ -56,6 +59,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
 
   @override
   void dispose() {
+    _modelRefreshDebounce?.cancel();
     _urlController.dispose();
     _keyController.dispose();
     super.dispose();
@@ -259,14 +263,29 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           controller: _urlController,
                           keyboardType: TextInputType.url,
                           readOnly: _selectedPreset != AiProviderPreset.custom,
-                          onChanged: (_) => _invalidateModels(),
+                          onChanged: _handleAiFieldChanged,
                         ),
+                        if (_isCrossOriginWebUrl(
+                          _urlController.text,
+                        )) ...<Widget>[
+                          const SizedBox(height: 8),
+                          Text(
+                            copy.aiApiWebCorsHint,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: palette.homeTextPrimary.withValues(
+                                    alpha: 0.72,
+                                  ),
+                                  height: 1.35,
+                                ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         _ApiField(
                           label: copy.aiApiKeyLabel,
                           controller: _keyController,
                           obscureText: true,
-                          onChanged: (_) => _invalidateModels(),
+                          onChanged: _handleAiFieldChanged,
                         ),
                         const SizedBox(height: 14),
                         _ModelDiscoveryPanel(
@@ -430,9 +449,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
     final current = widget.controller.aiApiConfig;
     return current.copyWith(
       name: _selectedPreset.template.name,
-      baseUrl: _urlController.text.trim().isEmpty
-          ? current.baseUrl
-          : _urlController.text.trim(),
+      baseUrl: _urlController.text.trim(),
       apiKey: _keyController.text.trim(),
       model: _selectedModel ?? '',
     );
@@ -442,6 +459,8 @@ class _LanguageSheetState extends State<LanguageSheet> {
     if (preset == null) {
       return;
     }
+    _modelRefreshDebounce?.cancel();
+    ++_modelInputRevision;
     if (preset == AiProviderPreset.custom) {
       setState(() {
         _selectedPreset = preset;
@@ -469,7 +488,45 @@ class _LanguageSheetState extends State<LanguageSheet> {
     widget.controller.invalidateAiModels();
   }
 
+  void _handleAiFieldChanged(String _) {
+    _invalidateModels();
+    _scheduleModelRefresh();
+  }
+
+  bool _isCrossOriginWebUrl(String value) {
+    if (!kIsWeb) {
+      return false;
+    }
+    final Uri? endpoint = Uri.tryParse(value.trim());
+    if (endpoint == null || !endpoint.hasScheme || endpoint.host.isEmpty) {
+      return false;
+    }
+    final Uri page = Uri.base;
+    return endpoint.scheme != page.scheme ||
+        endpoint.host != page.host ||
+        endpoint.port != page.port;
+  }
+
+  void _scheduleModelRefresh() {
+    _modelRefreshDebounce?.cancel();
+    final String baseUrl = _urlController.text.trim();
+    final String apiKey = _keyController.text.trim();
+    if (baseUrl.isEmpty || apiKey.isEmpty) {
+      return;
+    }
+
+    final int revision = ++_modelInputRevision;
+    _modelRefreshDebounce = Timer(const Duration(milliseconds: 650), () {
+      if (!mounted || revision != _modelInputRevision) {
+        return;
+      }
+      unawaited(_refreshModels());
+    });
+  }
+
   Future<void> _refreshModels() async {
+    _modelRefreshDebounce?.cancel();
+    _modelRefreshDebounce = null;
     final AiApiConfig config = _draftConfig().copyWith(model: '');
     if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
       widget.controller.invalidateAiModels();

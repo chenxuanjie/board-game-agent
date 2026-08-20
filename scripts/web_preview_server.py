@@ -178,7 +178,10 @@ class PreviewHandler(http.server.SimpleHTTPRequestHandler):
     def _write_cors_headers(self) -> None:
         origin = self.headers.get("Origin")
         self.send_header("Access-Control-Allow-Origin", origin or "*")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Accept, Authorization, Content-Type, X-Request-ID",
+        )
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Max-Age", "600")
         if origin:
