@@ -785,8 +785,14 @@ class _ModelDiscoveryPanel extends StatelessWidget {
         if (models.isNotEmpty) ...<Widget>[
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
+            key: ValueKey<String?>(validSelection),
             initialValue: validSelection,
             isExpanded: true,
+            style: const TextStyle(
+              color: Color(0xFF183D57),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
             onChanged: onChanged,
             items: models
                 .map(
@@ -908,6 +914,11 @@ class _ApiDropdownField<T> extends StatelessWidget {
             child: DropdownButton<T>(
               value: value,
               isExpanded: true,
+              style: const TextStyle(
+                color: Color(0xFF183D57),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
               onChanged: onChanged,
               items: values
                   .map(
