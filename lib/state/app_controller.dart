@@ -130,6 +130,7 @@ class AppController extends ChangeNotifier {
   double get speechLevel => _speechLevel;
   String? get speechError => _speechService.lastError;
   bool get isSending => _isSending;
+  bool get hasSelectedAiModel => _aiApiConfig.model.trim().isNotEmpty;
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
   AiApiConfig get aiApiConfig => _aiApiConfig;

@@ -198,6 +198,19 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       return;
     }
 
+    // Validate the model before clearing the draft. The controller also
+    // guards this invariant for non-UI callers, but the chat page must give
+    // immediate feedback while preserving the user's text.
+    if (!widget.controller.hasSelectedAiModel) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(widget.controller.copy.aiApiModelRequired)),
+        );
+      return;
+    }
+
     _textController.clear();
     await widget.controller.sendPrompt(
       text,
