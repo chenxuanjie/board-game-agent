@@ -45,7 +45,7 @@ class MessageBubble extends StatelessWidget {
       bottomRight: Radius.circular(isUser ? 8 : 24),
     );
     final bool hasAssistantAction = _hasAssistantAction;
-    final bool showFooter = showTimestamp || hasAssistantAction;
+    final bool showFooter = hasAssistantAction;
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -64,196 +64,219 @@ class MessageBubble extends StatelessWidget {
                 ),
               ],
               Flexible(
-                child: _TapToShowTimes(
-                  onTap: onTap,
-                  child: Material(
-                    color: Colors.transparent,
-                    borderRadius: borderRadius,
-                    child: Ink(
-                      decoration: BoxDecoration(
-                        color: isUser
-                            ? palette.primaryContainer
-                            : palette.surfaceContainer,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: isUser
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _TapToShowTimes(
+                      onTap: onTap,
+                      child: Material(
+                        color: Colors.transparent,
                         borderRadius: borderRadius,
-                        border: isUser
-                            ? null
-                            : Border.all(color: palette.outline),
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: palette.shadow.withValues(alpha: 0.28),
-                            blurRadius: 16,
-                            offset: const Offset(0, 7),
-                          ),
-                        ],
-                      ),
-                      child: InkWell(
-                        onTap: onTap,
-                        borderRadius: borderRadius,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 13, 12, 11),
-                          child: Column(
-                            crossAxisAlignment: isUser
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            children: <Widget>[
-                              if (isUser)
-                                SelectableText(message.text, style: bodyStyle)
-                              else if (message.text.trim().isEmpty &&
-                                  message.isStreaming)
-                                _StreamingPlaceholder(
-                                  palette: palette,
-                                  label: copy.streaming,
-                                )
-                              else
-                                MarkdownBody(
-                                  data: message.text,
-                                  selectable: true,
-                                  styleSheet:
-                                      MarkdownStyleSheet.fromTheme(
-                                        theme,
-                                      ).copyWith(
-                                        p: bodyStyle,
-                                        h1: theme.textTheme.titleLarge
-                                            ?.copyWith(
-                                              color: palette.textPrimary,
-                                            ),
-                                        h2: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                              color: palette.textPrimary,
-                                            ),
-                                        h3: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                              color: palette.textPrimary,
-                                            ),
-                                        code: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              color: palette.textPrimary,
-                                            ),
-                                        strong: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: palette.textPrimary,
-                                        ),
-                                        blockquote: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              color: palette.textPrimary
-                                                  .withValues(alpha: 0.8),
-                                            ),
-                                        listBullet: bodyStyle,
-                                      ),
-                                ),
-                              if (!isUser &&
-                                  message.source != null) ...<Widget>[
-                                const SizedBox(height: 10),
-                                _SourceLabel(
-                                  source: message.source!,
-                                  palette: palette,
-                                  copy: copy,
-                                ),
-                              ],
-                              if (!isUser &&
-                                  message.evidence.isNotEmpty) ...<Widget>[
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: message.evidence
-                                      .map(
-                                        (evidence) => Chip(
-                                          avatar: Icon(
-                                            Icons.menu_book_rounded,
-                                            size: 15,
-                                            color: palette.primary,
-                                          ),
-                                          label: Text(evidence.sourceName),
-                                          visualDensity: VisualDensity.compact,
-                                          side: BorderSide.none,
-                                          backgroundColor: palette
-                                              .primaryContainer
-                                              .withValues(alpha: 0.18),
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-                              ],
-                              if (!isUser && message.isFailed) ...<Widget>[
-                                const SizedBox(height: 8),
-                                Text(
-                                  'AI',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: palette.textPrimary.withValues(
-                                      alpha: 0.58,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              if (showFooter) ...<Widget>[
-                                const SizedBox(height: 6),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    if (showTimestamp) ...<Widget>[
-                                      Text(
-                                        _formatTime(message.timestamp),
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                              color: isUser
-                                                  ? userForeground.withValues(
-                                                      alpha: 0.68,
-                                                    )
-                                                  : palette.textPrimary
-                                                        .withValues(
-                                                          alpha: 0.56,
-                                                        ),
-                                            ),
-                                      ),
-                                      if (!isUser && hasAssistantAction)
-                                        const SizedBox(width: 8),
-                                    ],
-                                    if (!isUser &&
-                                        !message.isStreaming &&
-                                        !message.isFailed)
-                                      IconButton(
-                                        tooltip: speakTooltip,
-                                        visualDensity: VisualDensity.compact,
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(
-                                          minWidth: 28,
-                                          minHeight: 28,
-                                        ),
-                                        onPressed: onSpeak,
-                                        icon: Icon(
-                                          Icons.volume_up_rounded,
-                                          size: 17,
-                                          color: palette.primary,
-                                        ),
-                                      ),
-                                    if (!isUser &&
-                                        message.isFailed &&
-                                        onRetry != null)
-                                      TextButton.icon(
-                                        onPressed: onRetry,
-                                        icon: const Icon(
-                                          Icons.refresh_rounded,
-                                          size: 16,
-                                        ),
-                                        label: Text(retryTooltip),
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: palette.primary,
-                                          visualDensity: VisualDensity.compact,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ],
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            color: isUser
+                                ? palette.primaryContainer
+                                : palette.surfaceContainer,
+                            borderRadius: borderRadius,
+                            border: isUser
+                                ? null
+                                : Border.all(color: palette.outline),
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: palette.shadow.withValues(alpha: 0.28),
+                                blurRadius: 16,
+                                offset: const Offset(0, 7),
+                              ),
                             ],
+                          ),
+                          child: InkWell(
+                            // _TapToShowTimes handles pointer taps so that
+                            // selectable message text also toggles the time
+                            // without firing the callback twice.
+                            onTap: null,
+                            borderRadius: borderRadius,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                13,
+                                12,
+                                11,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: isUser
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  if (isUser)
+                                    SelectableText(
+                                      message.text,
+                                      style: bodyStyle,
+                                    )
+                                  else if (message.text.trim().isEmpty &&
+                                      message.isStreaming)
+                                    _StreamingPlaceholder(
+                                      palette: palette,
+                                      label: copy.streaming,
+                                    )
+                                  else
+                                    MarkdownBody(
+                                      data: message.text,
+                                      selectable: true,
+                                      styleSheet:
+                                          MarkdownStyleSheet.fromTheme(
+                                            theme,
+                                          ).copyWith(
+                                            p: bodyStyle,
+                                            h1: theme.textTheme.titleLarge
+                                                ?.copyWith(
+                                                  color: palette.textPrimary,
+                                                ),
+                                            h2: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                  color: palette.textPrimary,
+                                                ),
+                                            h3: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                  color: palette.textPrimary,
+                                                ),
+                                            code: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: palette.textPrimary,
+                                                ),
+                                            strong: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              color: palette.textPrimary,
+                                            ),
+                                            blockquote: theme
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: palette.textPrimary
+                                                      .withValues(alpha: 0.8),
+                                                ),
+                                            listBullet: bodyStyle,
+                                          ),
+                                    ),
+                                  if (!isUser &&
+                                      message.source != null) ...<Widget>[
+                                    const SizedBox(height: 10),
+                                    _SourceLabel(
+                                      source: message.source!,
+                                      palette: palette,
+                                      copy: copy,
+                                    ),
+                                  ],
+                                  if (!isUser &&
+                                      message.evidence.isNotEmpty) ...<Widget>[
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: message.evidence
+                                          .map(
+                                            (evidence) => Chip(
+                                              avatar: Icon(
+                                                Icons.menu_book_rounded,
+                                                size: 15,
+                                                color: palette.primary,
+                                              ),
+                                              label: Text(evidence.sourceName),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              side: BorderSide.none,
+                                              backgroundColor: palette
+                                                  .primaryContainer
+                                                  .withValues(alpha: 0.18),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                  if (!isUser && message.isFailed) ...<Widget>[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'AI',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: palette.textPrimary
+                                                .withValues(alpha: 0.58),
+                                          ),
+                                    ),
+                                  ],
+                                  if (showFooter) ...<Widget>[
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        if (!isUser &&
+                                            !message.isStreaming &&
+                                            !message.isFailed)
+                                          IconButton(
+                                            tooltip: speakTooltip,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 28,
+                                              minHeight: 28,
+                                            ),
+                                            onPressed: onSpeak,
+                                            icon: Icon(
+                                              Icons.volume_up_rounded,
+                                              size: 17,
+                                              color: palette.primary,
+                                            ),
+                                          ),
+                                        if (!isUser &&
+                                            message.isFailed &&
+                                            onRetry != null)
+                                          TextButton.icon(
+                                            onPressed: onRetry,
+                                            icon: const Icon(
+                                              Icons.refresh_rounded,
+                                              size: 16,
+                                            ),
+                                            label: Text(retryTooltip),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: palette.primary,
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                  ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                    if (showTimestamp)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: 4,
+                          left: 4,
+                          right: 4,
+                        ),
+                        child: Text(
+                          _formatTime(message.timestamp),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: isUser
+                                ? userForeground.withValues(alpha: 0.68)
+                                : palette.textPrimary.withValues(alpha: 0.56),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],

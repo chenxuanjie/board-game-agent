@@ -117,5 +117,9 @@ void main() {
 
     await tester.pumpWidget(buildBubble(showTimestamp: true));
     expect(find.text('12:30'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('12:30')).dy,
+      greaterThan(tester.getBottomLeft(find.text('你好')).dy),
+    );
   });
 }
