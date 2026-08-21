@@ -204,10 +204,18 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (!mounted) {
       return;
     }
+    if (_showMessageTimes) {
+      setState(() {
+        _showMessageTimes = false;
+      });
+      _messageTimeVisibilityTimer = null;
+      return;
+    }
     setState(() {
       _showMessageTimes = true;
     });
     _messageTimeVisibilityTimer = Timer(const Duration(seconds: 4), () {
+      _messageTimeVisibilityTimer = null;
       if (!mounted) {
         return;
       }
