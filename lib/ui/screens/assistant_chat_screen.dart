@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/assistant_mode.dart';
@@ -32,6 +34,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
   bool _didInitializeConversation = false;
+  bool _showMessageTimes = false;
+  Timer? _messageTimeVisibilityTimer;
 
   @override
   void initState() {
@@ -63,6 +67,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     _textController.removeListener(_onDraftChanged);
     _textController.dispose();
     _scrollController.dispose();
+    _messageTimeVisibilityTimer?.cancel();
     super.dispose();
   }
 
@@ -140,6 +145,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         scrollController: _scrollController,
                         onQuickPrompt: _sendQuickPrompt,
                         useGlobalMode: widget.useGlobalMode,
+                        showMessageTimes: _showMessageTimes,
+                        onMessageTap: _showMessageTimesTemporarily,
                       );
                     },
                   ),
@@ -190,6 +197,24 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _showMessageTimesTemporarily() {
+    _messageTimeVisibilityTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _showMessageTimes = true;
+    });
+    _messageTimeVisibilityTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _showMessageTimes = false;
+      });
+    });
   }
 
   Future<void> _sendCurrentText() async {
@@ -619,6 +644,8 @@ class _MessageList extends StatelessWidget {
     required this.scrollController,
     required this.onQuickPrompt,
     required this.useGlobalMode,
+    required this.showMessageTimes,
+    required this.onMessageTap,
   });
 
   final AppController controller;
@@ -626,6 +653,8 @@ class _MessageList extends StatelessWidget {
   final ScrollController scrollController;
   final Future<void> Function(String prompt) onQuickPrompt;
   final bool useGlobalMode;
+  final bool showMessageTimes;
+  final VoidCallback onMessageTap;
 
   @override
   Widget build(BuildContext context) {
@@ -652,6 +681,8 @@ class _MessageList extends StatelessWidget {
                   )
                 : null,
             retryTooltip: copy.retry,
+            showTimestamp: showMessageTimes,
+            onTap: onMessageTap,
           ),
         if (showQuickPrompts)
           _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),

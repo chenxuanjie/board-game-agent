@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../models/answer_source.dart';
@@ -16,6 +17,8 @@ class MessageBubble extends StatelessWidget {
     this.onRetry,
     this.retryTooltip = 'Retry',
     required this.copy,
+    this.showTimestamp = false,
+    this.onTap,
   });
 
   final ChatMessage message;
@@ -25,6 +28,8 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onRetry;
   final String retryTooltip;
   final AppCopy copy;
+  final bool showTimestamp;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +44,8 @@ class MessageBubble extends StatelessWidget {
       bottomLeft: Radius.circular(isUser ? 24 : 8),
       bottomRight: Radius.circular(isUser ? 8 : 24),
     );
+    final bool hasAssistantAction = _hasAssistantAction;
+    final bool showFooter = showTimestamp || hasAssistantAction;
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -57,166 +64,194 @@ class MessageBubble extends StatelessWidget {
                 ),
               ],
               Flexible(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? palette.primaryContainer
-                        : palette.surfaceContainer,
+                child: _TapToShowTimes(
+                  onTap: onTap,
+                  child: Material(
+                    color: Colors.transparent,
                     borderRadius: borderRadius,
-                    border: isUser ? null : Border.all(color: palette.outline),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: palette.shadow.withValues(alpha: 0.28),
-                        blurRadius: 16,
-                        offset: const Offset(0, 7),
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        color: isUser
+                            ? palette.primaryContainer
+                            : palette.surfaceContainer,
+                        borderRadius: borderRadius,
+                        border: isUser
+                            ? null
+                            : Border.all(color: palette.outline),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: palette.shadow.withValues(alpha: 0.28),
+                            blurRadius: 16,
+                            offset: const Offset(0, 7),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 13, 12, 11),
-                    child: Column(
-                      crossAxisAlignment: isUser
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      children: <Widget>[
-                        if (isUser)
-                          SelectableText(message.text, style: bodyStyle)
-                        else if (message.text.trim().isEmpty &&
-                            message.isStreaming)
-                          _StreamingPlaceholder(
-                            palette: palette,
-                            label: copy.streaming,
-                          )
-                        else
-                          MarkdownBody(
-                            data: message.text,
-                            selectable: true,
-                            styleSheet: MarkdownStyleSheet.fromTheme(theme)
-                                .copyWith(
-                                  p: bodyStyle,
-                                  h1: theme.textTheme.titleLarge?.copyWith(
-                                    color: palette.textPrimary,
+                      child: InkWell(
+                        onTap: onTap,
+                        borderRadius: borderRadius,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 13, 12, 11),
+                          child: Column(
+                            crossAxisAlignment: isUser
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
+                            children: <Widget>[
+                              if (isUser)
+                                SelectableText(message.text, style: bodyStyle)
+                              else if (message.text.trim().isEmpty &&
+                                  message.isStreaming)
+                                _StreamingPlaceholder(
+                                  palette: palette,
+                                  label: copy.streaming,
+                                )
+                              else
+                                MarkdownBody(
+                                  data: message.text,
+                                  selectable: true,
+                                  styleSheet:
+                                      MarkdownStyleSheet.fromTheme(
+                                        theme,
+                                      ).copyWith(
+                                        p: bodyStyle,
+                                        h1: theme.textTheme.titleLarge
+                                            ?.copyWith(
+                                              color: palette.textPrimary,
+                                            ),
+                                        h2: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              color: palette.textPrimary,
+                                            ),
+                                        h3: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              color: palette.textPrimary,
+                                            ),
+                                        code: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              color: palette.textPrimary,
+                                            ),
+                                        strong: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: palette.textPrimary,
+                                        ),
+                                        blockquote: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              color: palette.textPrimary
+                                                  .withValues(alpha: 0.8),
+                                            ),
+                                        listBullet: bodyStyle,
+                                      ),
+                                ),
+                              if (!isUser &&
+                                  message.source != null) ...<Widget>[
+                                const SizedBox(height: 10),
+                                _SourceLabel(
+                                  source: message.source!,
+                                  palette: palette,
+                                  copy: copy,
+                                ),
+                              ],
+                              if (!isUser &&
+                                  message.evidence.isNotEmpty) ...<Widget>[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: message.evidence
+                                      .map(
+                                        (evidence) => Chip(
+                                          avatar: Icon(
+                                            Icons.menu_book_rounded,
+                                            size: 15,
+                                            color: palette.primary,
+                                          ),
+                                          label: Text(evidence.sourceName),
+                                          visualDensity: VisualDensity.compact,
+                                          side: BorderSide.none,
+                                          backgroundColor: palette
+                                              .primaryContainer
+                                              .withValues(alpha: 0.18),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              ],
+                              if (!isUser && message.isFailed) ...<Widget>[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'AI',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: palette.textPrimary.withValues(
+                                      alpha: 0.58,
+                                    ),
                                   ),
-                                  h2: theme.textTheme.titleMedium?.copyWith(
-                                    color: palette.textPrimary,
-                                  ),
-                                  h3: theme.textTheme.titleMedium?.copyWith(
-                                    color: palette.textPrimary,
-                                  ),
-                                  code: theme.textTheme.bodyMedium?.copyWith(
-                                    color: palette.textPrimary,
-                                  ),
-                                  strong: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    color: palette.textPrimary,
-                                  ),
-                                  blockquote: theme.textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: palette.textPrimary.withValues(
-                                          alpha: 0.8,
+                                ),
+                              ],
+                              if (showFooter) ...<Widget>[
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    if (showTimestamp) ...<Widget>[
+                                      Text(
+                                        _formatTime(message.timestamp),
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: isUser
+                                                  ? userForeground.withValues(
+                                                      alpha: 0.68,
+                                                    )
+                                                  : palette.textPrimary
+                                                        .withValues(
+                                                          alpha: 0.56,
+                                                        ),
+                                            ),
+                                      ),
+                                      if (!isUser && hasAssistantAction)
+                                        const SizedBox(width: 8),
+                                    ],
+                                    if (!isUser &&
+                                        !message.isStreaming &&
+                                        !message.isFailed)
+                                      IconButton(
+                                        tooltip: speakTooltip,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                          minWidth: 28,
+                                          minHeight: 28,
+                                        ),
+                                        onPressed: onSpeak,
+                                        icon: Icon(
+                                          Icons.volume_up_rounded,
+                                          size: 17,
+                                          color: palette.primary,
                                         ),
                                       ),
-                                  listBullet: bodyStyle,
+                                    if (!isUser &&
+                                        message.isFailed &&
+                                        onRetry != null)
+                                      TextButton.icon(
+                                        onPressed: onRetry,
+                                        icon: const Icon(
+                                          Icons.refresh_rounded,
+                                          size: 16,
+                                        ),
+                                        label: Text(retryTooltip),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: palette.primary,
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                          ),
-                        if (!isUser && message.source != null) ...<Widget>[
-                          const SizedBox(height: 10),
-                          _SourceLabel(
-                            source: message.source!,
-                            palette: palette,
-                            copy: copy,
-                          ),
-                        ],
-                        if (!isUser && message.evidence.isNotEmpty) ...<Widget>[
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: message.evidence
-                                .map(
-                                  (evidence) => Chip(
-                                    avatar: Icon(
-                                      Icons.menu_book_rounded,
-                                      size: 15,
-                                      color: palette.primary,
-                                    ),
-                                    label: Text(evidence.sourceName),
-                                    visualDensity: VisualDensity.compact,
-                                    side: BorderSide.none,
-                                    backgroundColor: palette.primaryContainer
-                                        .withValues(alpha: 0.18),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ],
-                        if (!isUser && message.isFailed) ...<Widget>[
-                          const SizedBox(height: 8),
-                          Text(
-                            'AI',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: palette.textPrimary.withValues(
-                                alpha: 0.58,
-                              ),
-                            ),
-                          ),
-                        ],
-                        if (!isUser) ...<Widget>[
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                _formatTime(message.timestamp),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: palette.textPrimary.withValues(
-                                    alpha: 0.56,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              if (!message.isStreaming && !message.isFailed)
-                                IconButton(
-                                  tooltip: speakTooltip,
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 28,
-                                    minHeight: 28,
-                                  ),
-                                  onPressed: onSpeak,
-                                  icon: Icon(
-                                    Icons.volume_up_rounded,
-                                    size: 17,
-                                    color: palette.primary,
-                                  ),
-                                ),
-                              if (message.isFailed && onRetry != null)
-                                TextButton.icon(
-                                  onPressed: onRetry,
-                                  icon: const Icon(
-                                    Icons.refresh_rounded,
-                                    size: 16,
-                                  ),
-                                  label: Text(retryTooltip),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: palette.primary,
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                    ),
-                                  ),
-                                ),
+                              ],
                             ],
                           ),
-                        ] else
-                          Text(
-                            _formatTime(message.timestamp),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: userForeground.withValues(alpha: 0.68),
-                            ),
-                          ),
-                      ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -227,6 +262,11 @@ class MessageBubble extends StatelessWidget {
       ),
     );
   }
+
+  bool get _hasAssistantAction =>
+      message.role == ChatRole.assistant &&
+      ((!message.isStreaming && !message.isFailed) ||
+          (message.isFailed && onRetry != null));
 
   String _formatTime(DateTime value) {
     final String hour = value.hour.toString().padLeft(2, '0');
@@ -257,6 +297,44 @@ class _StreamingPlaceholder extends StatelessWidget {
         const SizedBox(width: 8),
         Text(label),
       ],
+    );
+  }
+}
+
+class _TapToShowTimes extends StatefulWidget {
+  const _TapToShowTimes({required this.onTap, required this.child});
+
+  final VoidCallback? onTap;
+  final Widget child;
+
+  @override
+  State<_TapToShowTimes> createState() => _TapToShowTimesState();
+}
+
+class _TapToShowTimesState extends State<_TapToShowTimes> {
+  Offset? _pointerDownPosition;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        _pointerDownPosition = event.position;
+      },
+      onPointerUp: (event) {
+        final Offset? downPosition = _pointerDownPosition;
+        _pointerDownPosition = null;
+        if (downPosition == null || widget.onTap == null) {
+          return;
+        }
+        if ((event.position - downPosition).distance <= kTouchSlop) {
+          widget.onTap!();
+        }
+      },
+      onPointerCancel: (_) {
+        _pointerDownPosition = null;
+      },
+      child: widget.child,
     );
   }
 }

@@ -81,4 +81,41 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('正在回答…'), findsOneWidget);
   });
+
+  testWidgets('chat bubble keeps time hidden until the parent reveals it', (
+    WidgetTester tester,
+  ) async {
+    bool tapped = false;
+    final ChatMessage message = ChatMessage(
+      id: 'user-time',
+      role: ChatRole.user,
+      text: '你好',
+      timestamp: DateTime(2026, 8, 18, 12, 30),
+    );
+
+    Widget buildBubble({required bool showTimestamp}) {
+      return MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            palette: PaletteRegistry.classic,
+            copy: AppCopy(AppLanguage.zhHans),
+            onSpeak: () {},
+            showTimestamp: showTimestamp,
+            onTap: () => tapped = true,
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(buildBubble(showTimestamp: false));
+    expect(find.text('12:30'), findsNothing);
+
+    await tester.tap(find.text('你好'));
+    expect(tapped, isTrue);
+
+    await tester.pumpWidget(buildBubble(showTimestamp: true));
+    expect(find.text('12:30'), findsOneWidget);
+  });
 }
