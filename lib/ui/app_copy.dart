@@ -21,13 +21,54 @@ class AppCopy {
   String get colorSchemeTitle => isChinese ? '配色方案' : 'Color Scheme';
   String get colorSchemeHint => isChinese ? '切换不同视觉风格' : 'Switch visual styles';
   String get aiApiTitle => isChinese ? 'AI 接口配置' : 'AI API Config';
-  String get aiApiNameLabel => isChinese ? '配置名称' : 'Config Name';
+  String get aiApiProviderNameLabel => isChinese ? '供应商名称' : 'Provider name';
+  String get aiApiProviderNameRequired =>
+      isChinese ? '请输入供应商名称' : 'Enter a provider name';
+  String get aiApiProviderNameReserved => isChinese
+      ? '该名称已被内置预设占用，请换一个供应商名称'
+      : 'That name is reserved by a built-in preset. Choose another name.';
   String get aiApiUrlLabel => isChinese ? '接口地址' : 'Base URL';
   String get aiApiKeyLabel => isChinese ? '接口密钥' : 'API Key';
   String get aiApiPresetLabel => isChinese ? '常用服务预设' : 'Provider preset';
   String get aiApiModelLabel => isChinese ? '模型名称' : 'Model';
   String get aiApiModelSelectHint =>
       isChinese ? '请选择接口返回的模型' : 'Select a model returned by the endpoint';
+  String get aiApiReasoningEffortLabel =>
+      isChinese ? '推理强度' : 'Reasoning effort';
+  String get aiApiReasoningEffortHint => isChinese
+      ? '仅对支持 reasoning_effort 的模型生效；自动模式不会发送额外参数。'
+      : 'Only supported by models that implement reasoning_effort; automatic sends no extra field.';
+  String get aiApiResponseSpeedLabel => isChinese ? '推理速度' : 'Response speed';
+  String get aiApiResponseSpeedHint => isChinese
+      ? '这是服务商的速度策略提示，实际速度仍取决于模型、网络和接口实现。'
+      : 'A provider speed-tier hint; actual speed still depends on the model, network, and endpoint.';
+  String aiApiReasoningEffortName(AiReasoningEffort value) {
+    switch (value) {
+      case AiReasoningEffort.automatic:
+        return isChinese ? '自动' : 'Automatic';
+      case AiReasoningEffort.low:
+        return isChinese ? '低' : 'Low';
+      case AiReasoningEffort.medium:
+        return isChinese ? '中' : 'Medium';
+      case AiReasoningEffort.high:
+        return isChinese ? '高' : 'High';
+    }
+  }
+
+  String aiApiResponseSpeedName(AiResponseSpeed value) {
+    switch (value) {
+      case AiResponseSpeed.automatic:
+        return isChinese ? '自动' : 'Automatic';
+      case AiResponseSpeed.fast:
+        return isChinese ? '快速（Fast）' : 'Fast';
+      case AiResponseSpeed.standard:
+        return isChinese ? '标准（Default）' : 'Standard (Default)';
+    }
+  }
+
+  String get aiApiGenerationCompatibilityHint => isChinese
+      ? '自定义接口不支持这些可选参数时，请保持“自动”，否则可能返回 400。'
+      : 'If a custom endpoint does not support these optional fields, keep Automatic or it may return 400.';
   String get aiApiModelRequired =>
       isChinese ? '请先获取并选择一个模型' : 'Fetch and select a model first';
   String get aiApiModelsNotLoaded => isChinese
@@ -49,6 +90,8 @@ class AppCopy {
   String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
   String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';
   String get aiApiSaved => isChinese ? 'AI 接口配置已保存' : 'AI API config saved';
+  String aiApiPresetSaved(String name) =>
+      isChinese ? '已保存供应商预设：$name' : 'Saved provider preset: $name';
   String get aiApiTestSuccess => isChinese ? '连接成功' : 'Connection successful';
 
   String aiProviderPresetName(AiProviderPreset preset) {

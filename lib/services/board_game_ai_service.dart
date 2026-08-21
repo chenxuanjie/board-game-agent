@@ -163,7 +163,8 @@ class BoardGameAiService implements AiService {
             AiMessage.system(systemPrompt),
             ...conversation,
           ],
-          options: const AiGenerationOptions(
+          options: _generationOptions(
+            config,
             temperature: 0.1,
             topP: 0.95,
             maxCompletionTokens: 900,
@@ -265,7 +266,8 @@ class BoardGameAiService implements AiService {
       config: config,
       systemPrompt: systemPrompt,
       conversation: conversation,
-      options: const AiGenerationOptions(
+      options: _generationOptions(
+        config,
         temperature: 0.1,
         topP: 0.95,
         maxCompletionTokens: 900,
@@ -304,7 +306,8 @@ class BoardGameAiService implements AiService {
       config: config,
       systemPrompt: systemPrompt,
       conversation: conversation,
-      options: const AiGenerationOptions(
+      options: _generationOptions(
+        config,
         temperature: 0.7,
         topP: 0.95,
         maxCompletionTokens: 1024,
@@ -356,7 +359,8 @@ class BoardGameAiService implements AiService {
       AiRequest(
         endpoint: _endpointFor(config),
         messages: <AiMessage>[AiMessage.system(systemPrompt), ...conversation],
-        options: const AiGenerationOptions(
+        options: _generationOptions(
+          config,
           temperature: 0.7,
           topP: 0.95,
           maxCompletionTokens: 1024,
@@ -448,6 +452,25 @@ class BoardGameAiService implements AiService {
       model: config.model,
       apiKeyHeader: 'Authorization',
       chatPath: '/chat/completions',
+    );
+  }
+
+  AiGenerationOptions _generationOptions(
+    AiApiConfig config, {
+    required double temperature,
+    required double topP,
+    required int maxCompletionTokens,
+    required double frequencyPenalty,
+    required double presencePenalty,
+  }) {
+    return AiGenerationOptions(
+      temperature: temperature,
+      topP: topP,
+      maxCompletionTokens: maxCompletionTokens,
+      frequencyPenalty: frequencyPenalty,
+      presencePenalty: presencePenalty,
+      reasoningEffort: config.reasoningEffort.requestValue,
+      serviceTier: config.responseSpeed.serviceTier,
     );
   }
 

@@ -29,11 +29,14 @@ class LanguageSheet extends StatefulWidget {
 }
 
 class _LanguageSheetState extends State<LanguageSheet> {
+  late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _keyController;
   late List<AssetSourceConfig> _assetSourceConfigs;
-  late AiProviderPreset _selectedPreset;
+  late _AiPresetOption _selectedPreset;
   String? _selectedModel;
+  AiReasoningEffort _selectedReasoningEffort = AiReasoningEffort.automatic;
+  AiResponseSpeed _selectedResponseSpeed = AiResponseSpeed.automatic;
   bool _isTesting = false;
   bool _isTestingAssets = false;
   String? _lastTestMessage;
@@ -45,10 +48,20 @@ class _LanguageSheetState extends State<LanguageSheet> {
   void initState() {
     super.initState();
     final config = widget.controller.aiApiConfig;
+    final List<_AiPresetOption> options = _presetOptions(widget.controller);
+    _selectedPreset = _presetForConfig(options, config);
+    _nameController = TextEditingController(
+      text:
+          config.providerPreset == AiProviderPreset.custom &&
+              !AiApiConfig.isBuiltInProviderName(config.name)
+          ? config.name
+          : '',
+    );
     _urlController = TextEditingController(text: config.baseUrl);
     _keyController = TextEditingController(text: config.apiKey);
-    _selectedPreset = config.providerPreset;
     _selectedModel = config.model.trim().isEmpty ? null : config.model.trim();
+    _selectedReasoningEffort = config.reasoningEffort;
+    _selectedResponseSpeed = config.responseSpeed;
     _assetSourceConfigs = widget.controller.assetSourceConfigs;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -60,6 +73,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
   @override
   void dispose() {
     _modelRefreshDebounce?.cancel();
+    _nameController.dispose();
     _urlController.dispose();
     _keyController.dispose();
     super.dispose();
@@ -73,6 +87,11 @@ class _LanguageSheetState extends State<LanguageSheet> {
         final controller = widget.controller;
         final copy = controller.copy;
         final palette = controller.palette;
+        final List<_AiPresetOption> presetOptions = _presetOptions(controller);
+        final _AiPresetOption selectedPreset = _presetForId(
+          presetOptions,
+          _selectedPreset.id,
+        );
         return SafeArea(
           child: ConstrainedBox(
             constraints: BoxConstraints(
@@ -250,19 +269,26 @@ class _LanguageSheetState extends State<LanguageSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        _ApiDropdownField<AiProviderPreset>(
+                        _ApiDropdownField<_AiPresetOption>(
                           label: copy.aiApiPresetLabel,
-                          value: _selectedPreset,
-                          values: AiProviderPreset.values,
-                          itemLabel: copy.aiProviderPresetName,
+                          value: selectedPreset,
+                          values: presetOptions,
+                          itemLabel: (_AiPresetOption option) => option.label,
                           onChanged: _applyPreset,
                         ),
                         const SizedBox(height: 12),
+                        if (selectedPreset.isCustom) ...<Widget>[
+                          _ApiField(
+                            label: copy.aiApiProviderNameLabel,
+                            controller: _nameController,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         _ApiField(
                           label: copy.aiApiUrlLabel,
                           controller: _urlController,
                           keyboardType: TextInputType.url,
-                          readOnly: _selectedPreset != AiProviderPreset.custom,
+                          readOnly: !selectedPreset.isCustom,
                           onChanged: _handleAiFieldChanged,
                         ),
                         if (_isCrossOriginWebUrl(
@@ -295,6 +321,61 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           onChanged: (String? model) {
                             setState(() => _selectedModel = model);
                           },
+                        ),
+                        const SizedBox(height: 14),
+                        _ApiDropdownField<AiReasoningEffort>(
+                          label: copy.aiApiReasoningEffortLabel,
+                          value: _selectedReasoningEffort,
+                          values: AiReasoningEffort.values,
+                          itemLabel: copy.aiApiReasoningEffortName,
+                          onChanged: (AiReasoningEffort? value) {
+                            if (value != null) {
+                              setState(() => _selectedReasoningEffort = value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          copy.aiApiReasoningEffortHint,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: palette.homeTextPrimary.withValues(
+                                  alpha: 0.68,
+                                ),
+                                height: 1.35,
+                              ),
+                        ),
+                        const SizedBox(height: 14),
+                        _ApiDropdownField<AiResponseSpeed>(
+                          label: copy.aiApiResponseSpeedLabel,
+                          value: _selectedResponseSpeed,
+                          values: AiResponseSpeed.values,
+                          itemLabel: copy.aiApiResponseSpeedName,
+                          onChanged: (AiResponseSpeed? value) {
+                            if (value != null) {
+                              setState(() => _selectedResponseSpeed = value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          copy.aiApiResponseSpeedHint,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: palette.homeTextPrimary.withValues(
+                                  alpha: 0.68,
+                                ),
+                                height: 1.35,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          copy.aiApiGenerationCompatibilityHint,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Colors.orange.shade700,
+                                height: 1.35,
+                              ),
                         ),
                         const SizedBox(height: 14),
                         Row(
@@ -379,6 +460,21 @@ class _LanguageSheetState extends State<LanguageSheet> {
   Future<void> _saveConfig() async {
     final controller = widget.controller;
     final copy = controller.copy;
+    if (_selectedPreset.isCustom) {
+      final String providerName = _nameController.text.trim();
+      if (providerName.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(copy.aiApiProviderNameRequired)));
+        return;
+      }
+      if (AiApiConfig.isBuiltInProviderName(providerName)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(copy.aiApiProviderNameReserved)));
+        return;
+      }
+    }
     if (_selectedModel == null || _selectedModel!.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -390,17 +486,29 @@ class _LanguageSheetState extends State<LanguageSheet> {
     if (!mounted) {
       return;
     }
+    final List<_AiPresetOption> options = _presetOptions(controller);
+    final _AiPresetOption savedPreset = _presetForConfig(options, next);
     setState(() {
+      _selectedPreset = savedPreset;
       _lastTestMessage = null;
       _lastTestSucceeded = null;
     });
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(copy.aiApiSaved)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          next.providerPreset == AiProviderPreset.custom
+              ? copy.aiApiPresetSaved(next.name)
+              : copy.aiApiSaved,
+        ),
+      ),
+    );
   }
 
   void _resetDefault() {
-    _applyPreset(AiProviderPreset.openAi);
+    final _AiPresetOption openAi = _presetOptions(
+      widget.controller,
+    ).firstWhere((_AiPresetOption option) => option.id == 'builtin:openai');
+    _applyPreset(openAi);
     _saveConfig();
   }
 
@@ -448,37 +556,98 @@ class _LanguageSheetState extends State<LanguageSheet> {
   AiApiConfig _draftConfig() {
     final current = widget.controller.aiApiConfig;
     return current.copyWith(
-      name: _selectedPreset.template.name,
+      name: _selectedPreset.isCustom
+          ? _nameController.text.trim()
+          : _selectedPreset.config.name,
       baseUrl: _urlController.text.trim(),
       apiKey: _keyController.text.trim(),
       model: _selectedModel ?? '',
+      reasoningEffort: _selectedReasoningEffort,
+      responseSpeed: _selectedResponseSpeed,
     );
   }
 
-  void _applyPreset(AiProviderPreset? preset) {
+  void _applyPreset(_AiPresetOption? preset) {
     if (preset == null) {
       return;
     }
     _modelRefreshDebounce?.cancel();
     ++_modelInputRevision;
-    if (preset == AiProviderPreset.custom) {
-      setState(() {
-        _selectedPreset = preset;
-        _urlController.clear();
-        _keyController.clear();
-        _selectedModel = null;
-      });
-      widget.controller.invalidateAiModels();
-      return;
-    }
-    final config = preset.template;
+    final AiApiConfig config = preset.config;
     setState(() {
       _selectedPreset = preset;
-      _urlController.text = config.baseUrl;
-      _keyController.clear();
-      _selectedModel = null;
+      _nameController.text = preset.isCustom ? config.name : '';
+      _urlController.text = preset.isNewCustom ? '' : config.baseUrl;
+      _keyController.text = preset.isNewCustom ? '' : config.apiKey;
+      _selectedModel = preset.isNewCustom || config.model.trim().isEmpty
+          ? null
+          : config.model.trim();
+      _selectedReasoningEffort = config.reasoningEffort;
+      _selectedResponseSpeed = config.responseSpeed;
     });
     widget.controller.invalidateAiModels();
+    if (!preset.isNewCustom &&
+        config.baseUrl.trim().isNotEmpty &&
+        config.apiKey.trim().isNotEmpty) {
+      unawaited(_refreshModels());
+    }
+  }
+
+  List<_AiPresetOption> _presetOptions(AppController controller) {
+    final AppCopy copy = controller.copy;
+    return <_AiPresetOption>[
+      _AiPresetOption(
+        id: 'builtin:openai',
+        label: copy.aiProviderPresetName(AiProviderPreset.openAi),
+        config: AiApiConfig.defaultOpenAi,
+      ),
+      _AiPresetOption(
+        id: 'builtin:deepseek',
+        label: copy.aiProviderPresetName(AiProviderPreset.deepSeek),
+        config: AiApiConfig.defaultDeepSeek,
+      ),
+      ...controller.customAiPresets
+          .where(
+            (AiApiConfig config) =>
+                !AiApiConfig.isBuiltInProviderName(config.name),
+          )
+          .map(
+            (AiApiConfig config) => _AiPresetOption(
+              id: 'custom:${config.normalizedName}',
+              label: config.name,
+              config: config,
+            ),
+          ),
+      _AiPresetOption(
+        id: 'custom:new',
+        label: copy.aiProviderPresetName(AiProviderPreset.custom),
+        config: AiApiConfig.defaultCustom,
+        isNewCustom: true,
+      ),
+    ];
+  }
+
+  _AiPresetOption _presetForConfig(
+    List<_AiPresetOption> options,
+    AiApiConfig config,
+  ) {
+    final String id = switch (config.providerPreset) {
+      AiProviderPreset.openAi => 'builtin:openai',
+      AiProviderPreset.deepSeek => 'builtin:deepseek',
+      AiProviderPreset.custom =>
+        config.normalizedName.isEmpty ||
+                AiApiConfig.isBuiltInProviderName(config.name)
+            ? 'custom:new'
+            : 'custom:${config.normalizedName}',
+    };
+    return _presetForId(options, id);
+  }
+
+  _AiPresetOption _presetForId(List<_AiPresetOption> options, String id) {
+    return options.firstWhere(
+      (_AiPresetOption option) => option.id == id,
+      orElse: () => options.last,
+    );
   }
 
   void _invalidateModels() {
@@ -747,6 +916,31 @@ class _ChoiceTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AiPresetOption {
+  const _AiPresetOption({
+    required this.id,
+    required this.label,
+    required this.config,
+    this.isNewCustom = false,
+  });
+
+  final String id;
+  final String label;
+  final AiApiConfig config;
+  final bool isNewCustom;
+
+  bool get isCustom =>
+      isNewCustom || config.providerPreset == AiProviderPreset.custom;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _AiPresetOption && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 class _ModelDiscoveryPanel extends StatelessWidget {

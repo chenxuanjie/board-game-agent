@@ -12,6 +12,7 @@ class PreferencesService {
   static const _voiceReplyKey = 'voice_reply_enabled';
   static const _colorSchemeKey = 'color_scheme';
   static const _aiApiConfigKey = 'ai_api_config';
+  static const _aiCustomPresetsKey = 'ai_custom_presets';
   static const _assetSourceOrderKey = 'asset_source_order';
   static const _gameAnswerModeKey = 'game_answer_mode';
   static const _globalAnswerModeKey = 'global_answer_mode';
@@ -66,6 +67,16 @@ class PreferencesService {
   Future<void> saveAiApiConfig(AiApiConfig config) async {
     final prefs = await _prefs;
     await prefs.setString(_aiApiConfigKey, config.toJson());
+  }
+
+  Future<List<AiApiConfig>> loadAiCustomPresets() async {
+    final prefs = await _prefs;
+    return AiApiConfig.decodeList(prefs.getString(_aiCustomPresetsKey));
+  }
+
+  Future<void> saveAiCustomPresets(Iterable<AiApiConfig> configs) async {
+    final prefs = await _prefs;
+    await prefs.setString(_aiCustomPresetsKey, AiApiConfig.encodeList(configs));
   }
 
   Future<List<AssetSourceConfig>> loadAssetSourceConfigs() async {

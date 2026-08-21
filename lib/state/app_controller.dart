@@ -77,6 +77,7 @@ class AppController extends ChangeNotifier {
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
   AiApiConfig _aiApiConfig = AiApiConfig.defaultOpenAi;
+  List<AiApiConfig> _customAiPresets = <AiApiConfig>[];
   List<AiModel> _availableAiModels = <AiModel>[];
   AiModelLoadState _aiModelLoadState = AiModelLoadState.idle;
   String? _aiModelLoadError;
@@ -134,6 +135,8 @@ class AppController extends ChangeNotifier {
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
   AiApiConfig get aiApiConfig => _aiApiConfig;
+  List<AiApiConfig> get customAiPresets =>
+      List<AiApiConfig>.unmodifiable(_customAiPresets);
   List<AiModel> get availableAiModels =>
       List<AiModel>.unmodifiable(_availableAiModels);
   AiModelLoadState get aiModelLoadState => _aiModelLoadState;
@@ -188,7 +191,12 @@ class AppController extends ChangeNotifier {
     _checkForUpdates = await _preferencesService.loadCheckForUpdates();
     _gameAnswerMode = await _preferencesService.loadGameAnswerMode();
     _globalAnswerMode = await _preferencesService.loadGlobalAnswerMode();
+    _customAiPresets = await _preferencesService.loadAiCustomPresets();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
+    if (_isSaveableCustomPreset(_aiApiConfig)) {
+      _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
+      await _preferencesService.saveAiCustomPresets(_customAiPresets);
+    }
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
@@ -257,7 +265,33 @@ class AppController extends ChangeNotifier {
   Future<void> saveAiApiConfig(AiApiConfig next) async {
     _aiApiConfig = next;
     await _preferencesService.saveAiApiConfig(next);
+    if (_isSaveableCustomPreset(next)) {
+      _customAiPresets = _upsertCustomPreset(_customAiPresets, next);
+      await _preferencesService.saveAiCustomPresets(_customAiPresets);
+    }
     notifyListeners();
+  }
+
+  bool _isSaveableCustomPreset(AiApiConfig config) {
+    return config.providerPreset == AiProviderPreset.custom &&
+        config.normalizedName.isNotEmpty &&
+        !AiApiConfig.isBuiltInProviderName(config.name);
+  }
+
+  List<AiApiConfig> _upsertCustomPreset(
+    Iterable<AiApiConfig> existing,
+    AiApiConfig next,
+  ) {
+    final List<AiApiConfig> result = List<AiApiConfig>.from(existing);
+    final int index = result.indexWhere(
+      (AiApiConfig item) => item.normalizedName == next.normalizedName,
+    );
+    if (index == -1) {
+      result.add(next);
+    } else {
+      result[index] = next;
+    }
+    return result;
   }
 
   Future<List<AiModel>> refreshAiModels({
