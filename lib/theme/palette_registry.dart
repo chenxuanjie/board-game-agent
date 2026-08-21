@@ -6,8 +6,8 @@ import 'app_palette.dart';
 class PaletteRegistry {
   static const AppPalette classic = AppPalette(
     scheme: ColorSchemeOption.classic,
-    nameZh: '默认深色',
-    nameEn: 'Classic Dark',
+    nameZh: '默认主题',
+    nameEn: 'Default Theme',
     pageBackground: Color(0xFF10192B),
     surface: Color(0xFF15203A),
     surfaceContainer: Color(0xFF1B2438),

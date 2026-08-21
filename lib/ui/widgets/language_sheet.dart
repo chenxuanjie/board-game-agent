@@ -12,7 +12,6 @@ import '../../models/connectivity_status.dart';
 import '../../models/color_scheme_option.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
-import '../../theme/palette_registry.dart';
 import '../app_copy.dart';
 
 class LanguageSheet extends StatefulWidget {
@@ -164,12 +163,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           title: copy.colorSchemeName(
                             ColorSchemeOption.classic,
                           ),
-                          subtitle: '保留当前默认深色方案',
-                          previewColors: <Color>[
-                            PaletteRegistry.classic.pageBackground,
-                            PaletteRegistry.classic.primary,
-                            PaletteRegistry.classic.secondary,
-                          ],
                           selected:
                               controller.colorScheme ==
                               ColorSchemeOption.classic,
@@ -183,12 +176,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           title: copy.colorSchemeName(
                             ColorSchemeOption.sunsetCoast,
                           ),
-                          subtitle: '柔粉、暖杏与灰蓝组成的固定浅色主题',
-                          previewColors: <Color>[
-                            PaletteRegistry.sunsetCoast.primary,
-                            PaletteRegistry.sunsetCoast.secondary,
-                            PaletteRegistry.sunsetCoast.secondaryContainer,
-                          ],
                           selected:
                               controller.colorScheme ==
                               ColorSchemeOption.sunsetCoast,
@@ -864,18 +851,16 @@ class _ChoiceTile extends StatelessWidget {
   const _ChoiceTile({
     required this.palette,
     required this.title,
-    required this.subtitle,
     required this.selected,
     required this.onTap,
-    this.previewColors = const <Color>[],
+    this.subtitle,
   });
 
   final AppPalette palette;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final bool selected;
   final VoidCallback onTap;
-  final List<Color> previewColors;
 
   @override
   Widget build(BuildContext context) {
@@ -904,30 +889,6 @@ class _ChoiceTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  if (previewColors.isNotEmpty) ...<Widget>[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: previewColors
-                          .map(
-                            (Color color) => Container(
-                              width: 18,
-                              height: 18,
-                              margin: const EdgeInsets.only(right: 5),
-                              decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: palette.outline.withValues(
-                                    alpha: 0.72,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(growable: false),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
                   Text(
                     title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -936,15 +897,17 @@ class _ChoiceTile extends StatelessWidget {
                           : palette.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: selected
-                          ? selectedForeground.withValues(alpha: 0.84)
-                          : palette.textSecondary,
+                  if (subtitle case final subtitle?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: selected
+                            ? selectedForeground.withValues(alpha: 0.84)
+                            : palette.textSecondary,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

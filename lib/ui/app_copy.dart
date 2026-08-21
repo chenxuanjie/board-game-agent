@@ -288,7 +288,7 @@ class AppCopy {
   String colorSchemeName(ColorSchemeOption scheme) {
     switch (scheme) {
       case ColorSchemeOption.classic:
-        return isChinese ? '默认深色' : 'Classic Dark';
+        return isChinese ? '默认主题' : 'Default Theme';
       case ColorSchemeOption.sunsetCoast:
         return isChinese ? '晚霞海岸' : 'Sunset Coast';
     }
