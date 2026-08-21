@@ -47,7 +47,9 @@ class AppController extends ChangeNotifier {
     required SpeechService speechService,
     required TtsService ttsService,
     RealtimeVoiceService? realtimeVoiceService,
+    ColorSchemeOption? initialColorScheme,
   }) : _preferencesService = preferencesService,
+       _colorScheme = initialColorScheme ?? ColorSchemeOption.sunsetCoast,
        _aiService = aiService,
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
@@ -65,7 +67,7 @@ class AppController extends ChangeNotifier {
   final RealtimeVoiceService _realtimeVoiceService;
 
   AppLanguage _language = AppLanguage.zhHans;
-  ColorSchemeOption _colorScheme = ColorSchemeOption.classic;
+  ColorSchemeOption _colorScheme;
   bool _voiceReplyEnabled = true;
   AssistantMode _assistantMode = AssistantMode.textAndDictation;
   bool _checkForUpdates = true;

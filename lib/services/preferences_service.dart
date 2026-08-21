@@ -43,6 +43,14 @@ class PreferencesService {
 
   Future<ColorSchemeOption> loadColorScheme() async {
     final prefs = await _prefs;
+    if (!prefs.containsKey(_colorSchemeKey)) {
+      // A completely empty preference store is a fresh install. If another
+      // legacy setting already exists, keep the old classic default instead
+      // of silently changing an existing user's appearance.
+      return prefs.getKeys().isEmpty
+          ? ColorSchemeOption.sunsetCoast
+          : ColorSchemeOption.classic;
+    }
     return ColorSchemeOptionX.fromCode(prefs.getString(_colorSchemeKey));
   }
 

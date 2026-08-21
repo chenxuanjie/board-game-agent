@@ -12,6 +12,7 @@ import '../../models/connectivity_status.dart';
 import '../../models/color_scheme_option.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../../theme/palette_registry.dart';
 import '../app_copy.dart';
 
 class LanguageSheet extends StatefulWidget {
@@ -86,7 +87,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
       builder: (context, _) {
         final controller = widget.controller;
         final copy = controller.copy;
-        final palette = controller.palette;
+        final palette = AppPalette.of(context);
         final List<_AiPresetOption> presetOptions = _presetOptions(controller);
         final _AiPresetOption selectedPreset = _presetForId(
           presetOptions,
@@ -112,7 +113,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                       width: 44,
                       height: 5,
                       decoration: BoxDecoration(
-                        color: palette.homeTextPrimary.withValues(alpha: 0.22),
+                        color: palette.textPrimary.withValues(alpha: 0.22),
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
@@ -146,6 +147,13 @@ class _LanguageSheetState extends State<LanguageSheet> {
                   ),
                   const SizedBox(height: 18),
                   _SectionTitle(title: copy.colorSchemeTitle),
+                  const SizedBox(height: 8),
+                  Text(
+                    copy.colorSchemeHint,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: palette.textSecondary,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   _SectionCard(
                     palette: palette,
@@ -157,6 +165,11 @@ class _LanguageSheetState extends State<LanguageSheet> {
                             ColorSchemeOption.classic,
                           ),
                           subtitle: '保留当前默认深色方案',
+                          previewColors: <Color>[
+                            PaletteRegistry.classic.pageBackground,
+                            PaletteRegistry.classic.primary,
+                            PaletteRegistry.classic.secondary,
+                          ],
                           selected:
                               controller.colorScheme ==
                               ColorSchemeOption.classic,
@@ -168,14 +181,19 @@ class _LanguageSheetState extends State<LanguageSheet> {
                         _ChoiceTile(
                           palette: palette,
                           title: copy.colorSchemeName(
-                            ColorSchemeOption.gradientBluePink,
+                            ColorSchemeOption.sunsetCoast,
                           ),
-                          subtitle: '使用蓝粉渐变参考图风格',
+                          subtitle: '柔粉、暖杏与灰蓝组成的固定浅色主题',
+                          previewColors: <Color>[
+                            PaletteRegistry.sunsetCoast.primary,
+                            PaletteRegistry.sunsetCoast.secondary,
+                            PaletteRegistry.sunsetCoast.secondaryContainer,
+                          ],
                           selected:
                               controller.colorScheme ==
-                              ColorSchemeOption.gradientBluePink,
+                              ColorSchemeOption.sunsetCoast,
                           onTap: () => controller.setColorScheme(
-                            ColorSchemeOption.gradientBluePink,
+                            ColorSchemeOption.sunsetCoast,
                           ),
                         ),
                       ],
@@ -187,7 +205,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                   Text(
                     copy.assetPriorityHint,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: palette.homeTextPrimary.withValues(alpha: 0.72),
+                      color: palette.textPrimary.withValues(alpha: 0.72),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -207,7 +225,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                               key: ValueKey(item.id),
                               margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
-                                color: palette.homeSurface,
+                                color: palette.surface,
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: ListTile(
@@ -216,9 +234,10 @@ class _LanguageSheetState extends State<LanguageSheet> {
                                   vertical: 8,
                                 ),
                                 leading: CircleAvatar(
-                                  backgroundColor: palette.accentPrimary
-                                      .withValues(alpha: 0.16),
-                                  foregroundColor: palette.accentPrimary,
+                                  backgroundColor: palette.primary.withValues(
+                                    alpha: 0.16,
+                                  ),
+                                  foregroundColor: palette.primary,
                                   child: Text('${index + 1}'),
                                 ),
                                 title: Text(
@@ -231,15 +250,16 @@ class _LanguageSheetState extends State<LanguageSheet> {
                                   item.address,
                                   style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(
-                                        color: palette.homeTextPrimary
-                                            .withValues(alpha: 0.72),
+                                        color: palette.textPrimary.withValues(
+                                          alpha: 0.72,
+                                        ),
                                       ),
                                 ),
                                 trailing: ReorderableDragStartListener(
                                   index: index,
                                   child: Icon(
                                     Icons.drag_handle_rounded,
-                                    color: palette.homeTextPrimary.withValues(
+                                    color: palette.textPrimary.withValues(
                                       alpha: 0.72,
                                     ),
                                   ),
@@ -299,7 +319,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                             copy.aiApiWebCorsHint,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
-                                  color: palette.homeTextPrimary.withValues(
+                                  color: palette.textPrimary.withValues(
                                     alpha: 0.72,
                                   ),
                                   height: 1.35,
@@ -339,7 +359,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           copy.aiApiReasoningEffortHint,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: palette.homeTextPrimary.withValues(
+                                color: palette.textPrimary.withValues(
                                   alpha: 0.68,
                                 ),
                                 height: 1.35,
@@ -362,7 +382,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           copy.aiApiResponseSpeedHint,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: palette.homeTextPrimary.withValues(
+                                color: palette.textPrimary.withValues(
                                   alpha: 0.68,
                                 ),
                                 height: 1.35,
@@ -372,10 +392,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
                         Text(
                           copy.aiApiGenerationCompatibilityHint,
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Colors.orange.shade700,
-                                height: 1.35,
-                              ),
+                              ?.copyWith(color: palette.warning, height: 1.35),
                         ),
                         const SizedBox(height: 14),
                         Row(
@@ -410,20 +427,20 @@ class _LanguageSheetState extends State<LanguageSheet> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: (_lastTestSucceeded ?? false)
-                                  ? Colors.green.withValues(alpha: 0.14)
-                                  : Colors.red.withValues(alpha: 0.14),
+                                  ? palette.success.withValues(alpha: 0.14)
+                                  : palette.error.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: (_lastTestSucceeded ?? false)
-                                    ? Colors.green.withValues(alpha: 0.32)
-                                    : Colors.red.withValues(alpha: 0.32),
+                                    ? palette.success.withValues(alpha: 0.32)
+                                    : palette.error.withValues(alpha: 0.32),
                               ),
                             ),
                             child: Text(
                               _lastTestMessage!,
                               style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(
-                                    color: palette.homeTextPrimary,
+                                    color: palette.textPrimary,
                                     fontWeight: FontWeight.w700,
                                   ),
                             ),
@@ -758,13 +775,13 @@ class _LanguageSheetState extends State<LanguageSheet> {
       showDialog<void>(
         context: context,
         builder: (context) {
-          final palette = widget.controller.palette;
+          final palette = AppPalette.of(context);
           return AlertDialog(
             title: Text(widget.controller.copy.assetStatusDialogTitle),
             content: Text(
               lines,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                color: palette.textPrimary.withValues(alpha: 0.88),
                 height: 1.5,
               ),
             ),
@@ -781,8 +798,10 @@ class _LanguageSheetState extends State<LanguageSheet> {
         SnackBar(
           content: Text(widget.controller.copy.assetTestDone),
           backgroundColor: hasFailure
-              ? (hasSuccess ? Colors.orange.shade700 : Colors.red.shade600)
-              : Colors.green,
+              ? (hasSuccess
+                    ? AppPalette.of(context).warning
+                    : AppPalette.of(context).error)
+              : AppPalette.of(context).success,
         ),
       );
     } finally {
@@ -832,9 +851,9 @@ class _SectionCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: palette.cardSurface,
+        color: palette.surface,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: palette.cardBorder),
+        border: Border.all(color: palette.outline),
       ),
       child: child,
     );
@@ -848,6 +867,7 @@ class _ChoiceTile extends StatelessWidget {
     required this.subtitle,
     required this.selected,
     required this.onTap,
+    this.previewColors = const <Color>[],
   });
 
   final AppPalette palette;
@@ -855,17 +875,16 @@ class _ChoiceTile extends StatelessWidget {
   final String subtitle;
   final bool selected;
   final VoidCallback onTap;
+  final List<Color> previewColors;
 
   @override
   Widget build(BuildContext context) {
-    final selectedBackground = selected
-        ? palette.accentPrimary.withValues(alpha: 0.16)
-        : palette.homeSurface;
-    final selectedForeground =
-        ThemeData.estimateBrightnessForColor(selectedBackground) ==
-            Brightness.dark
-        ? Colors.white
-        : const Color(0xFF173D57);
+    final Color selectedBackground = selected
+        ? palette.primaryContainer
+        : palette.surface;
+    final Color selectedForeground = selected
+        ? palette.onPrimaryContainer
+        : palette.textPrimary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -875,7 +894,7 @@ class _ChoiceTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           color: selectedBackground,
           border: Border.all(
-            color: selected ? palette.accentPrimary : palette.cardBorder,
+            color: selected ? palette.primary : palette.outline,
             width: selected ? 1.4 : 1,
           ),
         ),
@@ -885,12 +904,36 @@ class _ChoiceTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  if (previewColors.isNotEmpty) ...<Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: previewColors
+                          .map(
+                            (Color color) => Container(
+                              width: 18,
+                              height: 18,
+                              margin: const EdgeInsets.only(right: 5),
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: palette.outline.withValues(
+                                    alpha: 0.72,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Text(
                     title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: selected
                           ? selectedForeground
-                          : palette.homeTextPrimary,
+                          : palette.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -899,7 +942,7 @@ class _ChoiceTile extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: selected
                           ? selectedForeground.withValues(alpha: 0.84)
-                          : palette.homeTextPrimary.withValues(alpha: 0.72),
+                          : palette.textSecondary,
                     ),
                   ),
                 ],
@@ -907,9 +950,7 @@ class _ChoiceTile extends StatelessWidget {
             ),
             Icon(
               selected ? Icons.check_circle : Icons.circle_outlined,
-              color: selected
-                  ? palette.accentPrimary
-                  : palette.homeTextPrimary.withValues(alpha: 0.35),
+              color: selected ? palette.primary : palette.textSecondary,
             ),
           ],
         ),
@@ -959,7 +1000,7 @@ class _ModelDiscoveryPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppCopy copy = controller.copy;
-    final AppPalette palette = controller.palette;
+    final AppPalette palette = AppPalette.of(context);
     final List<AiModel> models = controller.availableAiModels;
     final String? validSelection =
         models.any((AiModel model) => model.id == selectedModel)
@@ -972,7 +1013,7 @@ class _ModelDiscoveryPanel extends StatelessWidget {
         status = Text(
           copy.aiApiModelsNotLoaded,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: palette.homeTextPrimary.withValues(alpha: 0.68),
+            color: palette.textPrimary.withValues(alpha: 0.68),
           ),
         );
       case AiModelLoadState.loading:
@@ -991,7 +1032,7 @@ class _ModelDiscoveryPanel extends StatelessWidget {
         status = Text(
           copy.aiApiModelsLoaded(models.length),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: palette.homeTextPrimary.withValues(alpha: 0.68),
+            color: palette.textPrimary.withValues(alpha: 0.68),
           ),
         );
       case AiModelLoadState.empty:
@@ -999,14 +1040,14 @@ class _ModelDiscoveryPanel extends StatelessWidget {
           copy.aiApiModelsEmpty,
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: Colors.orange.shade700),
+          ).textTheme.bodySmall?.copyWith(color: palette.warning),
         );
       case AiModelLoadState.failure:
         status = Text(
           '${copy.aiApiModelsFailed}: ${controller.aiModelLoadError ?? ''}',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: Colors.red.shade700),
+          ).textTheme.bodySmall?.copyWith(color: palette.error),
         );
     }
 
@@ -1019,7 +1060,7 @@ class _ModelDiscoveryPanel extends StatelessWidget {
               child: Text(
                 copy.aiApiModelLabel,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFFB1C6D8),
+                  color: palette.textSecondary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1039,11 +1080,6 @@ class _ModelDiscoveryPanel extends StatelessWidget {
             key: ValueKey<String?>(validSelection),
             initialValue: validSelection,
             isExpanded: true,
-            style: const TextStyle(
-              color: Color(0xFF183D57),
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
             onChanged: onChanged,
             items: models
                 .map(
@@ -1053,11 +1089,7 @@ class _ModelDiscoveryPanel extends StatelessWidget {
                   ),
                 )
                 .toList(growable: false),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              hintText: copy.aiApiModelSelectHint,
-            ),
+            decoration: InputDecoration(hintText: copy.aiApiModelSelectHint),
           ),
         ],
         const SizedBox(height: 6),
@@ -1101,7 +1133,7 @@ class _ApiField extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: const Color(0xFFB1C6D8),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1112,16 +1144,7 @@ class _ApiField extends StatelessWidget {
           obscureText: obscureText,
           readOnly: readOnly,
           onChanged: onChanged,
-          style: const TextStyle(
-            color: Color(0xFF183D57),
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
-          decoration: const InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            hintStyle: TextStyle(color: Color(0xFF7B99AD)),
-          ),
+          decoration: const InputDecoration(),
         ),
       ],
     );
@@ -1151,25 +1174,17 @@ class _ApiDropdownField<T> extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: const Color(0xFFB1C6D8),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 6),
         InputDecorator(
-          decoration: const InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-          ),
+          decoration: const InputDecoration(),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<T>(
               value: value,
               isExpanded: true,
-              style: const TextStyle(
-                color: Color(0xFF183D57),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
               onChanged: onChanged,
               items: values
                   .map(

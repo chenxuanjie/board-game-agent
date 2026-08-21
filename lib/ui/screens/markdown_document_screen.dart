@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../state/app_controller.dart';
+import '../../theme/app_palette.dart';
 
 class MarkdownDocumentScreen extends StatefulWidget {
   const MarkdownDocumentScreen({
@@ -30,16 +31,12 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = widget.controller.palette;
-    final cardTextColor =
-        ThemeData.estimateBrightnessForColor(palette.cardSurface) ==
-            Brightness.dark
-        ? Colors.white
-        : const Color(0xFF173B52);
+    final palette = AppPalette.of(context);
+    final Color cardTextColor = palette.textPrimary;
     final secondaryTextColor = cardTextColor.withValues(alpha: 0.82);
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      backgroundColor: palette.detailOverlayBottom,
+      backgroundColor: palette.pageBackground,
       body: FutureBuilder<String?>(
         future: _contentFuture,
         builder: (context, snapshot) {
@@ -62,7 +59,7 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
             padding: const EdgeInsets.all(18),
             children: <Widget>[
               Card(
-                color: palette.cardSurface,
+                color: palette.surface,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(24),
                 ),
@@ -98,19 +95,15 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
                             context,
                           ).textTheme.bodyLarge?.copyWith(color: cardTextColor),
                           a: TextStyle(
-                            color: palette.accentPrimary,
-                            decorationColor: palette.accentPrimary,
+                            color: palette.primary,
+                            decorationColor: palette.primary,
                           ),
                           codeblockDecoration: BoxDecoration(
-                            color: palette.homeSearchBackground.withValues(
-                              alpha: 0.38,
-                            ),
+                            color: palette.inputSurface.withValues(alpha: 0.38),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           blockquoteDecoration: BoxDecoration(
-                            color: palette.homeSearchBackground.withValues(
-                              alpha: 0.22,
-                            ),
+                            color: palette.inputSurface.withValues(alpha: 0.22),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           horizontalRuleDecoration: BoxDecoration(
@@ -129,9 +122,7 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
                             color: cardTextColor.withValues(alpha: 0.14),
                           ),
                           tableCellsDecoration: BoxDecoration(
-                            color: palette.homeSearchBackground.withValues(
-                              alpha: 0.18,
-                            ),
+                            color: palette.inputSurface.withValues(alpha: 0.18),
                           ),
                           tableColumnWidth: const FlexColumnWidth(),
                           checkbox: TextStyle(color: cardTextColor),

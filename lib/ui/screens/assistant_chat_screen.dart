@@ -289,12 +289,10 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   Future<void> _openContextSheet() async {
     final controller = widget.controller;
     final copy = controller.copy;
-    final palette = controller.palette;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      backgroundColor: palette.cardSurface,
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
@@ -302,6 +300,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
             child: AnimatedBuilder(
               animation: controller,
               builder: (context, _) {
+                final palette = AppPalette.of(context);
                 final smartSupplement = controller.allowSmartSupplement(
                   useGlobalMode: widget.useGlobalMode,
                 );
@@ -323,7 +322,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                       contentPadding: EdgeInsets.zero,
                       secondary: Icon(
                         Icons.menu_book_rounded,
-                        color: palette.accentPrimary,
+                        color: palette.primary,
                       ),
                       title: Text(copy.knowledgeOnlyLabel),
                       subtitle: Text(copy.assistantKnowledgeHint),
@@ -341,7 +340,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                       contentPadding: EdgeInsets.zero,
                       secondary: Icon(
                         Icons.auto_awesome_rounded,
-                        color: palette.accentSecondary,
+                        color: palette.secondary,
                       ),
                       title: Text(copy.smartSupplementLabel),
                       subtitle: Text(
@@ -361,7 +360,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                       contentPadding: EdgeInsets.zero,
                       secondary: Icon(
                         Icons.graphic_eq_rounded,
-                        color: palette.accentPrimary,
+                        color: palette.primary,
                       ),
                       title: Text(copy.voiceReplySwitchLabel),
                       subtitle: Text(copy.voiceReplyHint),
@@ -412,7 +411,7 @@ class _AssistantAppBarTitle extends StatelessWidget {
                 subtitle,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: controller.palette.homeTextSecondary,
+                  color: AppPalette.of(context).textSecondary,
                 ),
               ),
             ],
@@ -437,14 +436,14 @@ class _ContextStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final smart = controller.allowSmartSupplement(useGlobalMode: useGlobalMode);
     final modeLabel = smart
         ? copy.smartSupplementLabel
         : copy.knowledgeOnlyLabel;
 
     return Material(
-      color: palette.aiPrimary.withValues(alpha: 0.32),
+      color: palette.primaryContainer.withValues(alpha: 0.32),
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -457,9 +456,7 @@ class _ContextStrip extends StatelessWidget {
                 width: 9,
                 height: 9,
                 decoration: BoxDecoration(
-                  color: smart
-                      ? palette.accentSecondary
-                      : palette.accentPrimary,
+                  color: smart ? palette.secondary : palette.primary,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -474,16 +471,12 @@ class _ContextStrip extends StatelessWidget {
                 controller.speechAvailable
                     ? copy.speechReady
                     : copy.speechUnavailableShort,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: palette.homeTextSecondary,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
               ),
               const SizedBox(width: 6),
-              Icon(
-                Icons.tune_rounded,
-                size: 18,
-                color: palette.homeTextSecondary,
-              ),
+              Icon(Icons.tune_rounded, size: 18, color: palette.textSecondary),
             ],
           ),
         ),
@@ -501,16 +494,16 @@ class _AssistantModeStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final bool realtimeAvailable = controller.realtimeVoiceAvailable;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: palette.cardSurface.withValues(alpha: 0.76),
+        color: palette.surface.withValues(alpha: 0.76),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.cardBorder),
+        border: Border.all(color: palette.outline),
       ),
       child: Row(
         children: <Widget>[
@@ -564,14 +557,14 @@ class _AssistantModeChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color foreground = !enabled
-        ? palette.homeTextSecondary
+        ? palette.textSecondary
         : selected
-        ? Colors.white
-        : palette.homeTextPrimary;
+        ? palette.onPrimary
+        : palette.textPrimary;
     final Color background = !enabled
-        ? palette.cardBorder.withValues(alpha: 0.16)
+        ? palette.outline.withValues(alpha: 0.16)
         : selected
-        ? palette.accentPrimary
+        ? palette.primary
         : Colors.transparent;
 
     return Semantics(
@@ -646,7 +639,7 @@ class _MessageList extends StatelessWidget {
         for (final ChatMessage message in messages)
           MessageBubble(
             message: message,
-            palette: controller.palette,
+            palette: AppPalette.of(context),
             copy: copy,
             onSpeak: message.role == ChatRole.assistant
                 ? () => controller.speakMessage(message.text)
@@ -676,7 +669,7 @@ class _QuickPromptCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final prompts = <String>[
       copy.quickPromptRule,
       copy.quickPromptFlow,
@@ -687,9 +680,9 @@ class _QuickPromptCard extends StatelessWidget {
       margin: const EdgeInsets.only(top: 12, bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       decoration: BoxDecoration(
-        color: palette.cardSurface.withValues(alpha: 0.74),
+        color: palette.surface.withValues(alpha: 0.74),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: palette.cardBorder),
+        border: Border.all(color: palette.outline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -708,7 +701,7 @@ class _QuickPromptCard extends StatelessWidget {
                     avatar: Icon(
                       Icons.arrow_outward_rounded,
                       size: 15,
-                      color: palette.accentPrimary,
+                      color: palette.primary,
                     ),
                     label: Text(prompt),
                     onPressed: () {
@@ -746,7 +739,7 @@ class _Composer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final smartSupplement = controller.allowSmartSupplement(
       useGlobalMode: useGlobalMode,
     );
@@ -758,20 +751,17 @@ class _Composer extends StatelessWidget {
         label: smartSupplement
             ? copy.smartSupplementLabel
             : copy.knowledgeOnlyLabel,
-        foregroundColor: smartSupplement
-            ? palette.accentSecondary
-            : palette.accentPrimary,
-        backgroundColor:
-            (smartSupplement ? palette.accentSecondary : palette.accentPrimary)
-                .withValues(alpha: 0.14),
+        foregroundColor: smartSupplement ? palette.secondary : palette.primary,
+        backgroundColor: (smartSupplement ? palette.secondary : palette.primary)
+            .withValues(alpha: 0.14),
         onRemove: onOpenContext,
       ),
       if (controller.voiceReplyEnabled)
         _FeatureChip(
           icon: Icons.graphic_eq_rounded,
           label: copy.voiceReplySwitchLabel,
-          foregroundColor: palette.accentPrimary,
-          backgroundColor: palette.accentPrimary.withValues(alpha: 0.14),
+          foregroundColor: palette.primary,
+          backgroundColor: palette.primary.withValues(alpha: 0.14),
           onRemove: () {
             controller.setVoiceReplyEnabled(false);
           },
@@ -796,12 +786,12 @@ class _Composer extends StatelessWidget {
         ),
         DecoratedBox(
           decoration: BoxDecoration(
-            color: palette.inputFill,
+            color: palette.inputSurface,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: palette.cardBorder),
+            border: Border.all(color: palette.outline),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: palette.cardShadow.withValues(alpha: 0.22),
+                color: palette.shadow.withValues(alpha: 0.22),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
@@ -852,9 +842,9 @@ class _Composer extends StatelessWidget {
                         },
                   style: IconButton.styleFrom(
                     backgroundColor: controller.isListening
-                        ? palette.accentSecondary
-                        : palette.accentPrimary,
-                    foregroundColor: Colors.white,
+                        ? palette.secondary
+                        : palette.primary,
+                    foregroundColor: palette.onPrimary,
                   ),
                   icon: Icon(
                     controller.isListening
@@ -878,13 +868,15 @@ class _Composer extends StatelessWidget {
                       : null,
                   style: IconButton.styleFrom(
                     backgroundColor: controller.isSending
-                        ? palette.accentPrimary
+                        ? palette.primary
                         : canSend
-                        ? palette.accentSecondary
-                        : palette.homeTextPrimary.withValues(alpha: 0.14),
-                    foregroundColor: controller.isSending || canSend
-                        ? Colors.white
-                        : palette.homeTextPrimary.withValues(alpha: 0.38),
+                        ? palette.secondary
+                        : palette.textPrimary.withValues(alpha: 0.14),
+                    foregroundColor: controller.isSending
+                        ? palette.onPrimary
+                        : canSend
+                        ? palette.onSecondary
+                        : palette.disabledForeground,
                   ),
                   icon: controller.isSending
                       ? const Icon(Icons.stop_rounded)
@@ -913,23 +905,26 @@ class _RecordingBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
       decoration: BoxDecoration(
-        color: palette.accentPrimary,
+        color: palette.primary,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: <Widget>[
-          const Icon(Icons.mic_rounded, color: Colors.white),
+          Icon(Icons.mic_rounded, color: palette.onPrimary),
           const SizedBox(width: 10),
           SizedBox(
             width: 70,
             height: 28,
-            child: _SpeechWaveform(level: controller.speechLevel),
+            child: _SpeechWaveform(
+              level: controller.speechLevel,
+              color: palette.onPrimary,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -940,7 +935,7 @@ class _RecordingBanner extends StatelessWidget {
                   copy.assistantRecordingTitle,
                   style: Theme.of(
                     context,
-                  ).textTheme.titleSmall?.copyWith(color: Colors.white),
+                  ).textTheme.titleSmall?.copyWith(color: palette.onPrimary),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -950,7 +945,7 @@ class _RecordingBanner extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.82),
+                    color: palette.onPrimary.withValues(alpha: 0.82),
                   ),
                 ),
               ],
@@ -960,7 +955,7 @@ class _RecordingBanner extends StatelessWidget {
             onPressed: () {
               onStop();
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.white),
+            style: TextButton.styleFrom(foregroundColor: palette.onPrimary),
             child: Text(copy.tapToStop),
           ),
         ],
@@ -970,28 +965,30 @@ class _RecordingBanner extends StatelessWidget {
 }
 
 class _SpeechWaveform extends StatelessWidget {
-  const _SpeechWaveform({required this.level});
+  const _SpeechWaveform({required this.level, required this.color});
 
   final double level;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _SpeechWaveformPainter(level: level),
+      painter: _SpeechWaveformPainter(level: level, color: color),
       child: const SizedBox.expand(),
     );
   }
 }
 
 class _SpeechWaveformPainter extends CustomPainter {
-  const _SpeechWaveformPainter({required this.level});
+  const _SpeechWaveformPainter({required this.level, required this.color});
 
   final double level;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final Paint paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.9)
+      ..color = color.withValues(alpha: 0.9)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
     const List<double> profile = <double>[
@@ -1020,7 +1017,7 @@ class _SpeechWaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SpeechWaveformPainter oldDelegate) =>
-      (oldDelegate.level - level).abs() > 0.01;
+      (oldDelegate.level - level).abs() > 0.01 || oldDelegate.color != color;
 }
 
 class _FeatureChip extends StatelessWidget {

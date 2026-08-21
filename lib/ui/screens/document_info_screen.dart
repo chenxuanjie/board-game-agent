@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../state/app_controller.dart';
+import '../../theme/app_palette.dart';
 
 class DocumentInfoScreen extends StatelessWidget {
   const DocumentInfoScreen({
@@ -16,20 +17,16 @@ class DocumentInfoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = controller.palette;
-    final cardTextColor =
-        ThemeData.estimateBrightnessForColor(palette.cardSurface) ==
-            Brightness.dark
-        ? Colors.white
-        : const Color(0xFF173B52);
+    final palette = AppPalette.of(context);
+    final Color cardTextColor = palette.textPrimary;
     return Scaffold(
       appBar: AppBar(title: Text(title)),
-      backgroundColor: palette.detailOverlayBottom,
+      backgroundColor: palette.pageBackground,
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: <Widget>[
           Card(
-            color: palette.cardSurface,
+            color: palette.surface,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
             ),

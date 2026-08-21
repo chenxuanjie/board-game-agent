@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final bool showAssetsLoadingBanner = controller.homeAssetsLoading;
     final query = _searchController.text.trim().toLowerCase();
     final games = controller.games.where((game) {
@@ -65,15 +65,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: palette.scaffoldBackground,
+      backgroundColor: palette.pageBackground,
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: palette.primaryGradient,
-          ),
-        ),
+        color: palette.pageBackground,
         child: SafeArea(
           child: Stack(
             children: <Widget>[
@@ -117,7 +111,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           showModalBottomSheet<void>(
                             context: context,
                             isScrollControlled: true,
-                            backgroundColor: palette.homeSurface,
                             shape: const RoundedRectangleBorder(
                               borderRadius: BorderRadius.vertical(
                                 top: Radius.circular(30),
@@ -130,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         },
                         iconSize: 40,
-                        color: Colors.white,
+                        color: palette.primary,
                         icon: const Icon(Icons.settings_rounded),
                       ),
                       const SizedBox(width: 8),
@@ -139,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           copy.favouritesOnly,
                           style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(
-                                color: palette.homeTextPrimary,
+                                color: palette.textPrimary,
                                 fontSize: 18,
                               ),
                         ),
@@ -148,14 +141,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         value: _favouritesOnly,
                         onChanged: (value) =>
                             setState(() => _favouritesOnly = value),
-                        activeThumbColor: palette.accentPrimary,
-                        activeTrackColor: palette.accentPrimary.withValues(
+                        activeThumbColor: palette.primary,
+                        activeTrackColor: palette.primary.withValues(
                           alpha: 0.55,
                         ),
-                        inactiveThumbColor: palette.homeTextPrimary.withValues(
+                        inactiveThumbColor: palette.textPrimary.withValues(
                           alpha: 0.24,
                         ),
-                        inactiveTrackColor: palette.homeTextPrimary.withValues(
+                        inactiveTrackColor: palette.textPrimary.withValues(
                           alpha: 0.12,
                         ),
                       ),
@@ -227,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _showingLibraryUpdateDialog = true;
     final copy = controller.copy;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final titles =
         controller.pendingLibraryUpdate?.changedGameTitles ?? const <String>[];
     debugPrint('show update dialog: [${titles.join(', ')}]');
@@ -246,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 copy.libraryUpdateMessage,
                 style: textTheme.bodyMedium?.copyWith(
-                  color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                  color: palette.textPrimary.withValues(alpha: 0.88),
                   height: 1.55,
                 ),
               ),
@@ -258,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     update.changedGameTitles.length,
                   ),
                   style: textTheme.titleSmall?.copyWith(
-                    color: palette.homeTextPrimary,
+                    color: palette.textPrimary,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -269,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       '• $title',
                       style: textTheme.bodyMedium?.copyWith(
-                        color: palette.homeTextPrimary.withValues(alpha: 0.92),
+                        color: palette.textPrimary.withValues(alpha: 0.92),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -334,7 +327,7 @@ class _ConnectivityStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final copy = controller.copy;
     return Row(
       children: <Widget>[
@@ -388,10 +381,10 @@ class _StatusLamp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color lampColor = switch (status.state) {
-      ConnectivityState.success => const Color(0xFF26D07C),
-      ConnectivityState.warning => const Color(0xFFFFA940),
-      ConnectivityState.failure => const Color(0xFFFF5E5E),
-      ConnectivityState.unknown => const Color(0xFF8B97A9),
+      ConnectivityState.success => palette.success,
+      ConnectivityState.warning => palette.warning,
+      ConnectivityState.failure => palette.error,
+      ConnectivityState.unknown => palette.disabledForeground,
     };
     return InkWell(
       borderRadius: BorderRadius.circular(16),
@@ -404,7 +397,7 @@ class _StatusLamp extends StatelessWidget {
               content: Text(
                 details.join('\n'),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                  color: palette.textPrimary.withValues(alpha: 0.88),
                   height: 1.5,
                 ),
               ),
@@ -421,9 +414,9 @@ class _StatusLamp extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: palette.cardSurface.withValues(alpha: 0.86),
+          color: palette.surface.withValues(alpha: 0.86),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: palette.cardBorder),
+          border: Border.all(color: palette.outline),
         ),
         child: Row(
           children: <Widget>[
@@ -449,7 +442,7 @@ class _StatusLamp extends StatelessWidget {
                   Text(
                     label,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: palette.homeTextPrimary,
+                      color: palette.textPrimary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -459,7 +452,7 @@ class _StatusLamp extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: palette.homeTextPrimary.withValues(alpha: 0.72),
+                      color: palette.textPrimary.withValues(alpha: 0.72),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -500,22 +493,22 @@ class _SearchBar extends StatelessWidget {
     return Container(
       height: 70,
       decoration: BoxDecoration(
-        color: palette.homeSearchBackground,
+        color: palette.inputSurface,
         borderRadius: BorderRadius.circular(30),
       ),
       child: TextField(
         controller: controller,
         onChanged: onChanged,
-        style: TextStyle(color: palette.homeTextPrimary),
+        style: TextStyle(color: palette.textPrimary),
         decoration: InputDecoration(
           border: InputBorder.none,
           prefixIcon: Icon(
             Icons.search_rounded,
-            color: palette.homeTextSecondary,
+            color: palette.textSecondary,
             size: 32,
           ),
           hintText: hintText,
-          hintStyle: TextStyle(color: palette.homeSearchHint, fontSize: 20),
+          hintStyle: TextStyle(color: palette.textSecondary, fontSize: 20),
           contentPadding: const EdgeInsets.symmetric(vertical: 22),
         ),
       ),
@@ -542,11 +535,11 @@ class _AiOrbButton extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: <Color>[palette.accentPrimary, palette.aiSecondary],
+            colors: <Color>[palette.primary, palette.secondary],
           ),
           boxShadow: <BoxShadow>[
             BoxShadow(
-              color: palette.accentPrimary.withValues(alpha: 0.3),
+              color: palette.primary.withValues(alpha: 0.3),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -555,7 +548,7 @@ class _AiOrbButton extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: <Widget>[
-            const Icon(Icons.forum_rounded, color: Colors.white, size: 34),
+            Icon(Icons.forum_rounded, color: palette.onPrimary, size: 34),
             Positioned(
               right: 6,
               bottom: 6,
@@ -563,17 +556,14 @@ class _AiOrbButton extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: palette.surface,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: palette.homeSearchBackground,
-                    width: 2,
-                  ),
+                  border: Border.all(color: palette.inputSurface, width: 2),
                 ),
                 child: Icon(
                   Icons.auto_awesome_rounded,
                   size: 12,
-                  color: palette.aiSecondary,
+                  color: palette.secondary,
                 ),
               ),
             ),
@@ -606,15 +596,8 @@ class _GlobalAiCard extends StatelessWidget {
         height: 158,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[
-              palette.aiPrimary,
-              palette.aiSecondary,
-              palette.accentPrimary,
-            ],
-          ),
+          color: palette.surfaceContainer,
+          border: Border.all(color: palette.primary.withValues(alpha: 0.42)),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
@@ -625,7 +608,7 @@ class _GlobalAiCard extends StatelessWidget {
                 right: -10,
                 child: _GlowCircle(
                   size: 112,
-                  color: palette.accentSecondary.withValues(alpha: 0.25),
+                  color: palette.secondary.withValues(alpha: 0.25),
                 ),
               ),
               Positioned(
@@ -633,7 +616,7 @@ class _GlobalAiCard extends StatelessWidget {
                 left: 110,
                 child: _GlowCircle(
                   size: 160,
-                  color: Colors.white.withValues(alpha: 0.14),
+                  color: palette.secondaryContainer.withValues(alpha: 0.44),
                 ),
               ),
               Positioned.fill(
@@ -650,12 +633,12 @@ class _GlobalAiCard extends StatelessWidget {
                       width: 86,
                       height: 86,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.14),
+                        color: palette.primaryContainer.withValues(alpha: 0.48),
                         borderRadius: BorderRadius.circular(24),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.psychology_alt_rounded,
-                        color: Colors.white,
+                        color: palette.onPrimaryContainer,
                         size: 44,
                       ),
                     ),
@@ -669,7 +652,7 @@ class _GlobalAiCard extends StatelessWidget {
                             title,
                             style: Theme.of(context).textTheme.displayMedium
                                 ?.copyWith(
-                                  color: palette.homeTextPrimary,
+                                  color: palette.textPrimary,
                                   fontSize: 30,
                                 ),
                           ),
@@ -680,7 +663,7 @@ class _GlobalAiCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyLarge
                                 ?.copyWith(
-                                  color: palette.homeTextPrimary.withValues(
+                                  color: palette.textPrimary.withValues(
                                     alpha: 0.84,
                                   ),
                                 ),
@@ -722,7 +705,7 @@ class _GameListCard extends StatelessWidget {
         height: 156,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          color: palette.cardSurface,
+          color: palette.surface,
         ),
         child: Stack(
           children: <Widget>[
@@ -744,9 +727,9 @@ class _GameListCard extends StatelessWidget {
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                     colors: <Color>[
-                      Colors.black.withValues(alpha: 0.42),
-                      palette.detailOverlayMid.withValues(alpha: 0.18),
-                      Colors.black.withValues(alpha: 0.34),
+                      palette.surface.withValues(alpha: 0.90),
+                      palette.surface.withValues(alpha: 0.36),
+                      palette.shadow.withValues(alpha: 0.32),
                     ],
                   ),
                 ),
@@ -761,11 +744,11 @@ class _GameListCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: palette.outline.withValues(alpha: 0.84),
                   ),
                   boxShadow: <BoxShadow>[
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.16),
+                      color: palette.shadow.withValues(alpha: 0.16),
                       blurRadius: 12,
                       offset: const Offset(0, 8),
                     ),
@@ -799,7 +782,7 @@ class _GameListCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.displayMedium
                               ?.copyWith(
-                                color: palette.homeTextPrimary,
+                                color: palette.textPrimary,
                                 fontSize: 34,
                               ),
                         ),
@@ -808,7 +791,7 @@ class _GameListCard extends StatelessWidget {
                           game.subtitle,
                           style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(
-                                color: palette.homeTextPrimary.withValues(
+                                color: palette.textPrimary.withValues(
                                   alpha: 0.76,
                                 ),
                               ),
@@ -826,7 +809,7 @@ class _GameListCard extends StatelessWidget {
                           child: Text(
                             '${game.playerCount} · ${game.playTime}',
                             style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(color: palette.homeTextPrimary),
+                                ?.copyWith(color: palette.textPrimary),
                           ),
                         ),
                       ],
@@ -835,7 +818,7 @@ class _GameListCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   Icon(
                     Icons.arrow_forward_ios_rounded,
-                    color: palette.homeTextPrimary.withValues(alpha: 0.88),
+                    color: palette.textPrimary.withValues(alpha: 0.88),
                   ),
                 ],
               ),
@@ -888,16 +871,12 @@ class _AssetCardImageState extends State<_AssetCardImage> {
     if (path == null) {
       return DecoratedBox(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[const Color(0xFF102339), const Color(0xFF081426)],
-          ),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
-        child: const Center(
+        child: Center(
           child: Icon(
             Icons.image_not_supported_outlined,
-            color: Colors.white54,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             size: 34,
           ),
         ),
@@ -924,10 +903,10 @@ class _AssetCardImageState extends State<_AssetCardImage> {
             });
           });
         }
-        return const Center(
+        return Center(
           child: Icon(
             Icons.image_not_supported_outlined,
-            color: Colors.white54,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             size: 34,
           ),
         );
@@ -955,7 +934,7 @@ class _HomeAssetsLoadingBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final copy = controller.copy;
     final int total = controller.homeAssetsTotal;
     final int loaded = controller.homeAssetsLoaded.clamp(0, total);
@@ -964,9 +943,9 @@ class _HomeAssetsLoadingBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
-        color: palette.cardSurface.withValues(alpha: 0.88),
+        color: palette.surface.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.cardBorder),
+        border: Border.all(color: palette.outline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -978,9 +957,7 @@ class _HomeAssetsLoadingBanner extends StatelessWidget {
                 height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.4,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    palette.accentSecondary,
-                  ),
+                  valueColor: AlwaysStoppedAnimation<Color>(palette.secondary),
                 ),
               ),
               const SizedBox(width: 10),
@@ -988,7 +965,7 @@ class _HomeAssetsLoadingBanner extends StatelessWidget {
                 child: Text(
                   copy.homeAssetsLoadingTitle,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: palette.homeTextPrimary,
+                    color: palette.textPrimary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -996,7 +973,7 @@ class _HomeAssetsLoadingBanner extends StatelessWidget {
               Text(
                 copy.homeAssetsLoadingProgress(loaded, total),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: palette.homeTextPrimary.withValues(alpha: 0.72),
+                  color: palette.textPrimary.withValues(alpha: 0.72),
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1008,10 +985,8 @@ class _HomeAssetsLoadingBanner extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 8,
-              backgroundColor: palette.homeTextPrimary.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                palette.accentSecondary,
-              ),
+              backgroundColor: palette.textPrimary.withValues(alpha: 0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(palette.secondary),
             ),
           ),
         ],

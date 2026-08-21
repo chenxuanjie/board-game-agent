@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../../state/app_controller.dart';
+import '../../theme/app_palette.dart';
 
 class PdfDocumentScreen extends StatefulWidget {
   const PdfDocumentScreen({
@@ -33,10 +34,10 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = widget.controller.palette;
+    final palette = AppPalette.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      backgroundColor: palette.detailOverlayBottom,
+      backgroundColor: palette.pageBackground,
       body: FutureBuilder<String?>(
         future: _localPathFuture,
         builder: (context, snapshot) {
@@ -49,13 +50,13 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
             );
           }
           return DecoratedBox(
-            decoration: BoxDecoration(color: palette.detailOverlayBottom),
+            decoration: BoxDecoration(color: palette.pageBackground),
             child: PdfViewer.file(
               snapshot.data!,
               controller: _pdfController,
               useProgressiveLoading: false,
               params: PdfViewerParams(
-                backgroundColor: palette.detailOverlayBottom,
+                backgroundColor: palette.pageBackground,
                 margin: 10,
                 minScale: 1.0,
                 maxScale: 5.0,
@@ -95,15 +96,17 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
                               vertical: 5,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
+                              color: palette.surfaceContainer.withValues(
+                                alpha: 0.94,
+                              ),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               _totalPages > 0
                                   ? '$_currentPage/$_totalPages'
                                   : '$_currentPage',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: palette.textPrimary,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),

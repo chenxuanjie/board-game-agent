@@ -18,8 +18,10 @@ class AppCopy {
       isChinese ? '$count 个桌游' : '$count board games';
   String get openSettings => isChinese ? '语言与设置' : 'Language and settings';
   String get languageTitle => isChinese ? '语言设置' : 'Language';
-  String get colorSchemeTitle => isChinese ? '配色方案' : 'Color Scheme';
-  String get colorSchemeHint => isChinese ? '切换不同视觉风格' : 'Switch visual styles';
+  String get colorSchemeTitle => isChinese ? '主题风格' : 'Theme style';
+  String get colorSchemeHint => isChinese
+      ? '选择一套完整的页面、组件与状态视觉风格'
+      : 'Choose a complete visual style for pages, components, and states';
   String get aiApiTitle => isChinese ? 'AI 接口配置' : 'AI API Config';
   String get aiApiProviderNameLabel => isChinese ? '供应商名称' : 'Provider name';
   String get aiApiProviderNameRequired =>
@@ -287,8 +289,8 @@ class AppCopy {
     switch (scheme) {
       case ColorSchemeOption.classic:
         return isChinese ? '默认深色' : 'Classic Dark';
-      case ColorSchemeOption.gradientBluePink:
-        return isChinese ? '高级渐变' : 'Advanced Gradient';
+      case ColorSchemeOption.sunsetCoast:
+        return isChinese ? '晚霞海岸' : 'Sunset Coast';
     }
   }
 }

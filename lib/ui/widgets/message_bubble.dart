@@ -29,14 +29,10 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isUser = message.role == ChatRole.user;
-    final Color userForeground =
-        ThemeData.estimateBrightnessForColor(palette.messageUserBubble) ==
-            Brightness.dark
-        ? Colors.white
-        : palette.messageAssistantText;
+    final Color userForeground = palette.onPrimaryContainer;
     final ThemeData theme = Theme.of(context);
     final TextStyle bodyStyle = theme.textTheme.bodyLarge!.copyWith(
-      color: isUser ? userForeground : palette.messageAssistantText,
+      color: isUser ? userForeground : palette.textPrimary,
       height: 1.5,
     );
     final BorderRadius borderRadius = BorderRadius.circular(24).copyWith(
@@ -64,15 +60,13 @@ class MessageBubble extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: isUser
-                        ? palette.messageUserBubble
-                        : palette.messageAssistantBubble,
+                        ? palette.primaryContainer
+                        : palette.surfaceContainer,
                     borderRadius: borderRadius,
-                    border: isUser
-                        ? null
-                        : Border.all(color: palette.cardBorder),
+                    border: isUser ? null : Border.all(color: palette.outline),
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: palette.cardShadow.withValues(alpha: 0.28),
+                        color: palette.shadow.withValues(alpha: 0.28),
                         blurRadius: 16,
                         offset: const Offset(0, 7),
                       ),
@@ -101,25 +95,26 @@ class MessageBubble extends StatelessWidget {
                                 .copyWith(
                                   p: bodyStyle,
                                   h1: theme.textTheme.titleLarge?.copyWith(
-                                    color: palette.messageAssistantText,
+                                    color: palette.textPrimary,
                                   ),
                                   h2: theme.textTheme.titleMedium?.copyWith(
-                                    color: palette.messageAssistantText,
+                                    color: palette.textPrimary,
                                   ),
                                   h3: theme.textTheme.titleMedium?.copyWith(
-                                    color: palette.messageAssistantText,
+                                    color: palette.textPrimary,
                                   ),
                                   code: theme.textTheme.bodyMedium?.copyWith(
-                                    color: palette.messageAssistantText,
+                                    color: palette.textPrimary,
                                   ),
                                   strong: TextStyle(
                                     fontWeight: FontWeight.w800,
-                                    color: palette.messageAssistantText,
+                                    color: palette.textPrimary,
                                   ),
                                   blockquote: theme.textTheme.bodyMedium
                                       ?.copyWith(
-                                        color: palette.messageAssistantText
-                                            .withValues(alpha: 0.8),
+                                        color: palette.textPrimary.withValues(
+                                          alpha: 0.8,
+                                        ),
                                       ),
                                   listBullet: bodyStyle,
                                 ),
@@ -143,12 +138,12 @@ class MessageBubble extends StatelessWidget {
                                     avatar: Icon(
                                       Icons.menu_book_rounded,
                                       size: 15,
-                                      color: palette.accentPrimary,
+                                      color: palette.primary,
                                     ),
                                     label: Text(evidence.sourceName),
                                     visualDensity: VisualDensity.compact,
                                     side: BorderSide.none,
-                                    backgroundColor: palette.aiPrimary
+                                    backgroundColor: palette.primaryContainer
                                         .withValues(alpha: 0.18),
                                   ),
                                 )
@@ -160,7 +155,7 @@ class MessageBubble extends StatelessWidget {
                           Text(
                             'AI',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: palette.messageAssistantText.withValues(
+                              color: palette.textPrimary.withValues(
                                 alpha: 0.58,
                               ),
                             ),
@@ -174,8 +169,9 @@ class MessageBubble extends StatelessWidget {
                               Text(
                                 _formatTime(message.timestamp),
                                 style: theme.textTheme.labelSmall?.copyWith(
-                                  color: palette.messageAssistantText
-                                      .withValues(alpha: 0.56),
+                                  color: palette.textPrimary.withValues(
+                                    alpha: 0.56,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -192,7 +188,7 @@ class MessageBubble extends StatelessWidget {
                                   icon: Icon(
                                     Icons.volume_up_rounded,
                                     size: 17,
-                                    color: palette.buttonOutline,
+                                    color: palette.primary,
                                   ),
                                 ),
                               if (message.isFailed && onRetry != null)
@@ -204,7 +200,7 @@ class MessageBubble extends StatelessWidget {
                                   ),
                                   label: Text(retryTooltip),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: palette.accentPrimary,
+                                    foregroundColor: palette.primary,
                                     visualDensity: VisualDensity.compact,
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 6,
@@ -255,7 +251,7 @@ class _StreamingPlaceholder extends StatelessWidget {
           height: 14,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: palette.accentPrimary,
+            color: palette.primary,
           ),
         ),
         const SizedBox(width: 8),
@@ -291,12 +287,12 @@ class _SourceLabel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(icon, size: 15, color: palette.accentPrimary),
+        Icon(icon, size: 15, color: palette.primary),
         const SizedBox(width: 5),
         Text(
           label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: palette.accentPrimary,
+            color: palette.primary,
             fontWeight: FontWeight.w700,
           ),
         ),

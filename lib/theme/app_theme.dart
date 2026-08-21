@@ -4,170 +4,271 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_palette.dart';
 
 class AppTheme {
-  static const Color parchment = Color(0xFFF5E7D3);
-  static const Color sand = Color(0xFFE7D5BC);
-  static const Color ink = Color(0xFF1E241F);
-  static const Color cedar = Color(0xFF7E4A2F);
-  static const Color teal = Color(0xFF184C54);
-  static const Color moss = Color(0xFF5E6D4E);
-  static const Color cream = Color(0xFFFBF6EE);
-
   static ThemeData buildTheme(AppPalette palette) {
-    final bool isDarkSurface =
-        ThemeData.estimateBrightnessForColor(palette.cardSurface) ==
-        Brightness.dark;
-    final base = ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: palette.accentPrimary,
-        brightness: isDarkSurface ? Brightness.dark : Brightness.light,
-        primary: palette.accentPrimary,
-        secondary: palette.accentSecondary,
-        surface: palette.cardSurface,
-      ),
+    final Brightness brightness = ThemeData.estimateBrightnessForColor(
+      palette.pageBackground,
+    );
+    final ColorScheme colorScheme = ColorScheme(
+      brightness: brightness,
+      primary: palette.primary,
+      onPrimary: palette.onPrimary,
+      primaryContainer: palette.primaryContainer,
+      onPrimaryContainer: palette.onPrimaryContainer,
+      secondary: palette.secondary,
+      onSecondary: palette.onSecondary,
+      secondaryContainer: palette.secondaryContainer,
+      onSecondaryContainer: palette.onSecondaryContainer,
+      tertiary: palette.secondary,
+      onTertiary: palette.onSecondary,
+      tertiaryContainer: palette.secondaryContainer,
+      onTertiaryContainer: palette.onSecondaryContainer,
+      error: palette.error,
+      onError: palette.onError,
+      errorContainer: palette.error.withValues(alpha: 0.16),
+      onErrorContainer: palette.error,
+      surface: palette.surface,
+      onSurface: palette.textPrimary,
+      surfaceDim: palette.pageBackground,
+      surfaceBright: palette.surface,
+      surfaceContainerLowest: palette.pageBackground,
+      surfaceContainerLow: palette.surface,
+      surfaceContainer: palette.surfaceContainer,
+      surfaceContainerHigh: palette.surfaceVariant,
+      surfaceContainerHighest: palette.surfaceVariant,
+      onSurfaceVariant: palette.textSecondary,
+      outline: palette.outline,
+      outlineVariant: palette.outline.withValues(alpha: 0.62),
+      shadow: palette.shadow,
+      scrim: palette.shadow.withValues(alpha: 0.56),
+      inverseSurface: palette.textPrimary,
+      onInverseSurface: palette.pageBackground,
+      inversePrimary: palette.primaryContainer,
+      surfaceTint: palette.primary,
     );
 
-    final bodyTextTheme = GoogleFonts.manropeTextTheme(base.textTheme);
+    final ThemeData base = ThemeData(
+      useMaterial3: true,
+      brightness: brightness,
+      colorScheme: colorScheme,
+      extensions: <ThemeExtension<dynamic>>[
+        AppPaletteThemeExtension(palette),
+      ],
+      scaffoldBackgroundColor: palette.pageBackground,
+      canvasColor: palette.pageBackground,
+      cardColor: palette.surface,
+      dividerColor: palette.outline.withValues(alpha: 0.7),
+      splashColor: palette.primary.withValues(alpha: 0.12),
+      highlightColor: palette.primary.withValues(alpha: 0.08),
+    );
+    final TextTheme bodyTextTheme = GoogleFonts.manropeTextTheme(
+      base.textTheme,
+    );
 
     return base.copyWith(
-      scaffoldBackgroundColor: palette.scaffoldBackground,
       textTheme: bodyTextTheme.copyWith(
         displayLarge: GoogleFonts.cormorantGaramond(
           fontSize: 44,
           fontWeight: FontWeight.w700,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         displayMedium: GoogleFonts.cormorantGaramond(
           fontSize: 34,
           fontWeight: FontWeight.w700,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         headlineMedium: GoogleFonts.cormorantGaramond(
           fontSize: 30,
           fontWeight: FontWeight.w700,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         titleLarge: GoogleFonts.manrope(
           fontSize: 22,
           fontWeight: FontWeight.w800,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         titleMedium: GoogleFonts.manrope(
           fontSize: 17,
           fontWeight: FontWeight.w700,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         bodyLarge: GoogleFonts.manrope(
           fontSize: 16,
           height: 1.45,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         bodyMedium: GoogleFonts.manrope(
           fontSize: 14,
           height: 1.45,
-          color: palette.homeTextPrimary.withValues(alpha: 0.86),
+          color: palette.textSecondary,
+        ),
+        bodySmall: GoogleFonts.manrope(
+          fontSize: 12,
+          height: 1.4,
+          color: palette.textSecondary,
         ),
         labelLarge: GoogleFonts.manrope(
           fontWeight: FontWeight.w700,
           letterSpacing: 0.1,
+          color: palette.textPrimary,
         ),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
-        foregroundColor: palette.homeTextPrimary,
+        foregroundColor: palette.textPrimary,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: GoogleFonts.manrope(
           fontSize: 18,
           fontWeight: FontWeight.w800,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
       ),
       cardTheme: CardThemeData(
-        color: palette.cardSurface,
+        color: palette.surface,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
-          side: BorderSide(color: palette.cardBorder),
+          side: BorderSide(color: palette.outline),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: palette.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+          side: BorderSide(color: palette.outline),
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
+        labelStyle: GoogleFonts.manrope(
+          color: palette.onSecondaryContainer,
+          fontWeight: FontWeight.w700,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: palette.accentSecondary.withValues(alpha: 0.22),
-        selectedColor: palette.accentPrimary.withValues(alpha: 0.12),
+        backgroundColor: palette.secondaryContainer,
+        selectedColor: palette.primaryContainer,
         side: BorderSide.none,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: palette.inputFill,
-        hintStyle: GoogleFonts.manrope(
-          color: palette.homeTextPrimary.withValues(alpha: 0.45),
-        ),
+        fillColor: palette.inputSurface,
+        hintStyle: GoogleFonts.manrope(color: palette.textSecondary),
+        labelStyle: GoogleFonts.manrope(color: palette.textSecondary),
+        prefixIconColor: palette.textSecondary,
+        suffixIconColor: palette.textSecondary,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
           vertical: 18,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: palette.outline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide(color: palette.cardBorder),
+          borderSide: BorderSide(color: palette.outline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide(color: palette.accentPrimary, width: 1.4),
+          borderSide: BorderSide(color: palette.focusRing, width: 1.6),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: BorderSide(color: palette.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: BorderSide(color: palette.error, width: 1.6),
         ),
       ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll<Color>(palette.surface),
+          surfaceTintColor: const WidgetStatePropertyAll<Color>(
+            Colors.transparent,
+          ),
+          side: WidgetStatePropertyAll<BorderSide>(
+            BorderSide(color: palette.outline),
+          ),
+        ),
+        textStyle: GoogleFonts.manrope(color: palette.textPrimary),
+      ),
       dialogTheme: DialogThemeData(
-        backgroundColor: palette.cardSurface,
+        backgroundColor: palette.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
-          side: BorderSide(color: palette.cardBorder),
+          side: BorderSide(color: palette.outline),
         ),
         titleTextStyle: GoogleFonts.manrope(
           fontSize: 18,
           fontWeight: FontWeight.w800,
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
         ),
         contentTextStyle: GoogleFonts.manrope(
           fontSize: 15,
           height: 1.5,
-          color: palette.homeTextPrimary.withValues(alpha: 0.88),
+          color: palette.textPrimary,
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: palette.detailSurface,
+        backgroundColor: palette.surfaceContainer,
         contentTextStyle: GoogleFonts.manrope(
-          color: palette.homeTextPrimary,
+          color: palette.textPrimary,
           fontWeight: FontWeight.w700,
         ),
-        actionTextColor: palette.accentPrimary,
+        actionTextColor: palette.primary,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: palette.accentPrimary,
+          foregroundColor: palette.primary,
           textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
         ),
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: palette.accentPrimary,
-          foregroundColor:
-              ThemeData.estimateBrightnessForColor(palette.accentPrimary) ==
-                  Brightness.dark
-              ? Colors.white
-              : const Color(0xFF102339),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: palette.primary,
+          side: BorderSide(color: palette.primary),
           textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: palette.primary,
+          foregroundColor: palette.onPrimary,
+          textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith<Color?>(
+          (states) => states.contains(WidgetState.selected)
+              ? palette.onPrimary
+              : palette.disabledForeground,
+        ),
+        trackColor: WidgetStateProperty.resolveWith<Color?>(
+          (states) => states.contains(WidgetState.selected)
+              ? palette.primary
+              : palette.disabledBackground,
+        ),
+        trackOutlineColor: WidgetStatePropertyAll<Color>(palette.outline),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: palette.primary,
+        circularTrackColor: palette.primary.withValues(alpha: 0.18),
+        linearTrackColor: palette.primary.withValues(alpha: 0.18),
+      ),
+      iconTheme: IconThemeData(color: palette.textPrimary),
     );
   }
 }

@@ -16,12 +16,16 @@ import 'services/speech_service.dart';
 import 'services/tts_service.dart';
 import 'services/realtime_voice_service.dart';
 import 'state/app_controller.dart';
+import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
 
 Future<void> main() async {
   enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
+
+  final preferencesService = PreferencesService();
+  final initialColorScheme = await _loadInitialColorScheme(preferencesService);
 
   final updateStore = SecureWebDavSettingsStore(appId: 'board_game_agent');
   await _prepareUpdateSettings(updateStore);
@@ -31,7 +35,8 @@ Future<void> main() async {
   );
 
   final AppController controller = AppController(
-    preferencesService: PreferencesService(),
+    preferencesService: preferencesService,
+    initialColorScheme: initialColorScheme,
     aiService: BoardGameAiService(aiClient: OpenAiDartAiClient()),
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(),
@@ -46,6 +51,18 @@ Future<void> main() async {
       updateSettingsController: updateSettingsController,
     ),
   );
+}
+
+Future<ColorSchemeOption> _loadInitialColorScheme(
+  PreferencesService preferencesService,
+) async {
+  try {
+    return await preferencesService.loadColorScheme();
+  } catch (_) {
+    // Keep the native launch path usable even if the preference store is
+    // temporarily unavailable. The controller will retry during initialize.
+    return ColorSchemeOption.sunsetCoast;
+  }
 }
 
 Future<void> _prepareUpdateSettings(
@@ -219,10 +236,7 @@ class _StartupScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF0F172A),
-      body: Center(child: CircularProgressIndicator(color: Color(0xFF23D2D8))),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
 
@@ -234,33 +248,24 @@ class _StartupErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Icon(
-                Icons.error_outline_rounded,
-                color: Colors.white,
-                size: 44,
-              ),
+              const Icon(Icons.error_outline_rounded, size: 44),
               const SizedBox(height: 14),
-              Text(
-                '启动失败',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(color: Colors.white),
-              ),
+              Text('启动失败', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 10),
               Text(
                 '$error',
                 textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 18),
               FilledButton(onPressed: onRetry, child: const Text('重试')),

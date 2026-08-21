@@ -44,17 +44,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     final controller = widget.controller;
     final copy = controller.copy;
     final game = controller.selectedGame;
-    final palette = controller.palette;
+    final palette = AppPalette.of(context);
     final editionLabel = game.editionLabel ?? '';
 
     return Scaffold(
-      backgroundColor: palette.detailOverlayBottom,
+      backgroundColor: palette.pageBackground,
       body: Stack(
         children: <Widget>[
           Positioned.fill(
             child: _RemoteGameImage(
               controller: controller,
               remotePath: game.bannerAssetPath,
+              palette: palette,
               fit: BoxFit.cover,
             ),
           ),
@@ -65,9 +66,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    palette.detailOverlayTop,
-                    palette.detailOverlayMid,
-                    palette.detailOverlayBottom,
+                    palette.surfaceVariant,
+                    palette.surfaceContainer,
+                    palette.pageBackground,
                   ],
                 ),
               ),
@@ -114,7 +115,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                       ? '${game.title}：$editionLabel'
                       : '${game.title}: $editionLabel',
                   style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                    color: palette.homeTextPrimary,
+                    color: palette.textPrimary,
                     fontSize: 30,
                   ),
                 ),
@@ -122,7 +123,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                 Text(
                   '${game.subtitle} (${game.releaseYear})',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: palette.homeTextPrimary.withValues(alpha: 0.78),
+                    color: palette.textPrimary.withValues(alpha: 0.78),
                     fontSize: 22,
                     fontWeight: FontWeight.w500,
                   ),
@@ -270,11 +271,13 @@ class _RemoteGameImage extends StatefulWidget {
   const _RemoteGameImage({
     required this.controller,
     required this.remotePath,
+    required this.palette,
     required this.fit,
   });
 
   final AppController controller;
   final String remotePath;
+  final AppPalette palette;
   final BoxFit fit;
 
   @override
@@ -303,11 +306,11 @@ class _RemoteGameImageState extends State<_RemoteGameImage> {
   Widget build(BuildContext context) {
     if (_resolvedPath == null) {
       return DecoratedBox(
-        decoration: const BoxDecoration(color: Color(0xFF0C1624)),
-        child: const Center(
+        decoration: BoxDecoration(color: widget.palette.surfaceVariant),
+        child: Center(
           child: Icon(
             Icons.image_not_supported_outlined,
-            color: Colors.white54,
+            color: widget.palette.textSecondary,
             size: 34,
           ),
         ),
@@ -345,7 +348,7 @@ class _DetailTopBar extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
           icon: Icon(
             Icons.arrow_back_ios_new_rounded,
-            color: palette.homeTextPrimary,
+            color: palette.textPrimary,
             size: 30,
           ),
         ),
@@ -355,7 +358,7 @@ class _DetailTopBar extends StatelessWidget {
             child: Text(
               title,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: palette.homeTextPrimary,
+                color: palette.textPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
               ),
@@ -366,12 +369,12 @@ class _DetailTopBar extends StatelessWidget {
           width: 58,
           height: 46,
           decoration: BoxDecoration(
-            color: palette.homeTextPrimary.withValues(alpha: 0.08),
+            color: palette.textPrimary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Icon(
             Icons.more_horiz_rounded,
-            color: palette.homeTextPrimary.withValues(alpha: 0.7),
+            color: palette.textPrimary.withValues(alpha: 0.7),
           ),
         ),
       ],
@@ -430,7 +433,7 @@ class _ImageGallery extends StatelessWidget {
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: palette.cardShadow.withValues(alpha: 0.52),
+                        color: palette.shadow.withValues(alpha: 0.52),
                         blurRadius: 28,
                         offset: const Offset(0, 14),
                       ),
@@ -445,6 +448,7 @@ class _ImageGallery extends StatelessWidget {
                           controller: appController,
                           assetPath: assetPath,
                           fallbackPath: fallbackPath,
+                          palette: palette,
                         ),
                         DecoratedBox(
                           decoration: BoxDecoration(
@@ -452,9 +456,9 @@ class _ImageGallery extends StatelessWidget {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: <Color>[
-                                Colors.black.withValues(alpha: 0.04),
+                                palette.shadow.withValues(alpha: 0.04),
                                 Colors.transparent,
-                                Colors.black.withValues(alpha: 0.42),
+                                palette.shadow.withValues(alpha: 0.42),
                               ],
                             ),
                           ),
@@ -468,13 +472,15 @@ class _ImageGallery extends StatelessWidget {
                               vertical: 7,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.32),
+                              color: palette.surfaceContainer.withValues(
+                                alpha: 0.86,
+                              ),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               isCover ? coverLabel : sceneLabel,
                               style: textTheme.labelLarge?.copyWith(
-                                color: Colors.white,
+                                color: palette.textPrimary,
                                 fontSize: 12,
                               ),
                             ),
@@ -490,7 +496,7 @@ class _ImageGallery extends StatelessWidget {
                                 child: Text(
                                   '$pageLabel ${index + 1}',
                                   style: textTheme.titleMedium?.copyWith(
-                                    color: Colors.white,
+                                    color: palette.textPrimary,
                                     fontSize: 18,
                                   ),
                                 ),
@@ -498,7 +504,7 @@ class _ImageGallery extends StatelessWidget {
                               Text(
                                 '${index + 1}/${game.galleryAssetPaths.length}',
                                 style: textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.88),
+                                  color: palette.textSecondary,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -525,8 +531,8 @@ class _ImageGallery extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 4),
               decoration: BoxDecoration(
                 color: currentIndex == index
-                    ? palette.accentPrimary
-                    : palette.homeTextPrimary.withValues(alpha: 0.26),
+                    ? palette.primary
+                    : palette.textPrimary.withValues(alpha: 0.26),
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -542,11 +548,13 @@ class _GalleryImage extends StatefulWidget {
     required this.controller,
     required this.assetPath,
     required this.fallbackPath,
+    required this.palette,
   });
 
   final AppController controller;
   final String assetPath;
   final String fallbackPath;
+  final AppPalette palette;
 
   @override
   State<_GalleryImage> createState() => _GalleryImageState();
@@ -576,17 +584,11 @@ class _GalleryImageState extends State<_GalleryImage> {
   Widget build(BuildContext context) {
     if (_resolvedPath == null) {
       return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[const Color(0xFF203047), const Color(0xFF101826)],
-          ),
-        ),
-        child: const Center(
+        decoration: BoxDecoration(color: widget.palette.surfaceVariant),
+        child: Center(
           child: Icon(
             Icons.photo_library_outlined,
-            color: Colors.white70,
+            color: widget.palette.textSecondary,
             size: 44,
           ),
         ),
@@ -613,10 +615,10 @@ class _GalleryImageState extends State<_GalleryImage> {
             });
           });
         }
-        return const Center(
+        return Center(
           child: Icon(
             Icons.photo_library_outlined,
-            color: Colors.white70,
+            color: widget.palette.textSecondary,
             size: 44,
           ),
         );
@@ -651,15 +653,16 @@ class _ScorePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final game = controller.selectedGame;
+    final palette = AppPalette.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF20252C),
+        color: palette.surfaceContainer,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
+        border: Border.all(color: palette.outline),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
+            color: palette.shadow.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -673,7 +676,7 @@ class _ScorePanel extends StatelessWidget {
             height: 126,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF24C7CC),
+              color: palette.primary,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
@@ -682,7 +685,7 @@ class _ScorePanel extends StatelessWidget {
                 Text(
                   game.score,
                   style: GoogleFonts.notoSerifSc(
-                    color: Colors.white,
+                    color: palette.onPrimary,
                     fontSize: 38,
                     fontWeight: FontWeight.w700,
                     height: 1,
@@ -693,7 +696,7 @@ class _ScorePanel extends StatelessWidget {
                   game.scoreCountLabel,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.notoSansSc(
-                    color: Colors.white.withValues(alpha: 0.96),
+                    color: palette.onPrimary.withValues(alpha: 0.96),
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
                     height: 1.05,
@@ -720,7 +723,7 @@ class _ScorePanel extends StatelessWidget {
                       child: _PlayerModeButton(
                         label: controller.copy.supportPlayersLabel,
                         selected: true,
-                        selectedColor: const Color(0xFF24C7CC),
+                        selectedColor: palette.primary,
                         textAlign: TextAlign.left,
                         onTap: () => onModeChanged(_PlayerStripMode.supported),
                       ),
@@ -729,7 +732,7 @@ class _ScorePanel extends StatelessWidget {
                       child: _PlayerModeButton(
                         label: controller.copy.recommendedPlayersLabel,
                         selected: true,
-                        selectedColor: const Color(0xFFFF9159),
+                        selectedColor: palette.secondary,
                         textAlign: TextAlign.right,
                         onTap: () =>
                             onModeChanged(_PlayerStripMode.recommended),
@@ -808,9 +811,9 @@ class _PlayerNumberStrip extends StatelessWidget {
         final isRecommended = number == recommendedPlayer;
         Color? fillColor;
         if (isRecommended) {
-          fillColor = const Color(0xFFFF8D34);
+          fillColor = Theme.of(context).colorScheme.secondary;
         } else if (isSupported) {
-          fillColor = const Color(0xFF24C7CC);
+          fillColor = Theme.of(context).colorScheme.primary;
         }
         final isActive = fillColor != null;
         return Container(
@@ -818,13 +821,17 @@ class _PlayerNumberStrip extends StatelessWidget {
           height: itemHeight,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: isActive ? fillColor : const Color(0xFF12171D),
+            color: isActive
+                ? fillColor
+                : Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
             '$number',
             style: GoogleFonts.notoSansSc(
-              color: Colors.white.withValues(alpha: isActive ? 0.98 : 0.92),
+              color: isActive
+                  ? Theme.of(context).colorScheme.onPrimary
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 10,
               fontWeight: FontWeight.w500,
               height: 1,
@@ -837,13 +844,13 @@ class _PlayerNumberStrip extends StatelessWidget {
         height: itemHeight,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: const Color(0xFF12171D),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           '+',
           style: GoogleFonts.notoSansSc(
-            color: Colors.white.withValues(alpha: 0.92),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             fontSize: 10,
             fontWeight: FontWeight.w500,
             height: 1,
@@ -863,15 +870,11 @@ class _RankChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chipTextColor =
-        ThemeData.estimateBrightnessForColor(palette.rankChip) ==
-            Brightness.dark
-        ? Colors.white
-        : const Color(0xFF18364D);
+    final Color chipTextColor = palette.onSecondary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: palette.rankChip,
+        color: palette.secondary,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -903,8 +906,8 @@ class _MetaLine extends StatelessWidget {
         value,
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
           color: emphasis
-              ? palette.homeTextPrimary.withValues(alpha: 0.8)
-              : palette.homeTextPrimary,
+              ? palette.textPrimary.withValues(alpha: 0.8)
+              : palette.textPrimary,
           fontSize: emphasis ? 19 : 17,
         ),
       ),
@@ -933,14 +936,14 @@ class _MetaRow extends StatelessWidget {
             TextSpan(
               text: '$label：',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: palette.homeTextPrimary.withValues(alpha: 0.72),
+                color: palette.textPrimary.withValues(alpha: 0.72),
                 fontSize: 17,
               ),
             ),
             TextSpan(
               text: value,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: palette.homeTextPrimary,
+                color: palette.textPrimary,
                 fontSize: 17,
               ),
             ),
@@ -968,23 +971,19 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foregroundColor =
-        ThemeData.estimateBrightnessForColor(palette.detailSurface) ==
-            Brightness.dark
-        ? palette.buttonText
-        : palette.accentPrimary;
+    final Color foregroundColor = palette.primary;
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
         onPressed: onTap,
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 18),
-          side: BorderSide(color: palette.buttonOutline, width: 1.8),
+          side: BorderSide(color: palette.primary, width: 1.8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
           foregroundColor: foregroundColor,
-          backgroundColor: palette.detailSurface.withValues(alpha: 0.18),
+          backgroundColor: palette.surface.withValues(alpha: 0.18),
         ),
         icon: isLoading
             ? SizedBox(
