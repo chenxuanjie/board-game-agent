@@ -122,6 +122,7 @@ class AppController extends ChangeNotifier {
   ColorSchemeOption get colorScheme => _colorScheme;
   AppPalette get palette => PaletteRegistry.of(_colorScheme);
   bool get voiceReplyEnabled => _voiceReplyEnabled;
+  bool get voiceReplyAvailable => _ttsService.isAvailable;
   AssistantMode get assistantMode => _assistantMode;
   bool get realtimeVoiceAvailable =>
       _realtimeVoiceService.availability == RealtimeVoiceAvailability.available;
@@ -222,6 +223,9 @@ class AppController extends ChangeNotifier {
       _speechAvailable = false;
     }
     await _ttsService.initialize(_language);
+    if (!voiceReplyAvailable) {
+      _voiceReplyEnabled = false;
+    }
     _ensureGreeting();
     _queueConversationSave();
     unawaited(prefetchHomeImages());
@@ -431,6 +435,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setVoiceReplyEnabled(bool enabled) async {
+    if (!voiceReplyAvailable) {
+      if (_voiceReplyEnabled) {
+        _voiceReplyEnabled = false;
+        notifyListeners();
+      }
+      return;
+    }
     _voiceReplyEnabled = enabled;
     await _preferencesService.saveVoiceReplyEnabled(enabled);
     if (!enabled) {
@@ -483,6 +494,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> speakMessage(String text) async {
+    if (!voiceReplyAvailable) {
+      return;
+    }
     await _ttsService.setLanguage(_language);
     await _ttsService.speak(text);
   }

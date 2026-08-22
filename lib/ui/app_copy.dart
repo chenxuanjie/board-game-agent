@@ -150,6 +150,9 @@ class AppCopy {
   String get voiceReplyHint => isChinese
       ? '打开后，AI 回复会自动朗读。'
       : 'When enabled, assistant replies are spoken aloud.';
+  String get voiceReplyUnavailable => isChinese
+      ? 'Windows 桌面版暂时关闭语音朗读，以避免系统语音组件导致闪退。'
+      : 'Voice output is temporarily disabled on Windows to prevent native speech crashes.';
   String get voiceReplySwitchLabel => isChinese ? '语音朗读' : 'Voice output';
   String get assistantModeTitle => isChinese ? '助手交互方式' : 'Assistant mode';
   String get assistantTextModeLabel =>

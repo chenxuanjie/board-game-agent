@@ -396,11 +396,17 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         color: palette.primary,
                       ),
                       title: Text(copy.voiceReplySwitchLabel),
-                      subtitle: Text(copy.voiceReplyHint),
+                      subtitle: Text(
+                        controller.voiceReplyAvailable
+                            ? copy.voiceReplyHint
+                            : copy.voiceReplyUnavailable,
+                      ),
                       value: controller.voiceReplyEnabled,
-                      onChanged: (value) {
-                        controller.setVoiceReplyEnabled(value);
-                      },
+                      onChanged: controller.voiceReplyAvailable
+                          ? (value) {
+                              controller.setVoiceReplyEnabled(value);
+                            }
+                          : null,
                     ),
                   ],
                 );
