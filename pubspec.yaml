@@ -24,6 +24,12 @@ dependencies:
   webdav_settings:
     path: ../shared_packages/webdav_settings
 
+dependency_overrides:
+  # Keep the Windows SAPI implementation in-repo so its compatibility fixes
+  # stay versioned with the app while Android and Web use the upstream plugin.
+  speech_to_text_windows:
+    path: packages/speech_to_text_windows
+
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
