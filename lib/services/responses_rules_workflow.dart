@@ -23,6 +23,8 @@ import 'ai_service.dart';
 /// the catalog chooses declared files, while the shared Responses adapter
 /// sends those files to OpenAI.
 class ResponsesRulesWorkflow {
+  static const int _maxConversationMessages = 12;
+
   ResponsesRulesWorkflow({
     required ResponsesAiClient responsesClient,
     RuleSourceCatalogService? catalogService,
@@ -614,9 +616,14 @@ class ResponsesRulesWorkflow {
     List<ChatMessage> history,
     String prompt,
   ) {
-    final List<ResponsesInputItem> result = history
+    final List<ChatMessage> nonEmptyHistory = history
         .where((message) => message.text.trim().isNotEmpty)
-        .take(12)
+        .toList(growable: false);
+    final int start = nonEmptyHistory.length > _maxConversationMessages
+        ? nonEmptyHistory.length - _maxConversationMessages
+        : 0;
+    final List<ResponsesInputItem> result = nonEmptyHistory
+        .sublist(start)
         .map(
           (message) => ResponsesTextInput(
             message.text.trim(),

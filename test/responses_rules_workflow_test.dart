@@ -168,6 +168,56 @@ void main() {
     expect(content['filename'], 'rules.pdf');
     expect(content['file_data'], startsWith('data:application/pdf;base64,'));
   });
+
+  test('sends the most recent twelve conversation messages', () async {
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        ResponsesResponse(
+          text: '联网资料回答',
+          model: 'test-model',
+          webSearchCitations: const <ResponsesWebSearchCitation>[
+            ResponsesWebSearchCitation(
+              url: 'https://example.test/recent-context',
+              title: '最近上下文',
+            ),
+          ],
+        ),
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+    final List<ChatMessage> history = List<ChatMessage>.generate(
+      15,
+      (int index) => ChatMessage(
+        id: 'history-$index',
+        role: index.isEven ? ChatRole.user : ChatRole.assistant,
+        text: 'history-$index',
+        timestamp: DateTime(2026, 1, 1).add(Duration(minutes: index)),
+      ),
+    );
+
+    await workflow.generateReply(
+      prompt: 'current-prompt',
+      language: AppLanguage.zhHans,
+      game: _game(),
+      answerMode: AiAnswerMode.knowledgeThenDirect,
+      useGlobalMode: false,
+      config: _config(),
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _NoCatalogRemoteAssetService(),
+      conversationHistory: history,
+    );
+
+    final List<String> inputTexts = client.requests.single.input
+        .whereType<ResponsesTextInput>()
+        .map((ResponsesTextInput input) => input.text)
+        .toList();
+    expect(inputTexts, <String>[
+      ...List<String>.generate(12, (int index) => 'history-${index + 3}'),
+      'current-prompt',
+    ]);
+  });
 }
 
 AiApiConfig _config() => const AiApiConfig(
@@ -250,6 +300,22 @@ class _FakeRemoteAssetService extends RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async => utf8.encode(remotePath);
+}
+
+class _NoCatalogRemoteAssetService extends RemoteAssetService {
+  _NoCatalogRemoteAssetService();
+
+  @override
+  Future<String?> loadText({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async => null;
+
+  @override
+  Future<List<int>?> loadBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async => null;
 }
 
 class _FakeResponsesClient implements ResponsesAiClient {
