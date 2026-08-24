@@ -75,8 +75,6 @@ class AppController extends ChangeNotifier {
   bool _speechAvailable = false;
   bool _isListening = false;
   double _speechLevel = 0;
-  bool _isSending = false;
-  String? _aiWorkflowStatus;
   String _selectedGameId = 'puerto-rico';
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
@@ -112,8 +110,8 @@ class AppController extends ChangeNotifier {
   Future<void> _conversationSaveQueue = Future<void>.value();
   final Map<String, List<ChatMessage>> _conversationMessages =
       <String, List<ChatMessage>>{};
-  Completer<void>? _generationAbort;
-  bool _generationWasStopped = false;
+  final Map<String, _ChatGenerationState> _generationStates =
+      <String, _ChatGenerationState>{};
   late final http.Client _assetTestClient = IOClient(
     HttpClient()
       ..badCertificateCallback =
@@ -135,8 +133,13 @@ class AppController extends ChangeNotifier {
   bool get isListening => _isListening;
   double get speechLevel => _speechLevel;
   String? get speechError => _speechService.lastError;
-  bool get isSending => _isSending;
-  String? get aiWorkflowStatus => _aiWorkflowStatus;
+  bool get isSending => isSendingForContext(useGlobalMode: false);
+  String? get aiWorkflowStatus =>
+      aiWorkflowStatusForContext(useGlobalMode: false);
+  bool isSendingForContext({required bool useGlobalMode}) =>
+      _generationStateForContext(useGlobalMode: useGlobalMode).isSending;
+  String? aiWorkflowStatusForContext({required bool useGlobalMode}) =>
+      _generationStateForContext(useGlobalMode: useGlobalMode).workflowStatus;
   bool get hasSelectedAiModel => _aiApiConfig.model.trim().isNotEmpty;
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
@@ -535,12 +538,15 @@ class AppController extends ChangeNotifier {
     _handleListeningStopped();
   }
 
-  Future<void> stopGenerating() async {
-    if (!_isSending) {
+  Future<void> stopGenerating({bool useGlobalMode = false}) async {
+    final _ChatGenerationState generation = _generationStateForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    if (!generation.isSending) {
       return;
     }
-    _generationWasStopped = true;
-    final Completer<void>? abort = _generationAbort;
+    generation.wasStopped = true;
+    final Completer<void>? abort = generation.abort;
     if (abort != null && !abort.isCompleted) {
       abort.complete();
     }
@@ -591,7 +597,10 @@ class AppController extends ChangeNotifier {
 
   Future<void> sendPrompt(String prompt, {bool useGlobalMode = false}) async {
     final trimmed = prompt.trim();
-    if (trimmed.isEmpty || _isSending) {
+    final _ChatGenerationState generation = _generationStateForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    if (trimmed.isEmpty || generation.isSending) {
       return;
     }
     if (_aiApiConfig.model.trim().isEmpty) {
@@ -617,10 +626,11 @@ class AppController extends ChangeNotifier {
     messages.add(userMessage);
     _trimConversationMessages(messages);
     _queueConversationSave();
-    _isSending = true;
-    _generationWasStopped = false;
+    generation.isSending = true;
+    generation.workflowStatus = null;
+    generation.wasStopped = false;
     final Completer<void> generationAbort = Completer<void>();
-    _generationAbort = generationAbort;
+    generation.abort = generationAbort;
     final String draftId = '${DateTime.now().microsecondsSinceEpoch}-assistant';
     final ChatMessage draftMessage = ChatMessage(
       id: draftId,
@@ -656,11 +666,11 @@ class AppController extends ChangeNotifier {
         ),
         abortTrigger: generationAbort.future,
       )) {
-        if (_generationWasStopped) {
+        if (generation.wasStopped) {
           break;
         }
         if (event.status != null) {
-          _aiWorkflowStatus = event.status;
+          generation.workflowStatus = event.status;
           notifyListeners();
         }
         if (event.delta.isNotEmpty) {
@@ -679,7 +689,7 @@ class AppController extends ChangeNotifier {
       }
 
       final ChatMessage? currentDraft = _messageById(messages, draftId);
-      if (_generationWasStopped) {
+      if (generation.wasStopped) {
         if (currentDraft != null && currentDraft.text.trim().isNotEmpty) {
           _replaceMessage(
             messages,
@@ -718,7 +728,7 @@ class AppController extends ChangeNotifier {
     } catch (error, stackTrace) {
       debugPrint('[chat] sendPrompt failed: $error');
       debugPrint('$stackTrace');
-      if (_generationWasStopped) {
+      if (generation.wasStopped) {
         final ChatMessage? currentDraft = _messageById(messages, draftId);
         if (currentDraft != null && currentDraft.text.trim().isNotEmpty) {
           _replaceMessage(
@@ -748,9 +758,9 @@ class AppController extends ChangeNotifier {
       _trimConversationMessages(messages);
       _queueConversationSave();
     } finally {
-      _generationAbort = null;
-      _isSending = false;
-      _aiWorkflowStatus = null;
+      generation.abort = null;
+      generation.isSending = false;
+      generation.workflowStatus = null;
       notifyListeners();
     }
   }
@@ -763,7 +773,7 @@ class AppController extends ChangeNotifier {
     if (!message.canRetry ||
         prompt == null ||
         prompt.trim().isEmpty ||
-        _isSending) {
+        isSendingForContext(useGlobalMode: useGlobalMode)) {
       return;
     }
     final List<ChatMessage> messages = _messagesForContext(
@@ -806,10 +816,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> disposeServices() async {
     _assetStatusTimer?.cancel();
-    _generationWasStopped = true;
-    final Completer<void>? generationAbort = _generationAbort;
-    if (generationAbort != null && !generationAbort.isCompleted) {
-      generationAbort.complete();
+    for (final _ChatGenerationState generation in _generationStates.values) {
+      generation.wasStopped = true;
+      final Completer<void>? generationAbort = generation.abort;
+      if (generationAbort != null && !generationAbort.isCompleted) {
+        generationAbort.complete();
+      }
     }
     await _conversationSaveQueue;
     await _speechService.cancelListening();
@@ -1410,14 +1422,25 @@ class AppController extends ChangeNotifier {
   static const int _conversationStoreVersion = 1;
   static const int _maxMessagesPerConversation = 100;
 
+  String _conversationKeyForContext({required bool useGlobalMode}) {
+    return useGlobalMode
+        ? _globalConversationKey
+        : _conversationKeyForGameId(selectedGame.id);
+  }
+
+  _ChatGenerationState _generationStateForContext({
+    required bool useGlobalMode,
+  }) {
+    final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
+    return _generationStates.putIfAbsent(key, _ChatGenerationState.new);
+  }
+
   List<ChatMessage> _messagesForCurrentContext() {
     return _messagesForContext(useGlobalMode: false);
   }
 
   List<ChatMessage> _messagesForContext({required bool useGlobalMode}) {
-    final String key = useGlobalMode
-        ? _globalConversationKey
-        : _conversationKeyForGameId(selectedGame.id);
+    final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
     return _conversationMessages.putIfAbsent(key, () => <ChatMessage>[]);
   }
 
@@ -1500,4 +1523,11 @@ class AppController extends ChangeNotifier {
       '${support.path}${Platform.pathSeparator}chat_conversations.json',
     );
   }
+}
+
+class _ChatGenerationState {
+  bool isSending = false;
+  String? workflowStatus;
+  Completer<void>? abort;
+  bool wasStopped = false;
 }

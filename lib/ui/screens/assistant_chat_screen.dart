@@ -78,7 +78,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final copy = controller.copy;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final canSend =
-        _textController.text.trim().isNotEmpty && !controller.isSending;
+        _textController.text.trim().isNotEmpty &&
+        !controller.isSendingForContext(useGlobalMode: widget.useGlobalMode);
 
     return Scaffold(
       appBar: AppBar(
@@ -136,8 +137,14 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                 AnimatedBuilder(
                   animation: controller,
                   builder: (context, _) {
-                    final String? status = controller.aiWorkflowStatus;
-                    if (!controller.isSending || status == null) {
+                    final bool isSending = controller.isSendingForContext(
+                      useGlobalMode: widget.useGlobalMode,
+                    );
+                    final String? status = controller
+                        .aiWorkflowStatusForContext(
+                          useGlobalMode: widget.useGlobalMode,
+                        );
+                    if (!isSending || status == null) {
                       return const SizedBox.shrink();
                     }
                     return Padding(
@@ -265,7 +272,10 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
 
   Future<void> _sendCurrentText() async {
     final text = _textController.text.trim();
-    if (text.isEmpty || widget.controller.isSending) {
+    if (text.isEmpty ||
+        widget.controller.isSendingForContext(
+          useGlobalMode: widget.useGlobalMode,
+        )) {
       return;
     }
 
@@ -754,7 +764,9 @@ class _MessageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final showQuickPrompts = messages.length <= 1 && !controller.isSending;
+    final showQuickPrompts =
+        messages.length <= 1 &&
+        !controller.isSendingForContext(useGlobalMode: useGlobalMode);
 
     return ListView(
       controller: scrollController,
@@ -873,6 +885,9 @@ class _Composer extends StatelessWidget {
   Widget build(BuildContext context) {
     final copy = controller.copy;
     final palette = AppPalette.of(context);
+    final bool isSending = controller.isSendingForContext(
+      useGlobalMode: useGlobalMode,
+    );
     final smartSupplement = controller.allowSmartSupplement(
       useGlobalMode: useGlobalMode,
     );
@@ -968,7 +983,7 @@ class _Composer extends StatelessWidget {
                   tooltip: controller.isListening
                       ? copy.tapToStop
                       : copy.speechReady,
-                  onPressed: controller.isSending
+                  onPressed: isSending
                       ? null
                       : () {
                           onMicTap();
@@ -987,12 +1002,12 @@ class _Composer extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 IconButton(
-                  tooltip: controller.isSending
-                      ? copy.stopGenerating
-                      : copy.send,
-                  onPressed: controller.isSending
+                  tooltip: isSending ? copy.stopGenerating : copy.send,
+                  onPressed: isSending
                       ? () {
-                          controller.stopGenerating();
+                          controller.stopGenerating(
+                            useGlobalMode: useGlobalMode,
+                          );
                         }
                       : canSend
                       ? () {
@@ -1000,18 +1015,18 @@ class _Composer extends StatelessWidget {
                         }
                       : null,
                   style: IconButton.styleFrom(
-                    backgroundColor: controller.isSending
+                    backgroundColor: isSending
                         ? palette.primary
                         : canSend
                         ? palette.secondary
                         : palette.textPrimary.withValues(alpha: 0.14),
-                    foregroundColor: controller.isSending
+                    foregroundColor: isSending
                         ? palette.onPrimary
                         : canSend
                         ? palette.onSecondary
                         : palette.disabledForeground,
                   ),
-                  icon: controller.isSending
+                  icon: isSending
                       ? const Icon(Icons.stop_rounded)
                       : const Icon(Icons.arrow_upward_rounded),
                 ),
