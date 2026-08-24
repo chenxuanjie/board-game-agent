@@ -4,6 +4,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../models/answer_source.dart';
 import '../../models/chat_message.dart';
+import '../../models/rule_citation.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
 
@@ -195,6 +196,15 @@ class MessageBubble extends StatelessWidget {
                                           .toList(),
                                     ),
                                   ],
+                                  if (!isUser &&
+                                      message.citations.isNotEmpty) ...<Widget>[
+                                    const SizedBox(height: 8),
+                                    _CitationList(
+                                      citations: message.citations,
+                                      palette: palette,
+                                      title: copy.evidenceTitle,
+                                    ),
+                                  ],
                                   if (!isUser && message.isFailed) ...<Widget>[
                                     const SizedBox(height: 8),
                                     Text(
@@ -298,6 +308,125 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+class _CitationList extends StatelessWidget {
+  const _CitationList({
+    required this.citations,
+    required this.palette,
+    required this.title,
+  });
+
+  final List<RuleCitation> citations;
+  final AppPalette palette;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: palette.textSecondary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        for (final RuleCitation citation in citations)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _CitationItem(citation: citation, palette: palette),
+          ),
+      ],
+    );
+  }
+}
+
+class _CitationItem extends StatelessWidget {
+  const _CitationItem({required this.citation, required this.palette});
+
+  final RuleCitation citation;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isWeb = citation.sourceType == 'web';
+    final String title = citation.title?.trim().isNotEmpty == true
+        ? citation.title!.trim()
+        : isWeb
+        ? '联网网页'
+        : _fileName(citation.path) ?? '规则资料';
+    final String? detail = isWeb ? citation.url : _documentLocation(citation);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: palette.primaryContainer.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            isWeb ? Icons.language_rounded : Icons.menu_book_rounded,
+            size: 15,
+            color: palette.primary,
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (detail != null && detail.trim().isNotEmpty)
+                  Text(
+                    detail,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: palette.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _documentLocation(RuleCitation citation) {
+    final List<String> parts = <String>[];
+    if (citation.page != null) parts.add('第 ${citation.page} 页');
+    if (citation.lineStart != null) {
+      parts.add(
+        citation.lineEnd == null
+            ? '第 ${citation.lineStart} 行'
+            : '第 ${citation.lineStart}-${citation.lineEnd} 行',
+      );
+    }
+    if (citation.section?.trim().isNotEmpty == true) {
+      parts.add(citation.section!.trim());
+    }
+    if (parts.isNotEmpty) return parts.join(' · ');
+    return _fileName(citation.path);
+  }
+
+  String? _fileName(String? path) {
+    final String value = path?.trim() ?? '';
+    if (value.isEmpty) return null;
+    return value.split(RegExp(r'[\\/]')).last;
+  }
+}
+
 class _StreamingPlaceholder extends StatelessWidget {
   const _StreamingPlaceholder({required this.palette, required this.label});
 
@@ -377,11 +506,19 @@ class _SourceLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final String label = switch (source) {
       AnswerSource.rulebook => copy.answerSourceRulebook,
+      AnswerSource.official => copy.answerSourceOfficial,
+      AnswerSource.community => copy.answerSourceCommunity,
+      AnswerSource.web => copy.answerSourceWeb,
+      AnswerSource.modelKnowledge => copy.answerSourceModelKnowledge,
       AnswerSource.generalAdvice => copy.answerSourceGeneral,
       AnswerSource.insufficient => copy.answerSourceInsufficient,
     };
     final IconData icon = switch (source) {
       AnswerSource.rulebook => Icons.menu_book_rounded,
+      AnswerSource.official => Icons.verified_rounded,
+      AnswerSource.community => Icons.groups_rounded,
+      AnswerSource.web => Icons.language_rounded,
+      AnswerSource.modelKnowledge => Icons.auto_awesome_rounded,
       AnswerSource.generalAdvice => Icons.auto_awesome_rounded,
       AnswerSource.insufficient => Icons.info_outline_rounded,
     };

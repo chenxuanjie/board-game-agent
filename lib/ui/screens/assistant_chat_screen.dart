@@ -132,6 +132,26 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     onSelect: _selectAssistantMode,
                   ),
                 ),
+                AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) {
+                    final String? status = controller.aiWorkflowStatus;
+                    if (!controller.isSending || status == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        screenWidth >= 720 ? 28 : 16,
+                        0,
+                        screenWidth >= 720 ? 28 : 16,
+                        8,
+                      ),
+                      child: _WorkflowStatusBanner(
+                        label: copy.aiWorkflowStatus(status),
+                      ),
+                    );
+                  },
+                ),
                 Expanded(
                   child: AnimatedBuilder(
                     animation: controller,
@@ -415,6 +435,47 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _WorkflowStatusBanner extends StatelessWidget {
+  const _WorkflowStatusBanner({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      decoration: BoxDecoration(
+        color: palette.primaryContainer.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.outline),
+      ),
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: palette.primary,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: palette.textPrimary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

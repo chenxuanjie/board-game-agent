@@ -25,6 +25,7 @@ import '../models/game_catalog_manifest.dart';
 import '../models/remote_library_update.dart';
 import '../models/resolved_document.dart';
 import '../models/evidence_chunk.dart';
+import '../models/rule_citation.dart';
 import '../services/ai_service.dart';
 import '../services/preferences_service.dart';
 import '../services/game_manifest_service.dart';
@@ -75,6 +76,7 @@ class AppController extends ChangeNotifier {
   bool _isListening = false;
   double _speechLevel = 0;
   bool _isSending = false;
+  String? _aiWorkflowStatus;
   String _selectedGameId = 'puerto-rico';
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
@@ -134,6 +136,7 @@ class AppController extends ChangeNotifier {
   double get speechLevel => _speechLevel;
   String? get speechError => _speechService.lastError;
   bool get isSending => _isSending;
+  String? get aiWorkflowStatus => _aiWorkflowStatus;
   bool get hasSelectedAiModel => _aiApiConfig.model.trim().isNotEmpty;
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
@@ -668,6 +671,10 @@ class AppController extends ChangeNotifier {
         if (_generationWasStopped) {
           break;
         }
+        if (event.status != null) {
+          _aiWorkflowStatus = event.status;
+          notifyListeners();
+        }
         if (event.delta.isNotEmpty) {
           _replaceMessage(
             messages,
@@ -692,6 +699,7 @@ class AppController extends ChangeNotifier {
               state: ChatMessageState.complete,
               source: finalAnswer?.source ?? AnswerSource.generalAdvice,
               evidence: finalAnswer?.evidence ?? const <EvidenceChunk>[],
+              citations: finalAnswer?.citations ?? const <RuleCitation>[],
             ),
           );
         } else {
@@ -705,6 +713,7 @@ class AppController extends ChangeNotifier {
           text: answer.text,
           source: answer.source,
           evidence: answer.evidence,
+          citations: answer.citations,
           state: ChatMessageState.complete,
           canRetry: false,
           retryPrompt: null,
@@ -753,6 +762,7 @@ class AppController extends ChangeNotifier {
     } finally {
       _generationAbort = null;
       _isSending = false;
+      _aiWorkflowStatus = null;
       notifyListeners();
     }
   }

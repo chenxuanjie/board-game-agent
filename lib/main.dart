@@ -15,6 +15,7 @@ import 'services/insecure_android_certificate_trust.dart';
 import 'services/speech_service.dart';
 import 'services/tts_service.dart';
 import 'services/realtime_voice_service.dart';
+import 'services/responses_rules_workflow.dart';
 import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
@@ -37,7 +38,12 @@ Future<void> main() async {
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
-    aiService: BoardGameAiService(aiClient: OpenAiDartAiClient()),
+    aiService: BoardGameAiService(
+      aiClient: OpenAiDartAiClient(),
+      responsesWorkflow: ResponsesRulesWorkflow(
+        responsesClient: OpenAiDartResponsesAiClient(),
+      ),
+    ),
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(),
     speechService: SpeechService(),

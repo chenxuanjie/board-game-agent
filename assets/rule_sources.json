@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "games": {
+    "puerto_rico": {
+      "aliases": ["波多黎各", "Puerto Rico"],
+      "terms": {
+        "市长阶段": ["Mayor phase"],
+        "移民": ["Settler", "Colonist"],
+        "船长阶段": ["Captain phase"]
+      },
+      "official": [
+        {
+          "id": "puerto-rico-official-rulebook-en",
+          "title": "Puerto Rico Rulebook",
+          "path": "assets/games/puerto_rico/docs/rulebook_official_en.pdf",
+          "format": "pdf",
+          "language": "en",
+          "version": "2026-08"
+        },
+        {
+          "id": "puerto-rico-official-faq-en",
+          "title": "Puerto Rico Official FAQ",
+          "path": "assets/games/puerto_rico/docs/faq_en.md",
+          "format": "md",
+          "language": "en",
+          "version": "2026-08"
+        }
+      ],
+      "community": []
+    }
+  }
+}

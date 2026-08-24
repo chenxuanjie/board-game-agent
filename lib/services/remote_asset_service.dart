@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
@@ -100,6 +101,27 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    final List<int>? bytes = await fetchRemoteBytes(
+      sources: sources,
+      remotePath: remotePath,
+    );
+    if (bytes == null) return null;
+    try {
+      return utf8.decode(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetches the declared remote file without interpreting its bytes.
+  ///
+  /// Keeping this separate from [fetchRemoteText] is important for PDF and
+  /// other binary rule files: decoding arbitrary bytes as UTF-8 would corrupt
+  /// the file before it reaches the Responses API.
+  Future<List<int>?> fetchRemoteBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async {
     final Map<String, String> headers = await _headers();
     for (final source in sources) {
       final Uri? uri = _buildFileUri(source, remotePath);
@@ -111,7 +133,7 @@ class RemoteAssetService {
             .get(uri, headers: headers)
             .timeout(const Duration(seconds: 8));
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          return utf8.decode(response.bodyBytes);
+          return response.bodyBytes;
         }
       } catch (_) {
         continue;
@@ -163,6 +185,36 @@ class RemoteAssetService {
       return null;
     }
     return File(asset.localPath).readAsString();
+  }
+
+  /// Loads a cached or remote file as bytes for an AI file input.
+  ///
+  /// On Web, private text files can still be fetched through the browser
+  /// client. Binary files require a public URL or a same-origin gateway.
+  Future<List<int>?> loadBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async {
+    final CachedAsset? asset = await ensureCached(
+      sources: sources,
+      remotePath: remotePath,
+    );
+    if (asset != null && asset.exists && !kIsWeb) {
+      return File(asset.localPath).readAsBytes();
+    }
+    final List<int>? remoteBytes = await fetchRemoteBytes(
+      sources: sources,
+      remotePath: remotePath,
+    );
+    if (remoteBytes != null) {
+      return remoteBytes;
+    }
+    try {
+      final ByteData data = await rootBundle.load(remotePath);
+      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> loadTextFromAny({
