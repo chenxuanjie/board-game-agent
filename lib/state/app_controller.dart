@@ -234,10 +234,6 @@ class AppController extends ChangeNotifier {
     unawaited(prefetchHomeImages());
     _startAssetStatusPolling();
     unawaited(checkForLibraryUpdates());
-    if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
-        _aiApiConfig.apiKey.trim().isNotEmpty) {
-      unawaited(_refreshAiModelsOnInitialize());
-    }
     notifyListeners();
   }
 
@@ -369,14 +365,6 @@ class AppController extends ChangeNotifier {
         })
         .catchError((Object _) => <AiModel>[]);
     return future;
-  }
-
-  Future<void> _refreshAiModelsOnInitialize() async {
-    try {
-      await refreshAiModels(persistSelection: true);
-    } catch (_) {
-      // The settings screen exposes the retryable failure state.
-    }
   }
 
   void invalidateAiModels() {
