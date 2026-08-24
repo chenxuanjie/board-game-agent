@@ -286,8 +286,9 @@ class BoardGameAiService implements AiService {
 
   bool _responsesEnabled(AiApiConfig config) {
     return _responsesWorkflow != null &&
-        config.providerPreset == AiProviderPreset.openAi &&
-        config.model.trim().isNotEmpty;
+        config.model.trim().isNotEmpty &&
+        (config.providerPreset == AiProviderPreset.openAi ||
+            config.providerPreset == AiProviderPreset.custom);
   }
 
   Future<BoardGameAiAnswer> _answerFromKnowledgeOnly({
