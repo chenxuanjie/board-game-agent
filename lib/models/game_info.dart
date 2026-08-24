@@ -1,4 +1,41 @@
 class GameInfo {
+  factory GameInfo.empty() {
+    return GameInfo(
+      id: '__empty__',
+      slug: '__empty__',
+      title: '暂无游戏',
+      subtitle: '游戏资料尚未加载',
+      coverAssetPath: '',
+      bannerAssetPath: '',
+      galleryAssetPaths: const <String>[],
+      cardAccent: 0xFF607D8B,
+      score: '—',
+      scoreCountLabel: '',
+      releaseYear: '',
+      categoryLine: '',
+      learningDifficulty: '',
+      perPlayerTime: '',
+      setupTime: '',
+      languageRequirement: '',
+      supportedPlayers: const <int>[],
+      recommendedPlayer: 0,
+      rankBadges: const <String>[],
+      rulebookAssetPath: '',
+      faqAssetPath: '',
+      knowledgeAssetPaths: const <String>[],
+      heroTagline: '',
+      assistantIntro: '',
+      summary: '',
+      mentorPitch: '',
+      playTime: '',
+      playerCount: '',
+      complexity: '',
+      roundFlow: const <String>[],
+      assistantSkills: const <String>[],
+      quickPrompts: const <String>[],
+    );
+  }
+
   GameInfo({
     required this.id,
     required this.slug,

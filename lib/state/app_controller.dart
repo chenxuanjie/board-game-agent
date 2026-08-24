@@ -156,15 +156,22 @@ class AppController extends ChangeNotifier {
   bool get homeAssetsLoading => _homeAssetsLoading;
   int get homeAssetsLoaded => _homeAssetsLoaded;
   int get homeAssetsTotal => _homeAssetsTotal;
+  bool get hasGames => _games.isNotEmpty;
   String? resolvedAssetPath(String remotePath) =>
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
   GameInfo get featuredGame => selectedGame;
-  GameInfo get selectedGame => games.firstWhere(
-    (game) => game.id == _selectedGameId,
-    orElse: () => games.first,
-  );
+  GameInfo get selectedGame {
+    if (_games.isEmpty) {
+      return GameInfo.empty();
+    }
+    return _games.firstWhere(
+      (game) => game.id == _selectedGameId,
+      orElse: () => _games.first,
+    );
+  }
+
   UnmodifiableListView<ChatMessage> get messages =>
       UnmodifiableListView<ChatMessage>(_messagesForCurrentContext());
   UnmodifiableListView<ChatMessage> messagesForContext({
@@ -248,6 +255,13 @@ class AppController extends ChangeNotifier {
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _preferencesService.saveLanguage(next);
     await _ttsService.setLanguage(next);
+    notifyListeners();
+  }
+
+  Future<void> reloadGames() async {
+    _games = await _loadGamesForLanguage(_language);
+    _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+    _ensureGreeting();
     notifyListeners();
   }
 
@@ -821,6 +835,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshAssetAccessStatus() async {
+    if (_games.isEmpty) {
+      _assetSourceStatuses.clear();
+      _assetConnectivityStatus = ConnectivityStatus.unknown('暂无游戏资料');
+      notifyListeners();
+      return;
+    }
     ConnectivityStatus? bestStatus;
     final Map<String, ConnectivityStatus> nextStatuses =
         <String, ConnectivityStatus>{};
@@ -865,8 +885,9 @@ class AppController extends ChangeNotifier {
       ..addAll(nextStatuses);
     _assetConnectivityStatus =
         bestStatus ??
-        nextStatuses[_assetSourceConfigs.first.id] ??
-        ConnectivityStatus.unknown('未检测');
+        (nextStatuses.isEmpty
+            ? ConnectivityStatus.unknown('未检测')
+            : nextStatuses.values.first);
     notifyListeners();
   }
 
