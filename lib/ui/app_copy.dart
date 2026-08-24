@@ -110,6 +110,8 @@ class AppCopy {
   String get aiReplyFailed => isChinese
       ? '这次回答失败了，请稍后再试。'
       : 'The assistant could not answer this time. Please try again.';
+  String get copyAnswer => isChinese ? '复制回答' : 'Copy answer';
+  String get answerCopied => isChinese ? '回答已复制' : 'Answer copied';
   String get retry => isChinese ? '重试' : 'Retry';
   String get stopGenerating => isChinese ? '停止生成' : 'Stop generating';
   String get answerSourceRulebook => isChinese ? '规则库' : 'Rulebook';

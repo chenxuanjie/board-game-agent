@@ -4,6 +4,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../models/answer_source.dart';
 import '../../models/chat_message.dart';
+import '../../models/evidence_chunk.dart';
 import '../../models/rule_citation.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
@@ -15,6 +16,8 @@ class MessageBubble extends StatelessWidget {
     required this.onSpeak,
     required this.palette,
     this.speakTooltip = 'Speak',
+    this.onCopy,
+    this.copyTooltip = 'Copy',
     this.onRetry,
     this.retryTooltip = 'Retry',
     required this.copy,
@@ -26,6 +29,8 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback onSpeak;
   final AppPalette palette;
   final String speakTooltip;
+  final VoidCallback? onCopy;
+  final String copyTooltip;
   final VoidCallback? onRetry;
   final String retryTooltip;
   final AppCopy copy;
@@ -46,7 +51,7 @@ class MessageBubble extends StatelessWidget {
       bottomRight: Radius.circular(isUser ? 8 : 24),
     );
     final bool hasAssistantAction = _hasAssistantAction;
-    final bool showFooter = hasAssistantAction;
+    final bool hasAssistantReferences = _hasAssistantReferences;
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -161,108 +166,6 @@ class MessageBubble extends StatelessWidget {
                                             listBullet: bodyStyle,
                                           ),
                                     ),
-                                  if (!isUser &&
-                                      message.source != null) ...<Widget>[
-                                    const SizedBox(height: 10),
-                                    _SourceLabel(
-                                      source: message.source!,
-                                      palette: palette,
-                                      copy: copy,
-                                    ),
-                                  ],
-                                  if (!isUser &&
-                                      message.evidence.isNotEmpty) ...<Widget>[
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 6,
-                                      runSpacing: 6,
-                                      children: message.evidence
-                                          .map(
-                                            (evidence) => Chip(
-                                              avatar: Icon(
-                                                Icons.menu_book_rounded,
-                                                size: 15,
-                                                color: palette.primary,
-                                              ),
-                                              label: Text(evidence.sourceName),
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              side: BorderSide.none,
-                                              backgroundColor: palette
-                                                  .primaryContainer
-                                                  .withValues(alpha: 0.18),
-                                            ),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ],
-                                  if (!isUser &&
-                                      message.citations.isNotEmpty) ...<Widget>[
-                                    const SizedBox(height: 8),
-                                    _CitationList(
-                                      citations: message.citations,
-                                      palette: palette,
-                                      title: copy.evidenceTitle,
-                                    ),
-                                  ],
-                                  if (!isUser && message.isFailed) ...<Widget>[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'AI',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: palette.textPrimary
-                                                .withValues(alpha: 0.58),
-                                          ),
-                                    ),
-                                  ],
-                                  if (showFooter) ...<Widget>[
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        if (!isUser &&
-                                            !message.isStreaming &&
-                                            !message.isFailed)
-                                          IconButton(
-                                            tooltip: speakTooltip,
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(
-                                              minWidth: 28,
-                                              minHeight: 28,
-                                            ),
-                                            onPressed: onSpeak,
-                                            icon: Icon(
-                                              Icons.volume_up_rounded,
-                                              size: 17,
-                                              color: palette.primary,
-                                            ),
-                                          ),
-                                        if (!isUser &&
-                                            message.isFailed &&
-                                            onRetry != null)
-                                          TextButton.icon(
-                                            onPressed: onRetry,
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                              size: 16,
-                                            ),
-                                            label: Text(retryTooltip),
-                                            style: TextButton.styleFrom(
-                                              foregroundColor: palette.primary,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                  ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),
@@ -270,6 +173,24 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (hasAssistantAction)
+                      _AssistantActions(
+                        palette: palette,
+                        onCopy: _canCopy ? onCopy : null,
+                        copyTooltip: copyTooltip,
+                        onSpeak: _canSpeak ? onSpeak : null,
+                        speakTooltip: speakTooltip,
+                        onRetry: _canRetry ? onRetry : null,
+                        retryTooltip: retryTooltip,
+                      ),
+                    if (hasAssistantReferences)
+                      _AssistantReferenceSection(
+                        source: message.source,
+                        evidence: message.evidence,
+                        citations: message.citations,
+                        palette: palette,
+                        copy: copy,
+                      ),
                     if (showTimestamp)
                       Padding(
                         padding: const EdgeInsets.only(
@@ -296,15 +217,166 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  bool get _hasAssistantAction =>
+  bool get _hasAssistantAction => _canCopy || _canSpeak || _canRetry;
+
+  bool get _canCopy =>
       message.role == ChatRole.assistant &&
-      ((!message.isStreaming && !message.isFailed) ||
-          (message.isFailed && onRetry != null));
+      !message.isStreaming &&
+      !message.isFailed &&
+      message.text.trim().isNotEmpty &&
+      onCopy != null;
+
+  bool get _canSpeak =>
+      message.role == ChatRole.assistant &&
+      !message.isStreaming &&
+      !message.isFailed &&
+      message.text.trim().isNotEmpty;
+
+  bool get _canRetry =>
+      message.role == ChatRole.assistant && message.isFailed && onRetry != null;
+
+  bool get _hasAssistantReferences =>
+      message.role == ChatRole.assistant &&
+      (message.source != null ||
+          message.evidence.isNotEmpty ||
+          message.citations.isNotEmpty);
 
   String _formatTime(DateTime value) {
     final String hour = value.hour.toString().padLeft(2, '0');
     final String minute = value.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+class _AssistantActions extends StatelessWidget {
+  const _AssistantActions({
+    required this.palette,
+    required this.onCopy,
+    required this.copyTooltip,
+    required this.onSpeak,
+    required this.speakTooltip,
+    required this.onRetry,
+    required this.retryTooltip,
+  });
+
+  final AppPalette palette;
+  final VoidCallback? onCopy;
+  final String copyTooltip;
+  final VoidCallback? onSpeak;
+  final String speakTooltip;
+  final VoidCallback? onRetry;
+  final String retryTooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, left: 2, right: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (onCopy != null)
+            IconButton(
+              tooltip: copyTooltip,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              onPressed: onCopy,
+              icon: Icon(
+                Icons.copy_all_rounded,
+                size: 18,
+                color: palette.textSecondary,
+              ),
+            ),
+          if (onSpeak != null)
+            IconButton(
+              tooltip: speakTooltip,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              onPressed: onSpeak,
+              icon: Icon(
+                Icons.volume_up_rounded,
+                size: 18,
+                color: palette.textSecondary,
+              ),
+            ),
+          if (onRetry != null)
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(retryTooltip),
+              style: TextButton.styleFrom(
+                foregroundColor: palette.primary,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantReferenceSection extends StatelessWidget {
+  const _AssistantReferenceSection({
+    required this.source,
+    required this.evidence,
+    required this.citations,
+    required this.palette,
+    required this.copy,
+  });
+
+  final AnswerSource? source;
+  final List<EvidenceChunk> evidence;
+  final List<RuleCitation> citations;
+  final AppPalette palette;
+  final AppCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (source != null)
+            _SourceLabel(source: source!, palette: palette, copy: copy),
+          if (evidence.isNotEmpty) ...<Widget>[
+            if (source != null) const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: evidence
+                  .map(
+                    (evidence) => Chip(
+                      avatar: Icon(
+                        Icons.menu_book_rounded,
+                        size: 15,
+                        color: palette.primary,
+                      ),
+                      label: Text(evidence.sourceName),
+                      visualDensity: VisualDensity.compact,
+                      side: BorderSide.none,
+                      backgroundColor: palette.primaryContainer.withValues(
+                        alpha: 0.18,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+          if (citations.isNotEmpty) ...<Widget>[
+            if (source != null || evidence.isNotEmpty)
+              const SizedBox(height: 6),
+            _CitationList(
+              citations: citations,
+              palette: palette,
+              title: copy.evidenceTitle,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

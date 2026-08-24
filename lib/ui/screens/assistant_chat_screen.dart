@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/assistant_mode.dart';
 import '../../models/chat_message.dart';
@@ -164,6 +165,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         messages: messages,
                         scrollController: _scrollController,
                         onQuickPrompt: _sendQuickPrompt,
+                        onCopy: _copyAssistantAnswer,
                         useGlobalMode: widget.useGlobalMode,
                         showMessageTimes: _showMessageTimes,
                         onMessageTap: _showMessageTimesTemporarily,
@@ -217,6 +219,22 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _copyAssistantAnswer(String text) async {
+    final String value = text.trim();
+    if (value.isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(widget.controller.copy.answerCopied)),
+      );
   }
 
   void _showMessageTimesTemporarily() {
@@ -718,6 +736,7 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.scrollController,
     required this.onQuickPrompt,
+    required this.onCopy,
     required this.useGlobalMode,
     required this.showMessageTimes,
     required this.onMessageTap,
@@ -727,6 +746,7 @@ class _MessageList extends StatelessWidget {
   final List<ChatMessage> messages;
   final ScrollController scrollController;
   final Future<void> Function(String prompt) onQuickPrompt;
+  final Future<void> Function(String text) onCopy;
   final bool useGlobalMode;
   final bool showMessageTimes;
   final VoidCallback onMessageTap;
@@ -749,6 +769,13 @@ class _MessageList extends StatelessWidget {
                 ? () => controller.speakMessage(message.text)
                 : () {},
             speakTooltip: copy.speakAgain,
+            onCopy:
+                message.role == ChatRole.assistant &&
+                    !message.isStreaming &&
+                    !message.isFailed
+                ? () => onCopy(message.text)
+                : null,
+            copyTooltip: copy.copyAnswer,
             onRetry: message.canRetry
                 ? () => controller.retryMessage(
                     message,
