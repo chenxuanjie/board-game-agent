@@ -10,6 +10,7 @@ import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
+import 'package:board_game_agent/services/responses_compaction_store.dart';
 import 'package:board_game_agent/services/responses_rules_workflow.dart';
 
 void main() {
@@ -217,7 +218,161 @@ void main() {
       ...List<String>.generate(12, (int index) => 'history-${index + 3}'),
       'current-prompt',
     ]);
+    expect(client.requests.single.contextManagement, hasLength(1));
+    expect(
+      client.requests.single.contextManagement.single.compactThreshold,
+      100000,
+    );
   });
+
+  test(
+    'round trips a server compaction item per conversation context',
+    () async {
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          ResponsesResponse(
+            text: '第一次回答',
+            model: 'test-model',
+            webSearchCitations: const <ResponsesWebSearchCitation>[
+              ResponsesWebSearchCitation(
+                url: 'https://example.test/first',
+                title: '第一次来源',
+              ),
+            ],
+            outputItems: const <ResponsesInputItem>[
+              ResponsesRawInput(<String, dynamic>{
+                'type': 'compaction',
+                'id': 'cmp-1',
+                'encrypted_content': 'opaque',
+              }),
+            ],
+          ),
+          ResponsesResponse(
+            text: '第二次回答',
+            model: 'test-model',
+            webSearchCitations: const <ResponsesWebSearchCitation>[
+              ResponsesWebSearchCitation(
+                url: 'https://example.test/second',
+                title: '第二次来源',
+              ),
+            ],
+          ),
+        ],
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+      );
+
+      await workflow.generateReply(
+        prompt: '第一问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _NoCatalogRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+      await workflow.generateReply(
+        prompt: '第二问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _NoCatalogRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      final List<ResponsesRawInput> compactions = client.requests[1].input
+          .whereType<ResponsesRawInput>()
+          .toList();
+      expect(compactions, hasLength(1));
+      expect(compactions.single.value['id'], 'cmp-1');
+    },
+  );
+
+  test(
+    'restores an opaque compaction item in a new workflow instance',
+    () async {
+      final InMemoryResponsesCompactionStore store =
+          InMemoryResponsesCompactionStore();
+      final _FakeResponsesClient firstClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          ResponsesResponse(
+            text: '第一次回答',
+            model: 'test-model',
+            outputItems: const <ResponsesInputItem>[
+              ResponsesRawInput(<String, dynamic>{
+                'type': 'compaction',
+                'id': 'cmp-persisted',
+                'encrypted_content': 'opaque-persisted',
+              }),
+            ],
+          ),
+        ],
+      );
+      final ResponsesRulesWorkflow firstWorkflow = ResponsesRulesWorkflow(
+        responsesClient: firstClient,
+        compactionStore: store,
+      );
+
+      await firstWorkflow.generateReply(
+        prompt: '第一问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _NoCatalogRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      final _FakeResponsesClient secondClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          ResponsesResponse(
+            text: '第二次回答',
+            model: 'test-model',
+            webSearchCitations: const <ResponsesWebSearchCitation>[
+              ResponsesWebSearchCitation(
+                url: 'https://example.test/persisted',
+                title: '持久化来源',
+              ),
+            ],
+          ),
+        ],
+      );
+      final ResponsesRulesWorkflow secondWorkflow = ResponsesRulesWorkflow(
+        responsesClient: secondClient,
+        compactionStore: store,
+      );
+
+      await secondWorkflow.generateReply(
+        prompt: '第二问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _NoCatalogRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      final List<ResponsesRawInput> compactions = secondClient
+          .requests
+          .single
+          .input
+          .whereType<ResponsesRawInput>()
+          .toList();
+      expect(compactions, hasLength(1));
+      expect(compactions.single.value['id'], 'cmp-persisted');
+      expect(compactions.single.value['encrypted_content'], 'opaque-persisted');
+    },
+  );
 }
 
 AiApiConfig _config() => const AiApiConfig(

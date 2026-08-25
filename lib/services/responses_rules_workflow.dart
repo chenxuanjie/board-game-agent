@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:app_ai_client/app_ai_client.dart';
+import 'package:crypto/crypto.dart';
 
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
@@ -16,6 +17,7 @@ import 'board_game_prompt_builder.dart';
 import 'remote_asset_service.dart';
 import 'rule_source_catalog_service.dart';
 import 'ai_service.dart';
+import 'responses_compaction_store.dart';
 
 /// Four-stage rule workflow for the Responses API.
 ///
@@ -24,20 +26,34 @@ import 'ai_service.dart';
 /// sends those files to OpenAI.
 class ResponsesRulesWorkflow {
   static const int _maxConversationMessages = 12;
+  // Keep a safety margin for providers whose model context window is smaller
+  // than the largest modern Responses models. Server compaction is a guardrail
+  // for long conversations, not a replacement for the local recent window.
+  static const int _serverCompactionThreshold = 100000;
 
   ResponsesRulesWorkflow({
     required ResponsesAiClient responsesClient,
     RuleSourceCatalogService? catalogService,
     BoardGamePromptBuilder? promptBuilder,
+    ResponsesCompactionStore? compactionStore,
   }) : _responsesClient = responsesClient,
        _catalogService = catalogService ?? const RuleSourceCatalogService(),
-       _promptBuilder = promptBuilder ?? BoardGamePromptBuilder();
+       _promptBuilder = promptBuilder ?? BoardGamePromptBuilder(),
+       _compactionStore = compactionStore ?? InMemoryResponsesCompactionStore();
 
   final ResponsesAiClient _responsesClient;
   final RuleSourceCatalogService _catalogService;
   final BoardGamePromptBuilder _promptBuilder;
+  final ResponsesCompactionStore _compactionStore;
+  final Map<String, List<ResponsesInputItem>> _compactionInputsByContext =
+      <String, List<ResponsesInputItem>>{};
+  Future<void>? _compactionLoadFuture;
+  bool _compactionLoaded = false;
 
-  void close() => _responsesClient.close();
+  void close() {
+    _compactionInputsByContext.clear();
+    _responsesClient.close();
+  }
 
   Future<BoardGameAiAnswer> generateReply({
     required String prompt,
@@ -50,11 +66,13 @@ class ResponsesRulesWorkflow {
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
   }) async {
+    await _ensureCompactionLoaded();
     final _WorkflowContext context = await _prepare(
       prompt: prompt,
       language: language,
       game: game,
       config: config,
+      useGlobalMode: useGlobalMode,
       assetSourceConfigs: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
@@ -109,11 +127,13 @@ class ResponsesRulesWorkflow {
     required List<ChatMessage> conversationHistory,
     Future<void>? abortTrigger,
   }) async* {
+    await _ensureCompactionLoaded();
     final _WorkflowContext context = await _prepare(
       prompt: prompt,
       language: language,
       game: game,
       config: config,
+      useGlobalMode: useGlobalMode,
       assetSourceConfigs: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
@@ -228,6 +248,9 @@ class ResponsesRulesWorkflow {
       ),
       abortTrigger: abortTrigger,
     )) {
+      if (event.response != null) {
+        await _rememberCompaction(context, event.response!);
+      }
       if (event.type == ResponsesStreamEventType.textDelta &&
           event.delta.isNotEmpty) {
         buffer.write(event.delta);
@@ -252,6 +275,7 @@ class ResponsesRulesWorkflow {
     required AppLanguage language,
     required GameInfo game,
     required AiApiConfig config,
+    required bool useGlobalMode,
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
@@ -273,9 +297,17 @@ class ResponsesRulesWorkflow {
       language: language,
       game: game,
       config: config,
+      useGlobalMode: useGlobalMode,
       sources: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
-      conversation: _conversationInputs(conversationHistory, prompt),
+      conversation: <ResponsesInputItem>[
+        ..._compactionInputsFor(
+          config: config,
+          game: game,
+          useGlobalMode: useGlobalMode,
+        ),
+        ..._conversationInputs(conversationHistory, prompt),
+      ],
       catalog: catalog,
     );
   }
@@ -302,6 +334,7 @@ class ResponsesRulesWorkflow {
           source: source,
         ),
       );
+      await _rememberCompaction(context, response);
       final _ParsedAnswer parsed = _parseStructured(
         response.text,
         prepared.documents,
@@ -339,6 +372,9 @@ class ResponsesRulesWorkflow {
         ),
         abortTrigger: abortTrigger,
       )) {
+        if (event.response != null) {
+          await _rememberCompaction(context, event.response!);
+        }
         if (event.type == ResponsesStreamEventType.textDelta &&
             event.delta.isNotEmpty) {
           raw.write(event.delta);
@@ -375,6 +411,7 @@ class ResponsesRulesWorkflow {
       final ResponsesResponse response = await _responsesClient.complete(
         _webRequest(context, language: language, game: game),
       );
+      await _rememberCompaction(context, response);
       if (response.text.trim().isEmpty || response.webSearchCitations.isEmpty) {
         return const _StageResult();
       }
@@ -406,6 +443,9 @@ class ResponsesRulesWorkflow {
         _webRequest(context, language: language, game: game),
         abortTrigger: abortTrigger,
       )) {
+        if (event.response != null) {
+          await _rememberCompaction(context, event.response!);
+        }
         if (event.type == ResponsesStreamEventType.textDelta &&
             event.delta.isNotEmpty) {
           text.write(event.delta);
@@ -451,6 +491,7 @@ class ResponsesRulesWorkflow {
           useGlobalMode: useGlobalMode,
         ),
       );
+      await _rememberCompaction(context, response);
       final String text = response.text.trim();
       return BoardGameAiAnswer(
         text: text.isEmpty ? _unknownAnswer(language).text : text,
@@ -482,10 +523,17 @@ class ResponsesRulesWorkflow {
     return ResponsesRequest(
       endpoint: _endpoint(context.config),
       instructions: system,
-      input: <ResponsesInputItem>[...files, ...context.conversation],
+      input: <ResponsesInputItem>[
+        ...context.conversation.whereType<ResponsesRawInput>(),
+        ...files,
+        ...context.conversation.where(
+          (ResponsesInputItem item) => item is! ResponsesRawInput,
+        ),
+      ],
       maxOutputTokens: 1200,
       reasoningEffort: context.config.reasoningEffort.requestValue,
       serviceTier: context.config.responseSpeed.serviceTier,
+      contextManagement: _contextManagementFor(context.config),
     );
   }
 
@@ -505,6 +553,7 @@ class ResponsesRulesWorkflow {
     maxOutputTokens: 1200,
     reasoningEffort: context.config.reasoningEffort.requestValue,
     serviceTier: context.config.responseSpeed.serviceTier,
+    contextManagement: _contextManagementFor(context.config),
   );
 
   ResponsesRequest _knowledgeRequest(
@@ -523,7 +572,104 @@ class ResponsesRulesWorkflow {
     maxOutputTokens: 1200,
     reasoningEffort: context.config.reasoningEffort.requestValue,
     serviceTier: context.config.responseSpeed.serviceTier,
+    contextManagement: _contextManagementFor(context.config),
   );
+
+  List<ResponsesContextManagement> _contextManagementFor(AiApiConfig config) {
+    final AiProviderPreset preset = config.providerPreset;
+    if (preset != AiProviderPreset.openAi &&
+        preset != AiProviderPreset.custom) {
+      return const <ResponsesContextManagement>[];
+    }
+    return const <ResponsesContextManagement>[
+      ResponsesContextManagement.compaction(
+        compactThreshold: _serverCompactionThreshold,
+      ),
+    ];
+  }
+
+  List<ResponsesInputItem> _compactionInputsFor({
+    required AiApiConfig config,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) {
+    return List<ResponsesInputItem>.unmodifiable(
+      _compactionInputsByContext[_contextKey(
+            config: config,
+            game: game,
+            useGlobalMode: useGlobalMode,
+          )] ??
+          const <ResponsesInputItem>[],
+    );
+  }
+
+  Future<void> _rememberCompaction(
+    _WorkflowContext context,
+    ResponsesResponse response,
+  ) async {
+    final List<ResponsesInputItem> compactionItems = response.outputItems
+        .where(
+          (ResponsesInputItem item) =>
+              item is ResponsesRawInput && item.value['type'] == 'compaction',
+        )
+        .toList(growable: false);
+    if (compactionItems.isEmpty) return;
+    _compactionInputsByContext[_contextKey(
+      config: context.config,
+      game: context.game,
+      useGlobalMode: context.useGlobalMode,
+    )] = List<ResponsesInputItem>.unmodifiable(
+      compactionItems,
+    );
+    try {
+      await _compactionStore.save(_compactionInputsByContext);
+    } catch (_) {
+      // Compaction persistence is a cache optimization. A secure-storage
+      // failure must not turn an otherwise valid AI response into a failure.
+    }
+  }
+
+  String _contextKey({
+    required AiApiConfig config,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) {
+    final String scope = useGlobalMode ? 'global' : 'game:${game.slug}';
+    final String endpointFingerprint = sha256
+        .convert(
+          utf8.encode(
+            <String>[
+              config.name.trim(),
+              config.baseUrl.trim(),
+              config.model.trim(),
+              config.apiKey.trim(),
+              config.apiKeyHeader.trim(),
+            ].join('|'),
+          ),
+        )
+        .toString();
+    return '$scope|$endpointFingerprint';
+  }
+
+  Future<void> _ensureCompactionLoaded() {
+    if (_compactionLoaded) return Future<void>.value();
+    return _compactionLoadFuture ??= _loadCompactionState();
+  }
+
+  Future<void> _loadCompactionState() async {
+    try {
+      final Map<String, List<ResponsesInputItem>> stored =
+          await _compactionStore.load();
+      _compactionInputsByContext
+        ..clear()
+        ..addAll(stored);
+    } catch (_) {
+      // A corrupt/unavailable secure store should not block the first chat.
+      _compactionInputsByContext.clear();
+    } finally {
+      _compactionLoaded = true;
+    }
+  }
 
   Future<_PreparedDocuments> _prepareDocuments(
     _WorkflowContext context,
@@ -730,6 +876,7 @@ class _WorkflowContext {
     required this.language,
     required this.game,
     required this.config,
+    required this.useGlobalMode,
     required this.sources,
     required this.remoteAssetService,
     required this.conversation,
@@ -740,6 +887,7 @@ class _WorkflowContext {
   final AppLanguage language;
   final GameInfo game;
   final AiApiConfig config;
+  final bool useGlobalMode;
   final List<AssetSourceConfig> sources;
   final RemoteAssetService remoteAssetService;
   final List<ResponsesInputItem> conversation;

@@ -15,6 +15,7 @@ import 'services/insecure_android_certificate_trust.dart';
 import 'services/speech_service.dart';
 import 'services/tts_service.dart';
 import 'services/realtime_voice_service.dart';
+import 'services/responses_compaction_store.dart';
 import 'services/responses_rules_workflow.dart';
 import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
@@ -42,6 +43,7 @@ Future<void> main() async {
       aiClient: OpenAiDartAiClient(),
       responsesWorkflow: ResponsesRulesWorkflow(
         responsesClient: OpenAiDartResponsesAiClient(),
+        compactionStore: SecureResponsesCompactionStore(),
       ),
     ),
     gameManifestService: GameManifestService(),
