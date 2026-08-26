@@ -41,7 +41,6 @@ flutter:
   uses-material-design: true
   assets:
     - branding/app_icon.png
-    - assets/rule_sources.json
     - assets/catalog.json
     - assets/storage_endpoints.json
     - assets/games/puerto_rico/images/
@@ -52,6 +51,7 @@ flutter:
     - assets/games/startups/game.json
     - assets/games/cabo/images/
     - assets/games/cabo/game.json
+    - assets/games/cabo/manifest.json
     - assets/games/carcassonne_3/images/
     - assets/games/carcassonne_3/game.json
     - assets/games/harmonies/images/

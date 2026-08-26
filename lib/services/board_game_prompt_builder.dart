@@ -109,11 +109,7 @@ $gameProfile$knowledgeBlock
     required AppLanguage language,
     required GameInfo game,
     required String sourceLabel,
-    List<String> terminology = const <String>[],
   }) {
-    final String terms = terminology.isEmpty
-        ? ''
-        : '\n\n术语映射：\n${terminology.map((item) => '- $item').join('\n')}';
     if (language == AppLanguage.zhHans) {
       return '''你是《${game.title}》的桌游规则助手。
 当前阶段只能依据附件中的$sourceLabel回答，不能调用联网搜索，也不能使用模型常识补全。
@@ -122,7 +118,7 @@ $gameProfile$knowledgeBlock
 只返回 JSON，不要 Markdown 代码块：
 {"status":"answered","answer":"中文答案","sourceIds":["附件中声明的 sourceId"]}
 {"status":"insufficient","answer":"","sourceIds":[]}
-附件来源 ID 只能使用请求中声明的 sourceId，不要伪造来源。$terms''';
+附件来源 ID 只能使用请求中声明的 sourceId，不要伪造来源。''';
     }
     return '''You are the ${game.title} board-game rules assistant.
 Use only the attached $sourceLabel documents in this stage. Do not use web search or general knowledge.
@@ -131,27 +127,23 @@ If the documents do not directly support the answer, return status=insufficient 
 Return JSON only, without code fences:
 {"status":"answered","answer":"Chinese answer","sourceIds":["declared sourceId"]}
 {"status":"insufficient","answer":"","sourceIds":[]}
-Only use source IDs declared by the app. Do not invent citations.$terms''';
+Only use source IDs declared by the app. Do not invent citations.''';
   }
 
   String buildResponsesWebInstructions({
     required AppLanguage language,
     required GameInfo game,
-    List<String> terminology = const <String>[],
   }) {
-    final String terms = terminology.isEmpty
-        ? ''
-        : '\n术语映射：${terminology.join('；')}';
     if (language == AppLanguage.zhHans) {
       return '''你是《${game.title}》规则助手。
 本阶段只允许使用 web_search，搜索当前桌游的官方网页和可信社区资料。
 用中文回答，保留英文专有名词；明确说明这是联网资料，不是本地规则书。
-只有搜索结果有可靠引用支持时才回答；否则返回“未找到可靠直接依据”。不要伪造引用。$terms''';
+只有搜索结果有可靠引用支持时才回答；否则返回“未找到可靠直接依据”。不要伪造引用。''';
     }
     return '''You are the ${game.title} rules assistant.
 Use only web_search in this stage. Prefer official pages and trustworthy community sources.
 Answer in Chinese, preserve English proper nouns, and say that the answer comes from web sources rather than a local rulebook.
-Do not claim anything without reliable citations and do not invent citations.$terms''';
+Do not claim anything without reliable citations and do not invent citations.''';
   }
 
   String buildResponsesKnowledgeInstructions({

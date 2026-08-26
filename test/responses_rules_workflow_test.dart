@@ -14,46 +14,43 @@ import 'package:board_game_agent/services/responses_compaction_store.dart';
 import 'package:board_game_agent/services/responses_rules_workflow.dart';
 
 void main() {
-  test(
-    'falls back from insufficient official material to community material',
-    () async {
-      final _FakeResponsesClient client = _FakeResponsesClient(
-        responses: <ResponsesResponse>[
-          _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
-          _response(
-            '{"status":"answered","answer":"社区资料回答","sourceIds":["community-faq"]}',
-          ),
-        ],
-      );
-      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
-        responsesClient: client,
-      );
+  test('uses the selected game knowledge paths as official documents', () async {
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        _response(
+          '{"status":"answered","answer":"本地规则回答","sourceIds":["puerto_rico-knowledge-0"]}',
+        ),
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
 
-      final answer = await workflow.generateReply(
-        prompt: '社区问题',
-        language: AppLanguage.zhHans,
-        game: _game(),
-        answerMode: AiAnswerMode.knowledgeThenDirect,
-        useGlobalMode: false,
-        config: _config(),
-        assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: _FakeRemoteAssetService(),
-        conversationHistory: const <ChatMessage>[],
-      );
+    final answer = await workflow.generateReply(
+      prompt: '本地资料问题',
+      language: AppLanguage.zhHans,
+      game: _game(),
+      answerMode: AiAnswerMode.knowledgeThenDirect,
+      useGlobalMode: false,
+      config: _config(),
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _FakeRemoteAssetService(),
+      conversationHistory: const <ChatMessage>[],
+    );
 
-      expect(answer.text, '社区资料回答');
-      expect(answer.source.name, 'community');
-      expect(answer.citations.single.sourceId, 'community-faq');
-      expect(client.completeRequests, 2);
-      expect(client.requests[0].tools, isEmpty);
-      expect(client.requests[1].tools, isEmpty);
-    },
-  );
+    expect(answer.text, '本地规则回答');
+    expect(answer.source.name, 'official');
+    expect(answer.citations.single.sourceId, 'puerto_rico-knowledge-0');
+    expect(client.completeRequests, 1);
+    expect(
+      client.requests.single.input.whereType<ResponsesFileInput>(),
+      hasLength(2),
+    );
+  });
 
   test('knowledgeOnly stops before web search and model knowledge', () async {
     final _FakeResponsesClient client = _FakeResponsesClient(
       responses: <ResponsesResponse>[
-        _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
         _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
       ],
     );
@@ -74,7 +71,7 @@ void main() {
     );
 
     expect(answer.source.name, 'insufficient');
-    expect(client.completeRequests, 2);
+    expect(client.completeRequests, 1);
     expect(
       client.requests.every((ResponsesRequest item) => item.tools.isEmpty),
       isTrue,
@@ -84,7 +81,6 @@ void main() {
   test('uses web citations before the model-knowledge fallback', () async {
     final _FakeResponsesClient client = _FakeResponsesClient(
       responses: <ResponsesResponse>[
-        _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
         _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
         ResponsesResponse(
           text: '联网资料回答',
@@ -116,8 +112,8 @@ void main() {
 
     expect(answer.source.name, 'web');
     expect(answer.citations.single.url, 'https://example.test/rules');
-    expect(client.completeRequests, 3);
-    expect(client.requests[2].tools.single.kind, ResponsesToolKind.webSearch);
+    expect(client.completeRequests, 2);
+    expect(client.requests[1].tools.single.kind, ResponsesToolKind.webSearch);
   });
 
   test(
@@ -125,7 +121,6 @@ void main() {
     () async {
       final _FakeResponsesClient client = _FakeResponsesClient(
         responses: <ResponsesResponse>[
-          _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
           _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
           _response('没有可靠联网依据'),
           _response('根据通用知识谨慎回答'),
@@ -149,9 +144,9 @@ void main() {
 
       expect(answer.text, '根据通用知识谨慎回答');
       expect(answer.source.name, 'modelKnowledge');
-      expect(client.completeRequests, 4);
-      expect(client.requests[2].tools.single.kind, ResponsesToolKind.webSearch);
-      expect(client.requests[3].tools, isEmpty);
+      expect(client.completeRequests, 3);
+      expect(client.requests[1].tools.single.kind, ResponsesToolKind.webSearch);
+      expect(client.requests[2].tools, isEmpty);
     },
   );
 
@@ -206,7 +201,7 @@ void main() {
       useGlobalMode: false,
       config: _config(),
       assetSourceConfigs: const <AssetSourceConfig>[],
-      remoteAssetService: _NoCatalogRemoteAssetService(),
+      remoteAssetService: _UnavailableRemoteAssetService(),
       conversationHistory: history,
     );
 
@@ -271,7 +266,7 @@ void main() {
         useGlobalMode: false,
         config: _config(),
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: _NoCatalogRemoteAssetService(),
+        remoteAssetService: _UnavailableRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
       );
       await workflow.generateReply(
@@ -282,7 +277,7 @@ void main() {
         useGlobalMode: false,
         config: _config(),
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: _NoCatalogRemoteAssetService(),
+        remoteAssetService: _UnavailableRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
       );
 
@@ -327,7 +322,7 @@ void main() {
         useGlobalMode: false,
         config: _config(),
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: _NoCatalogRemoteAssetService(),
+        remoteAssetService: _UnavailableRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
       );
 
@@ -358,7 +353,7 @@ void main() {
         useGlobalMode: false,
         config: _config(),
         assetSourceConfigs: const <AssetSourceConfig>[],
-        remoteAssetService: _NoCatalogRemoteAssetService(),
+        remoteAssetService: _UnavailableRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
       );
 
@@ -404,7 +399,10 @@ GameInfo _game() => GameInfo(
   rankBadges: const <String>[],
   rulebookAssetPath: 'assets/games/puerto_rico/docs/rulebook_zh.md',
   faqAssetPath: 'assets/games/puerto_rico/docs/faq_zh.md',
-  knowledgeAssetPaths: const <String>[],
+  knowledgeAssetPaths: const <String>[
+    'assets/games/puerto_rico/docs/rulebook_zh.md',
+    'assets/games/puerto_rico/docs/faq_zh.md',
+  ],
   heroTagline: '',
   assistantIntro: '',
   summary: '',
@@ -423,33 +421,6 @@ ResponsesResponse _response(String text) =>
 class _FakeRemoteAssetService extends RemoteAssetService {
   _FakeRemoteAssetService();
 
-  static const String _catalog = '''
-{
-  "version": 1,
-  "games": {
-    "puerto_rico": {
-      "official": [{"id":"official-rulebook","title":"Official","path":"official.md","format":"md","language":"en"}],
-      "community": [{"id":"community-faq","title":"Community FAQ","path":"community.md","format":"md","language":"en"}],
-      "terms": {"市长阶段": ["Mayor phase"]}
-    }
-  }
-}
-''';
-
-  @override
-  Future<String?> loadText({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async {
-    return remotePath == 'rule_sources.json' ? _catalog : null;
-  }
-
-  @override
-  Future<String?> fetchRemoteText({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async => null;
-
   @override
   Future<List<int>?> loadBytes({
     required List<AssetSourceConfig> sources,
@@ -457,8 +428,8 @@ class _FakeRemoteAssetService extends RemoteAssetService {
   }) async => utf8.encode(remotePath);
 }
 
-class _NoCatalogRemoteAssetService extends RemoteAssetService {
-  _NoCatalogRemoteAssetService();
+class _UnavailableRemoteAssetService extends RemoteAssetService {
+  _UnavailableRemoteAssetService();
 
   @override
   Future<String?> loadText({

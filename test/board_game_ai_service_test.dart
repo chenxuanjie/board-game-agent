@@ -185,7 +185,7 @@ void main() {
       responses: <ResponsesResponse>[
         ResponsesResponse(
           text:
-              '{"status":"answered","answer":"自定义 Responses 回答","sourceIds":["custom-official"]}',
+              '{"status":"answered","answer":"自定义 Responses 回答","sourceIds":["cabo-knowledge-0"]}',
           model: 'test-model',
         ),
       ],
@@ -355,40 +355,6 @@ class _FakeRemoteAssetService extends RemoteAssetService {
 
 class _FakeResponsesRemoteAssetService extends RemoteAssetService {
   _FakeResponsesRemoteAssetService() : super(client: http.Client());
-
-  static const String _catalog = '''
-{
-  "version": 1,
-  "games": {
-    "cabo": {
-      "official": [
-        {
-          "id": "custom-official",
-          "title": "Cabo 官方规则",
-          "path": "rules.md",
-          "format": "md",
-          "language": "zh"
-        }
-      ],
-      "community": []
-    }
-  }
-}
-''';
-
-  @override
-  Future<String?> loadText({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async {
-    return remotePath == 'rule_sources.json' ? _catalog : null;
-  }
-
-  @override
-  Future<String?> fetchRemoteText({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async => null;
 
   @override
   Future<List<int>?> loadBytes({

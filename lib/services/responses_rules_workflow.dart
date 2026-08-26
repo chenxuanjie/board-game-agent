@@ -12,18 +12,17 @@ import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
 import '../models/game_info.dart';
 import '../models/rule_citation.dart';
-import '../models/rule_source.dart';
+import '../models/rule_document.dart';
 import 'board_game_prompt_builder.dart';
 import 'remote_asset_service.dart';
-import 'rule_source_catalog_service.dart';
 import 'ai_service.dart';
 import 'responses_compaction_store.dart';
 
-/// Four-stage rule workflow for the Responses API.
+/// Three-stage rule workflow for the Responses API.
 ///
 /// The workflow deliberately keeps retrieval and provider transport separate:
-/// the catalog chooses declared files, while the shared Responses adapter
-/// sends those files to OpenAI.
+/// the selected game's knowledge paths choose declared files, while the shared
+/// Responses adapter sends those files to the configured provider.
 class ResponsesRulesWorkflow {
   static const int _maxConversationMessages = 12;
   // Keep a safety margin for providers whose model context window is smaller
@@ -33,16 +32,13 @@ class ResponsesRulesWorkflow {
 
   ResponsesRulesWorkflow({
     required ResponsesAiClient responsesClient,
-    RuleSourceCatalogService? catalogService,
     BoardGamePromptBuilder? promptBuilder,
     ResponsesCompactionStore? compactionStore,
   }) : _responsesClient = responsesClient,
-       _catalogService = catalogService ?? const RuleSourceCatalogService(),
        _promptBuilder = promptBuilder ?? BoardGamePromptBuilder(),
        _compactionStore = compactionStore ?? InMemoryResponsesCompactionStore();
 
   final ResponsesAiClient _responsesClient;
-  final RuleSourceCatalogService _catalogService;
   final BoardGamePromptBuilder _promptBuilder;
   final ResponsesCompactionStore _compactionStore;
   final Map<String, List<ResponsesInputItem>> _compactionInputsByContext =
@@ -80,21 +76,12 @@ class ResponsesRulesWorkflow {
 
     final _StageResult official = await _runDocumentStage(
       context: context,
-      documents: context.catalog.official,
+      documents: context.documents,
       source: AnswerSource.official,
       language: language,
       game: game,
     );
     if (official.answer != null) return official.answer!;
-
-    final _StageResult community = await _runDocumentStage(
-      context: context,
-      documents: context.catalog.community,
-      source: AnswerSource.community,
-      language: language,
-      game: game,
-    );
-    if (community.answer != null) return community.answer!;
 
     if (answerMode == AiAnswerMode.knowledgeOnly) {
       return _unknownAnswer(language);
@@ -143,7 +130,7 @@ class ResponsesRulesWorkflow {
     BoardGameAiAnswer? officialAnswer;
     await for (final _StageStreamEvent event in _streamDocumentStage(
       context: context,
-      documents: context.catalog.official,
+      documents: context.documents,
       source: AnswerSource.official,
       language: language,
       game: game,
@@ -163,35 +150,6 @@ class ResponsesRulesWorkflow {
       yield BoardGameAiStreamEvent(
         answer: officialAnswer,
         citations: officialAnswer.citations,
-        isDone: true,
-      );
-      return;
-    }
-
-    yield const BoardGameAiStreamEvent(status: 'community');
-    BoardGameAiAnswer? communityAnswer;
-    await for (final _StageStreamEvent event in _streamDocumentStage(
-      context: context,
-      documents: context.catalog.community,
-      source: AnswerSource.community,
-      language: language,
-      game: game,
-      abortTrigger: abortTrigger,
-    )) {
-      if (event.delta.isNotEmpty) {
-        yield BoardGameAiStreamEvent(delta: event.delta);
-      }
-      if (event.citation != null) {
-        yield BoardGameAiStreamEvent(
-          citations: <RuleCitation>[event.citation!],
-        );
-      }
-      if (event.answer != null) communityAnswer = event.answer;
-    }
-    if (communityAnswer != null) {
-      yield BoardGameAiStreamEvent(
-        answer: communityAnswer,
-        citations: communityAnswer.citations,
         isDone: true,
       );
       return;
@@ -280,18 +238,6 @@ class ResponsesRulesWorkflow {
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
   }) async {
-    RuleSourceCatalog? loaded;
-    try {
-      loaded = await _catalogService.load(
-        game: game,
-        sources: assetSourceConfigs,
-        remoteAssetService: remoteAssetService,
-      );
-    } catch (_) {
-      loaded = null;
-    }
-    final RuleGameSourceCatalog catalog =
-        loaded?.forGame(game.slug) ?? _legacyCatalog(game);
     return _WorkflowContext(
       prompt: prompt,
       language: language,
@@ -308,13 +254,13 @@ class ResponsesRulesWorkflow {
         ),
         ..._conversationInputs(conversationHistory, prompt),
       ],
-      catalog: catalog,
+      documents: _documentsForGame(game),
     );
   }
 
   Future<_StageResult> _runDocumentStage({
     required _WorkflowContext context,
-    required List<RuleSourceDocument> documents,
+    required List<RuleDocument> documents,
     required AnswerSource source,
     required AppLanguage language,
     required GameInfo game,
@@ -348,7 +294,7 @@ class ResponsesRulesWorkflow {
 
   Stream<_StageStreamEvent> _streamDocumentStage({
     required _WorkflowContext context,
-    required List<RuleSourceDocument> documents,
+    required List<RuleDocument> documents,
     required AnswerSource source,
     required AppLanguage language,
     required GameInfo game,
@@ -518,7 +464,6 @@ class ResponsesRulesWorkflow {
       language: language,
       game: game,
       sourceLabel: sourceLabel,
-      terminology: context.catalog.terminologyLines,
     );
     return ResponsesRequest(
       endpoint: _endpoint(context.config),
@@ -546,7 +491,6 @@ class ResponsesRulesWorkflow {
     instructions: _promptBuilder.buildResponsesWebInstructions(
       language: language,
       game: game,
-      terminology: context.catalog.terminologyLines,
     ),
     input: context.conversation,
     tools: const <ResponsesToolDefinition>[ResponsesToolDefinition.webSearch()],
@@ -673,11 +617,11 @@ class ResponsesRulesWorkflow {
 
   Future<_PreparedDocuments> _prepareDocuments(
     _WorkflowContext context,
-    List<RuleSourceDocument> documents,
+    List<RuleDocument> documents,
   ) async {
     final List<ResponsesInputItem> inputs = <ResponsesInputItem>[];
-    final List<RuleSourceDocument> loaded = <RuleSourceDocument>[];
-    for (final RuleSourceDocument document in documents.take(4)) {
+    final List<RuleDocument> loaded = <RuleDocument>[];
+    for (final RuleDocument document in documents.take(4)) {
       if (document.url != null && _isPublicHttps(document.url!)) {
         inputs.add(
           ResponsesFileInput.url(
@@ -709,7 +653,7 @@ class ResponsesRulesWorkflow {
 
   _ParsedAnswer _parseStructured(
     String raw,
-    List<RuleSourceDocument> documents,
+    List<RuleDocument> documents,
     AnswerSource source,
   ) {
     try {
@@ -740,22 +684,45 @@ class ResponsesRulesWorkflow {
     }
   }
 
-  RuleGameSourceCatalog _legacyCatalog(GameInfo game) {
-    final List<RuleSourceDocument> docs = game.knowledgeAssetPaths
+  List<RuleDocument> _documentsForGame(GameInfo game) {
+    return game.knowledgeAssetPaths
         .asMap()
         .entries
         .map(
-          (entry) => RuleSourceDocument(
-            id: 'legacy-${entry.key}-${entry.value}',
-            title: entry.value.split('/').last,
+          (entry) => RuleDocument(
+            id: '${game.slug}-knowledge-${entry.key}',
+            title: _documentTitle(entry.value),
             path: entry.value,
-            format: entry.value.endsWith('.pdf') ? 'pdf' : 'md',
-            language: entry.value.endsWith('_en.md') ? 'en' : 'zh',
+            format: _documentFormat(entry.value),
+            language: _documentLanguage(entry.value),
             sourceType: 'official',
           ),
         )
-        .toList();
-    return RuleGameSourceCatalog(slug: game.slug, official: docs);
+        .toList(growable: false);
+  }
+
+  String _documentTitle(String path) {
+    final String normalized = path.replaceAll('\\', '/');
+    final int slash = normalized.lastIndexOf('/');
+    return slash == -1 ? normalized : normalized.substring(slash + 1);
+  }
+
+  String _documentFormat(String path) {
+    final String title = _documentTitle(path);
+    final int dot = title.lastIndexOf('.');
+    return dot == -1 ? 'bin' : title.substring(dot + 1).toLowerCase();
+  }
+
+  String _documentLanguage(String path) {
+    final String title = _documentTitle(path).toLowerCase();
+    if (title.contains('_en.') || title.contains('-en.')) return 'en';
+    if (title.contains('_zh.') ||
+        title.contains('-zh.') ||
+        title.contains('_zh-hans.') ||
+        title.contains('-zh-hans.')) {
+      return 'zh';
+    }
+    return 'unknown';
   }
 
   List<ResponsesInputItem> _conversationInputs(
@@ -880,7 +847,7 @@ class _WorkflowContext {
     required this.sources,
     required this.remoteAssetService,
     required this.conversation,
-    required this.catalog,
+    required this.documents,
   });
 
   final String prompt;
@@ -891,14 +858,14 @@ class _WorkflowContext {
   final List<AssetSourceConfig> sources;
   final RemoteAssetService remoteAssetService;
   final List<ResponsesInputItem> conversation;
-  final RuleGameSourceCatalog catalog;
+  final List<RuleDocument> documents;
 }
 
 class _PreparedDocuments {
   const _PreparedDocuments({required this.inputs, required this.documents});
 
   final List<ResponsesInputItem> inputs;
-  final List<RuleSourceDocument> documents;
+  final List<RuleDocument> documents;
 }
 
 class _ParsedAnswer {
