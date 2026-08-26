@@ -2,6 +2,7 @@ import 'package:board_game_agent/models/answer_source.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/evidence_chunk.dart';
 import 'package:board_game_agent/models/app_language.dart';
+import 'package:board_game_agent/models/rule_citation.dart';
 import 'package:board_game_agent/theme/palette_registry.dart';
 import 'package:board_game_agent/ui/app_copy.dart';
 import 'package:board_game_agent/ui/widgets/message_bubble.dart';
@@ -81,6 +82,59 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('正在回答…'), findsOneWidget);
   });
+
+  testWidgets(
+    'assistant actions and references render outside the answer bubble',
+    (WidgetTester tester) async {
+      bool copied = false;
+      final ChatMessage message = ChatMessage(
+        id: 'complete',
+        role: ChatRole.assistant,
+        text: '答案正文',
+        timestamp: DateTime(2026, 8, 18, 12, 30),
+        source: AnswerSource.rulebook,
+        citations: <RuleCitation>[
+          const RuleCitation(
+            sourceType: 'file',
+            sourceId: 'rulebook',
+            path: 'assets/rulebook.md',
+            page: 3,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              palette: PaletteRegistry.classic,
+              copy: AppCopy(AppLanguage.zhHans),
+              onSpeak: () {},
+              onCopy: () => copied = true,
+              copyTooltip: '复制回答',
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('复制回答'), findsOneWidget);
+      expect(find.text('规则库'), findsOneWidget);
+      expect(find.text('第 3 页'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byTooltip('复制回答')).dy,
+        greaterThan(tester.getBottomLeft(find.text('答案正文')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('规则库')).dy,
+        greaterThan(tester.getBottomLeft(find.text('答案正文')).dy),
+      );
+
+      await tester.tap(find.byTooltip('复制回答'));
+      expect(copied, isTrue);
+    },
+  );
 
   testWidgets('chat bubble keeps time hidden until the parent reveals it', (
     WidgetTester tester,

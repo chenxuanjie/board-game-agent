@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -10,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
 import 'board_game_remote_layout.dart';
+import 'board_game_remote_credentials.dart';
 
 class RemoteAssetService {
   RemoteAssetService({http.Client? client})
@@ -25,12 +27,7 @@ class RemoteAssetService {
 
   final http.Client _client;
 
-  static const String _defaultUsername = 'Shane';
-  static const String _defaultPassword = '1';
   static const String _versionManifestFileName = '_asset_versions.json';
-  String? _username;
-  String? _password;
-  bool _authLoaded = false;
 
   Future<CachedAsset?> ensureCached({
     required List<AssetSourceConfig> sources,
@@ -100,6 +97,27 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    final List<int>? bytes = await fetchRemoteBytes(
+      sources: sources,
+      remotePath: remotePath,
+    );
+    if (bytes == null) return null;
+    try {
+      return utf8.decode(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetches the declared remote file without interpreting its bytes.
+  ///
+  /// Keeping this separate from [fetchRemoteText] is important for PDF and
+  /// other binary rule files: decoding arbitrary bytes as UTF-8 would corrupt
+  /// the file before it reaches the Responses API.
+  Future<List<int>?> fetchRemoteBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async {
     final Map<String, String> headers = await _headers();
     for (final source in sources) {
       final Uri? uri = _buildFileUri(source, remotePath);
@@ -111,7 +129,7 @@ class RemoteAssetService {
             .get(uri, headers: headers)
             .timeout(const Duration(seconds: 8));
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          return utf8.decode(response.bodyBytes);
+          return response.bodyBytes;
         }
       } catch (_) {
         continue;
@@ -163,6 +181,36 @@ class RemoteAssetService {
       return null;
     }
     return File(asset.localPath).readAsString();
+  }
+
+  /// Loads a cached or remote file as bytes for an AI file input.
+  ///
+  /// On Web, private text files can still be fetched through the browser
+  /// client. Binary files require a public URL or a same-origin gateway.
+  Future<List<int>?> loadBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async {
+    final CachedAsset? asset = await ensureCached(
+      sources: sources,
+      remotePath: remotePath,
+    );
+    if (asset != null && asset.exists && !kIsWeb) {
+      return File(asset.localPath).readAsBytes();
+    }
+    final List<int>? remoteBytes = await fetchRemoteBytes(
+      sources: sources,
+      remotePath: remotePath,
+    );
+    if (remoteBytes != null) {
+      return remoteBytes;
+    }
+    try {
+      final ByteData data = await rootBundle.load(remotePath);
+      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> loadTextFromAny({
@@ -317,42 +365,11 @@ class RemoteAssetService {
   }
 
   Future<Map<String, String>> _headers() async {
-    await _ensureAuthLoaded();
     final String encoded = base64Encode(
       utf8.encode(
-        '${_username ?? _defaultUsername}:${_password ?? _defaultPassword}',
+        '${BoardGameRemoteCredentials.username}:${BoardGameRemoteCredentials.password}',
       ),
     );
     return <String, String>{'Authorization': 'Basic $encoded'};
-  }
-
-  Future<void> _ensureAuthLoaded() async {
-    if (_authLoaded) {
-      return;
-    }
-    _authLoaded = true;
-    try {
-      final String source = await rootBundle.loadString(
-        'assets/storage_endpoints.json',
-      );
-      final Map<String, dynamic> json =
-          jsonDecode(source) as Map<String, dynamic>;
-      final Map<String, dynamic>? auth = json['auth'] as Map<String, dynamic>?;
-      final String? username = auth?['username'] as String?;
-      final String? password = auth?['password'] as String?;
-      if (username != null && username.trim().isNotEmpty) {
-        _username = username.trim();
-      }
-      if (password != null && password.isNotEmpty) {
-        _password = password;
-      }
-      debugPrint(
-        '[assets] auth loaded for remote library: ${_username ?? _defaultUsername}',
-      );
-    } catch (_) {
-      _username = _defaultUsername;
-      _password = _defaultPassword;
-      debugPrint('[assets] auth fallback in use: $_defaultUsername');
-    }
   }
 }

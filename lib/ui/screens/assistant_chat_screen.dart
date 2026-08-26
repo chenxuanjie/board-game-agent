@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/assistant_mode.dart';
 import '../../models/chat_message.dart';
@@ -77,7 +78,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final copy = controller.copy;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final canSend =
-        _textController.text.trim().isNotEmpty && !controller.isSending;
+        _textController.text.trim().isNotEmpty &&
+        !controller.isSendingForContext(useGlobalMode: widget.useGlobalMode);
 
     return Scaffold(
       appBar: AppBar(
@@ -132,6 +134,32 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     onSelect: _selectAssistantMode,
                   ),
                 ),
+                AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) {
+                    final bool isSending = controller.isSendingForContext(
+                      useGlobalMode: widget.useGlobalMode,
+                    );
+                    final String? status = controller
+                        .aiWorkflowStatusForContext(
+                          useGlobalMode: widget.useGlobalMode,
+                        );
+                    if (!isSending || status == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        screenWidth >= 720 ? 28 : 16,
+                        0,
+                        screenWidth >= 720 ? 28 : 16,
+                        8,
+                      ),
+                      child: _WorkflowStatusBanner(
+                        label: copy.aiWorkflowStatus(status),
+                      ),
+                    );
+                  },
+                ),
                 Expanded(
                   child: AnimatedBuilder(
                     animation: controller,
@@ -144,6 +172,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         messages: messages,
                         scrollController: _scrollController,
                         onQuickPrompt: _sendQuickPrompt,
+                        onCopy: _copyAssistantAnswer,
                         useGlobalMode: widget.useGlobalMode,
                         showMessageTimes: _showMessageTimes,
                         onMessageTap: _showMessageTimesTemporarily,
@@ -199,6 +228,22 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     }
   }
 
+  Future<void> _copyAssistantAnswer(String text) async {
+    final String value = text.trim();
+    if (value.isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(widget.controller.copy.answerCopied)),
+      );
+  }
+
   void _showMessageTimesTemporarily() {
     _messageTimeVisibilityTimer?.cancel();
     if (!mounted) {
@@ -227,7 +272,10 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
 
   Future<void> _sendCurrentText() async {
     final text = _textController.text.trim();
-    if (text.isEmpty || widget.controller.isSending) {
+    if (text.isEmpty ||
+        widget.controller.isSendingForContext(
+          useGlobalMode: widget.useGlobalMode,
+        )) {
       return;
     }
 
@@ -415,6 +463,47 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _WorkflowStatusBanner extends StatelessWidget {
+  const _WorkflowStatusBanner({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      decoration: BoxDecoration(
+        color: palette.primaryContainer.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.outline),
+      ),
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: palette.primary,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: palette.textPrimary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -657,6 +746,7 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.scrollController,
     required this.onQuickPrompt,
+    required this.onCopy,
     required this.useGlobalMode,
     required this.showMessageTimes,
     required this.onMessageTap,
@@ -666,6 +756,7 @@ class _MessageList extends StatelessWidget {
   final List<ChatMessage> messages;
   final ScrollController scrollController;
   final Future<void> Function(String prompt) onQuickPrompt;
+  final Future<void> Function(String text) onCopy;
   final bool useGlobalMode;
   final bool showMessageTimes;
   final VoidCallback onMessageTap;
@@ -673,7 +764,9 @@ class _MessageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
-    final showQuickPrompts = messages.length <= 1 && !controller.isSending;
+    final showQuickPrompts =
+        messages.length <= 1 &&
+        !controller.isSendingForContext(useGlobalMode: useGlobalMode);
 
     return ListView(
       controller: scrollController,
@@ -688,6 +781,13 @@ class _MessageList extends StatelessWidget {
                 ? () => controller.speakMessage(message.text)
                 : () {},
             speakTooltip: copy.speakAgain,
+            onCopy:
+                message.role == ChatRole.assistant &&
+                    !message.isStreaming &&
+                    !message.isFailed
+                ? () => onCopy(message.text)
+                : null,
+            copyTooltip: copy.copyAnswer,
             onRetry: message.canRetry
                 ? () => controller.retryMessage(
                     message,
@@ -785,6 +885,9 @@ class _Composer extends StatelessWidget {
   Widget build(BuildContext context) {
     final copy = controller.copy;
     final palette = AppPalette.of(context);
+    final bool isSending = controller.isSendingForContext(
+      useGlobalMode: useGlobalMode,
+    );
     final smartSupplement = controller.allowSmartSupplement(
       useGlobalMode: useGlobalMode,
     );
@@ -880,7 +983,7 @@ class _Composer extends StatelessWidget {
                   tooltip: controller.isListening
                       ? copy.tapToStop
                       : copy.speechReady,
-                  onPressed: controller.isSending
+                  onPressed: isSending
                       ? null
                       : () {
                           onMicTap();
@@ -899,12 +1002,12 @@ class _Composer extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 IconButton(
-                  tooltip: controller.isSending
-                      ? copy.stopGenerating
-                      : copy.send,
-                  onPressed: controller.isSending
+                  tooltip: isSending ? copy.stopGenerating : copy.send,
+                  onPressed: isSending
                       ? () {
-                          controller.stopGenerating();
+                          controller.stopGenerating(
+                            useGlobalMode: useGlobalMode,
+                          );
                         }
                       : canSend
                       ? () {
@@ -912,18 +1015,18 @@ class _Composer extends StatelessWidget {
                         }
                       : null,
                   style: IconButton.styleFrom(
-                    backgroundColor: controller.isSending
+                    backgroundColor: isSending
                         ? palette.primary
                         : canSend
                         ? palette.secondary
                         : palette.textPrimary.withValues(alpha: 0.14),
-                    foregroundColor: controller.isSending
+                    foregroundColor: isSending
                         ? palette.onPrimary
                         : canSend
                         ? palette.onSecondary
                         : palette.disabledForeground,
                   ),
-                  icon: controller.isSending
+                  icon: isSending
                       ? const Icon(Icons.stop_rounded)
                       : const Icon(Icons.arrow_upward_rounded),
                 ),

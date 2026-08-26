@@ -74,8 +74,8 @@ class AppCopy {
   String get aiApiModelRequired =>
       isChinese ? '请先获取并选择一个模型' : 'Fetch and select a model first';
   String get aiApiModelsNotLoaded => isChinese
-      ? '点击刷新，从 /models 获取可用模型'
-      : 'Refresh to load models from /models';
+      ? '点击“测试并保存配置”，从 /models 获取可用模型'
+      : 'Click “Test and save config” to load models from /models';
   String get aiApiModelsLoading => isChinese ? '正在加载模型列表…' : 'Loading models…';
   String aiApiModelsLoaded(int count) =>
       isChinese ? '已加载 $count 个模型' : '$count models loaded';
@@ -83,12 +83,18 @@ class AppCopy {
       isChinese ? '接口返回了空模型列表' : 'The endpoint returned no models';
   String get aiApiModelsFailed =>
       isChinese ? '模型列表加载失败' : 'Could not load models';
-  String get aiApiModelsRefresh => isChinese ? '刷新模型列表' : 'Refresh model list';
-  String get aiApiModelsRetry => isChinese ? '重试获取模型' : 'Retry model discovery';
+  String aiApiModelsSaved(int count) =>
+      isChinese ? '配置已保存，已获取 $count 个模型' : 'Config saved; $count models loaded';
+  String get aiApiSavedWithoutModelDiscovery => isChinese
+      ? '配置已保存，接口地址和密钥完整后可获取模型'
+      : 'Config saved; add a base URL and API key to load models';
+  String aiApiSavedWithModelFailure(String detail) => isChinese
+      ? '配置已保存，但模型获取失败：$detail'
+      : 'Config saved, but model discovery failed: $detail';
   String get aiApiWebCorsHint => isChinese
       ? 'Web 浏览器可能拦截跨域请求。若使用本地预览代理，请将地址改为 http://127.0.0.1:8081/v1。'
       : 'Browsers may block cross-origin requests. For the local preview proxy, use http://127.0.0.1:8081/v1.';
-  String get aiApiSave => isChinese ? '保存配置' : 'Save Config';
+  String get aiApiSave => isChinese ? '测试并保存配置' : 'Test and save config';
   String get aiApiReset => isChinese ? '恢复默认' : 'Reset Default';
   String get aiApiTest => isChinese ? '测试 AI 接口' : 'Test AI API';
   String get aiApiSaved => isChinese ? 'AI 接口配置已保存' : 'AI API config saved';
@@ -103,19 +109,43 @@ class AppCopy {
       case AiProviderPreset.deepSeek:
         return 'DeepSeek';
       case AiProviderPreset.custom:
-        return isChinese ? '自定义 OpenAI 兼容接口' : 'Custom OpenAI-compatible';
+        return isChinese ? '自定义服务商(仅openai)' : 'Custom provider (OpenAI only)';
     }
   }
 
   String get aiReplyFailed => isChinese
       ? '这次回答失败了，请稍后再试。'
       : 'The assistant could not answer this time. Please try again.';
+  String get copyAnswer => isChinese ? '复制回答' : 'Copy answer';
+  String get answerCopied => isChinese ? '回答已复制' : 'Answer copied';
   String get retry => isChinese ? '重试' : 'Retry';
   String get stopGenerating => isChinese ? '停止生成' : 'Stop generating';
   String get answerSourceRulebook => isChinese ? '规则库' : 'Rulebook';
+  String get answerSourceOfficial => isChinese ? '官方资料' : 'Official source';
+  String get answerSourceCommunity => isChinese ? '社区资料' : 'Community source';
+  String get answerSourceWeb => isChinese ? '联网资料' : 'Web source';
+  String get answerSourceModelKnowledge =>
+      isChinese ? '模型知识（无直接依据）' : 'Model knowledge';
   String get answerSourceGeneral => isChinese ? '智能补充' : 'AI supplement';
   String get answerSourceInsufficient => isChinese ? '信息不足' : 'Insufficient';
   String get evidenceTitle => isChinese ? '参考来源' : 'Sources';
+  String get aiWorkflowFindingOfficial =>
+      isChinese ? '正在查找官方规则…' : 'Checking official rules…';
+  String get aiWorkflowFindingCommunity =>
+      isChinese ? '正在查找社区资料…' : 'Checking community sources…';
+  String get aiWorkflowSearchingWeb =>
+      isChinese ? '正在联网搜索…' : 'Searching the web…';
+  String get aiWorkflowPreparingAnswer =>
+      isChinese ? '正在整理答案…' : 'Preparing the answer…';
+  String get aiWorkflowWorking => isChinese ? '正在处理…' : 'Working…';
+
+  String aiWorkflowStatus(String? status) => switch (status) {
+    'official' => aiWorkflowFindingOfficial,
+    'community' => aiWorkflowFindingCommunity,
+    'web_search' => aiWorkflowSearchingWeb,
+    'answering' => aiWorkflowPreparingAnswer,
+    _ => aiWorkflowWorking,
+  };
   String get streaming => isChinese ? '正在回答…' : 'Answering…';
   String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
   String get assetPriorityTitle =>

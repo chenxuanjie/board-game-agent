@@ -1,5 +1,6 @@
 import 'answer_source.dart';
 import 'evidence_chunk.dart';
+import 'rule_citation.dart';
 
 enum ChatRole { user, assistant }
 
@@ -13,10 +14,12 @@ class ChatMessage {
     required this.timestamp,
     this.source,
     List<EvidenceChunk> evidence = const <EvidenceChunk>[],
+    List<RuleCitation> citations = const <RuleCitation>[],
     this.state = ChatMessageState.complete,
     this.canRetry = false,
     this.retryPrompt,
-  }) : evidence = List<EvidenceChunk>.unmodifiable(evidence);
+  }) : evidence = List<EvidenceChunk>.unmodifiable(evidence),
+       citations = List<RuleCitation>.unmodifiable(citations);
 
   final String id;
   final ChatRole role;
@@ -24,6 +27,7 @@ class ChatMessage {
   final DateTime timestamp;
   final AnswerSource? source;
   final List<EvidenceChunk> evidence;
+  final List<RuleCitation> citations;
   final ChatMessageState state;
   final bool canRetry;
   final String? retryPrompt;
@@ -35,6 +39,7 @@ class ChatMessage {
     String? text,
     AnswerSource? source,
     List<EvidenceChunk>? evidence,
+    List<RuleCitation>? citations,
     ChatMessageState? state,
     bool? canRetry,
     String? retryPrompt,
@@ -47,6 +52,7 @@ class ChatMessage {
       timestamp: timestamp ?? this.timestamp,
       source: source ?? this.source,
       evidence: evidence ?? this.evidence,
+      citations: citations ?? this.citations,
       state: state ?? this.state,
       canRetry: canRetry ?? this.canRetry,
       retryPrompt: retryPrompt ?? this.retryPrompt,
@@ -62,6 +68,10 @@ class ChatMessage {
       if (source != null) 'source': source!.code,
       if (evidence.isNotEmpty)
         'evidence': evidence.map((EvidenceChunk item) => item.toMap()).toList(),
+      if (citations.isNotEmpty)
+        'citations': citations
+            .map((RuleCitation item) => item.toMap())
+            .toList(),
       'state': state.name == ChatMessageState.streaming.name
           ? ChatMessageState.complete.name
           : state.name,
@@ -85,6 +95,10 @@ class ChatMessage {
       evidence: (map['evidence'] as List<dynamic>? ?? const <dynamic>[])
           .whereType<Map<String, dynamic>>()
           .map(EvidenceChunk.fromMap)
+          .toList(),
+      citations: (map['citations'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .map(RuleCitation.fromMap)
           .toList(),
       state: _parseState(map['state'] as String?),
       canRetry: map['canRetry'] as bool? ?? false,

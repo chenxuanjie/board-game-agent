@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app_about/app_about.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
@@ -41,8 +39,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
   bool _isTestingAssets = false;
   String? _lastTestMessage;
   bool? _lastTestSucceeded;
-  Timer? _modelRefreshDebounce;
-  int _modelInputRevision = 0;
 
   @override
   void initState() {
@@ -63,16 +59,10 @@ class _LanguageSheetState extends State<LanguageSheet> {
     _selectedReasoningEffort = config.reasoningEffort;
     _selectedResponseSpeed = config.responseSpeed;
     _assetSourceConfigs = widget.controller.assetSourceConfigs;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(_refreshModels());
-      }
-    });
   }
 
   @override
   void dispose() {
-    _modelRefreshDebounce?.cancel();
     _nameController.dispose();
     _urlController.dispose();
     _keyController.dispose();
@@ -324,7 +314,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                         _ModelDiscoveryPanel(
                           controller: controller,
                           selectedModel: _selectedModel,
-                          onRefresh: _refreshModels,
                           onChanged: (String? model) {
                             setState(() => _selectedModel = model);
                           },
@@ -386,7 +375,9 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           children: <Widget>[
                             Expanded(
                               child: FilledButton(
-                                onPressed: _saveConfig,
+                                onPressed: _isTesting
+                                    ? null
+                                    : _testAndSaveConfig,
                                 child: Text(copy.aiApiSave),
                               ),
                             ),
@@ -400,13 +391,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _isTesting ? null : _testConfig,
-                            child: Text(_isTesting ? '...' : copy.aiApiTest),
-                          ),
-                        ),
                         if (_lastTestMessage != null) ...<Widget>[
                           const SizedBox(height: 10),
                           Container(
@@ -461,7 +445,7 @@ class _LanguageSheetState extends State<LanguageSheet> {
     );
   }
 
-  Future<void> _saveConfig() async {
+  Future<void> _testAndSaveConfig() async {
     final controller = widget.controller;
     final copy = controller.copy;
     if (_selectedPreset.isCustom) {
@@ -479,66 +463,35 @@ class _LanguageSheetState extends State<LanguageSheet> {
         return;
       }
     }
-    if (_selectedModel == null || _selectedModel!.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(copy.aiApiModelRequired)));
+    if (_isTesting) {
       return;
     }
-    final next = _draftConfig();
-    await controller.saveAiApiConfig(next);
-    if (!mounted) {
-      return;
-    }
-    final List<_AiPresetOption> options = _presetOptions(controller);
-    final _AiPresetOption savedPreset = _presetForConfig(options, next);
+
+    final AiApiConfig draft = _draftConfig();
     setState(() {
-      _selectedPreset = savedPreset;
+      _isTesting = true;
       _lastTestMessage = null;
       _lastTestSucceeded = null;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          next.providerPreset == AiProviderPreset.custom
-              ? copy.aiApiPresetSaved(next.name)
-              : copy.aiApiSaved,
-        ),
-      ),
-    );
-  }
 
-  void _resetDefault() {
-    final _AiPresetOption openAi = _presetOptions(
-      widget.controller,
-    ).firstWhere((_AiPresetOption option) => option.id == 'builtin:openai');
-    _applyPreset(openAi);
-    _saveConfig();
-  }
-
-  Future<void> _testConfig() async {
-    final controller = widget.controller;
-    final config = _draftConfig();
-    if (config.model.trim().isEmpty) {
-      setState(() {
-        _lastTestMessage = controller.copy.aiApiModelRequired;
-        _lastTestSucceeded = false;
-      });
-      return;
-    }
-    setState(() => _isTesting = true);
+    List<AiModel>? models;
+    Object? modelError;
     try {
-      final result = await controller.testAiApiConfig(config);
-      if (!mounted) {
-        return;
+      if (draft.baseUrl.trim().isNotEmpty && draft.apiKey.trim().isNotEmpty) {
+        models = await _refreshModels(draft);
+      } else {
+        controller.invalidateAiModels();
       }
-      setState(() {
-        _lastTestMessage = result;
-        _lastTestSucceeded = result == controller.copy.aiApiTestSuccess;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(result)));
+    } catch (error) {
+      modelError = error;
+    }
+
+    // Saving is intentionally independent from model discovery. A provider
+    // configuration remains useful even when /models is temporarily blocked,
+    // unavailable, or returns an incompatible response.
+    final AiApiConfig next = _draftConfig();
+    try {
+      await controller.saveAiApiConfig(next);
     } catch (error) {
       if (!mounted) {
         return;
@@ -546,15 +499,63 @@ class _LanguageSheetState extends State<LanguageSheet> {
       setState(() {
         _lastTestMessage = '$error';
         _lastTestSucceeded = false;
+        _isTesting = false;
       });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('$error')));
-    } finally {
-      if (mounted) {
-        setState(() => _isTesting = false);
-      }
+      return;
     }
+    if (!mounted) {
+      return;
+    }
+
+    final List<_AiPresetOption> options = _presetOptions(controller);
+    final _AiPresetOption savedPreset = _presetForConfig(options, next);
+    final String resultMessage;
+    final bool succeeded;
+    if (models != null) {
+      resultMessage = copy.aiApiModelsSaved(models.length);
+      succeeded = true;
+    } else if (modelError != null) {
+      final String detail =
+          controller.aiModelLoadState == AiModelLoadState.empty
+          ? copy.aiApiModelsEmpty
+          : controller.aiModelLoadError ?? '$modelError';
+      resultMessage = copy.aiApiSavedWithModelFailure(detail);
+      succeeded = false;
+    } else {
+      resultMessage = copy.aiApiSavedWithoutModelDiscovery;
+      succeeded = false;
+    }
+    setState(() {
+      _selectedPreset = savedPreset;
+      _lastTestMessage = resultMessage;
+      _lastTestSucceeded = succeeded;
+      _isTesting = false;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(resultMessage)));
+  }
+
+  Future<void> _resetDefault() async {
+    final _AiPresetOption openAi = _presetOptions(
+      widget.controller,
+    ).firstWhere((_AiPresetOption option) => option.id == 'builtin:openai');
+    _applyPreset(openAi);
+    final AiApiConfig next = _draftConfig();
+    await widget.controller.saveAiApiConfig(next);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lastTestMessage = null;
+      _lastTestSucceeded = null;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(widget.controller.copy.aiApiSaved)));
   }
 
   AiApiConfig _draftConfig() {
@@ -575,8 +576,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
     if (preset == null) {
       return;
     }
-    _modelRefreshDebounce?.cancel();
-    ++_modelInputRevision;
     final AiApiConfig config = preset.config;
     setState(() {
       _selectedPreset = preset;
@@ -590,11 +589,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
       _selectedResponseSpeed = config.responseSpeed;
     });
     widget.controller.invalidateAiModels();
-    if (!preset.isNewCustom &&
-        config.baseUrl.trim().isNotEmpty &&
-        config.apiKey.trim().isNotEmpty) {
-      unawaited(_refreshModels());
-    }
   }
 
   List<_AiPresetOption> _presetOptions(AppController controller) {
@@ -663,7 +657,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
 
   void _handleAiFieldChanged(String _) {
     _invalidateModels();
-    _scheduleModelRefresh();
   }
 
   bool _isCrossOriginWebUrl(String value) {
@@ -680,47 +673,20 @@ class _LanguageSheetState extends State<LanguageSheet> {
         endpoint.port != page.port;
   }
 
-  void _scheduleModelRefresh() {
-    _modelRefreshDebounce?.cancel();
-    final String baseUrl = _urlController.text.trim();
-    final String apiKey = _keyController.text.trim();
-    if (baseUrl.isEmpty || apiKey.isEmpty) {
-      return;
+  Future<List<AiModel>> _refreshModels(AiApiConfig config) async {
+    final List<AiModel> models = await widget.controller.refreshAiModels(
+      config: config.copyWith(model: ''),
+    );
+    if (!mounted) {
+      return models;
     }
-
-    final int revision = ++_modelInputRevision;
-    _modelRefreshDebounce = Timer(const Duration(milliseconds: 650), () {
-      if (!mounted || revision != _modelInputRevision) {
-        return;
+    setState(() {
+      if (_selectedModel != null &&
+          models.every((AiModel model) => model.id != _selectedModel)) {
+        _selectedModel = null;
       }
-      unawaited(_refreshModels());
     });
-  }
-
-  Future<void> _refreshModels() async {
-    _modelRefreshDebounce?.cancel();
-    _modelRefreshDebounce = null;
-    final AiApiConfig config = _draftConfig().copyWith(model: '');
-    if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
-      widget.controller.invalidateAiModels();
-      return;
-    }
-    try {
-      final List<AiModel> models = await widget.controller.refreshAiModels(
-        config: config,
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        if (_selectedModel != null &&
-            models.every((AiModel model) => model.id != _selectedModel)) {
-          _selectedModel = null;
-        }
-      });
-    } catch (_) {
-      // The controller exposes the retryable failure state in the panel.
-    }
+    return models;
   }
 
   Future<void> _reorderSources(int oldIndex, int newIndex) async {
@@ -951,13 +917,11 @@ class _ModelDiscoveryPanel extends StatelessWidget {
   const _ModelDiscoveryPanel({
     required this.controller,
     required this.selectedModel,
-    required this.onRefresh,
     required this.onChanged,
   });
 
   final AppController controller;
   final String? selectedModel;
-  final Future<void> Function() onRefresh;
   final ValueChanged<String?> onChanged;
 
   @override
@@ -1017,25 +981,12 @@ class _ModelDiscoveryPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                copy.aiApiModelLabel,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: palette.textSecondary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: copy.aiApiModelsRefresh,
-              onPressed: controller.aiModelLoadState == AiModelLoadState.loading
-                  ? null
-                  : onRefresh,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
+        Text(
+          copy.aiApiModelLabel,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: palette.textSecondary,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         if (models.isNotEmpty) ...<Widget>[
           const SizedBox(height: 6),
@@ -1057,15 +1008,6 @@ class _ModelDiscoveryPanel extends StatelessWidget {
         ],
         const SizedBox(height: 6),
         status,
-        if (controller.aiModelLoadState == AiModelLoadState.failure ||
-            controller.aiModelLoadState == AiModelLoadState.empty) ...<Widget>[
-          const SizedBox(height: 6),
-          TextButton.icon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
-            label: Text(copy.aiApiModelsRetry),
-          ),
-        ],
       ],
     );
   }

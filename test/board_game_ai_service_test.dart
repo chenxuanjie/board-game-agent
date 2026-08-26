@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
 import 'package:board_game_agent/models/ai_answer_mode.dart';
@@ -10,6 +12,7 @@ import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/services/board_game_ai_service.dart';
 import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
+import 'package:board_game_agent/services/responses_rules_workflow.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
@@ -176,6 +179,48 @@ void main() {
       expect(client.streamRequestCount, 2);
     },
   );
+
+  test('custom provider uses the Responses API workflow', () async {
+    final _FakeResponsesClient responsesClient = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        ResponsesResponse(
+          text:
+              '{"status":"answered","answer":"自定义 Responses 回答","sourceIds":["cabo-knowledge-0"]}',
+          model: 'test-model',
+        ),
+      ],
+    );
+    final _FakeAiClient chatClient = _FakeAiClient();
+    final BoardGameAiService service = BoardGameAiService(
+      aiClient: chatClient,
+      responsesWorkflow: ResponsesRulesWorkflow(
+        responsesClient: responsesClient,
+      ),
+    );
+
+    final BoardGameAiAnswer answer = await service.generateReply(
+      prompt: '这款游戏怎么开始？',
+      language: AppLanguage.zhHans,
+      game: _gameInfo(),
+      answerMode: AiAnswerMode.knowledgeOnly,
+      useGlobalMode: false,
+      config: const AiApiConfig(
+        name: '自定义服务商',
+        baseUrl: 'https://example.test/v1',
+        apiKey: 'test-key',
+        model: 'test-model',
+        apiKeyHeader: 'Authorization',
+      ),
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _FakeResponsesRemoteAssetService(),
+      conversationHistory: const <ChatMessage>[],
+    );
+
+    expect(answer.text, '自定义 Responses 回答');
+    expect(answer.source, AnswerSource.official);
+    expect(responsesClient.completeRequestCount, 1);
+    expect(chatClient.requestCount, 0);
+  });
 }
 
 GameInfo _gameInfo() {
@@ -269,6 +314,33 @@ class _FakeAiClient implements AiClient {
   }
 }
 
+class _FakeResponsesClient implements ResponsesAiClient {
+  _FakeResponsesClient({required this.responses});
+
+  final List<ResponsesResponse> responses;
+  int completeRequestCount = 0;
+
+  @override
+  Future<ResponsesResponse> complete(
+    ResponsesRequest request, {
+    Future<void>? abortTrigger,
+  }) async {
+    completeRequestCount += 1;
+    return responses.removeAt(0);
+  }
+
+  @override
+  Stream<ResponsesStreamEvent> stream(
+    ResponsesRequest request, {
+    Future<void>? abortTrigger,
+  }) async* {
+    yield ResponsesStreamEvent.completed(responses.removeAt(0));
+  }
+
+  @override
+  void close() {}
+}
+
 class _FakeRemoteAssetService extends RemoteAssetService {
   _FakeRemoteAssetService() : super(client: http.Client());
 
@@ -279,4 +351,14 @@ class _FakeRemoteAssetService extends RemoteAssetService {
   }) async {
     return '# Cabo test knowledge\nCabo is a competitive card game.';
   }
+}
+
+class _FakeResponsesRemoteAssetService extends RemoteAssetService {
+  _FakeResponsesRemoteAssetService() : super(client: http.Client());
+
+  @override
+  Future<List<int>?> loadBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async => utf8.encode('# Cabo 官方规则\n游戏开始时每位玩家获得四张牌。');
 }

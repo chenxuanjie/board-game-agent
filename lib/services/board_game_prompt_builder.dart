@@ -105,6 +105,67 @@ $gameProfile$knowledgeBlock
 ''';
   }
 
+  String buildResponsesDocumentInstructions({
+    required AppLanguage language,
+    required GameInfo game,
+    required String sourceLabel,
+  }) {
+    if (language == AppLanguage.zhHans) {
+      return '''你是《${game.title}》的桌游规则助手。
+当前阶段只能依据附件中的$sourceLabel回答，不能调用联网搜索，也不能使用模型常识补全。
+用户使用中文提问；请阅读英文规则内容，并用中文回答，首次出现专有名词时附英文原名。
+如果附件没有足够直接依据，必须返回 status=insufficient，不能猜测。
+只返回 JSON，不要 Markdown 代码块：
+{"status":"answered","answer":"中文答案","sourceIds":["附件中声明的 sourceId"]}
+{"status":"insufficient","answer":"","sourceIds":[]}
+附件来源 ID 只能使用请求中声明的 sourceId，不要伪造来源。''';
+    }
+    return '''You are the ${game.title} board-game rules assistant.
+Use only the attached $sourceLabel documents in this stage. Do not use web search or general knowledge.
+Read English rules and answer the Chinese user in Chinese; include the original English term on first mention.
+If the documents do not directly support the answer, return status=insufficient instead of guessing.
+Return JSON only, without code fences:
+{"status":"answered","answer":"Chinese answer","sourceIds":["declared sourceId"]}
+{"status":"insufficient","answer":"","sourceIds":[]}
+Only use source IDs declared by the app. Do not invent citations.''';
+  }
+
+  String buildResponsesWebInstructions({
+    required AppLanguage language,
+    required GameInfo game,
+  }) {
+    if (language == AppLanguage.zhHans) {
+      return '''你是《${game.title}》规则助手。
+本阶段只允许使用 web_search，搜索当前桌游的官方网页和可信社区资料。
+用中文回答，保留英文专有名词；明确说明这是联网资料，不是本地规则书。
+只有搜索结果有可靠引用支持时才回答；否则返回“未找到可靠直接依据”。不要伪造引用。''';
+    }
+    return '''You are the ${game.title} rules assistant.
+Use only web_search in this stage. Prefer official pages and trustworthy community sources.
+Answer in Chinese, preserve English proper nouns, and say that the answer comes from web sources rather than a local rulebook.
+Do not claim anything without reliable citations and do not invent citations.''';
+  }
+
+  String buildResponsesKnowledgeInstructions({
+    required AppLanguage language,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) {
+    final String context = useGlobalMode
+        ? '用户位于独立 AI 入口，但当前桌游上下文仍是《${game.title}》。'
+        : '用户位于《${game.title}》规则助手。';
+    if (language == AppLanguage.zhHans) {
+      return '''你是桌游 AI 助手。$context
+官方资料、社区资料和联网搜索都没有找到直接依据。
+现在只允许使用通用知识做最后兜底；必须明确提醒用户“未在已检索资料中找到直接依据”，不要伪装成官方规则。
+请用中文给出谨慎、简洁的回答。''';
+    }
+    return '''You are a board-game AI assistant. $context
+Official, community, and web sources did not provide direct evidence.
+Use general knowledge only as a final fallback and clearly state that no direct source was found. Do not present it as an official rule.
+Answer carefully and concisely in Chinese.''';
+  }
+
   String buildGameProfileBlock(AppLanguage language, GameInfo game) {
     final StringBuffer buffer = StringBuffer()
       ..writeln('- title: ${game.title}')

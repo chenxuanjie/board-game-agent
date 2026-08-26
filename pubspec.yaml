@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 2.0.0+17
+version: 2.0.0+18
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
@@ -13,6 +13,8 @@ dependencies:
     path: ../shared_packages/app_about
   app_ai_client:
     path: ../shared_packages/app_ai_client
+  crypto: ^3.0.7
+  flutter_secure_storage: ^9.2.4
   flutter_tts: ^4.2.3
   google_fonts: ^6.2.1
   http: ^1.6.0
@@ -40,7 +42,6 @@ flutter:
   assets:
     - branding/app_icon.png
     - assets/catalog.json
-    - assets/storage_endpoints.json
     - assets/games/puerto_rico/images/
     - assets/games/puerto_rico/game.json
     - assets/games/arkham_horror_lcg/images/
@@ -49,6 +50,7 @@ flutter:
     - assets/games/startups/game.json
     - assets/games/cabo/images/
     - assets/games/cabo/game.json
+    - assets/games/cabo/manifest.json
     - assets/games/carcassonne_3/images/
     - assets/games/carcassonne_3/game.json
     - assets/games/harmonies/images/

@@ -17,6 +17,7 @@ import 'board_game_prompt_builder.dart';
 import 'knowledge_answer_parser.dart';
 import 'remote_asset_service.dart';
 import 'rule_knowledge_retriever.dart';
+import 'responses_rules_workflow.dart';
 
 /// Application-level AI service for board-game questions.
 ///
@@ -32,16 +33,19 @@ class BoardGameAiService implements AiService {
     RuleKnowledgeRetriever? knowledgeRetriever,
     BoardGamePromptBuilder? promptBuilder,
     KnowledgeAnswerParser? answerParser,
+    ResponsesRulesWorkflow? responsesWorkflow,
   }) : _aiClient = aiClient,
        _knowledgeRetriever =
            knowledgeRetriever ?? const RuleKnowledgeRetriever(),
        _promptBuilder = promptBuilder ?? BoardGamePromptBuilder(),
-       _answerParser = answerParser ?? KnowledgeAnswerParser();
+       _answerParser = answerParser ?? KnowledgeAnswerParser(),
+       _responsesWorkflow = responsesWorkflow;
 
   final AiClient _aiClient;
   final RuleKnowledgeRetriever _knowledgeRetriever;
   final BoardGamePromptBuilder _promptBuilder;
   final KnowledgeAnswerParser _answerParser;
+  final ResponsesRulesWorkflow? _responsesWorkflow;
 
   @override
   Future<BoardGameAiAnswer> generateReply({
@@ -55,6 +59,19 @@ class BoardGameAiService implements AiService {
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
   }) async {
+    if (_responsesEnabled(config)) {
+      return _responsesWorkflow!.generateReply(
+        prompt: prompt,
+        language: language,
+        game: game,
+        answerMode: answerMode,
+        useGlobalMode: useGlobalMode,
+        config: config,
+        assetSourceConfigs: assetSourceConfigs,
+        remoteAssetService: remoteAssetService,
+        conversationHistory: conversationHistory,
+      );
+    }
     final List<EvidenceChunk> evidence = await _knowledgeRetriever.retrieve(
       game: game,
       assetSourceConfigs: assetSourceConfigs,
@@ -134,6 +151,21 @@ class BoardGameAiService implements AiService {
     required List<ChatMessage> conversationHistory,
     Future<void>? abortTrigger,
   }) async* {
+    if (_responsesEnabled(config)) {
+      yield* _responsesWorkflow!.streamReply(
+        prompt: prompt,
+        language: language,
+        game: game,
+        answerMode: answerMode,
+        useGlobalMode: useGlobalMode,
+        config: config,
+        assetSourceConfigs: assetSourceConfigs,
+        remoteAssetService: remoteAssetService,
+        conversationHistory: conversationHistory,
+        abortTrigger: abortTrigger,
+      );
+      return;
+    }
     final List<EvidenceChunk> evidence = await _knowledgeRetriever.retrieve(
       game: game,
       assetSourceConfigs: assetSourceConfigs,
@@ -247,7 +279,17 @@ class BoardGameAiService implements AiService {
   }
 
   @override
-  void dispose() => _aiClient.close();
+  void dispose() {
+    _responsesWorkflow?.close();
+    _aiClient.close();
+  }
+
+  bool _responsesEnabled(AiApiConfig config) {
+    return _responsesWorkflow != null &&
+        config.model.trim().isNotEmpty &&
+        (config.providerPreset == AiProviderPreset.openAi ||
+            config.providerPreset == AiProviderPreset.custom);
+  }
 
   Future<BoardGameAiAnswer> _answerFromKnowledgeOnly({
     required AppLanguage language,
