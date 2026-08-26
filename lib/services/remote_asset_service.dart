@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
 import 'board_game_remote_layout.dart';
+import 'board_game_remote_credentials.dart';
 
 class RemoteAssetService {
   RemoteAssetService({http.Client? client})
@@ -26,12 +27,7 @@ class RemoteAssetService {
 
   final http.Client _client;
 
-  static const String _defaultUsername = 'Shane';
-  static const String _defaultPassword = '1';
   static const String _versionManifestFileName = '_asset_versions.json';
-  String? _username;
-  String? _password;
-  bool _authLoaded = false;
 
   Future<CachedAsset?> ensureCached({
     required List<AssetSourceConfig> sources,
@@ -369,42 +365,11 @@ class RemoteAssetService {
   }
 
   Future<Map<String, String>> _headers() async {
-    await _ensureAuthLoaded();
     final String encoded = base64Encode(
       utf8.encode(
-        '${_username ?? _defaultUsername}:${_password ?? _defaultPassword}',
+        '${BoardGameRemoteCredentials.username}:${BoardGameRemoteCredentials.password}',
       ),
     );
     return <String, String>{'Authorization': 'Basic $encoded'};
-  }
-
-  Future<void> _ensureAuthLoaded() async {
-    if (_authLoaded) {
-      return;
-    }
-    _authLoaded = true;
-    try {
-      final String source = await rootBundle.loadString(
-        'assets/storage_endpoints.json',
-      );
-      final Map<String, dynamic> json =
-          jsonDecode(source) as Map<String, dynamic>;
-      final Map<String, dynamic>? auth = json['auth'] as Map<String, dynamic>?;
-      final String? username = auth?['username'] as String?;
-      final String? password = auth?['password'] as String?;
-      if (username != null && username.trim().isNotEmpty) {
-        _username = username.trim();
-      }
-      if (password != null && password.isNotEmpty) {
-        _password = password;
-      }
-      debugPrint(
-        '[assets] auth loaded for remote library: ${_username ?? _defaultUsername}',
-      );
-    } catch (_) {
-      _username = _defaultUsername;
-      _password = _defaultPassword;
-      debugPrint('[assets] auth fallback in use: $_defaultUsername');
-    }
   }
 }

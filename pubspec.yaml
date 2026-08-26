@@ -42,7 +42,6 @@ flutter:
   assets:
     - branding/app_icon.png
     - assets/catalog.json
-    - assets/storage_endpoints.json
     - assets/games/puerto_rico/images/
     - assets/games/puerto_rico/game.json
     - assets/games/arkham_horror_lcg/images/
