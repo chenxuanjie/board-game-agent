@@ -13,9 +13,16 @@ import '../../theme/app_palette.dart';
 import '../app_copy.dart';
 import '../widgets/language_sheet.dart';
 import '../widgets/message_bubble.dart';
-import 'game_detail_screen.dart';
+import 'desktop_game_detail_pane.dart';
 
-enum _DesktopDestination { home, games, assistant, library, settings }
+enum _DesktopDestination {
+  home,
+  games,
+  gameDetail,
+  assistant,
+  library,
+  settings,
+}
 
 class DesktopWorkspaceScreen extends StatefulWidget {
   const DesktopWorkspaceScreen({
@@ -33,6 +40,7 @@ class DesktopWorkspaceScreen extends StatefulWidget {
 
 class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   _DesktopDestination _destination = _DesktopDestination.home;
+  _DesktopDestination _detailReturnDestination = _DesktopDestination.games;
   RemoteLibraryUpdate? _lastSeenUpdate;
   bool _showingUpdateDialog = false;
 
@@ -79,6 +87,16 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
                         onNew: () =>
                             _selectDestination(_DesktopDestination.games),
                         onRefresh: _showStatus,
+                        primaryAction:
+                            _destination == _DesktopDestination.gameDetail
+                            ? () => _selectDestination(
+                                _DesktopDestination.assistant,
+                              )
+                            : null,
+                        primaryLabel:
+                            _destination == _DesktopDestination.gameDetail
+                            ? copy.askAiAssistant
+                            : null,
                       ),
                       Expanded(child: _buildPage(compact)),
                     ],
@@ -107,6 +125,13 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
         );
       case _DesktopDestination.games:
         return _DesktopGamesPane(controller: controller, onOpenGame: _openGame);
+      case _DesktopDestination.gameDetail:
+        return DesktopGameDetailPane(
+          controller: controller,
+          game: controller.selectedGame,
+          onBack: () => _selectDestination(_detailReturnDestination),
+          onAskAi: () => _selectDestination(_DesktopDestination.assistant),
+        );
       case _DesktopDestination.assistant:
         return _DesktopAssistantPane(controller: controller);
       case _DesktopDestination.library:
@@ -126,11 +151,12 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
 
   void _openGame(GameInfo game) {
     widget.controller.selectGame(game.id);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => GameDetailScreen(controller: widget.controller),
-      ),
-    );
+    setState(() {
+      _detailReturnDestination = _destination == _DesktopDestination.gameDetail
+          ? _DesktopDestination.games
+          : _destination;
+      _destination = _DesktopDestination.gameDetail;
+    });
   }
 
   void _showStatus() {
@@ -149,6 +175,8 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
         return '首页';
       case _DesktopDestination.games:
         return '我的游戏';
+      case _DesktopDestination.gameDetail:
+        return '桌游详情';
       case _DesktopDestination.assistant:
         return copy.globalAiTitle;
       case _DesktopDestination.library:
@@ -503,12 +531,16 @@ class _DesktopTopBar extends StatelessWidget {
     required this.compact,
     required this.onNew,
     required this.onRefresh,
+    this.primaryAction,
+    this.primaryLabel,
   });
 
   final String title;
   final bool compact;
   final VoidCallback onNew;
   final VoidCallback onRefresh;
+  final VoidCallback? primaryAction;
+  final String? primaryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -544,11 +576,18 @@ class _DesktopTopBar extends StatelessWidget {
             icon: const Icon(Icons.search_rounded),
           ),
           const SizedBox(width: 6),
-          FilledButton.icon(
-            onPressed: onNew,
-            icon: const Icon(Icons.add_rounded),
-            label: Text(compact ? '新建' : '新建'),
-          ),
+          if (primaryAction != null)
+            FilledButton.icon(
+              onPressed: primaryAction,
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
+              label: Text(primaryLabel ?? '询问 AI'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: onNew,
+              icon: const Icon(Icons.add_rounded),
+              label: Text(compact ? '新建' : '新建'),
+            ),
         ],
       ),
     );
