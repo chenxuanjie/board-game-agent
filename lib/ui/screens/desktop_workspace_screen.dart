@@ -1427,6 +1427,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
           border: Border.all(color: palette.outline),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             SizedBox(
               width: 205,
@@ -1597,32 +1598,26 @@ class _DesktopAssistantSessions extends StatelessWidget {
         children: <Widget>[
           Text('会话', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: palette.primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: <Widget>[
-                Text(
-                  '${controller.featuredGame.title}助手',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-                const SizedBox(height: 4),
-                Text('当前对局', style: Theme.of(context).textTheme.bodySmall),
+                for (final GameInfo game in controller.games)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _DesktopSessionRow(
+                      icon: game.id == controller.selectedGame.id
+                          ? Icons.chat_rounded
+                          : Icons.chat_bubble_outline_rounded,
+                      title: '${game.title}助手',
+                      subtitle:
+                          '规则问答 · ${controller.messageCountForGame(game.id)} 条消息',
+                      selected: game.id == controller.selectedGame.id,
+                      onTap: () => controller.selectGame(game.id),
+                    ),
+                  ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          _DesktopSessionRow(
-            icon: Icons.message_outlined,
-            title: '规则问答',
-            subtitle: '${controller.messages.length} 条消息',
           ),
         ],
       ),
@@ -1635,30 +1630,67 @@ class _DesktopSessionRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.selected,
+    required this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: Theme.of(context).textTheme.labelMedium),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
+    final AppPalette palette = AppPalette.of(context);
+    return Material(
+      color: selected
+          ? palette.primary.withValues(alpha: 0.14)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(11),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? palette.primary : palette.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: selected
+                            ? palette.textPrimary
+                            : palette.textSecondary,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1952,7 +1984,7 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
               ),
             ),
             FilledButton.icon(
-              onPressed: () {},
+              onPressed: _showImportComingSoon,
               icon: const Icon(Icons.file_upload_outlined),
               label: const Text('导入'),
             ),
@@ -2001,6 +2033,12 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
         ),
       ],
     );
+  }
+
+  void _showImportComingSoon() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('该功能正在开发中')));
   }
 }
 

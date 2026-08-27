@@ -180,6 +180,15 @@ class AppController extends ChangeNotifier {
     _messagesForContext(useGlobalMode: useGlobalMode),
   );
 
+  /// Returns the number of messages stored for a game's conversation.
+  ///
+  /// The desktop assistant uses this to render a lightweight session list
+  /// without exposing the mutable conversation map to the UI layer.
+  int messageCountForGame(String gameId) {
+    return _conversationMessages[_conversationKeyForGameId(gameId)]?.length ??
+        0;
+  }
+
   AiAnswerMode chatAnswerMode({required bool useGlobalMode}) =>
       useGlobalMode ? _globalAnswerMode : _gameAnswerMode;
 
