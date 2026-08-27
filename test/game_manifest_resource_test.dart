@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/game_catalog_manifest.dart';
+import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/models/game_resource.dart';
 
 void main() {
@@ -116,6 +117,67 @@ void main() {
       'assets/games/legacy/docs/rulebook_cn.md',
       'assets/games/legacy/docs/faq_cn.md',
     ]);
+  });
+
+  test('resources under docs/others are excluded from runtime paths', () {
+    final GameManifest game = GameManifest.fromJson(
+      <String, dynamic>{
+        'id': 'cabo',
+        'slug': 'cabo',
+        'documents': <String, dynamic>{
+          'rulebook': <String, dynamic>{
+            'en': 'docs/others/raw/rulebook_extracted_en.txt',
+          },
+          'faq': <String, dynamic>{
+            'en': 'docs/others/raw/faq_extracted_en.txt',
+          },
+          'knowledge': <String, dynamic>{
+            'en': <String>['docs/others/raw/rulebook_extracted_en.txt'],
+          },
+        },
+        'locales': <String, dynamic>{
+          'en': <String, dynamic>{'title': 'Cabo'},
+        },
+      },
+      resourceManifest: GameResourceManifest.fromJson(<String, dynamic>{
+        'game': <String, dynamic>{'id': 'cabo', 'slug': 'cabo'},
+        'resources': <Map<String, dynamic>>[
+          _resource(
+            id: 'other-rulebook',
+            path: 'docs/others/raw/rulebook_extracted_en.txt',
+            documentType: 'rulebook',
+            language: 'en',
+          ),
+          _resource(
+            id: 'other-faq',
+            path: 'docs/others/raw/faq_extracted_en.txt',
+            documentType: 'faq',
+            language: 'en',
+          ),
+          _resource(
+            id: 'other-knowledge',
+            path: 'docs/others/raw/knowledge_en.md',
+            documentType: 'other',
+            language: 'en',
+          ),
+        ],
+      }),
+    );
+
+    final GameInfo info = game.toGameInfo(AppLanguage.en);
+    expect(info.rulebookAssetPath, isEmpty);
+    expect(info.faqAssetPath, isEmpty);
+    expect(info.knowledgeAssetPaths, isEmpty);
+    expect(info.resources, hasLength(3));
+    expect(
+      info.resources.every((resource) => resource.isInOthersDirectory),
+      isTrue,
+    );
+    expect(
+      isOtherStoragePath('assets/games/cabo/docs/others/raw/file.md'),
+      isTrue,
+    );
+    expect(isOtherStoragePath('docs/local/knowledge/file.md'), isFalse);
   });
 
   test('all bundled game pairs parse through the runtime models', () {

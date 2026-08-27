@@ -623,6 +623,9 @@ class ResponsesRulesWorkflow {
     final List<ResponsesInputItem> inputs = <ResponsesInputItem>[];
     final List<RuleDocument> loaded = <RuleDocument>[];
     for (final RuleDocument document in documents.take(4)) {
+      if (isOtherStoragePath(document.path)) {
+        continue;
+      }
       if (document.url != null && _isPublicHttps(document.url!)) {
         inputs.add(
           ResponsesFileInput.url(
@@ -688,11 +691,13 @@ class ResponsesRulesWorkflow {
   List<RuleDocument> _documentsForGame(GameInfo game) {
     final Map<String, GameResource> resourcesByPath = <String, GameResource>{
       for (final GameResource resource in game.resources)
-        resource.assetPathFor(game.slug): resource,
+        if (!resource.isInOthersDirectory &&
+            resource.assetPathFor(game.slug).trim().isNotEmpty)
+          resource.assetPathFor(game.slug): resource,
     };
 
     return game.knowledgeAssetPaths
-        .where((path) => path.trim().isNotEmpty)
+        .where((path) => path.trim().isNotEmpty && !isOtherStoragePath(path))
         .toList(growable: false)
         .asMap()
         .entries

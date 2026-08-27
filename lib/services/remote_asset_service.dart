@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
+import '../models/game_resource.dart';
 import 'board_game_remote_layout.dart';
 import 'board_game_remote_credentials.dart';
 
@@ -381,7 +382,9 @@ class RemoteAssetService {
 
   bool _isUsableRemotePath(String remotePath) {
     final String normalized = remotePath.replaceAll('\\', '/').trim();
-    return normalized.isNotEmpty && !normalized.split('/').contains('..');
+    return normalized.isNotEmpty &&
+        !normalized.split('/').contains('..') &&
+        !isOtherStoragePath(normalized);
   }
 
   Future<Map<String, String>> _headers() async {

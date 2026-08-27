@@ -39,6 +39,10 @@ class GameResource {
 
   bool get isAvailable => status == 'available';
 
+  /// Resources under `docs/others/` are retained for archive or cleanup work
+  /// and must never become runtime-readable application resources.
+  bool get isInOthersDirectory => isOtherStoragePath(path);
+
   String get fileName {
     final String normalized = path.replaceAll('\\', '/');
     final int slash = normalized.lastIndexOf('/');
@@ -55,6 +59,9 @@ class GameResource {
   bool get isRenderableDocument => format == 'pdf' || isMarkdown;
 
   String assetPathFor(String slug) {
+    if (isInOthersDirectory) {
+      return '';
+    }
     if (path.startsWith('assets/')) {
       return path;
     }
@@ -80,6 +87,20 @@ class GameResource {
       notes: json['notes'] as String?,
     );
   }
+}
+
+bool isOtherStoragePath(String path) {
+  final List<String> segments = path
+      .replaceAll('\\', '/')
+      .trim()
+      .toLowerCase()
+      .split('/');
+  for (int index = 0; index + 1 < segments.length; index++) {
+    if (segments[index] == 'docs' && segments[index + 1] == 'others') {
+      return true;
+    }
+  }
+  return false;
 }
 
 class GameResourceManifest {

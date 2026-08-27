@@ -84,6 +84,12 @@ class GameManifestService {
     List<AssetSourceConfig> sources = const [],
     bool preferRemote = false,
   }) async {
+    if (isOtherStoragePath(remotePath)) {
+      throw StateError(
+        'Resources under docs/others are excluded from runtime.',
+      );
+    }
+
     // 1. Check local cache
     final File? cached = await remoteAssetService.cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {

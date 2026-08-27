@@ -1152,7 +1152,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String?> cacheDocument(String remotePath) async {
-    if (remotePath.trim().isEmpty) {
+    if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
 
@@ -1213,7 +1213,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String?> resolveImagePath(String remotePath) async {
-    if (remotePath.trim().isEmpty) {
+    if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
     try {
@@ -1224,7 +1224,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String?> _cacheImage(String remotePath) async {
-    if (remotePath.trim().isEmpty) {
+    if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
     if (_resolvedAssetPaths.containsKey(remotePath)) {
@@ -1310,6 +1310,7 @@ class AppController extends ChangeNotifier {
               documentTypes.contains(resource.documentType) &&
               resource.isAvailable &&
               resource.enabled &&
+              !resource.isInOthersDirectory &&
               resource.isRenderableDocument &&
               resource.path.trim().isNotEmpty,
         )
@@ -1336,7 +1337,9 @@ class AppController extends ChangeNotifier {
     final String fallback = baseName == 'rulebook'
         ? game.rulebookAssetPath
         : game.faqAssetPath;
-    if (fallback.trim().isNotEmpty && !candidates.contains(fallback)) {
+    if (fallback.trim().isNotEmpty &&
+        !isOtherStoragePath(fallback) &&
+        !candidates.contains(fallback)) {
       candidates.add(fallback);
     }
     return candidates;
@@ -1372,21 +1375,29 @@ class AppController extends ChangeNotifier {
 
   Iterable<String> _trackedRemotePaths() sync* {
     final Set<String> paths = <String>{};
-    for (final GameInfo game in _games) {
-      paths.add(game.coverAssetPath);
-      paths.add(game.bannerAssetPath);
-      for (final String path in game.galleryAssetPaths) {
+    void addPath(String path) {
+      if (path.trim().isNotEmpty && !isOtherStoragePath(path)) {
         paths.add(path);
       }
-      paths.add(game.rulebookAssetPath);
-      paths.add(game.faqAssetPath);
-      for (final GameResource resource in game.resources) {
-        paths.add(resource.assetPathFor(game.slug));
-      }
-      paths.add('assets/games/${game.slug}/game.json');
-      paths.add('assets/games/${game.slug}/manifest.json');
     }
-    yield* paths.where((path) => path.trim().isNotEmpty);
+
+    for (final GameInfo game in _games) {
+      addPath(game.coverAssetPath);
+      addPath(game.bannerAssetPath);
+      for (final String path in game.galleryAssetPaths) {
+        addPath(path);
+      }
+      addPath(game.rulebookAssetPath);
+      addPath(game.faqAssetPath);
+      for (final GameResource resource in game.resources) {
+        if (!resource.isInOthersDirectory) {
+          addPath(resource.assetPathFor(game.slug));
+        }
+      }
+      addPath('assets/games/${game.slug}/game.json');
+      addPath('assets/games/${game.slug}/manifest.json');
+    }
+    yield* paths;
   }
 
   List<AssetSourceConfig> _preferredUpdateSources() {

@@ -42,6 +42,44 @@ void main() {
     );
   });
 
+  test('docs/others paths are ignored without touching WebDAV', () async {
+    final RemoteAssetService service = RemoteAssetService(
+      client: _UnexpectedRequestClient(),
+    );
+    const String path =
+        'assets/games/cabo/docs/others/raw/rulebook_extracted_en.txt';
+
+    expect(
+      await service.ensureCached(
+        sources: AssetSourceConfig.defaults,
+        remotePath: path,
+      ),
+      isNull,
+    );
+    expect(
+      await service.fetchRemoteBytes(
+        sources: AssetSourceConfig.defaults,
+        remotePath: path,
+      ),
+      isNull,
+    );
+    expect(
+      await service.loadBytes(
+        sources: AssetSourceConfig.defaults,
+        remotePath: path,
+      ),
+      isNull,
+    );
+    expect(await service.cachedFileFor(path), isNull);
+    expect(
+      await service.hasRemoteChanged(
+        sources: AssetSourceConfig.defaults,
+        remotePath: path,
+      ),
+      isFalse,
+    );
+  });
+
   test('missing document copy avoids exposing internal loading errors', () {
     final AppCopy copy = AppCopy(AppLanguage.zhHans);
 

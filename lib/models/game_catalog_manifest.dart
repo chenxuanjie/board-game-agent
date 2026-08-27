@@ -138,10 +138,11 @@ class GameManifest {
     final List<String> knowledge = _selectKnowledgeResources(
       localeKey,
     ).map((resource) => resource.assetPathFor(slug)).toList(growable: false);
-    final List<String> fallbackKnowledge = _resolveLocalizedList(
-      knowledgePaths,
-      localeKey,
-    ).map(_assetPath).toList(growable: false);
+    final List<String> fallbackKnowledge =
+        _resolveLocalizedList(knowledgePaths, localeKey)
+            .map(_assetPath)
+            .where((path) => path.trim().isNotEmpty)
+            .toList(growable: false);
 
     return GameInfo(
       id: id,
@@ -195,6 +196,7 @@ class GameManifest {
               documentTypes.contains(resource.documentType) &&
               resource.isAvailable &&
               resource.enabled &&
+              !resource.isInOthersDirectory &&
               resource.isRenderableDocument &&
               resource.path.trim().isNotEmpty,
         )
@@ -209,6 +211,7 @@ class GameManifest {
           (resource) =>
               resource.aiEnabled &&
               resource.isAvailable &&
+              !resource.isInOthersDirectory &&
               resource.isMarkdown &&
               resource.path.trim().isNotEmpty,
         )
@@ -407,7 +410,8 @@ class GameManifest {
   }
 
   String _assetPath(String relativeOrAbsolutePath) {
-    if (relativeOrAbsolutePath.trim().isEmpty) {
+    if (relativeOrAbsolutePath.trim().isEmpty ||
+        isOtherStoragePath(relativeOrAbsolutePath)) {
       return '';
     }
     if (relativeOrAbsolutePath.startsWith('assets/')) {
@@ -420,6 +424,7 @@ class GameManifest {
     final List<String> resolved = relativePaths
         .where((path) => path.trim().isNotEmpty)
         .map(_assetPath)
+        .where((path) => path.trim().isNotEmpty)
         .toList();
     if (resolved.isNotEmpty) {
       return resolved;

@@ -56,6 +56,8 @@ assets/games/<game_slug>/
 - 资料类型决定二级目录：规则放 `rules`，问答、FAQ、勘误放 `answers`，其他辅助资料放 `other`。
 - `local/knowledge` 只放本地整理的 Markdown，不放原始 PDF、HTML、PNG 或 JPG。
 - 无法判断来源或用途、但需要暂时保留的文件放 `others/raw`；历史或停用文件放 `others/archive`。
+- `docs/others/` 是仅供保留、审计和后续清洗的存储区，程序不会读取、缓存、下载或跟踪其中的文件；即使 manifest 误标记为启用，运行时也会硬性排除。
+- `others` 中的资料完成清洗并确认用途后，必须移动到 `official`、`community` 或 `local` 下的正式目录，再同步修改 manifest 的 `path`、`id`、`derivedFrom` 和 `notes`。
 - 不要复制同一个文件到多个目录；在 `manifest.json` 中登记源文件和派生关系。
 
 ## 二、文件命名规范
