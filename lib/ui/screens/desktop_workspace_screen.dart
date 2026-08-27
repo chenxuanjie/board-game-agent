@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../models/app_language.dart';
+import '../../models/ai_conversation.dart';
 import '../../models/chat_message.dart';
 import '../../models/color_scheme_option.dart';
 import '../../models/connectivity_status.dart';
@@ -87,7 +88,9 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
                         compact: compact,
                         onNew: () =>
                             _selectDestination(_DesktopDestination.games),
-                        onRefresh: _showStatus,
+                        onRefresh: () => _refreshStatuses(),
+                        statusRefreshing:
+                            widget.controller.isRefreshingServiceStatuses,
                         primaryAction:
                             _destination == _DesktopDestination.gameDetail
                             ? () => _selectDestination(
@@ -160,11 +163,12 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
     });
   }
 
-  void _showStatus() {
-    final ConnectivityStatus status = widget.controller.aiConnectivityStatus;
-    final String message = status.message.trim().isEmpty
-        ? widget.controller.copy.statusReadyShort
-        : status.message;
+  Future<void> _refreshStatuses() async {
+    await widget.controller.refreshServiceStatuses();
+    if (!mounted) return;
+    final AppController controller = widget.controller;
+    final String message =
+        'AI：${controller.aiConnectivityStatus.message} · 资料：${controller.assetConnectivityStatus.message}';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
@@ -559,6 +563,7 @@ class _DesktopTopBar extends StatelessWidget {
     required this.compact,
     required this.onNew,
     required this.onRefresh,
+    required this.statusRefreshing,
     this.primaryAction,
     this.primaryLabel,
   });
@@ -567,6 +572,7 @@ class _DesktopTopBar extends StatelessWidget {
   final bool compact;
   final VoidCallback onNew;
   final VoidCallback onRefresh;
+  final bool statusRefreshing;
   final VoidCallback? primaryAction;
   final String? primaryLabel;
 
@@ -595,8 +601,14 @@ class _DesktopTopBar extends StatelessWidget {
           ),
           IconButton(
             tooltip: '状态',
-            onPressed: onRefresh,
-            icon: const Icon(Icons.notifications_none_rounded),
+            onPressed: statusRefreshing ? null : onRefresh,
+            icon: statusRefreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.notifications_none_rounded),
           ),
           IconButton(
             tooltip: '搜索',
@@ -1015,33 +1027,42 @@ class _DesktopStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     final ConnectivityStatus aiStatus = controller.aiConnectivityStatus;
+    final ConnectivityStatus assetStatus = controller.assetConnectivityStatus;
+    final AiModelLoadState modelState = controller.aiModelLoadState;
     return _DesktopSurface(
       title: '状态',
       action: IconButton(
         tooltip: '刷新',
-        onPressed: () {},
-        icon: const Icon(Icons.refresh_rounded),
+        onPressed: controller.isRefreshingServiceStatuses
+            ? null
+            : () => controller.refreshServiceStatuses(),
+        icon: controller.isRefreshingServiceStatuses
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh_rounded),
       ),
       child: Column(
         children: <Widget>[
           _DesktopStatusRow(
             label: '规则资料',
-            value: controller.homeAssetsLoading ? '加载中' : '已就绪',
-            color: controller.homeAssetsLoading
-                ? palette.warning
-                : palette.success,
+            value: _connectivityLabel(assetStatus.state),
+            color: _connectivityColor(palette, assetStatus.state),
+            state: assetStatus.state,
           ),
           _DesktopStatusRow(
             label: 'AI 服务',
             value: _connectivityLabel(aiStatus.state),
             color: _connectivityColor(palette, aiStatus.state),
+            state: aiStatus.state,
           ),
           _DesktopStatusRow(
             label: '模型',
-            value: controller.hasSelectedAiModel ? '已选择' : '未选择',
-            color: controller.hasSelectedAiModel
-                ? palette.success
-                : palette.warning,
+            value: _modelLabel(controller, modelState),
+            color: _modelColor(palette, controller, modelState),
+            state: _modelConnectivityState(controller, modelState),
           ),
         ],
       ),
@@ -1053,6 +1074,7 @@ class _DesktopStatusCard extends StatelessWidget {
       ConnectivityState.success => palette.success,
       ConnectivityState.warning => palette.warning,
       ConnectivityState.failure => palette.error,
+      ConnectivityState.loading => palette.primary,
       ConnectivityState.unknown => palette.disabledForeground,
     };
   }
@@ -1062,7 +1084,56 @@ class _DesktopStatusCard extends StatelessWidget {
       ConnectivityState.success => '已连接',
       ConnectivityState.warning => '受限',
       ConnectivityState.failure => '失败',
+      ConnectivityState.loading => '加载中',
       ConnectivityState.unknown => '未检测',
+    };
+  }
+
+  String _modelLabel(AppController controller, AiModelLoadState state) {
+    return switch (state) {
+      AiModelLoadState.loading => '加载中',
+      AiModelLoadState.success => controller.hasSelectedAiModel ? '已选择' : '可选择',
+      AiModelLoadState.empty => '为空',
+      AiModelLoadState.failure => '失败',
+      AiModelLoadState.idle => controller.hasSelectedAiModel ? '已选择' : '未检测',
+    };
+  }
+
+  Color _modelColor(
+    AppPalette palette,
+    AppController controller,
+    AiModelLoadState state,
+  ) {
+    return switch (state) {
+      AiModelLoadState.success when controller.hasSelectedAiModel =>
+        palette.success,
+      AiModelLoadState.success => palette.warning,
+      AiModelLoadState.loading => palette.primary,
+      AiModelLoadState.empty => palette.warning,
+      AiModelLoadState.failure => palette.error,
+      AiModelLoadState.idle =>
+        controller.hasSelectedAiModel
+            ? palette.success
+            : palette.disabledForeground,
+    };
+  }
+
+  ConnectivityState _modelConnectivityState(
+    AppController controller,
+    AiModelLoadState state,
+  ) {
+    return switch (state) {
+      AiModelLoadState.loading => ConnectivityState.loading,
+      AiModelLoadState.failure => ConnectivityState.failure,
+      AiModelLoadState.empty => ConnectivityState.warning,
+      AiModelLoadState.success =>
+        controller.hasSelectedAiModel
+            ? ConnectivityState.success
+            : ConnectivityState.warning,
+      AiModelLoadState.idle =>
+        controller.hasSelectedAiModel
+            ? ConnectivityState.success
+            : ConnectivityState.unknown,
     };
   }
 }
@@ -1072,11 +1143,13 @@ class _DesktopStatusRow extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
+    required this.state,
   });
 
   final String label;
   final String value;
   final Color color;
+  final ConnectivityState state;
 
   @override
   Widget build(BuildContext context) {
@@ -1101,7 +1174,27 @@ class _DesktopStatusRow extends StatelessWidget {
                 ).textTheme.labelLarge?.copyWith(color: color),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.check_circle_outline_rounded, size: 17, color: color),
+              if (state == ConnectivityState.loading)
+                SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: color,
+                  ),
+                )
+              else
+                Icon(
+                  state == ConnectivityState.failure
+                      ? Icons.error_outline_rounded
+                      : state == ConnectivityState.warning
+                      ? Icons.warning_amber_rounded
+                      : state == ConnectivityState.success
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.help_outline_rounded,
+                  size: 17,
+                  color: color,
+                ),
             ],
           ),
         ),
@@ -1389,8 +1482,9 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     _scrollController = ScrollController();
     controller.addListener(_handleControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (controller.messagesForContext(useGlobalMode: false).isEmpty) {
-        controller.resetConversation(useGlobalMode: false);
+      final bool useGlobalMode = controller.selectedConversationIsGlobal;
+      if (controller.messagesForContext(useGlobalMode: useGlobalMode).isEmpty) {
+        controller.resetConversation(useGlobalMode: useGlobalMode);
       }
     });
   }
@@ -1414,10 +1508,15 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
       );
     }
     final AppPalette palette = AppPalette.of(context);
+    final bool useGlobalMode = controller.selectedConversationIsGlobal;
     final List<ChatMessage> messages = controller.messagesForContext(
-      useGlobalMode: false,
+      useGlobalMode: useGlobalMode,
     );
     final GameInfo game = controller.featuredGame;
+    final String assistantTitle = useGlobalMode
+        ? controller.copy.globalAiTitle
+        : '${game.title}助手';
+    final String assistantSubtitle = useGlobalMode ? '跨桌游知识问答' : '官方资料已加载';
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
       child: DecoratedBox(
@@ -1447,11 +1546,11 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
                               Text(
-                                '${game.title}助手',
+                                assistantTitle,
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                               Text(
-                                '官方资料已加载',
+                                assistantSubtitle,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -1461,7 +1560,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                           tooltip: '清空对话',
                           onPressed: () =>
                               controller.clearConversationForContext(
-                                useGlobalMode: false,
+                                useGlobalMode: useGlobalMode,
                               ),
                           icon: const Icon(Icons.delete_sweep_outlined),
                         ),
@@ -1486,7 +1585,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                             onRetry: message.canRetry
                                 ? () => controller.retryMessage(
                                     message,
-                                    useGlobalMode: false,
+                                    useGlobalMode: useGlobalMode,
                                   )
                                 : null,
                             retryTooltip: controller.copy.retry,
@@ -1510,7 +1609,10 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
             ),
             SizedBox(
               width: 220,
-              child: _DesktopContextPanel(controller: controller),
+              child: _DesktopContextPanel(
+                controller: controller,
+                useGlobalMode: useGlobalMode,
+              ),
             ),
           ],
         ),
@@ -1554,7 +1656,10 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
       return;
     }
     _draftController.clear();
-    await controller.sendPrompt(text, useGlobalMode: false);
+    await controller.sendPrompt(
+      text,
+      useGlobalMode: controller.selectedConversationIsGlobal,
+    );
   }
 
   Future<void> _toggleListening() async {
@@ -1587,6 +1692,7 @@ class _DesktopAssistantSessions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
+    final List<AiConversation> conversations = controller.conversations;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1602,18 +1708,21 @@ class _DesktopAssistantSessions extends StatelessWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: <Widget>[
-                for (final GameInfo game in controller.games)
+                for (final AiConversation conversation in conversations)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: _DesktopSessionRow(
-                      icon: game.id == controller.selectedGame.id
+                      icon: conversation.id == controller.selectedConversationId
                           ? Icons.chat_rounded
                           : Icons.chat_bubble_outline_rounded,
-                      title: '${game.title}助手',
-                      subtitle:
-                          '规则问答 · ${controller.messageCountForGame(game.id)} 条消息',
-                      selected: game.id == controller.selectedGame.id,
-                      onTap: () => controller.selectGame(game.id),
+                      title: conversation.title,
+                      subtitle: conversation.isGlobal
+                          ? '跨桌游问答 · ${conversation.messageCount} 条消息'
+                          : '规则问答 · ${conversation.messageCount} 条消息',
+                      selected:
+                          conversation.id == controller.selectedConversationId,
+                      onTap: () =>
+                          controller.selectConversation(conversation.id),
                     ),
                   ),
               ],
@@ -1721,15 +1830,19 @@ class _AssistantAppMark extends StatelessWidget {
 }
 
 class _DesktopContextPanel extends StatelessWidget {
-  const _DesktopContextPanel({required this.controller});
+  const _DesktopContextPanel({
+    required this.controller,
+    required this.useGlobalMode,
+  });
 
   final AppController controller;
+  final bool useGlobalMode;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     final bool smartSupplement = controller.allowSmartSupplement(
-      useGlobalMode: false,
+      useGlobalMode: useGlobalMode,
     );
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1744,7 +1857,7 @@ class _DesktopContextPanel extends StatelessWidget {
           const SizedBox(height: 13),
           _DesktopContextLine(
             icon: Icons.casino_outlined,
-            label: controller.featuredGame.title,
+            label: useGlobalMode ? '全部资料' : controller.featuredGame.title,
           ),
           _DesktopContextLine(icon: Icons.menu_book_outlined, label: '规则书'),
           _DesktopContextLine(icon: Icons.fact_check_outlined, label: 'FAQ'),
@@ -1754,14 +1867,18 @@ class _DesktopContextPanel extends StatelessWidget {
           _DesktopContextToggle(
             label: '官方资料优先',
             selected: !smartSupplement,
-            onTap: () =>
-                controller.setAllowSmartSupplement(false, useGlobalMode: false),
+            onTap: () => controller.setAllowSmartSupplement(
+              false,
+              useGlobalMode: useGlobalMode,
+            ),
           ),
           _DesktopContextToggle(
             label: '允许智能补充',
             selected: smartSupplement,
-            onTap: () =>
-                controller.setAllowSmartSupplement(true, useGlobalMode: false),
+            onTap: () => controller.setAllowSmartSupplement(
+              true,
+              useGlobalMode: useGlobalMode,
+            ),
           ),
         ],
       ),

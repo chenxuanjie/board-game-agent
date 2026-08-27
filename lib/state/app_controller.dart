@@ -17,6 +17,7 @@ import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
+import '../models/ai_conversation.dart';
 import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
@@ -89,8 +90,8 @@ class AppController extends ChangeNotifier {
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
-    state: ConnectivityState.success,
-    message: '默认可用',
+    state: ConnectivityState.unknown,
+    message: '未检测',
     checkedAt: DateTime.now(),
   );
   ConnectivityStatus _assetConnectivityStatus = ConnectivityStatus.unknown(
@@ -100,6 +101,8 @@ class AppController extends ChangeNotifier {
       <String, ConnectivityStatus>{};
   final Map<String, String> _resolvedAssetPaths = <String, String>{};
   Timer? _assetStatusTimer;
+  Future<void>? _assetStatusRefreshFuture;
+  Future<void>? _serviceStatusRefreshFuture;
   RemoteLibraryUpdate? _pendingLibraryUpdate;
   bool _checkingLibraryUpdate = false;
   bool _applyingLibraryUpdate = false;
@@ -108,8 +111,9 @@ class AppController extends ChangeNotifier {
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
-  final Map<String, List<ChatMessage>> _conversationMessages =
-      <String, List<ChatMessage>>{};
+  Future<void> _selectedConversationSaveQueue = Future<void>.value();
+  final Map<String, AiConversation> _conversations = <String, AiConversation>{};
+  String? _selectedConversationId;
   Completer<void>? _generationAbort;
   bool _generationWasStopped = false;
   late final http.Client _assetTestClient = IOClient(
@@ -150,6 +154,29 @@ class AppController extends ChangeNotifier {
   ConnectivityStatus get assetConnectivityStatus => _assetConnectivityStatus;
   Map<String, ConnectivityStatus> get assetSourceStatuses =>
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
+  bool get isRefreshingServiceStatuses => _serviceStatusRefreshFuture != null;
+  String? get selectedConversationId => _selectedConversationId;
+  bool get selectedConversationIsGlobal =>
+      selectedConversation?.scope == AiConversationScope.global;
+  AiConversation? get selectedConversation {
+    final String? id = _selectedConversationId;
+    return id == null ? null : _conversations[id]?.copyWith();
+  }
+
+  List<AiConversation> get conversations {
+    final List<AiConversation> result = _conversations.values
+        .where(_isConversationAvailable)
+        .map((AiConversation conversation) => conversation.copyWith())
+        .toList();
+    result.sort((AiConversation left, AiConversation right) {
+      if (left.isGlobal != right.isGlobal) {
+        return left.isGlobal ? -1 : 1;
+      }
+      return right.updatedAt.compareTo(left.updatedAt);
+    });
+    return List<AiConversation>.unmodifiable(result);
+  }
+
   RemoteLibraryUpdate? get pendingLibraryUpdate => _pendingLibraryUpdate;
   bool get checkingLibraryUpdate => _checkingLibraryUpdate;
   bool get applyingLibraryUpdate => _applyingLibraryUpdate;
@@ -185,8 +212,7 @@ class AppController extends ChangeNotifier {
   /// The desktop assistant uses this to render a lightweight session list
   /// without exposing the mutable conversation map to the UI layer.
   int messageCountForGame(String gameId) {
-    return _conversationMessages[_conversationKeyForGameId(gameId)]?.length ??
-        0;
+    return _conversations[_conversationKeyForGameId(gameId)]?.messageCount ?? 0;
   }
 
   AiAnswerMode chatAnswerMode({required bool useGlobalMode}) =>
@@ -212,6 +238,8 @@ class AppController extends ChangeNotifier {
     _globalAnswerMode = await _preferencesService.loadGlobalAnswerMode();
     _customAiPresets = await _preferencesService.loadAiCustomPresets();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
+    _selectedConversationId = await _preferencesService
+        .loadSelectedConversationId();
     if (_isSaveableCustomPreset(_aiApiConfig)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
@@ -220,13 +248,20 @@ class AppController extends ChangeNotifier {
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
+    _ensureGreeting();
+    _selectedConversationId = _resolveSelectedConversationId(
+      _selectedConversationId,
+    );
+    await _preferencesService.saveSelectedConversationId(
+      _selectedConversationId!,
+    );
     debugPrint(
       '[updates] initialize loaded games: ${_games.map((g) => '${g.slug}:${g.title}').join(', ')}',
     );
-    _aiConnectivityStatus = ConnectivityStatus(
-      state: ConnectivityState.success,
-      message: copy.aiStatusDefaultReady,
-      checkedAt: DateTime.now(),
+    _aiConnectivityStatus = ConnectivityStatus.unknown(
+      _aiApiConfig.baseUrl.trim().isEmpty || _aiApiConfig.apiKey.trim().isEmpty
+          ? '未配置 AI 服务'
+          : '未检测',
     );
     for (final source in _assetSourceConfigs) {
       _assetSourceStatuses[source.id] = ConnectivityStatus.unknown('未检测');
@@ -242,7 +277,6 @@ class AppController extends ChangeNotifier {
     if (!voiceReplyAvailable) {
       _voiceReplyEnabled = false;
     }
-    _ensureGreeting();
     _queueConversationSave();
     unawaited(prefetchHomeImages());
     _startAssetStatusPolling();
@@ -262,6 +296,13 @@ class AppController extends ChangeNotifier {
     _language = next;
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+    _ensureGreeting();
+    _selectedConversationId = _resolveSelectedConversationId(
+      _selectedConversationId,
+    );
+    await _preferencesService.saveSelectedConversationId(
+      _selectedConversationId!,
+    );
     await _preferencesService.saveLanguage(next);
     await _ttsService.setLanguage(next);
     notifyListeners();
@@ -271,6 +312,12 @@ class AppController extends ChangeNotifier {
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _ensureGreeting();
+    _selectedConversationId = _resolveSelectedConversationId(
+      _selectedConversationId,
+    );
+    await _preferencesService.saveSelectedConversationId(
+      _selectedConversationId!,
+    );
     notifyListeners();
   }
 
@@ -293,6 +340,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> saveAiApiConfig(AiApiConfig next) async {
     _aiApiConfig = next;
+    _aiConnectivityStatus = ConnectivityStatus.unknown(
+      next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
+          ? '未配置 AI 服务'
+          : '等待检查',
+    );
+    invalidateAiModels();
     await _preferencesService.saveAiApiConfig(next);
     if (_isSaveableCustomPreset(next)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, next);
@@ -450,11 +503,48 @@ class AppController extends ChangeNotifier {
   }
 
   void selectGame(String gameId) {
-    if (_selectedGameId == gameId) {
+    final bool gameChanged = _selectedGameId != gameId;
+    final String previousConversationId = _selectedConversationId ?? '';
+    _selectedGameId = gameId;
+    _selectConversationInternal(_conversationKeyForGameId(gameId));
+    if (gameChanged || previousConversationId != _selectedConversationId) {
+      notifyListeners();
+    }
+  }
+
+  /// Selects a persisted assistant conversation by its stable ID.
+  ///
+  /// Game sessions use `game:<gameId>` and the all-knowledge session uses
+  /// `global`. Unknown IDs are ignored so stale preference data cannot point
+  /// the UI at a conversation that no longer exists.
+  void selectConversation(String conversationId) {
+    final String normalized = conversationId.trim();
+    if (!_conversations.containsKey(normalized) ||
+        !_isConversationAvailable(_conversations[normalized]!)) {
       return;
     }
-    _selectedGameId = gameId;
+    final AiConversation conversation = _conversations[normalized]!;
+    if (conversation.scope == AiConversationScope.game &&
+        conversation.gameId != null &&
+        _games.any((GameInfo game) => game.id == conversation.gameId)) {
+      _selectedGameId = conversation.gameId!;
+    }
+    if (_selectedConversationId == normalized) {
+      return;
+    }
+    _selectedConversationId = normalized;
+    _queueSelectedConversationSave(normalized);
     notifyListeners();
+  }
+
+  void _selectConversationInternal(String conversationId) {
+    if (!_conversations.containsKey(conversationId) ||
+        !_isConversationAvailable(_conversations[conversationId]!) ||
+        _selectedConversationId == conversationId) {
+      return;
+    }
+    _selectedConversationId = conversationId;
+    _queueSelectedConversationSave(conversationId);
   }
 
   Future<void> setVoiceReplyEnabled(bool enabled) async {
@@ -592,6 +682,9 @@ class AppController extends ChangeNotifier {
     String? greeting,
     bool useGlobalMode = false,
   }) async {
+    final String conversationId = _conversationIdForContext(
+      useGlobalMode: useGlobalMode,
+    );
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
@@ -617,7 +710,7 @@ class AppController extends ChangeNotifier {
       );
     await _ttsService.stop();
     _trimConversationMessages(messages);
-    _queueConversationSave();
+    _queueConversationSave(conversationId: conversationId);
     notifyListeners();
   }
 
@@ -638,6 +731,9 @@ class AppController extends ChangeNotifier {
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
+    final String conversationId = _conversationIdForContext(
+      useGlobalMode: useGlobalMode,
+    );
 
     final userMessage = ChatMessage(
       id: '${DateTime.now().microsecondsSinceEpoch}-user',
@@ -648,7 +744,7 @@ class AppController extends ChangeNotifier {
 
     messages.add(userMessage);
     _trimConversationMessages(messages);
-    _queueConversationSave();
+    _queueConversationSave(conversationId: conversationId);
     _isSending = true;
     _generationWasStopped = false;
     final Completer<void> generationAbort = Completer<void>();
@@ -721,7 +817,7 @@ class AppController extends ChangeNotifier {
           messages.removeWhere((ChatMessage item) => item.id == draftId);
         }
         _trimConversationMessages(messages);
-        _queueConversationSave();
+        _queueConversationSave(conversationId: conversationId);
       } else if (finalAnswer != null) {
         final BoardGameAiAnswer answer = finalAnswer;
         final ChatMessage nextMessage = (currentDraft ?? draftMessage).copyWith(
@@ -734,7 +830,7 @@ class AppController extends ChangeNotifier {
         );
         _replaceMessage(messages, nextMessage);
         _trimConversationMessages(messages);
-        _queueConversationSave();
+        _queueConversationSave(conversationId: conversationId);
         if (_voiceReplyEnabled) {
           await speakMessage(answer.text);
         }
@@ -772,7 +868,7 @@ class AppController extends ChangeNotifier {
         );
       }
       _trimConversationMessages(messages);
-      _queueConversationSave();
+      _queueConversationSave(conversationId: conversationId);
     } finally {
       _generationAbort = null;
       _isSending = false;
@@ -794,6 +890,9 @@ class AppController extends ChangeNotifier {
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
+    final String conversationId = _conversationIdForContext(
+      useGlobalMode: useGlobalMode,
+    );
     final int failedIndex = messages.indexWhere(
       (ChatMessage item) => item.id == message.id,
     );
@@ -805,7 +904,7 @@ class AppController extends ChangeNotifier {
       } else {
         messages.removeAt(failedIndex);
       }
-      _queueConversationSave();
+      _queueConversationSave(conversationId: conversationId);
       notifyListeners();
     }
     await sendPrompt(prompt, useGlobalMode: useGlobalMode);
@@ -837,20 +936,57 @@ class AppController extends ChangeNotifier {
       generationAbort.complete();
     }
     await _conversationSaveQueue;
+    await _selectedConversationSaveQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
     _aiService.dispose();
     _assetTestClient.close();
   }
 
-  Future<void> refreshAssetAccessStatus() async {
+  Future<void> refreshAssetAccessStatus() {
+    final Future<void>? active = _assetStatusRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> future = _refreshAssetAccessStatus();
+    _assetStatusRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_assetStatusRefreshFuture, future)) {
+            _assetStatusRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _refreshAssetAccessStatus() async {
+    final DateTime startedAt = DateTime.now();
     if (_games.isEmpty) {
       _assetSourceStatuses.clear();
-      _assetConnectivityStatus = ConnectivityStatus.unknown('暂无游戏资料');
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.unknown,
+        message: '暂无游戏资料',
+        checkedAt: startedAt,
+      );
       notifyListeners();
       return;
     }
-    ConnectivityStatus? bestStatus;
+
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查规则资料',
+      checkedAt: startedAt,
+    );
+    for (final source in _assetSourceConfigs) {
+      _assetSourceStatuses[source.id] = ConnectivityStatus(
+        state: ConnectivityState.loading,
+        message: '正在检查',
+        checkedAt: startedAt,
+      );
+    }
+    notifyListeners();
+
     final Map<String, ConnectivityStatus> nextStatuses =
         <String, ConnectivityStatus>{};
     for (final source in _assetSourceConfigs) {
@@ -874,11 +1010,6 @@ class AppController extends ChangeNotifier {
               );
         debugPrint('[assets] ${source.id} => ${status.message}');
         nextStatuses[source.id] = status;
-        if (bestStatus == null ||
-            (status.state == ConnectivityState.success &&
-                bestStatus.state != ConnectivityState.success)) {
-          bestStatus = status;
-        }
       } catch (error) {
         final failureStatus = ConnectivityStatus(
           state: ConnectivityState.failure,
@@ -892,12 +1023,149 @@ class AppController extends ChangeNotifier {
     _assetSourceStatuses
       ..clear()
       ..addAll(nextStatuses);
-    _assetConnectivityStatus =
-        bestStatus ??
-        (nextStatuses.isEmpty
-            ? ConnectivityStatus.unknown('未检测')
-            : nextStatuses.values.first);
+    final int successCount = nextStatuses.values
+        .where(
+          (ConnectivityStatus status) =>
+              status.state == ConnectivityState.success,
+        )
+        .length;
+    final int failureCount = nextStatuses.values
+        .where(
+          (ConnectivityStatus status) =>
+              status.state == ConnectivityState.failure,
+        )
+        .length;
+    final ConnectivityState aggregateState;
+    final String aggregateMessage;
+    if (nextStatuses.isEmpty) {
+      aggregateState = ConnectivityState.unknown;
+      aggregateMessage = '未配置资料来源';
+    } else if (successCount == 0) {
+      aggregateState = ConnectivityState.failure;
+      aggregateMessage = '规则资料访问失败';
+    } else if (failureCount > 0) {
+      aggregateState = ConnectivityState.warning;
+      aggregateMessage = '部分资料来源可用';
+    } else {
+      aggregateState = ConnectivityState.success;
+      aggregateMessage = '规则资料访问正常';
+    }
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: aggregateState,
+      message: aggregateMessage,
+      checkedAt: DateTime.now(),
+    );
     notifyListeners();
+  }
+
+  /// Refreshes every user-visible service status from its real endpoint.
+  ///
+  /// Model discovery validates the AI endpoint even before a model is chosen.
+  /// When a model is selected, a small completion request is also issued so
+  /// the status reflects the actual chat path rather than only `/models`.
+  Future<void> refreshServiceStatuses() {
+    final Future<void>? active = _serviceStatusRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> future = _refreshServiceStatuses();
+    _serviceStatusRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_serviceStatusRefreshFuture, future)) {
+            _serviceStatusRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _refreshServiceStatuses() async {
+    final DateTime startedAt = DateTime.now();
+    _aiConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查 AI 服务',
+      checkedAt: startedAt,
+    );
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查规则资料',
+      checkedAt: startedAt,
+    );
+    for (final source in _assetSourceConfigs) {
+      _assetSourceStatuses[source.id] = ConnectivityStatus(
+        state: ConnectivityState.loading,
+        message: '正在检查',
+        checkedAt: startedAt,
+      );
+    }
+    notifyListeners();
+
+    await Future.wait<void>(<Future<void>>[
+      _refreshAiServiceStatus(),
+      refreshAssetAccessStatus(),
+    ]);
+  }
+
+  Future<void> _refreshAiServiceStatus() async {
+    final AiApiConfig config = _aiApiConfig;
+    if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
+      _availableAiModels = <AiModel>[];
+      _aiModelLoadState = AiModelLoadState.idle;
+      _aiModelLoadError = null;
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: '未配置 AI 服务',
+        checkedAt: DateTime.now(),
+      );
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final List<AiModel> models = await refreshAiModels(
+        persistSelection: true,
+      );
+      if (models.isEmpty) {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.failure,
+          message: '模型列表为空',
+          checkedAt: DateTime.now(),
+        );
+      } else if (!hasSelectedAiModel) {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.warning,
+          message: '接口可用，请选择模型',
+          checkedAt: DateTime.now(),
+        );
+      } else {
+        final AiHealthResult health = await _aiService.checkConnection(config);
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: health.success
+              ? ConnectivityState.success
+              : ConnectivityState.failure,
+          message: health.success
+              ? 'AI 服务与聊天接口正常'
+              : '聊天接口失败: ${health.message}',
+          checkedAt: DateTime.now(),
+        );
+      }
+    } catch (error) {
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: 'AI 服务失败: ${_safeStatusError(error)}',
+        checkedAt: DateTime.now(),
+      );
+    }
+    notifyListeners();
+  }
+
+  String _safeStatusError(Object error) {
+    final String message = error.toString().trim();
+    if (message.isEmpty) return '未知错误';
+    final String apiKey = _aiApiConfig.apiKey.trim();
+    if (apiKey.isEmpty) return message;
+    return message.replaceAll(apiKey, '<redacted>');
   }
 
   Future<void> prefetchHomeImages() async {
@@ -914,19 +1182,13 @@ class AppController extends ChangeNotifier {
     _homeAssetsTotal = imagePaths.length;
     notifyListeners();
 
-    bool anySuccess = false;
     for (final String path in imagePaths) {
-      anySuccess = (await _cacheImage(path)) != null || anySuccess;
+      await _cacheImage(path);
       _homeAssetsLoaded += 1;
       notifyListeners();
     }
 
     _homeAssetsLoading = false;
-    _assetConnectivityStatus = ConnectivityStatus(
-      state: anySuccess ? ConnectivityState.success : ConnectivityState.failure,
-      message: anySuccess ? '首页资源已缓存' : '首页资源拉取失败',
-      checkedAt: DateTime.now(),
-    );
     notifyListeners();
   }
 
@@ -1387,38 +1649,66 @@ class AppController extends ChangeNotifier {
   }
 
   void _ensureGreeting() {
-    if (_games.isEmpty) {
-      return;
-    }
+    final DateTime now = DateTime.now();
     for (final GameInfo game in _games) {
-      _conversationMessages.putIfAbsent(
-        _conversationKeyForGameId(game.id),
-        () => <ChatMessage>[
-          ChatMessage(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            role: ChatRole.assistant,
-            text: copy.assistantGreetingFor(
-              game.title,
-              game.assistantIntro.isNotEmpty
-                  ? game.assistantIntro
-                  : game.summary,
+      final String id = _conversationKeyForGameId(game.id);
+      final AiConversation? existing = _conversations[id];
+      final String title = '${game.title}助手';
+      if (existing == null) {
+        _conversations[id] = AiConversation(
+          id: id,
+          title: title,
+          scope: AiConversationScope.game,
+          gameId: game.id,
+          createdAt: now,
+          updatedAt: now,
+          messages: <ChatMessage>[
+            ChatMessage(
+              id: '${now.microsecondsSinceEpoch}-${game.id}',
+              role: ChatRole.assistant,
+              text: copy.assistantGreetingFor(
+                game.title,
+                game.assistantIntro.isNotEmpty
+                    ? game.assistantIntro
+                    : game.summary,
+              ),
+              timestamp: now,
             ),
-            timestamp: DateTime.now(),
+          ],
+        );
+      } else if (existing.title != title || existing.gameId != game.id) {
+        _conversations[id] = existing.copyWith(
+          title: title,
+          scope: AiConversationScope.game,
+          gameId: game.id,
+        );
+      }
+    }
+    final AiConversation? existingGlobal =
+        _conversations[_globalConversationKey];
+    if (existingGlobal == null) {
+      _conversations[_globalConversationKey] = AiConversation(
+        id: _globalConversationKey,
+        title: copy.globalAiTitle,
+        scope: AiConversationScope.global,
+        createdAt: now,
+        updatedAt: now,
+        messages: <ChatMessage>[
+          ChatMessage(
+            id: '${now.microsecondsSinceEpoch}-global',
+            role: ChatRole.assistant,
+            text: copy.allKnowledgeGreeting,
+            timestamp: now,
           ),
         ],
       );
+    } else if (existingGlobal.title != copy.globalAiTitle) {
+      _conversations[_globalConversationKey] = existingGlobal.copyWith(
+        title: copy.globalAiTitle,
+        scope: AiConversationScope.global,
+        gameId: null,
+      );
     }
-    _conversationMessages.putIfAbsent(
-      _globalConversationKey,
-      () => <ChatMessage>[
-        ChatMessage(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          role: ChatRole.assistant,
-          text: copy.allKnowledgeGreeting,
-          timestamp: DateTime.now(),
-        ),
-      ],
-    );
   }
 
   void _handleListeningStopped() {
@@ -1439,21 +1729,52 @@ class AppController extends ChangeNotifier {
   }
 
   static const String _globalConversationKey = 'global';
-  static const int _conversationStoreVersion = 1;
+  static const int _conversationStoreVersion = 2;
   static const int _maxMessagesPerConversation = 100;
 
   List<ChatMessage> _messagesForCurrentContext() {
     return _messagesForContext(useGlobalMode: false);
   }
 
-  List<ChatMessage> _messagesForContext({required bool useGlobalMode}) {
-    final String key = useGlobalMode
+  String _conversationIdForContext({required bool useGlobalMode}) {
+    return useGlobalMode
         ? _globalConversationKey
         : _conversationKeyForGameId(selectedGame.id);
-    return _conversationMessages.putIfAbsent(key, () => <ChatMessage>[]);
+  }
+
+  List<ChatMessage> _messagesForContext({required bool useGlobalMode}) {
+    final String key = _conversationIdForContext(useGlobalMode: useGlobalMode);
+    final AiConversation? existing = _conversations[key];
+    if (existing != null) {
+      return existing.messages;
+    }
+    _ensureGreeting();
+    final AiConversation? ensured = _conversations[key];
+    if (ensured != null) {
+      return ensured.messages;
+    }
+    final DateTime now = DateTime.now();
+    final AiConversation fallback = AiConversation(
+      id: key,
+      title: useGlobalMode ? copy.globalAiTitle : '${selectedGame.title}助手',
+      scope: useGlobalMode
+          ? AiConversationScope.global
+          : AiConversationScope.game,
+      gameId: useGlobalMode ? null : selectedGame.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _conversations[key] = fallback;
+    return fallback.messages;
   }
 
   String _conversationKeyForGameId(String gameId) => 'game:$gameId';
+
+  bool _isConversationAvailable(AiConversation conversation) {
+    return conversation.isGlobal ||
+        (conversation.gameId != null &&
+            _games.any((GameInfo game) => game.id == conversation.gameId));
+  }
 
   void _trimConversationMessages(List<ChatMessage> messages) {
     if (messages.length <= _maxMessagesPerConversation) {
@@ -1462,13 +1783,36 @@ class AppController extends ChangeNotifier {
     messages.removeRange(0, messages.length - _maxMessagesPerConversation);
   }
 
-  void _queueConversationSave() {
+  void _queueConversationSave({String? conversationId}) {
+    if (conversationId != null) {
+      _touchConversation(conversationId);
+    }
     _conversationSaveQueue = _conversationSaveQueue
         .then((_) async {
           await _persistConversations();
         })
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint('[chat] persist conversations failed: $error');
+          debugPrint('$stackTrace');
+        });
+  }
+
+  void _touchConversation(String conversationId) {
+    final AiConversation? conversation = _conversations[conversationId];
+    if (conversation == null) return;
+    // Keep the live message list intact while updating ordering metadata.
+    // Replacing the model here would detach an in-flight streaming request
+    // from the list that the UI and persistence queue are observing.
+    conversation.updatedAt = DateTime.now();
+  }
+
+  void _queueSelectedConversationSave(String conversationId) {
+    _selectedConversationSaveQueue = _selectedConversationSaveQueue
+        .then(
+          (_) => _preferencesService.saveSelectedConversationId(conversationId),
+        )
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[chat] persist selected conversation failed: $error');
           debugPrint('$stackTrace');
         });
   }
@@ -1484,21 +1828,26 @@ class AppController extends ChangeNotifier {
       final Map<String, dynamic> conversations =
           json['conversations'] as Map<String, dynamic>? ?? <String, dynamic>{};
 
-      _conversationMessages.clear();
+      _conversations.clear();
       for (final MapEntry<String, dynamic> entry in conversations.entries) {
-        final List<dynamic> rawMessages =
-            entry.value as List<dynamic>? ?? const <dynamic>[];
-        final List<ChatMessage> messages = rawMessages
-            .whereType<Map<String, dynamic>>()
-            .map(ChatMessage.fromMap)
-            .toList();
-        _trimConversationMessages(messages);
-        if (messages.isNotEmpty) {
-          _conversationMessages[entry.key] = messages;
+        final AiConversation? restored = _conversationFromStoredEntry(
+          entry.key,
+          entry.value,
+        );
+        if (restored != null) {
+          _conversations[entry.key] = restored;
         }
       }
+      final String? persistedSelection =
+          (json['selectedConversationId'] as String?)?.trim();
+      if ((_selectedConversationId == null ||
+              _selectedConversationId!.isEmpty) &&
+          persistedSelection != null &&
+          persistedSelection.isNotEmpty) {
+        _selectedConversationId = persistedSelection;
+      }
       debugPrint(
-        '[chat] restored conversations: ${_conversationMessages.keys.join(', ')}',
+        '[chat] restored conversations: ${_conversations.keys.join(', ')}',
       );
     } catch (error, stackTrace) {
       debugPrint('[chat] restore conversations failed: $error');
@@ -1512,10 +1861,11 @@ class AppController extends ChangeNotifier {
       final Map<String, dynamic> payload = <String, dynamic>{
         'version': _conversationStoreVersion,
         'savedAt': DateTime.now().toIso8601String(),
+        'selectedConversationId': _selectedConversationId,
         'conversations': <String, dynamic>{
-          for (final MapEntry<String, List<ChatMessage>> entry
-              in _conversationMessages.entries)
-            entry.key: entry.value.map((ChatMessage m) => m.toMap()).toList(),
+          for (final MapEntry<String, AiConversation> entry
+              in _conversations.entries)
+            entry.key: entry.value.toMap(),
         },
       };
       await file.parent.create(recursive: true);
@@ -1531,5 +1881,85 @@ class AppController extends ChangeNotifier {
     return File(
       '${support.path}${Platform.pathSeparator}chat_conversations.json',
     );
+  }
+
+  AiConversation? _conversationFromStoredEntry(String id, Object? raw) {
+    if (raw is Map<String, dynamic>) {
+      try {
+        final AiConversation parsed = AiConversation.fromMap(raw);
+        return parsed.id == id ? parsed : parsed.copyWith(id: id);
+      } catch (error) {
+        debugPrint('[chat] skipped malformed conversation $id: $error');
+        return null;
+      }
+    }
+    if (raw is! List<dynamic>) {
+      return null;
+    }
+    final List<ChatMessage> messages = <ChatMessage>[];
+    for (final Map<String, dynamic> messageMap
+        in raw.whereType<Map<String, dynamic>>()) {
+      try {
+        messages.add(ChatMessage.fromMap(messageMap));
+      } catch (error) {
+        debugPrint('[chat] skipped malformed message in $id: $error');
+      }
+    }
+    _trimConversationMessages(messages);
+    // The v1 store represented conversations as bare message lists. Keep an
+    // empty (but structurally valid) list during migration as well: the
+    // greeting/session bootstrap runs after restore and can populate it, while
+    // dropping the entry here would lose its stable session identity and
+    // selected-session preference.
+    final DateTime now = DateTime.now();
+    final DateTime updatedAt = messages.isEmpty ? now : messages.last.timestamp;
+    final bool global = id == _globalConversationKey;
+    final GameInfo? game = global
+        ? null
+        : _games
+              .where(
+                (GameInfo item) => _conversationKeyForGameId(item.id) == id,
+              )
+              .cast<GameInfo?>()
+              .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+    return AiConversation(
+      id: id,
+      title: global
+          ? copy.globalAiTitle
+          : game == null
+          ? '规则问答'
+          : '${game.title}助手',
+      scope: global ? AiConversationScope.global : AiConversationScope.game,
+      gameId: game?.id ?? (global ? null : id.replaceFirst('game:', '')),
+      createdAt: messages.isEmpty ? now : messages.first.timestamp,
+      updatedAt: updatedAt,
+      messages: messages,
+    );
+  }
+
+  String _resolveSelectedConversationId(String? preferredId) {
+    final String? preferred = preferredId?.trim();
+    if (preferred != null && _conversations.containsKey(preferred)) {
+      final AiConversation conversation = _conversations[preferred]!;
+      if (conversation.isGlobal ||
+          (conversation.gameId != null &&
+              _games.any((GameInfo game) => game.id == conversation.gameId))) {
+        if (conversation.scope == AiConversationScope.game &&
+            conversation.gameId != null) {
+          _selectedGameId = conversation.gameId!;
+        }
+        return preferred;
+      }
+    }
+    final String gameConversationId = _conversationKeyForGameId(
+      _selectedGameId,
+    );
+    if (_conversations.containsKey(gameConversationId)) {
+      return gameConversationId;
+    }
+    if (_conversations.containsKey(_globalConversationKey)) {
+      return _globalConversationKey;
+    }
+    return gameConversationId;
   }
 }

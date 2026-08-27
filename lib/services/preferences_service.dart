@@ -18,6 +18,7 @@ class PreferencesService {
   static const _globalAnswerModeKey = 'global_answer_mode';
   static const _checkForUpdatesKey = 'check_for_updates';
   static const _assistantModeKey = 'assistant_mode';
+  static const _selectedConversationKey = 'selected_conversation_id';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -144,5 +145,16 @@ class PreferencesService {
   Future<void> saveAssistantMode(AssistantMode mode) async {
     final prefs = await _prefs;
     await prefs.setString(_assistantModeKey, mode.code);
+  }
+
+  Future<String?> loadSelectedConversationId() async {
+    final prefs = await _prefs;
+    final String? value = prefs.getString(_selectedConversationKey)?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<void> saveSelectedConversationId(String conversationId) async {
+    final prefs = await _prefs;
+    await prefs.setString(_selectedConversationKey, conversationId);
   }
 }

@@ -384,6 +384,7 @@ class _StatusLamp extends StatelessWidget {
       ConnectivityState.success => palette.success,
       ConnectivityState.warning => palette.warning,
       ConnectivityState.failure => palette.error,
+      ConnectivityState.loading => palette.primary,
       ConnectivityState.unknown => palette.disabledForeground,
     };
     return InkWell(
@@ -420,20 +421,29 @@ class _StatusLamp extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: lampColor,
-                shape: BoxShape.circle,
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: lampColor.withValues(alpha: 0.45),
-                    blurRadius: 8,
+            status.state == ConnectivityState.loading
+                ? SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: lampColor,
+                    ),
+                  )
+                : Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: lampColor,
+                      shape: BoxShape.circle,
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color: lampColor.withValues(alpha: 0.45),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -471,6 +481,7 @@ String _statusSummary(AppCopy copy, ConnectivityState? state) {
     ConnectivityState.success => copy.statusReadyShort,
     ConnectivityState.warning => copy.statusLimitedShort,
     ConnectivityState.failure => copy.statusFailedShort,
+    ConnectivityState.loading => copy.statusLoading,
     ConnectivityState.unknown || null => copy.statusPendingShort,
   };
 }

@@ -132,6 +132,7 @@ class AppCopy {
   String get statusFailedShort => isChinese ? '失败' : 'Failed';
   String get statusPendingShort => isChinese ? '待测' : 'Pending';
   String get statusLimitedShort => isChinese ? '受限' : 'Limited';
+  String get statusLoading => isChinese ? '加载中' : 'Loading';
   String get aiStatusDefaultReady => isChinese ? '默认可用' : 'Ready by default';
   String get assetTestDone =>
       isChinese ? '资源访问测试完成' : 'Asset access test completed';

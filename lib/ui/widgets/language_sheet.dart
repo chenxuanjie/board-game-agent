@@ -811,6 +811,9 @@ class _LanguageSheetState extends State<LanguageSheet> {
     if (state == ConnectivityState.warning) {
       return '受限';
     }
+    if (state == ConnectivityState.loading) {
+      return '加载中';
+    }
     return '未检测';
   }
 }
