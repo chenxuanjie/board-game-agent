@@ -209,13 +209,21 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         return;
       }
       if (document == null) {
-        _showDocumentUnavailable(controller, title);
+        _showDocumentUnavailable(
+          controller,
+          title,
+          onRetry: () => _openRulebook(controller, game, title),
+        );
         return;
       }
       await _openResolvedDocument(controller, document, title);
     } catch (_) {
       if (mounted) {
-        _showDocumentUnavailable(controller, title);
+        _showDocumentUnavailable(
+          controller,
+          title,
+          onRetry: () => _openRulebook(controller, game, title),
+        );
       }
     } finally {
       if (mounted) {
@@ -238,13 +246,21 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         return;
       }
       if (document == null) {
-        _showDocumentUnavailable(controller, title);
+        _showDocumentUnavailable(
+          controller,
+          title,
+          onRetry: () => _openFaq(controller, game, title),
+        );
         return;
       }
       await _openResolvedDocument(controller, document, title);
     } catch (_) {
       if (mounted) {
-        _showDocumentUnavailable(controller, title);
+        _showDocumentUnavailable(
+          controller,
+          title,
+          onRetry: () => _openFaq(controller, game, title),
+        );
       }
     } finally {
       if (mounted) {
@@ -282,7 +298,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     );
   }
 
-  void _showDocumentUnavailable(AppController controller, String title) {
+  void _showDocumentUnavailable(
+    AppController controller,
+    String title, {
+    required VoidCallback onRetry,
+  }) {
     if (!mounted) {
       return;
     }
@@ -290,7 +310,13 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text(controller.copy.documentUnavailable(title))),
+        SnackBar(
+          content: Text(controller.copy.documentUnavailable(title)),
+          action: SnackBarAction(
+            label: controller.copy.retry,
+            onPressed: onRetry,
+          ),
+        ),
       );
   }
 }

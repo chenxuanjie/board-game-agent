@@ -3,6 +3,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../widgets/document_failure_view.dart';
 
 class PdfDocumentScreen extends StatefulWidget {
   const PdfDocumentScreen({
@@ -25,11 +26,22 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
   late Future<String?> _localPathFuture;
   int _currentPage = 1;
   int _totalPages = 0;
+  int _viewerRevision = 0;
 
   @override
   void initState() {
     super.initState();
     _localPathFuture = widget.controller.cacheDocument(widget.remotePath);
+  }
+
+  void _retryLoad() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _localPathFuture = widget.controller.cacheDocument(widget.remotePath);
+      _viewerRevision += 1;
+    });
   }
 
   @override
@@ -46,11 +58,18 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || snapshot.data == null) {
-            return Center(child: Text(copy.documentUnavailable(widget.title)));
+            return DocumentFailureView(
+              copy: copy,
+              title: widget.title,
+              kind: DocumentFailureKind.load,
+              onRetry: _retryLoad,
+              onBack: () => Navigator.of(context).maybePop(),
+            );
           }
           return DecoratedBox(
             decoration: BoxDecoration(color: palette.pageBackground),
             child: PdfViewer.file(
+              key: ValueKey<int>(_viewerRevision),
               snapshot.data!,
               controller: _pdfController,
               useProgressiveLoading: false,
@@ -80,6 +99,15 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
                   setState(() {
                     _currentPage = pageNumber;
                   });
+                },
+                errorBannerBuilder: (context, error, stackTrace, documentRef) {
+                  return DocumentFailureView(
+                    copy: copy,
+                    title: widget.title,
+                    kind: DocumentFailureKind.render,
+                    onRetry: _retryLoad,
+                    onBack: () => Navigator.of(context).maybePop(),
+                  );
                 },
                 viewerOverlayBuilder: (context, size, handleLinkTap) {
                   return <Widget>[

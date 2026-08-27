@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../widgets/document_failure_view.dart';
 
 class MarkdownDocumentScreen extends StatefulWidget {
   const MarkdownDocumentScreen({
@@ -29,6 +30,17 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
     _contentFuture = widget.controller.loadMarkdownDocument(widget.remotePath);
   }
 
+  void _retryLoad() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _contentFuture = widget.controller.loadMarkdownDocument(
+        widget.remotePath,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -45,14 +57,15 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError || snapshot.data == null) {
-            return Center(
-              child: Text(
-                copy.documentUnavailable(widget.title),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: cardTextColor),
-              ),
+          if (snapshot.hasError ||
+              snapshot.data == null ||
+              snapshot.data!.trim().isEmpty) {
+            return DocumentFailureView(
+              copy: copy,
+              title: widget.title,
+              kind: DocumentFailureKind.load,
+              onRetry: _retryLoad,
+              onBack: () => Navigator.of(context).maybePop(),
             );
           }
 

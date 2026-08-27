@@ -46,6 +46,8 @@ void main() {
     final AppCopy copy = AppCopy(AppLanguage.zhHans);
 
     expect(copy.documentUnavailable('规则书'), '暂时找不到“规则书”，资料可能还在同步中，请稍后再试。');
+    expect(copy.documentLoadFailed('规则书'), '“规则书”暂时无法读取，请稍后重试。');
+    expect(copy.documentRenderFailed('规则书'), '“规则书”暂时无法打开，文件可能损坏或格式暂不支持。');
   });
 }
 

@@ -1315,6 +1315,12 @@ class AppController extends ChangeNotifier {
         )
         .toList();
     resources.sort((a, b) {
+      if (baseName == 'rulebook') {
+        final int documentFormat = _documentFormatRank(
+          a,
+        ).compareTo(_documentFormatRank(b));
+        if (documentFormat != 0) return documentFormat;
+      }
       final int language = _documentLanguageRank(
         a.language,
       ).compareTo(_documentLanguageRank(b.language));
@@ -1334,6 +1340,16 @@ class AppController extends ChangeNotifier {
       candidates.add(fallback);
     }
     return candidates;
+  }
+
+  int _documentFormatRank(GameResource resource) {
+    if (resource.format == 'pdf' && resource.sourceClass == 'official') {
+      return 0;
+    }
+    if (resource.format == 'pdf') {
+      return 1;
+    }
+    return 2;
   }
 
   int _documentLanguageRank(String resourceLanguage) {

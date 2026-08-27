@@ -8,7 +8,7 @@ import 'package:board_game_agent/models/game_catalog_manifest.dart';
 import 'package:board_game_agent/models/game_resource.dart';
 
 void main() {
-  test('companion manifest selects localized AI resources by priority', () {
+  test('companion manifest prefers the official PDF for the rulebook', () {
     final GameManifest game = GameManifest.fromJson(
       <String, dynamic>{
         'id': 'cabo',
@@ -75,7 +75,7 @@ void main() {
     final infoCn = game.toGameInfo(AppLanguage.zhHans);
     expect(
       infoCn.rulebookAssetPath,
-      'assets/games/cabo/docs/local/knowledge/rulebook_cn.md',
+      'assets/games/cabo/docs/official/rules/rulebook_en.pdf',
     );
     expect(infoCn.knowledgeAssetPaths, <String>[
       'assets/games/cabo/docs/local/knowledge/rulebook_cn.md',

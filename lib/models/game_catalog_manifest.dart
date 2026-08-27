@@ -123,6 +123,7 @@ class GameManifest {
     final GameResource? rulebookResource = _selectDocumentResource(
       documentTypes: const <String>{'rulebook', 'how_to_play'},
       localeKey: localeKey,
+      preferOfficialPdf: true,
     );
     final GameResource? faqResource = _selectDocumentResource(
       documentTypes: const <String>{'faq'},
@@ -186,6 +187,7 @@ class GameManifest {
   GameResource? _selectDocumentResource({
     required Set<String> documentTypes,
     required String localeKey,
+    bool preferOfficialPdf = false,
   }) {
     final List<GameResource> candidates = resources
         .where(
@@ -197,7 +199,7 @@ class GameManifest {
               resource.path.trim().isNotEmpty,
         )
         .toList();
-    _sortResources(candidates, localeKey);
+    _sortResources(candidates, localeKey, preferOfficialPdf: preferOfficialPdf);
     return candidates.isEmpty ? null : candidates.first;
   }
 
@@ -225,8 +227,18 @@ class GameManifest {
     return List<GameResource>.unmodifiable(selected);
   }
 
-  void _sortResources(List<GameResource> values, String localeKey) {
+  void _sortResources(
+    List<GameResource> values,
+    String localeKey, {
+    bool preferOfficialPdf = false,
+  }) {
     values.sort((a, b) {
+      if (preferOfficialPdf) {
+        final int documentFormat = _documentFormatRank(
+          a,
+        ).compareTo(_documentFormatRank(b));
+        if (documentFormat != 0) return documentFormat;
+      }
       final int language = _languageRank(
         a.language,
         localeKey,
@@ -236,6 +248,16 @@ class GameManifest {
       if (priority != 0) return priority;
       return a.id.compareTo(b.id);
     });
+  }
+
+  int _documentFormatRank(GameResource resource) {
+    if (resource.format == 'pdf' && resource.sourceClass == 'official') {
+      return 0;
+    }
+    if (resource.format == 'pdf') {
+      return 1;
+    }
+    return 2;
   }
 
   int _languageRank(String language, String localeKey) {
