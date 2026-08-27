@@ -278,9 +278,7 @@ class AppController extends ChangeNotifier {
       _voiceReplyEnabled = false;
     }
     _queueConversationSave();
-    unawaited(prefetchHomeImages());
-    _startAssetStatusPolling();
-    unawaited(checkForLibraryUpdates());
+    unawaited(_initializeRemoteLibrary());
     if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
         _aiApiConfig.apiKey.trim().isNotEmpty) {
       unawaited(_refreshAiModelsOnInitialize());
@@ -1192,6 +1190,22 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _initializeRemoteLibrary() async {
+    try {
+      // Warm the image cache first so the update probe has a stable baseline
+      // and cannot race with the version manifest writes performed by
+      // ensureCached().
+      await prefetchHomeImages();
+      await refreshAssetAccessStatus();
+      await checkForLibraryUpdates();
+    } catch (error, stackTrace) {
+      debugPrint('[updates] initial remote library warm-up failed: $error');
+      debugPrint('$stackTrace');
+    } finally {
+      _startAssetStatusPolling();
+    }
+  }
+
   Future<void> checkForLibraryUpdates({bool forcePromptReset = false}) async {
     if (_checkingLibraryUpdate) {
       return;
@@ -1615,10 +1629,10 @@ class AppController extends ChangeNotifier {
     if (successful.isNotEmpty) {
       return successful;
     }
-    if (_assetSourceConfigs.isNotEmpty) {
-      return <AssetSourceConfig>[_assetSourceConfigs.first];
-    }
-    return <AssetSourceConfig>[];
+    // At startup every source may still be unknown, and the first source is
+    // not necessarily reachable. Try the full configured list so a healthy
+    // fallback source can establish the update baseline.
+    return List<AssetSourceConfig>.from(_assetSourceConfigs);
   }
 
   Future<List<GameInfo>> _loadGamesForLanguage(AppLanguage language) async {
@@ -1642,7 +1656,6 @@ class AppController extends ChangeNotifier {
 
   void _startAssetStatusPolling() {
     _assetStatusTimer?.cancel();
-    unawaited(refreshAssetAccessStatus());
     _assetStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       unawaited(refreshAssetAccessStatus());
     });

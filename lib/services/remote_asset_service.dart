@@ -146,7 +146,12 @@ class RemoteAssetService {
     final Map<String, dynamic>? local =
         localMap[remotePath] as Map<String, dynamic>?;
     if (local == null) {
-      return true;
+      // A missing local fingerprint means this is the first time the
+      // resource has been discovered (or the version map was introduced by a
+      // newer app). Establish the remote value as the baseline instead of
+      // showing a false "content updated" prompt.
+      await _saveVersionProbe(remotePath: remotePath, probe: remote);
+      return false;
     }
     return _fingerprint(remote) != _fingerprint(local);
   }
@@ -243,13 +248,32 @@ class RemoteAssetService {
     required String sourceId,
     required Map<String, String> headers,
   }) async {
-    final Map<String, dynamic> map = await _loadVersionMap();
-    map[remotePath] = <String, dynamic>{
+    await _saveVersionRecord(remotePath, <String, dynamic>{
       'sourceId': sourceId,
       'etag': headers['etag'],
       'lastModified': headers['last-modified'],
       'contentLength': headers['content-length'],
-    };
+    });
+  }
+
+  Future<void> _saveVersionProbe({
+    required String remotePath,
+    required Map<String, dynamic> probe,
+  }) async {
+    await _saveVersionRecord(remotePath, <String, dynamic>{
+      'sourceId': probe['sourceId'],
+      'etag': probe['etag'],
+      'lastModified': probe['lastModified'],
+      'contentLength': probe['contentLength'],
+    });
+  }
+
+  Future<void> _saveVersionRecord(
+    String remotePath,
+    Map<String, dynamic> record,
+  ) async {
+    final Map<String, dynamic> map = await _loadVersionMap();
+    map[remotePath] = record;
     await _saveVersionMap(map);
   }
 
@@ -284,7 +308,6 @@ class RemoteAssetService {
 
   String _fingerprint(Map<String, dynamic> value) {
     return [
-      value['sourceId'] ?? '',
       value['etag'] ?? '',
       value['lastModified'] ?? '',
       value['contentLength'] ?? '',

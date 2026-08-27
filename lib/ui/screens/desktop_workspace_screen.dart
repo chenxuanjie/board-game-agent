@@ -214,18 +214,61 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: Text(copy.libraryUpdateTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(copy.libraryUpdateMessage),
-              if (update != null && update.changedGameTitles.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                ...update.changedGameTitles.map(
-                  (String title) => Text('• $title'),
-                ),
-              ],
-            ],
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(dialogContext).size.height * 0.55,
+              maxWidth: 520,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(copy.libraryUpdateMessage),
+                  if (update != null && update.changedCount > 0) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      copy.libraryUpdateChangeSummary(update.changedCount),
+                      style: Theme.of(dialogContext).textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: update.changedResourceCounts.entries
+                          .map(
+                            (entry) => Chip(
+                              label: Text(
+                                '${copy.libraryUpdateResourceLabel(entry.key)} ${entry.value}',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ],
+                  if (update != null &&
+                      update.changedGameTitles.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      copy.libraryUpdateGameListLabel(
+                        update.changedGameTitles.length,
+                      ),
+                      style: Theme.of(dialogContext).textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    ...update.changedGameTitles.map(
+                      (String title) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text('• $title'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
           actions: <Widget>[
             TextButton(

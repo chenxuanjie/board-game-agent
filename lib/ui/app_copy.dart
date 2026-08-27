@@ -1,6 +1,7 @@
 import '../models/app_language.dart';
 import '../models/ai_api_config.dart';
 import '../models/color_scheme_option.dart';
+import '../models/remote_library_update.dart';
 
 class AppCopy {
   AppCopy(this.language);
@@ -140,8 +141,22 @@ class AppCopy {
   String get libraryUpdateTitle =>
       isChinese ? '检测到新的桌游信息内容' : 'New board game content detected';
   String get libraryUpdateMessage => isChinese
-      ? '检测到 catalog、背景图、规则书或相关资料有更新。是否现在下载并更新到本地？'
-      : 'Catalog, images, rulebooks, or related content has been updated. Download and update local data now?';
+      ? '检测到远端资料与本地缓存存在实际差异。是否现在下载并更新？'
+      : 'Remote content differs from the local cache. Download and update it now?';
+  String libraryUpdateChangeSummary(int count) =>
+      isChinese ? '共 $count 项资源发生变化' : '$count resources changed';
+  String libraryUpdateResourceLabel(RemoteLibraryResourceType type) {
+    return switch (type) {
+      RemoteLibraryResourceType.catalog => isChinese ? '目录' : 'Catalog',
+      RemoteLibraryResourceType.gameManifest =>
+        isChinese ? '桌游配置' : 'Game metadata',
+      RemoteLibraryResourceType.image => isChinese ? '图片' : 'Images',
+      RemoteLibraryResourceType.rulebook => isChinese ? '规则书' : 'Rulebooks',
+      RemoteLibraryResourceType.faq => isChinese ? 'FAQ' : 'FAQs',
+      RemoteLibraryResourceType.other => isChinese ? '其他资料' : 'Other',
+    };
+  }
+
   String libraryUpdateGameListLabel(int count) =>
       isChinese ? '涉及 $count 个桌游：' : 'Affected games ($count):';
   String get updateNow => isChinese ? '确定' : 'Update';
