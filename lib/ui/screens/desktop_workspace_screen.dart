@@ -337,36 +337,7 @@ class _DesktopSidebar extends StatelessWidget {
               icon: const Icon(Icons.info_outline_rounded),
             )
           else
-            InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: onOpenAbout,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Row(
-                  children: <Widget>[
-                    const _DesktopUserAvatar(),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            '本地工作区',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          Text(
-                            '2.0 预览',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _DesktopWorkspaceIdentity(onTap: onOpenAbout),
         ],
       ),
     );
@@ -511,16 +482,72 @@ class _DesktopNavItem extends StatelessWidget {
   }
 }
 
-class _DesktopUserAvatar extends StatelessWidget {
-  const _DesktopUserAvatar();
+class _DesktopWorkspaceIdentity extends StatelessWidget {
+  const _DesktopWorkspaceIdentity({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return CircleAvatar(
-      radius: 15,
-      backgroundColor: AppPalette.of(context).secondary,
-      foregroundColor: AppPalette.of(context).onSecondary,
-      child: const Text('你'),
+    final AppPalette palette = AppPalette.of(context);
+    return Semantics(
+      button: true,
+      label: '本地工作区，桌面端 2.0 预览',
+      child: Material(
+        color: palette.surfaceContainer.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(9),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: palette.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: palette.primary.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.desktop_windows_rounded,
+                    size: 19,
+                    color: palette.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '本地工作区',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Text(
+                        '桌面端 · 2.0',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: palette.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -681,24 +708,38 @@ class _DesktopHomePane extends StatelessWidget {
         LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool stack = constraints.maxWidth < 700;
-            final List<Widget> cards = <Widget>[
-              Expanded(
-                child: _DesktopRecentGamesCard(
-                  controller: controller,
-                  onOpenGame: onOpenGame,
-                ),
+            if (stack) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _DesktopRecentGamesCard(
+                    controller: controller,
+                    onOpenGame: onOpenGame,
+                  ),
+                  const SizedBox(height: 16),
+                  _DesktopStatusCard(controller: controller),
+                ],
+              );
+            }
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(
+                    flex: 11,
+                    child: _DesktopRecentGamesCard(
+                      controller: controller,
+                      onOpenGame: onOpenGame,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 9,
+                    child: _DesktopStatusCard(controller: controller),
+                  ),
+                ],
               ),
-              Expanded(child: _DesktopStatusCard(controller: controller)),
-            ];
-            return stack
-                ? Column(
-                    children: <Widget>[
-                      cards[0],
-                      const SizedBox(height: 12),
-                      cards[1],
-                    ],
-                  )
-                : Row(children: cards);
+            );
           },
         ),
       ],
@@ -899,7 +940,7 @@ class _DesktopRecentGamesCard extends StatelessWidget {
       child: Column(
         children: controller.games.take(3).map((GameInfo game) {
           return Padding(
-            padding: const EdgeInsets.only(bottom: 7),
+            padding: const EdgeInsets.only(bottom: 9),
             child: _DesktopGameRow(game: game, onTap: () => onOpenGame(game)),
           );
         }).toList(),
@@ -1030,19 +1071,30 @@ class _DesktopStatusRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: Text(label)),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.labelLarge?.copyWith(color: color),
+      padding: const EdgeInsets.only(bottom: 9),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppPalette.of(
+            context,
+          ).surfaceContainer.withValues(alpha: 0.52),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          child: Row(
+            children: <Widget>[
+              Expanded(child: Text(label)),
+              Text(
+                value,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: color),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.check_circle_outline_rounded, size: 17, color: color),
+            ],
           ),
-          const SizedBox(width: 8),
-          Icon(Icons.check_circle_outline_rounded, size: 17, color: color),
-        ],
+        ),
       ),
     );
   }
