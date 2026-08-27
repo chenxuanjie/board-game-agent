@@ -77,27 +77,40 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 22, 28, 34),
       children: <Widget>[
-        _DesktopBreadcrumb(
-          gameTitle: game.title,
-          palette: palette,
-          onBack: widget.onBack,
+        Align(
+          alignment: Alignment.topLeft,
+          child: ConstrainedBox(
+            key: const ValueKey<String>('desktop-detail-content'),
+            constraints: const BoxConstraints(maxWidth: 1600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _DesktopBreadcrumb(
+                  gameTitle: game.title,
+                  palette: palette,
+                  onBack: widget.onBack,
+                ),
+                const SizedBox(height: 18),
+                _buildHero(context, game, palette),
+                const SizedBox(height: 24),
+                _DesktopDetailTabs(
+                  selected: _section,
+                  palette: palette,
+                  onSelected: (value) => setState(() => _section = value),
+                ),
+                const SizedBox(height: 18),
+                _buildSection(context, game, palette),
+              ],
+            ),
+          ),
         ),
-        const SizedBox(height: 18),
-        _buildHero(context, game, palette),
-        const SizedBox(height: 24),
-        _DesktopDetailTabs(
-          selected: _section,
-          palette: palette,
-          onSelected: (value) => setState(() => _section = value),
-        ),
-        const SizedBox(height: 18),
-        _buildSection(context, game, palette),
       ],
     );
   }
 
   Widget _buildHero(BuildContext context, GameInfo game, AppPalette palette) {
     return LayoutBuilder(
+      key: const ValueKey<String>('desktop-detail-hero'),
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 1050;
         final bool medium = constraints.maxWidth >= 760;
@@ -122,15 +135,23 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
         final Widget score = _DesktopScoreCard(game: game, palette: palette);
 
         if (wide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              SizedBox(width: 248, height: 280, child: cover),
-              const SizedBox(width: 22),
-              Expanded(child: copy),
-              const SizedBox(width: 22),
-              SizedBox(width: 220, height: 280, child: score),
-            ],
+          // The detail pane lives in a vertically unbounded ListView. Keep
+          // the hero row's cross-axis height explicit so a maximized window
+          // cannot pass an unbounded height through the centered copy column.
+          return SizedBox(
+            height: 280,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(width: 248, height: 280, child: cover),
+                const SizedBox(width: 22),
+                Expanded(
+                  child: Align(alignment: Alignment.centerLeft, child: copy),
+                ),
+                const SizedBox(width: 22),
+                SizedBox(width: 220, height: 280, child: score),
+              ],
+            ),
           );
         }
         if (medium) {
@@ -450,7 +471,7 @@ class _DesktopHeroCopy extends StatelessWidget {
         : '${game.subtitle} · ${game.heroTagline}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Text(
           kicker,
