@@ -15,6 +15,7 @@ import '../models/answer_source.dart';
 import '../models/assistant_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
+import '../models/app_activity.dart';
 import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
 import '../models/ai_conversation.dart';
@@ -112,7 +113,9 @@ class AppController extends ChangeNotifier {
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
+  Future<void> _activitySaveQueue = Future<void>.value();
   final Map<String, AiConversation> _conversations = <String, AiConversation>{};
+  List<AppActivity> _activities = <AppActivity>[];
   String? _selectedConversationId;
   Completer<void>? _generationAbort;
   bool _generationWasStopped = false;
@@ -156,6 +159,10 @@ class AppController extends ChangeNotifier {
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
   bool get isRefreshingServiceStatuses => _serviceStatusRefreshFuture != null;
   String? get selectedConversationId => _selectedConversationId;
+  List<AppActivity> get activities =>
+      List<AppActivity>.unmodifiable(_activities);
+  int get unreadActivityCount =>
+      _activities.where((AppActivity activity) => !activity.isRead).length;
   bool get selectedConversationIsGlobal =>
       selectedConversation?.scope == AiConversationScope.global;
   AiConversation? get selectedConversation {
@@ -222,6 +229,68 @@ class AppController extends ChangeNotifier {
       chatAnswerMode(useGlobalMode: useGlobalMode) ==
       AiAnswerMode.knowledgeThenDirect;
 
+  static const int _maxActivities = 50;
+
+  void _recordActivity({
+    required AppActivityKind kind,
+    required String title,
+    required String message,
+    DateTime? createdAt,
+  }) {
+    final AppActivity activity = AppActivity(
+      id: 'activity-${DateTime.now().microsecondsSinceEpoch}',
+      kind: kind,
+      title: title,
+      message: message,
+      createdAt: createdAt ?? DateTime.now(),
+    );
+    _activities = <AppActivity>[activity, ..._activities];
+    if (_activities.length > _maxActivities) {
+      _activities = _activities.sublist(0, _maxActivities);
+    }
+    _queueActivitySave();
+    notifyListeners();
+  }
+
+  void _queueActivitySave() {
+    final List<AppActivity> snapshot = List<AppActivity>.from(_activities);
+    _activitySaveQueue = _activitySaveQueue
+        .catchError((Object _) {})
+        .then((_) => _preferencesService.saveActivities(snapshot));
+  }
+
+  Future<void> markActivitiesRead() async {
+    final bool hasUnread = _activities.any(
+      (AppActivity activity) => !activity.isRead,
+    );
+    if (!hasUnread) {
+      return;
+    }
+    _activities = _activities
+        .map((AppActivity activity) => activity.copyWith(isRead: true))
+        .toList(growable: false);
+    _queueActivitySave();
+    notifyListeners();
+  }
+
+  void _setPendingLibraryUpdate(RemoteLibraryUpdate update) {
+    final RemoteLibraryUpdate? previous = _pendingLibraryUpdate;
+    _pendingLibraryUpdate = update;
+    _libraryUpdatePromptSeen = false;
+    final bool isSame =
+        previous != null &&
+        previous.changedPaths.length == update.changedPaths.length &&
+        previous.changedPaths.toSet().containsAll(update.changedPaths) &&
+        update.changedPaths.toSet().containsAll(previous.changedPaths);
+    if (!isSame) {
+      _recordActivity(
+        kind: AppActivityKind.libraryUpdate,
+        title: copy.activityLibraryUpdateTitle,
+        message: copy.activityLibraryUpdateMessage(update.changedCount),
+      );
+    }
+  }
+
   Future<void> initialize() async {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
@@ -240,6 +309,7 @@ class AppController extends ChangeNotifier {
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
     _selectedConversationId = await _preferencesService
         .loadSelectedConversationId();
+    _activities = await _preferencesService.loadActivities();
     if (_isSaveableCustomPreset(_aiApiConfig)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
@@ -248,13 +318,10 @@ class AppController extends ChangeNotifier {
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
-    _ensureGreeting();
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
     );
-    await _preferencesService.saveSelectedConversationId(
-      _selectedConversationId!,
-    );
+    await _persistSelectedConversationId();
     debugPrint(
       '[updates] initialize loaded games: ${_games.map((g) => '${g.slug}:${g.title}').join(', ')}',
     );
@@ -294,13 +361,11 @@ class AppController extends ChangeNotifier {
     _language = next;
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
-    _ensureGreeting();
+    _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
     );
-    await _preferencesService.saveSelectedConversationId(
-      _selectedConversationId!,
-    );
+    await _persistSelectedConversationId();
     await _preferencesService.saveLanguage(next);
     await _ttsService.setLanguage(next);
     notifyListeners();
@@ -309,13 +374,11 @@ class AppController extends ChangeNotifier {
   Future<void> reloadGames() async {
     _games = await _loadGamesForLanguage(_language);
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
-    _ensureGreeting();
+    _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
     );
-    await _preferencesService.saveSelectedConversationId(
-      _selectedConversationId!,
-    );
+    await _persistSelectedConversationId();
     notifyListeners();
   }
 
@@ -508,6 +571,38 @@ class AppController extends ChangeNotifier {
     if (gameChanged || previousConversationId != _selectedConversationId) {
       notifyListeners();
     }
+  }
+
+  /// Opens the game-scoped assistant for [gameId], creating its session only
+  /// when the user explicitly enters that assistant context.
+  bool openGameAssistant(String gameId, {String? greeting}) {
+    final GameInfo? game = _games
+        .where((GameInfo item) => item.id == gameId)
+        .cast<GameInfo?>()
+        .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+    if (game == null) {
+      return false;
+    }
+
+    _selectedGameId = game.id;
+    final AiConversation conversation = _ensureConversationForContext(
+      useGlobalMode: false,
+      gameId: game.id,
+      greeting: greeting,
+    );
+    _selectConversationInternal(conversation.id);
+    notifyListeners();
+    return true;
+  }
+
+  /// Opens the cross-game assistant, creating its session on first entry.
+  void openGlobalAssistant({String? greeting}) {
+    final AiConversation conversation = _ensureConversationForContext(
+      useGlobalMode: true,
+      greeting: greeting,
+    );
+    _selectConversationInternal(conversation.id);
+    notifyListeners();
   }
 
   /// Selects a persisted assistant conversation by its stable ID.
@@ -723,7 +818,11 @@ class AppController extends ChangeNotifier {
         message: copy.aiApiModelRequired,
         checkedAt: DateTime.now(),
       );
-      notifyListeners();
+      _recordActivity(
+        kind: AppActivityKind.aiFailed,
+        title: copy.activityAiFailedTitle,
+        message: copy.aiApiModelRequired,
+      );
       return;
     }
     final List<ChatMessage> messages = _messagesForContext(
@@ -829,6 +928,11 @@ class AppController extends ChangeNotifier {
         _replaceMessage(messages, nextMessage);
         _trimConversationMessages(messages);
         _queueConversationSave(conversationId: conversationId);
+        _recordActivity(
+          kind: AppActivityKind.aiCompleted,
+          title: copy.activityAiCompletedTitle,
+          message: copy.activityAiCompletedMessage(game.title),
+        );
         if (_voiceReplyEnabled) {
           await speakMessage(answer.text);
         }
@@ -863,6 +967,11 @@ class AppController extends ChangeNotifier {
             canRetry: true,
             retryPrompt: trimmed,
           ),
+        );
+        _recordActivity(
+          kind: AppActivityKind.aiFailed,
+          title: copy.activityAiFailedTitle,
+          message: _safeStatusError(error),
         );
       }
       _trimConversationMessages(messages);
@@ -935,6 +1044,7 @@ class AppController extends ChangeNotifier {
     }
     await _conversationSaveQueue;
     await _selectedConversationSaveQueue;
+    await _activitySaveQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
     _aiService.dispose();
@@ -1099,10 +1209,27 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
 
-    await Future.wait<void>(<Future<void>>[
-      _refreshAiServiceStatus(),
-      refreshAssetAccessStatus(),
-    ]);
+    try {
+      await Future.wait<void>(<Future<void>>[
+        _refreshAiServiceStatus(),
+        refreshAssetAccessStatus(),
+      ]);
+      _recordActivity(
+        kind: AppActivityKind.serviceRefresh,
+        title: copy.activityServiceRefreshTitle,
+        message: copy.activityServiceRefreshMessage(
+          _aiConnectivityStatus.message,
+          _assetConnectivityStatus.message,
+        ),
+      );
+    } catch (error) {
+      _recordActivity(
+        kind: AppActivityKind.serviceRefresh,
+        title: copy.activityServiceRefreshFailedTitle,
+        message: _safeStatusError(error),
+      );
+      rethrow;
+    }
   }
 
   Future<void> _refreshAiServiceStatus() async {
@@ -1243,11 +1370,12 @@ class AppController extends ChangeNotifier {
         );
         debugPrint('[updates] catalog changed');
         final List<String> titles = changedGameTitles.toList()..sort();
-        _pendingLibraryUpdate = RemoteLibraryUpdate(
-          changedPaths: changedPaths,
-          changedGameTitles: titles,
+        _setPendingLibraryUpdate(
+          RemoteLibraryUpdate(
+            changedPaths: changedPaths,
+            changedGameTitles: titles,
+          ),
         );
-        _libraryUpdatePromptSeen = false;
         debugPrint('[updates] pending update titles: ${titles.join(', ')}');
         return;
       } else {
@@ -1275,11 +1403,12 @@ class AppController extends ChangeNotifier {
 
       if (changedPaths.isNotEmpty) {
         final List<String> titles = changedGameTitles.toList()..sort();
-        _pendingLibraryUpdate = RemoteLibraryUpdate(
-          changedPaths: changedPaths,
-          changedGameTitles: titles,
+        _setPendingLibraryUpdate(
+          RemoteLibraryUpdate(
+            changedPaths: changedPaths,
+            changedGameTitles: titles,
+          ),
         );
-        _libraryUpdatePromptSeen = false;
         debugPrint('[updates] pending update titles: ${titles.join(', ')}');
       } else {
         debugPrint('[updates] no remote library updates detected');
@@ -1661,66 +1790,102 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  void _ensureGreeting() {
-    final DateTime now = DateTime.now();
-    for (final GameInfo game in _games) {
-      final String id = _conversationKeyForGameId(game.id);
-      final AiConversation? existing = _conversations[id];
-      final String title = '${game.title}助手';
-      if (existing == null) {
-        _conversations[id] = AiConversation(
-          id: id,
+  AiConversation _ensureConversationForContext({
+    required bool useGlobalMode,
+    String? gameId,
+    String? greeting,
+  }) {
+    final GameInfo game = gameId == null
+        ? selectedGame
+        : _games.firstWhere(
+            (GameInfo item) => item.id == gameId,
+            orElse: () => selectedGame,
+          );
+    final String id = useGlobalMode
+        ? _globalConversationKey
+        : _conversationKeyForGameId(game.id);
+    final String title = useGlobalMode ? copy.globalAiTitle : '${game.title}助手';
+    final AiConversation? existing = _conversations[id];
+    if (existing != null) {
+      if (existing.title != title ||
+          existing.scope !=
+              (useGlobalMode
+                  ? AiConversationScope.global
+                  : AiConversationScope.game) ||
+          existing.gameId != (useGlobalMode ? null : game.id)) {
+        final AiConversation updated = existing.copyWith(
           title: title,
-          scope: AiConversationScope.game,
-          gameId: game.id,
-          createdAt: now,
-          updatedAt: now,
-          messages: <ChatMessage>[
-            ChatMessage(
-              id: '${now.microsecondsSinceEpoch}-${game.id}',
-              role: ChatRole.assistant,
-              text: copy.assistantGreetingFor(
-                game.title,
-                game.assistantIntro.isNotEmpty
-                    ? game.assistantIntro
-                    : game.summary,
-              ),
-              timestamp: now,
-            ),
-          ],
+          scope: useGlobalMode
+              ? AiConversationScope.global
+              : AiConversationScope.game,
+          gameId: useGlobalMode ? null : game.id,
         );
-      } else if (existing.title != title || existing.gameId != game.id) {
-        _conversations[id] = existing.copyWith(
-          title: title,
-          scope: AiConversationScope.game,
-          gameId: game.id,
-        );
+        _conversations[id] = updated;
+        _queueConversationSave(conversationId: id);
+        return updated;
       }
+      return existing;
     }
-    final AiConversation? existingGlobal =
-        _conversations[_globalConversationKey];
-    if (existingGlobal == null) {
-      _conversations[_globalConversationKey] = AiConversation(
-        id: _globalConversationKey,
-        title: copy.globalAiTitle,
-        scope: AiConversationScope.global,
-        createdAt: now,
-        updatedAt: now,
-        messages: <ChatMessage>[
-          ChatMessage(
-            id: '${now.microsecondsSinceEpoch}-global',
-            role: ChatRole.assistant,
-            text: copy.allKnowledgeGreeting,
-            timestamp: now,
-          ),
-        ],
-      );
-    } else if (existingGlobal.title != copy.globalAiTitle) {
-      _conversations[_globalConversationKey] = existingGlobal.copyWith(
-        title: copy.globalAiTitle,
-        scope: AiConversationScope.global,
-        gameId: null,
-      );
+
+    final DateTime now = DateTime.now();
+    final String defaultGreeting = useGlobalMode
+        ? copy.allKnowledgeGreeting
+        : copy.assistantGreetingFor(
+            game.title,
+            game.assistantIntro.isNotEmpty ? game.assistantIntro : game.summary,
+          );
+    final AiConversation created = AiConversation(
+      id: id,
+      title: title,
+      scope: useGlobalMode
+          ? AiConversationScope.global
+          : AiConversationScope.game,
+      gameId: useGlobalMode ? null : game.id,
+      createdAt: now,
+      updatedAt: now,
+      messages: <ChatMessage>[
+        ChatMessage(
+          id: '${now.microsecondsSinceEpoch}-${useGlobalMode ? 'global' : game.id}',
+          role: ChatRole.assistant,
+          text: greeting ?? defaultGreeting,
+          timestamp: now,
+        ),
+      ],
+    );
+    _conversations[id] = created;
+    _queueConversationSave(conversationId: id);
+    return created;
+  }
+
+  void _refreshConversationMetadata() {
+    for (final MapEntry<String, AiConversation> entry
+        in _conversations.entries.toList()) {
+      final AiConversation conversation = entry.value;
+      if (conversation.isGlobal) {
+        if (conversation.title != copy.globalAiTitle) {
+          _conversations[entry.key] = conversation.copyWith(
+            title: copy.globalAiTitle,
+            scope: AiConversationScope.global,
+            gameId: null,
+          );
+        }
+        continue;
+      }
+      final String? gameId = conversation.gameId;
+      if (gameId == null) {
+        continue;
+      }
+      final GameInfo? game = _games
+          .where((GameInfo item) => item.id == gameId)
+          .cast<GameInfo?>()
+          .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+      if (game == null) {
+        continue;
+      }
+      final String title = '${game.title}助手';
+      if (conversation.title != title) {
+        _conversations[entry.key] = conversation.copyWith(title: title);
+      }
     }
   }
 
@@ -1742,7 +1907,7 @@ class AppController extends ChangeNotifier {
   }
 
   static const String _globalConversationKey = 'global';
-  static const int _conversationStoreVersion = 2;
+  static const int _conversationStoreVersion = 3;
   static const int _maxMessagesPerConversation = 100;
 
   List<ChatMessage> _messagesForCurrentContext() {
@@ -1761,24 +1926,7 @@ class AppController extends ChangeNotifier {
     if (existing != null) {
       return existing.messages;
     }
-    _ensureGreeting();
-    final AiConversation? ensured = _conversations[key];
-    if (ensured != null) {
-      return ensured.messages;
-    }
-    final DateTime now = DateTime.now();
-    final AiConversation fallback = AiConversation(
-      id: key,
-      title: useGlobalMode ? copy.globalAiTitle : '${selectedGame.title}助手',
-      scope: useGlobalMode
-          ? AiConversationScope.global
-          : AiConversationScope.game,
-      gameId: useGlobalMode ? null : selectedGame.id,
-      createdAt: now,
-      updatedAt: now,
-    );
-    _conversations[key] = fallback;
-    return fallback.messages;
+    return _ensureConversationForContext(useGlobalMode: useGlobalMode).messages;
   }
 
   String _conversationKeyForGameId(String gameId) => 'game:$gameId';
@@ -1830,6 +1978,15 @@ class AppController extends ChangeNotifier {
         });
   }
 
+  Future<void> _persistSelectedConversationId() async {
+    final String? id = _selectedConversationId;
+    if (id == null || id.isEmpty) {
+      await _preferencesService.clearSelectedConversationId();
+      return;
+    }
+    await _preferencesService.saveSelectedConversationId(id);
+  }
+
   Future<void> _restoreConversations() async {
     try {
       final File file = await _conversationStoreFile();
@@ -1847,8 +2004,12 @@ class AppController extends ChangeNotifier {
           entry.key,
           entry.value,
         );
-        if (restored != null) {
+        if (restored != null && !restored.isUnstarted) {
           _conversations[entry.key] = restored;
+        } else if (restored != null) {
+          debugPrint(
+            '[chat] skipped unused session during migration: ${restored.id}',
+          );
         }
       }
       final String? persistedSelection =
@@ -1919,11 +2080,10 @@ class AppController extends ChangeNotifier {
       }
     }
     _trimConversationMessages(messages);
-    // The v1 store represented conversations as bare message lists. Keep an
-    // empty (but structurally valid) list during migration as well: the
-    // greeting/session bootstrap runs after restore and can populate it, while
-    // dropping the entry here would lose its stable session identity and
-    // selected-session preference.
+    // The v1 store represented conversations as bare message lists. Entries
+    // that contain a user message are considered explicitly opened; a bare
+    // greeting-only entry is a legacy bootstrap artifact and is discarded by
+    // the restore migration.
     final DateTime now = DateTime.now();
     final DateTime updatedAt = messages.isEmpty ? now : messages.last.timestamp;
     final bool global = id == _globalConversationKey;
@@ -1946,11 +2106,14 @@ class AppController extends ChangeNotifier {
       gameId: game?.id ?? (global ? null : id.replaceFirst('game:', '')),
       createdAt: messages.isEmpty ? now : messages.first.timestamp,
       updatedAt: updatedAt,
+      opened: messages.any(
+        (ChatMessage message) => message.role == ChatRole.user,
+      ),
       messages: messages,
     );
   }
 
-  String _resolveSelectedConversationId(String? preferredId) {
+  String? _resolveSelectedConversationId(String? preferredId) {
     final String? preferred = preferredId?.trim();
     if (preferred != null && _conversations.containsKey(preferred)) {
       final AiConversation conversation = _conversations[preferred]!;
@@ -1964,15 +2127,6 @@ class AppController extends ChangeNotifier {
         return preferred;
       }
     }
-    final String gameConversationId = _conversationKeyForGameId(
-      _selectedGameId,
-    );
-    if (_conversations.containsKey(gameConversationId)) {
-      return gameConversationId;
-    }
-    if (_conversations.containsKey(_globalConversationKey)) {
-      return _globalConversationKey;
-    }
-    return gameConversationId;
+    return null;
   }
 }

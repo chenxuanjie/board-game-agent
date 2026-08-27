@@ -1,12 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../models/app_activity.dart';
 import '../../models/app_language.dart';
 import '../../models/ai_conversation.dart';
 import '../../models/chat_message.dart';
 import '../../models/color_scheme_option.dart';
-import '../../models/connectivity_status.dart';
 import '../../models/game_info.dart';
 import '../../models/remote_library_update.dart';
 import '../../state/app_controller.dart';
@@ -43,6 +44,7 @@ class DesktopWorkspaceScreen extends StatefulWidget {
 class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   _DesktopDestination _destination = _DesktopDestination.home;
   _DesktopDestination _detailReturnDestination = _DesktopDestination.games;
+  final GlobalKey _activityButtonKey = GlobalKey();
   RemoteLibraryUpdate? _lastSeenUpdate;
   bool _showingUpdateDialog = false;
 
@@ -86,15 +88,16 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
                       _DesktopTopBar(
                         title: _destinationTitle(copy),
                         compact: compact,
+                        activityButtonKey: _activityButtonKey,
                         onNew: () =>
                             _selectDestination(_DesktopDestination.games),
-                        onRefresh: () => _refreshStatuses(),
-                        statusRefreshing:
-                            widget.controller.isRefreshingServiceStatuses,
+                        onOpenActivities: _openActivityCenter,
+                        unreadActivityCount:
+                            widget.controller.unreadActivityCount,
                         primaryAction:
                             _destination == _DesktopDestination.gameDetail
-                            ? () => _selectDestination(
-                                _DesktopDestination.assistant,
+                            ? () => _openAssistantForGame(
+                                widget.controller.selectedGame.id,
                               )
                             : null,
                         primaryLabel:
@@ -123,9 +126,10 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
           compact: compact,
           onOpenGames: () => _selectDestination(_DesktopDestination.games),
           onOpenAssistant: () =>
-              _selectDestination(_DesktopDestination.assistant),
+              _openAssistantForGame(controller.featuredGame.id),
           onOpenLibrary: () => _selectDestination(_DesktopDestination.library),
           onOpenGame: _openGame,
+          onOpenActivities: _openActivityCenter,
         );
       case _DesktopDestination.games:
         return _DesktopGamesPane(controller: controller, onOpenGame: _openGame);
@@ -134,7 +138,7 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
           controller: controller,
           game: controller.selectedGame,
           onBack: () => _selectDestination(_detailReturnDestination),
-          onAskAi: () => _selectDestination(_DesktopDestination.assistant),
+          onAskAi: () => _openAssistantForGame(controller.selectedGame.id),
         );
       case _DesktopDestination.assistant:
         return _DesktopAssistantPane(controller: controller);
@@ -150,7 +154,34 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
 
   void _selectDestination(_DesktopDestination destination) {
     if (!mounted) return;
+    if (destination == _DesktopDestination.assistant) {
+      _openAssistant();
+      return;
+    }
     setState(() => _destination = destination);
+  }
+
+  /// Opens the generic desktop assistant entry point. It reuses the current
+  /// session when one is selected; otherwise it creates the global session.
+  /// No game-scoped session is created merely by navigating to the assistant
+  /// section.
+  void _openAssistant() {
+    if (widget.controller.selectedConversation == null) {
+      widget.controller.openGlobalAssistant();
+    }
+    if (!mounted) return;
+    setState(() => _destination = _DesktopDestination.assistant);
+  }
+
+  /// Enters the assistant in the context of exactly one game. This is used by
+  /// the game detail and featured-game actions, so the session is created only
+  /// after the user explicitly chooses that game.
+  void _openAssistantForGame(String gameId) {
+    if (!widget.controller.openGameAssistant(gameId)) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _destination = _DesktopDestination.assistant);
   }
 
   void _openGame(GameInfo game) {
@@ -163,15 +194,80 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
     });
   }
 
-  Future<void> _refreshStatuses() async {
-    await widget.controller.refreshServiceStatuses();
-    if (!mounted) return;
+  Future<void> _openActivityCenter() async {
     final AppController controller = widget.controller;
-    final String message =
-        'AI：${controller.aiConnectivityStatus.message} · 资料：${controller.assetConnectivityStatus.message}';
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    await controller.markActivitiesRead();
+    if (!mounted) return;
+    final AppCopy copy = controller.copy;
+    final RenderBox? button =
+        _activityButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (button == null || overlay == null || !button.hasSize) return;
+
+    final Offset anchor = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final Size overlaySize = overlay.size;
+    final double panelWidth = math.min(390, overlaySize.width - 24);
+    final double panelMaxHeight = math.min(580, overlaySize.height - 24);
+    final double left = (anchor.dx + button.size.width - panelWidth)
+        .clamp(12.0, math.max(12.0, overlaySize.width - panelWidth - 12.0))
+        .toDouble();
+    final double top = (anchor.dy + button.size.height + 8)
+        .clamp(12.0, math.max(12.0, overlaySize.height - panelMaxHeight - 12.0))
+        .toDouble();
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent,
+      barrierDismissible: true,
+      barrierLabel: copy.activityTitle,
+      transitionDuration: const Duration(milliseconds: 150),
+      transitionBuilder:
+          (
+            BuildContext context,
+            Animation<double> animation,
+            Animation<double> secondaryAnimation,
+            Widget child,
+          ) {
+            final CurvedAnimation curve = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            return FadeTransition(
+              opacity: curve,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.025),
+                  end: Offset.zero,
+                ).animate(curve),
+                child: child,
+              ),
+            );
+          },
+      pageBuilder:
+          (
+            BuildContext dialogContext,
+            Animation<double> animation,
+            Animation<double> secondaryAnimation,
+          ) {
+            return Stack(
+              children: <Widget>[
+                Positioned(
+                  left: left,
+                  top: top,
+                  width: panelWidth,
+                  child: SafeArea(
+                    child: _DesktopActivityPopup(
+                      controller: controller,
+                      maxHeight: panelMaxHeight,
+                      onClose: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+    );
   }
 
   String _destinationTitle(AppCopy copy) {
@@ -183,7 +279,8 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
       case _DesktopDestination.gameDetail:
         return '桌游详情';
       case _DesktopDestination.assistant:
-        return copy.globalAiTitle;
+        return widget.controller.selectedConversation?.title ??
+            copy.globalAiTitle;
       case _DesktopDestination.library:
         return '资料库';
       case _DesktopDestination.settings:
@@ -604,18 +701,20 @@ class _DesktopTopBar extends StatelessWidget {
   const _DesktopTopBar({
     required this.title,
     required this.compact,
+    required this.activityButtonKey,
     required this.onNew,
-    required this.onRefresh,
-    required this.statusRefreshing,
+    required this.onOpenActivities,
+    required this.unreadActivityCount,
     this.primaryAction,
     this.primaryLabel,
   });
 
   final String title;
   final bool compact;
+  final GlobalKey activityButtonKey;
   final VoidCallback onNew;
-  final VoidCallback onRefresh;
-  final bool statusRefreshing;
+  final VoidCallback onOpenActivities;
+  final int unreadActivityCount;
   final VoidCallback? primaryAction;
   final String? primaryLabel;
 
@@ -642,16 +741,48 @@ class _DesktopTopBar extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            tooltip: '状态',
-            onPressed: statusRefreshing ? null : onRefresh,
-            icon: statusRefreshing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.notifications_none_rounded),
+          Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              IconButton(
+                key: activityButtonKey,
+                tooltip: '消息',
+                onPressed: onOpenActivities,
+                icon: const Icon(Icons.notifications_none_rounded),
+              ),
+              if (unreadActivityCount > 0)
+                Positioned(
+                  top: 7,
+                  right: 7,
+                  child: IgnorePointer(
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 16),
+                      height: 16,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: palette.error,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: palette.pageBackground,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        unreadActivityCount > 99
+                            ? '99+'
+                            : '$unreadActivityCount',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: palette.onPrimary,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           IconButton(
             tooltip: '搜索',
@@ -685,6 +816,7 @@ class _DesktopHomePane extends StatelessWidget {
     required this.onOpenAssistant,
     required this.onOpenLibrary,
     required this.onOpenGame,
+    required this.onOpenActivities,
   });
 
   final AppController controller;
@@ -693,6 +825,7 @@ class _DesktopHomePane extends StatelessWidget {
   final VoidCallback onOpenAssistant;
   final VoidCallback onOpenLibrary;
   final ValueChanged<GameInfo> onOpenGame;
+  final VoidCallback onOpenActivities;
 
   @override
   Widget build(BuildContext context) {
@@ -773,7 +906,10 @@ class _DesktopHomePane extends StatelessWidget {
                     onOpenGame: onOpenGame,
                   ),
                   const SizedBox(height: 16),
-                  _DesktopStatusCard(controller: controller),
+                  _DesktopActivityCard(
+                    controller: controller,
+                    onOpenActivities: onOpenActivities,
+                  ),
                 ],
               );
             }
@@ -791,7 +927,10 @@ class _DesktopHomePane extends StatelessWidget {
                   const SizedBox(width: 16),
                   Expanded(
                     flex: 9,
-                    child: _DesktopStatusCard(controller: controller),
+                    child: _DesktopActivityCard(
+                      controller: controller,
+                      onOpenActivities: onOpenActivities,
+                    ),
                   ),
                 ],
               ),
@@ -1061,189 +1200,305 @@ class _DesktopGameRow extends StatelessWidget {
   }
 }
 
-class _DesktopStatusCard extends StatelessWidget {
-  const _DesktopStatusCard({required this.controller});
+class _DesktopActivityCard extends StatelessWidget {
+  const _DesktopActivityCard({
+    required this.controller,
+    required this.onOpenActivities,
+  });
 
   final AppController controller;
+  final VoidCallback onOpenActivities;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<AppActivity> activities = controller.activities.take(3).toList();
+    final AppCopy copy = controller.copy;
+    return _DesktopSurface(
+      title: copy.activityTitle,
+      action: TextButton.icon(
+        onPressed: onOpenActivities,
+        icon: const Icon(Icons.arrow_outward_rounded, size: 17),
+        label: Text(copy.activityViewAll),
+      ),
+      child: activities.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.notifications_none_rounded,
+                    color: AppPalette.of(context).textSecondary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(copy.activityEmpty)),
+                ],
+              ),
+            )
+          : Column(
+              children: <Widget>[
+                for (int index = 0; index < activities.length; index++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == activities.length - 1 ? 0 : 8,
+                    ),
+                    child: _DesktopActivityTile(
+                      controller: controller,
+                      activity: activities[index],
+                      compact: true,
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+class _DesktopActivityPopup extends StatefulWidget {
+  const _DesktopActivityPopup({
+    required this.controller,
+    required this.maxHeight,
+    required this.onClose,
+  });
+
+  final AppController controller;
+  final double maxHeight;
+  final VoidCallback onClose;
+
+  @override
+  State<_DesktopActivityPopup> createState() => _DesktopActivityPopupState();
+}
+
+class _DesktopActivityPopupState extends State<_DesktopActivityPopup> {
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = widget.controller.copy;
+    final double listMaxHeight = math.max(96, widget.maxHeight - 82);
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (BuildContext context, Widget? child) {
+        final List<AppActivity> activities = widget.controller.activities;
+        return Material(
+          color: Colors.transparent,
+          elevation: 18,
+          shadowColor: Colors.black.withValues(alpha: 0.32),
+          borderRadius: BorderRadius.circular(16),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: palette.outline),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: widget.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          Icons.notifications_none_rounded,
+                          color: palette.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          copy.activityTitle,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                color: palette.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        if (activities.isNotEmpty) ...<Widget>[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: palette.primary.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${activities.length}',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: palette.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        IconButton(
+                          tooltip: copy.dialogClose,
+                          onPressed: widget.onClose,
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    Divider(height: 16, color: palette.outline),
+                    if (activities.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: listMaxHeight),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          itemCount: activities.length,
+                          separatorBuilder: (BuildContext context, int index) =>
+                              Divider(height: 1, color: palette.outline),
+                          itemBuilder: (BuildContext context, int index) =>
+                              _DesktopActivityTile(
+                                activity: activities[index],
+                                compact: false,
+                                controller: widget.controller,
+                              ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DesktopActivityTile extends StatelessWidget {
+  const _DesktopActivityTile({
+    required this.controller,
+    required this.activity,
+    required this.compact,
+  });
+
+  final AppController controller;
+  final AppActivity activity;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
-    final ConnectivityStatus aiStatus = controller.aiConnectivityStatus;
-    final ConnectivityStatus assetStatus = controller.assetConnectivityStatus;
-    final AiModelLoadState modelState = controller.aiModelLoadState;
-    return _DesktopSurface(
-      title: '状态',
-      action: IconButton(
-        tooltip: '刷新',
-        onPressed: controller.isRefreshingServiceStatuses
-            ? null
-            : () => controller.refreshServiceStatuses(),
-        icon: controller.isRefreshingServiceStatuses
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.refresh_rounded),
+    final AppCopy copy = controller.copy;
+    final Color accent = _activityColor(palette, activity.kind);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 4,
+        vertical: compact ? 10 : 8,
       ),
-      child: Column(
+      decoration: compact
+          ? BoxDecoration(
+              color: palette.surfaceContainer.withValues(alpha: 0.52),
+              borderRadius: BorderRadius.circular(11),
+            )
+          : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _DesktopStatusRow(
-            label: '规则资料',
-            value: _connectivityLabel(assetStatus.state),
-            color: _connectivityColor(palette, assetStatus.state),
-            state: assetStatus.state,
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(_activityIcon(activity.kind), size: 17, color: accent),
           ),
-          _DesktopStatusRow(
-            label: 'AI 服务',
-            value: _connectivityLabel(aiStatus.state),
-            color: _connectivityColor(palette, aiStatus.state),
-            state: aiStatus.state,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  activity.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  activity.message,
+                  maxLines: compact ? 1 : 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: palette.textSecondary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
           ),
-          _DesktopStatusRow(
-            label: '模型',
-            value: _modelLabel(controller, modelState),
-            color: _modelColor(palette, controller, modelState),
-            state: _modelConnectivityState(controller, modelState),
+          const SizedBox(width: 10),
+          Tooltip(
+            message: _activityAbsoluteTime(activity.createdAt),
+            child: Text(
+              _activityTime(copy, activity.createdAt),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: palette.textSecondary),
+            ),
           ),
         ],
       ),
     );
   }
-
-  Color _connectivityColor(AppPalette palette, ConnectivityState state) {
-    return switch (state) {
-      ConnectivityState.success => palette.success,
-      ConnectivityState.warning => palette.warning,
-      ConnectivityState.failure => palette.error,
-      ConnectivityState.loading => palette.primary,
-      ConnectivityState.unknown => palette.disabledForeground,
-    };
-  }
-
-  String _connectivityLabel(ConnectivityState state) {
-    return switch (state) {
-      ConnectivityState.success => '已连接',
-      ConnectivityState.warning => '受限',
-      ConnectivityState.failure => '失败',
-      ConnectivityState.loading => '加载中',
-      ConnectivityState.unknown => '未检测',
-    };
-  }
-
-  String _modelLabel(AppController controller, AiModelLoadState state) {
-    return switch (state) {
-      AiModelLoadState.loading => '加载中',
-      AiModelLoadState.success => controller.hasSelectedAiModel ? '已选择' : '可选择',
-      AiModelLoadState.empty => '为空',
-      AiModelLoadState.failure => '失败',
-      AiModelLoadState.idle => controller.hasSelectedAiModel ? '已选择' : '未检测',
-    };
-  }
-
-  Color _modelColor(
-    AppPalette palette,
-    AppController controller,
-    AiModelLoadState state,
-  ) {
-    return switch (state) {
-      AiModelLoadState.success when controller.hasSelectedAiModel =>
-        palette.success,
-      AiModelLoadState.success => palette.warning,
-      AiModelLoadState.loading => palette.primary,
-      AiModelLoadState.empty => palette.warning,
-      AiModelLoadState.failure => palette.error,
-      AiModelLoadState.idle =>
-        controller.hasSelectedAiModel
-            ? palette.success
-            : palette.disabledForeground,
-    };
-  }
-
-  ConnectivityState _modelConnectivityState(
-    AppController controller,
-    AiModelLoadState state,
-  ) {
-    return switch (state) {
-      AiModelLoadState.loading => ConnectivityState.loading,
-      AiModelLoadState.failure => ConnectivityState.failure,
-      AiModelLoadState.empty => ConnectivityState.warning,
-      AiModelLoadState.success =>
-        controller.hasSelectedAiModel
-            ? ConnectivityState.success
-            : ConnectivityState.warning,
-      AiModelLoadState.idle =>
-        controller.hasSelectedAiModel
-            ? ConnectivityState.success
-            : ConnectivityState.unknown,
-    };
-  }
 }
 
-class _DesktopStatusRow extends StatelessWidget {
-  const _DesktopStatusRow({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.state,
-  });
+IconData _activityIcon(AppActivityKind kind) {
+  return switch (kind) {
+    AppActivityKind.serviceRefresh => Icons.sync_rounded,
+    AppActivityKind.aiCompleted => Icons.check_circle_outline_rounded,
+    AppActivityKind.aiFailed => Icons.error_outline_rounded,
+    AppActivityKind.libraryUpdate => Icons.system_update_alt_rounded,
+    AppActivityKind.info => Icons.info_outline_rounded,
+  };
+}
 
-  final String label;
-  final String value;
-  final Color color;
-  final ConnectivityState state;
+Color _activityColor(AppPalette palette, AppActivityKind kind) {
+  return switch (kind) {
+    AppActivityKind.serviceRefresh => palette.primary,
+    AppActivityKind.aiCompleted => palette.success,
+    AppActivityKind.aiFailed => palette.error,
+    AppActivityKind.libraryUpdate => palette.warning,
+    AppActivityKind.info => palette.textSecondary,
+  };
+}
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppPalette.of(
-            context,
-          ).surfaceContainer.withValues(alpha: 0.52),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          child: Row(
-            children: <Widget>[
-              Expanded(child: Text(label)),
-              Text(
-                value,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelLarge?.copyWith(color: color),
-              ),
-              const SizedBox(width: 8),
-              if (state == ConnectivityState.loading)
-                SizedBox(
-                  width: 17,
-                  height: 17,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: color,
-                  ),
-                )
-              else
-                Icon(
-                  state == ConnectivityState.failure
-                      ? Icons.error_outline_rounded
-                      : state == ConnectivityState.warning
-                      ? Icons.warning_amber_rounded
-                      : state == ConnectivityState.success
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.help_outline_rounded,
-                  size: 17,
-                  color: color,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
+String _activityTime(AppCopy copy, DateTime createdAt) {
+  final Duration age = DateTime.now().difference(createdAt);
+  if (age.isNegative || age.inSeconds < 60) {
+    return copy.activityJustNow;
   }
+  if (age.inMinutes < 60) {
+    return copy.activityMinutesAgo(age.inMinutes);
+  }
+  if (age.inHours < 24) {
+    return copy.activityHoursAgo(age.inHours);
+  }
+  if (age.inDays < 7) {
+    return copy.activityDaysAgo(age.inDays);
+  }
+  final DateTime local = createdAt.toLocal();
+  final String hour = local.hour.toString().padLeft(2, '0');
+  final String minute = local.minute.toString().padLeft(2, '0');
+  return '${local.month}/${local.day} $hour:$minute';
+}
+
+String _activityAbsoluteTime(DateTime createdAt) {
+  final DateTime local = createdAt.toLocal();
+  final String month = local.month.toString().padLeft(2, '0');
+  final String day = local.day.toString().padLeft(2, '0');
+  final String hour = local.hour.toString().padLeft(2, '0');
+  final String minute = local.minute.toString().padLeft(2, '0');
+  return '${local.year}-$month-$day $hour:$minute';
 }
 
 class _DesktopGameMark extends StatelessWidget {
@@ -1524,12 +1779,6 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     _draftController = TextEditingController();
     _scrollController = ScrollController();
     controller.addListener(_handleControllerChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final bool useGlobalMode = controller.selectedConversationIsGlobal;
-      if (controller.messagesForContext(useGlobalMode: useGlobalMode).isEmpty) {
-        controller.resetConversation(useGlobalMode: useGlobalMode);
-      }
-    });
   }
 
   @override
@@ -1551,7 +1800,12 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
       );
     }
     final AppPalette palette = AppPalette.of(context);
-    final bool useGlobalMode = controller.selectedConversationIsGlobal;
+    final AiConversation? selectedConversation =
+        controller.selectedConversation;
+    if (selectedConversation == null) {
+      return _DesktopAssistantEmptyPane(controller: controller);
+    }
+    final bool useGlobalMode = selectedConversation.isGlobal;
     final List<ChatMessage> messages = controller.messagesForContext(
       useGlobalMode: useGlobalMode,
     );
@@ -1723,6 +1977,54 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
           selection: TextSelection.collapsed(offset: value.length),
         );
       },
+    );
+  }
+}
+
+class _DesktopAssistantEmptyPane extends StatelessWidget {
+  const _DesktopAssistantEmptyPane({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.pageBackground,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: palette.outline),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.forum_outlined, size: 42, color: palette.primary),
+                const SizedBox(height: 14),
+                Text('还没有会话', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                Text(
+                  '进入某款桌游的详情页并点击“询问 AI”，或打开通用助手开始聊天。',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: palette.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: () => controller.openGlobalAssistant(),
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: const Text('打开通用助手'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

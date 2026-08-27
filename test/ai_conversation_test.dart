@@ -29,6 +29,7 @@ void main() {
     expect(restored.title, original.title);
     expect(restored.scope, AiConversationScope.game);
     expect(restored.gameId, 'cabo');
+    expect(restored.opened, isTrue);
     expect(restored.createdAt, createdAt);
     expect(restored.updatedAt, updatedAt);
     expect(restored.messages, hasLength(1));
@@ -47,5 +48,66 @@ void main() {
 
     expect(global.scope, AiConversationScope.global);
     expect(game.scope, AiConversationScope.game);
+  });
+
+  test('entered greeting-only sessions stay opened without user messages', () {
+    final DateTime now = DateTime.utc(2026, 8, 27, 11);
+    final AiConversation greetingOnly = AiConversation(
+      id: 'game:cabo',
+      title: 'Cabo助手',
+      scope: AiConversationScope.game,
+      gameId: 'cabo',
+      opened: true,
+      createdAt: now,
+      updatedAt: now,
+      messages: <ChatMessage>[
+        ChatMessage(
+          id: 'greeting',
+          role: ChatRole.assistant,
+          text: '你好',
+          timestamp: now,
+        ),
+      ],
+    );
+    final AiConversation used = AiConversation(
+      id: 'game:cabo',
+      title: 'Cabo助手',
+      scope: AiConversationScope.game,
+      gameId: 'cabo',
+      createdAt: now,
+      updatedAt: now,
+      messages: <ChatMessage>[
+        ChatMessage(
+          id: 'question',
+          role: ChatRole.user,
+          text: '什么时候结束？',
+          timestamp: now,
+        ),
+      ],
+    );
+
+    expect(greetingOnly.hasUserMessages, isFalse);
+    expect(greetingOnly.isUnstarted, isFalse);
+    expect(used.hasUserMessages, isTrue);
+    expect(used.isUnstarted, isFalse);
+  });
+
+  test('legacy greeting-only maps are treated as unopened', () {
+    final AiConversation restored = AiConversation.fromMap(<String, dynamic>{
+      'id': 'game:cabo',
+      'scope': 'game',
+      'gameId': 'cabo',
+      'messages': <dynamic>[
+        <String, dynamic>{
+          'id': 'greeting',
+          'role': 'assistant',
+          'text': '你好',
+          'timestamp': '2026-08-27T11:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(restored.opened, isFalse);
+    expect(restored.isUnstarted, isTrue);
   });
 }

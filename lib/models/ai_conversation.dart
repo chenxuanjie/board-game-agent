@@ -16,6 +16,7 @@ class AiConversation {
     required this.createdAt,
     required this.updatedAt,
     this.gameId,
+    this.opened = true,
     List<ChatMessage> messages = const <ChatMessage>[],
   }) : messages = List<ChatMessage>.from(messages);
 
@@ -23,18 +24,32 @@ class AiConversation {
   final String title;
   final AiConversationScope scope;
   final String? gameId;
+
+  /// Whether the user explicitly entered this assistant context.
+  ///
+  /// New sessions are marked opened immediately, even when they only contain
+  /// the automatic greeting. Older stores without this field derive the value
+  /// from the presence of a user message during migration.
+  final bool opened;
   final DateTime createdAt;
   DateTime updatedAt;
   final List<ChatMessage> messages;
 
   bool get isGlobal => scope == AiConversationScope.global;
   int get messageCount => messages.length;
+  bool get hasUserMessages =>
+      messages.any((ChatMessage message) => message.role == ChatRole.user);
+
+  /// Legacy sessions with no persisted opened marker are treated as
+  /// unstarted by the restore migration. New sessions are opened on entry.
+  bool get isUnstarted => !opened;
 
   AiConversation copyWith({
     String? id,
     String? title,
     AiConversationScope? scope,
     String? gameId,
+    bool? opened,
     DateTime? createdAt,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
@@ -44,6 +59,7 @@ class AiConversation {
       title: title ?? this.title,
       scope: scope ?? this.scope,
       gameId: gameId ?? this.gameId,
+      opened: opened ?? this.opened,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       messages: messages ?? this.messages,
@@ -56,6 +72,7 @@ class AiConversation {
       'title': title,
       'scope': scope.name,
       if (gameId != null) 'gameId': gameId,
+      'opened': opened,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'messages': messages
@@ -73,6 +90,9 @@ class AiConversation {
             .whereType<Map<String, dynamic>>()
             .map(ChatMessage.fromMap)
             .toList();
+    final bool opened =
+        map['opened'] as bool? ??
+        messages.any((ChatMessage message) => message.role == ChatRole.user);
     final DateTime now = DateTime.now();
     return AiConversation(
       id: id,
@@ -81,6 +101,7 @@ class AiConversation {
           : (scope == AiConversationScope.global ? '通用 AI 助手' : '规则问答'),
       scope: scope,
       gameId: gameId?.isEmpty == true ? null : gameId,
+      opened: opened,
       createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? now,
       updatedAt: DateTime.tryParse(map['updatedAt'] as String? ?? '') ?? now,
       messages: messages,

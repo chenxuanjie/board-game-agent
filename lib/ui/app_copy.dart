@@ -135,6 +135,38 @@ class AppCopy {
   String get statusLimitedShort => isChinese ? '受限' : 'Limited';
   String get statusLoading => isChinese ? '加载中' : 'Loading';
   String get aiStatusDefaultReady => isChinese ? '默认可用' : 'Ready by default';
+  String get activityTitle => isChinese ? '消息' : 'Notifications';
+  String get activityEmpty => isChinese
+      ? '暂无消息，服务刷新和 AI 回答完成后会显示在这里。'
+      : 'No notifications yet. Service refreshes and completed AI answers will appear here.';
+  String get activityViewAll => isChinese ? '查看全部' : 'View all';
+  String get activityRefreshServices =>
+      isChinese ? '刷新服务状态' : 'Refresh service status';
+  String get activityServiceRefreshTitle =>
+      isChinese ? '服务状态已刷新' : 'Service status refreshed';
+  String activityServiceRefreshMessage(String ai, String assets) =>
+      isChinese ? 'AI：$ai · 资料：$assets' : 'AI: $ai · Assets: $assets';
+  String get activityServiceRefreshFailedTitle =>
+      isChinese ? '服务状态刷新失败' : 'Service refresh failed';
+  String get activityAiCompletedTitle =>
+      isChinese ? 'AI 已完成回答' : 'AI answer completed';
+  String activityAiCompletedMessage(String gameTitle) => isChinese
+      ? '已完成《$gameTitle》的新回答。'
+      : 'A new answer for $gameTitle is ready.';
+  String get activityAiFailedTitle =>
+      isChinese ? 'AI 回答失败' : 'AI answer failed';
+  String get activityLibraryUpdateTitle =>
+      isChinese ? '发现资料更新' : 'Library update found';
+  String activityLibraryUpdateMessage(int count) => isChinese
+      ? '有 $count 项资料等待更新。'
+      : '$count library items are ready to update.';
+  String get activityJustNow => isChinese ? '刚刚' : 'Just now';
+  String activityMinutesAgo(int count) =>
+      isChinese ? '$count 分钟前' : '$count min ago';
+  String activityHoursAgo(int count) =>
+      isChinese ? '$count 小时前' : '$count hr ago';
+  String activityDaysAgo(int count) =>
+      isChinese ? '$count 天前' : '$count days ago';
   String get assetTestDone =>
       isChinese ? '资源访问测试完成' : 'Asset access test completed';
   String get dialogClose => isChinese ? '关闭' : 'Close';

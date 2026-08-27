@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/app_activity.dart';
 import '../models/ai_api_config.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/assistant_mode.dart';
@@ -19,6 +22,7 @@ class PreferencesService {
   static const _checkForUpdatesKey = 'check_for_updates';
   static const _assistantModeKey = 'assistant_mode';
   static const _selectedConversationKey = 'selected_conversation_id';
+  static const _activitiesKey = 'app_activities';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -156,5 +160,41 @@ class PreferencesService {
   Future<void> saveSelectedConversationId(String conversationId) async {
     final prefs = await _prefs;
     await prefs.setString(_selectedConversationKey, conversationId);
+  }
+
+  Future<void> clearSelectedConversationId() async {
+    final prefs = await _prefs;
+    await prefs.remove(_selectedConversationKey);
+  }
+
+  Future<List<AppActivity>> loadActivities() async {
+    final prefs = await _prefs;
+    final String? stored = prefs.getString(_activitiesKey);
+    if (stored == null || stored.trim().isEmpty) {
+      return const <AppActivity>[];
+    }
+
+    try {
+      final Object? decoded = jsonDecode(stored);
+      if (decoded is! List<Object?>) {
+        return const <AppActivity>[];
+      }
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(AppActivity.fromMap)
+          .toList(growable: false);
+    } catch (_) {
+      return const <AppActivity>[];
+    }
+  }
+
+  Future<void> saveActivities(Iterable<AppActivity> activities) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _activitiesKey,
+      jsonEncode(
+        activities.map((AppActivity activity) => activity.toMap()).toList(),
+      ),
+    );
   }
 }
