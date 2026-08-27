@@ -35,6 +35,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
+    final copy = widget.controller.copy;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       backgroundColor: palette.pageBackground,
@@ -45,9 +46,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || snapshot.data == null) {
-            return Center(
-              child: Text('PDF 加载失败：${snapshot.error ?? '未找到缓存或远端资源'}'),
-            );
+            return Center(child: Text(copy.documentUnavailable(widget.title)));
           }
           return DecoratedBox(
             decoration: BoxDecoration(color: palette.pageBackground),

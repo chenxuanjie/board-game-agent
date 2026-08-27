@@ -32,6 +32,7 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
+    final copy = widget.controller.copy;
     final Color cardTextColor = palette.textPrimary;
     final secondaryTextColor = cardTextColor.withValues(alpha: 0.82);
     return Scaffold(
@@ -47,7 +48,7 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
           if (snapshot.hasError || snapshot.data == null) {
             return Center(
               child: Text(
-                '文档加载失败：${snapshot.error ?? '未找到缓存或远端资源'}',
+                copy.documentUnavailable(widget.title),
                 style: Theme.of(
                   context,
                 ).textTheme.bodyLarge?.copyWith(color: cardTextColor),

@@ -22,6 +22,7 @@ import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
+import '../models/game_resource.dart';
 import '../models/remote_library_update.dart';
 import '../models/resolved_document.dart';
 import '../models/evidence_chunk.dart';
@@ -1151,14 +1152,23 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String?> cacheDocument(String remotePath) async {
-    final CachedAsset? cached = await _remoteAssetService.ensureCached(
-      sources: _assetSourceConfigs,
-      remotePath: remotePath,
-    );
+    if (remotePath.trim().isEmpty) {
+      return null;
+    }
+
+    CachedAsset? cached;
+    try {
+      cached = await _remoteAssetService.ensureCached(
+        sources: _assetSourceConfigs,
+        remotePath: remotePath,
+      );
+    } catch (_) {
+      cached = null;
+    }
     if (cached == null) {
       _assetConnectivityStatus = ConnectivityStatus(
         state: ConnectivityState.failure,
-        message: '文档下载失败',
+        message: '文档暂时不可用',
         checkedAt: DateTime.now(),
       );
       notifyListeners();
@@ -1179,14 +1189,17 @@ class AppController extends ChangeNotifier {
     if (localPath == null) {
       return null;
     }
-    return File(localPath).readAsString();
+    try {
+      return await File(localPath).readAsString();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<ResolvedDocument?> resolveRulebookDocument(GameInfo game) {
     return _resolveDocument(
       game: game,
       baseName: 'rulebook',
-      fallbackRemotePath: game.rulebookAssetPath,
       fallbackLabel: copy.rulesBook,
     );
   }
@@ -1195,16 +1208,25 @@ class AppController extends ChangeNotifier {
     return _resolveDocument(
       game: game,
       baseName: 'faq',
-      fallbackRemotePath: game.faqAssetPath,
       fallbackLabel: copy.faq,
     );
   }
 
   Future<String?> resolveImagePath(String remotePath) async {
-    return _cacheImage(remotePath);
+    if (remotePath.trim().isEmpty) {
+      return null;
+    }
+    try {
+      return await _cacheImage(remotePath);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> _cacheImage(String remotePath) async {
+    if (remotePath.trim().isEmpty) {
+      return null;
+    }
     if (_resolvedAssetPaths.containsKey(remotePath)) {
       return _resolvedAssetPaths[remotePath];
     }
@@ -1222,18 +1244,32 @@ class AppController extends ChangeNotifier {
   Future<ResolvedDocument?> _resolveDocument({
     required GameInfo game,
     required String baseName,
-    required String fallbackRemotePath,
     required String fallbackLabel,
   }) async {
     final List<String> candidates = _documentCandidates(
       game: game,
       baseName: baseName,
     );
-    for (final candidate in candidates) {
-      final CachedAsset? cached = await _remoteAssetService.ensureCached(
-        sources: _assetSourceConfigs,
-        remotePath: candidate,
+    if (candidates.isEmpty) {
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: '文档暂时不可用',
+        checkedAt: DateTime.now(),
       );
+      notifyListeners();
+      return null;
+    }
+
+    for (final candidate in candidates) {
+      CachedAsset? cached;
+      try {
+        cached = await _remoteAssetService.ensureCached(
+          sources: _assetSourceConfigs,
+          remotePath: candidate,
+        );
+      } catch (_) {
+        cached = null;
+      }
       if (cached != null) {
         _resolvedAssetPaths[candidate] = cached.localPath;
         _assetConnectivityStatus = ConnectivityStatus(
@@ -1254,72 +1290,87 @@ class AppController extends ChangeNotifier {
 
     _assetConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.failure,
-      message: '文档下载失败',
+      message: '文档暂时不可用',
       checkedAt: DateTime.now(),
     );
     notifyListeners();
-    return ResolvedDocument(
-      remotePath: fallbackRemotePath,
-      renderType: fallbackRemotePath.endsWith('.pdf')
-          ? DocumentRenderType.pdf
-          : DocumentRenderType.markdown,
-      label: fallbackLabel,
-    );
+    return null;
   }
 
   List<String> _documentCandidates({
     required GameInfo game,
     required String baseName,
   }) {
-    final String docsRoot = 'assets/games/${game.slug}/docs';
-    final bool isChinese = language == AppLanguage.zhHans;
-    final List<String> localized = isChinese
-        ? <String>[
-            '$docsRoot/${baseName}_official_zh.pdf',
-            '$docsRoot/${baseName}_official_en.pdf',
-            '$docsRoot/${baseName}_zh.md',
-            '$docsRoot/${baseName}_en.md',
-          ]
-        : <String>[
-            '$docsRoot/${baseName}_official_en.pdf',
-            '$docsRoot/${baseName}_official_zh.pdf',
-            '$docsRoot/${baseName}_en.md',
-            '$docsRoot/${baseName}_zh.md',
-          ];
+    final Set<String> documentTypes = baseName == 'rulebook'
+        ? <String>{'rulebook', 'how_to_play'}
+        : <String>{'faq'};
+    final List<GameResource> resources = game.resources
+        .where(
+          (resource) =>
+              documentTypes.contains(resource.documentType) &&
+              resource.isAvailable &&
+              resource.enabled &&
+              resource.isRenderableDocument &&
+              resource.path.trim().isNotEmpty,
+        )
+        .toList();
+    resources.sort((a, b) {
+      final int language = _documentLanguageRank(
+        a.language,
+      ).compareTo(_documentLanguageRank(b.language));
+      if (language != 0) return language;
+      final int priority = a.priority.compareTo(b.priority);
+      if (priority != 0) return priority;
+      return a.id.compareTo(b.id);
+    });
 
-    // Keep compatibility with already uploaded irregular names.
-    if (baseName == 'faq') {
-      localized.insert(0, '$docsRoot/faq_official_v25_en.pdf');
+    final List<String> candidates = resources
+        .map((resource) => resource.assetPathFor(game.slug))
+        .toList();
+    final String fallback = baseName == 'rulebook'
+        ? game.rulebookAssetPath
+        : game.faqAssetPath;
+    if (fallback.trim().isNotEmpty && !candidates.contains(fallback)) {
+      candidates.add(fallback);
     }
-    return localized;
+    return candidates;
+  }
+
+  int _documentLanguageRank(String resourceLanguage) {
+    final String normalized = resourceLanguage.toLowerCase();
+    if (language == AppLanguage.zhHans) {
+      if (normalized == 'cn' || normalized == 'zh' || normalized == 'zhhans') {
+        return 0;
+      }
+      if (normalized == 'multi') return 1;
+      if (normalized == 'en') return 2;
+      return 3;
+    }
+    if (normalized == 'en') return 0;
+    if (normalized == 'multi') return 1;
+    if (normalized == 'cn' || normalized == 'zh' || normalized == 'zhhans') {
+      return 2;
+    }
+    return 3;
   }
 
   Iterable<String> _trackedRemotePaths() sync* {
+    final Set<String> paths = <String>{};
     for (final GameInfo game in _games) {
-      yield game.coverAssetPath;
-      yield game.bannerAssetPath;
+      paths.add(game.coverAssetPath);
+      paths.add(game.bannerAssetPath);
       for (final String path in game.galleryAssetPaths) {
-        yield path;
+        paths.add(path);
       }
-      yield game.rulebookAssetPath;
-      yield game.faqAssetPath;
-      for (final String path in game.knowledgeAssetPaths) {
-        yield path;
+      paths.add(game.rulebookAssetPath);
+      paths.add(game.faqAssetPath);
+      for (final GameResource resource in game.resources) {
+        paths.add(resource.assetPathFor(game.slug));
       }
-      for (final String path in _documentCandidates(
-        game: game,
-        baseName: 'rulebook',
-      )) {
-        yield path;
-      }
-      for (final String path in _documentCandidates(
-        game: game,
-        baseName: 'faq',
-      )) {
-        yield path;
-      }
-      yield 'assets/games/${game.slug}/game.json';
+      paths.add('assets/games/${game.slug}/game.json');
+      paths.add('assets/games/${game.slug}/manifest.json');
     }
+    yield* paths.where((path) => path.trim().isNotEmpty);
   }
 
   List<AssetSourceConfig> _preferredUpdateSources() {

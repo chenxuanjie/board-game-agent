@@ -149,7 +149,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   _initialization = _initialize();
                 });
               },
-              error: snapshot.error,
+              message: widget.controller.copy.startupDataUnavailable,
             );
           }
 
@@ -164,8 +164,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   Future<void> _initialize() async {
-    await widget.updateSettingsController.load();
-    await widget.controller.initialize();
+    try {
+      await widget.updateSettingsController.load();
+      await widget.controller.initialize();
+    } catch (error, stackTrace) {
+      debugPrint('[startup] initialization failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
   }
 
   void _scheduleStartupUpdateCheck(BuildContext context) {
@@ -249,10 +255,10 @@ class _StartupScreen extends StatelessWidget {
 }
 
 class _StartupErrorScreen extends StatelessWidget {
-  const _StartupErrorScreen({required this.onRetry, required this.error});
+  const _StartupErrorScreen({required this.onRetry, required this.message});
 
   final VoidCallback onRetry;
-  final Object? error;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -269,7 +275,7 @@ class _StartupErrorScreen extends StatelessWidget {
               Text('启动失败', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 10),
               Text(
-                '$error',
+                message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,

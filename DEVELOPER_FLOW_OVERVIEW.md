@@ -11,8 +11,8 @@
 1. 读取本地偏好设置  
    包括语言、配色、语音朗读开关、AI 回答模式、AI 接口配置、资源源配置等。
 
-2. 加载桌游清单和桌游 manifest  
-   当前实现优先使用本地缓存，其次使用包内资源，不在首屏初始化阶段阻塞式拉远端 `game.json`。  
+2. 加载桌游目录、展示配置和资源 manifest
+   当前实现优先使用本地缓存，其次使用包内的 `catalog.json`、`game.json` 和 `manifest.json`，不在首屏初始化阶段阻塞式拉远端资源。
    这样首页能先起来，避免因为某个资源源响应慢导致一直卡在启动页。
 
 3. 初始化语音相关能力  
@@ -46,7 +46,7 @@
 1. 先对比远端 `assets/catalog.json` 和本地 catalog
 2. 如果 catalog 有变化，直接认为有一批桌游元数据需要更新
 3. 如果 catalog 没变，再逐个检查已跟踪的远端资源路径  
-   包括封面、背景、规则书、FAQ、知识库文档、`game.json` 等
+   包括封面、背景、manifest 登记的所有资源、`game.json` 和 `manifest.json`
 
 更新比较主要依赖远端 `HEAD`/响应头信息，比如：
 
@@ -104,7 +104,7 @@
 
 ## 5. AI 回答链路
 
-AI 核心服务是 `MimoAiService`。当前回答模式分两种：
+AI 核心服务是 `ResponsesRulesWorkflow`。当前回答模式分两种：
 
 - `knowledgeOnly`：只按本地知识库回答，不够就返回“不知道”
 - `knowledgeThenDirect`：先按知识库回答，不够再结合当前桌游资料直接回答
@@ -113,7 +113,7 @@ AI 核心服务是 `MimoAiService`。当前回答模式分两种：
 
 1. `AppController.sendPrompt()` 收到用户输入
 2. 读取当前语言、桌游、回答模式、AI 配置
-3. `MimoAiService` 先构建当前桌游知识上下文
+3. `ResponsesRulesWorkflow` 先按当前桌游 manifest 选择知识资源和文档
 4. 根据回答模式决定：
    - 只做知识库回答
    - 或先知识库回答，再做直接补充
@@ -125,13 +125,13 @@ AI 核心服务是 `MimoAiService`。当前回答模式分两种：
 当前资源系统可以简单理解为三层：
 
 1. 包内资源  
-   用于首包可用、离线兜底
+   用于首包可用、离线兜底；各桌游的 manifest 和本地知识 Markdown 会随应用内置
 
 2. 本地缓存  
    用于运行时快速读取，尽量避免重复访问远端
 
 3. 远端资源库  
-   用于更新 catalog、图片、文档和各桌游 manifest
+   用于更新 catalog、图片、文档、各桌游 `game.json` 和 `manifest.json`
 
 运行时大多数读取逻辑遵循：
 

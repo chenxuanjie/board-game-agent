@@ -205,10 +205,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     try {
       final ResolvedDocument? document = await controller
           .resolveRulebookDocument(game);
-      if (!mounted || document == null) {
+      if (!mounted) {
+        return;
+      }
+      if (document == null) {
+        _showDocumentUnavailable(controller, title);
         return;
       }
       await _openResolvedDocument(controller, document, title);
+    } catch (_) {
+      if (mounted) {
+        _showDocumentUnavailable(controller, title);
+      }
     } finally {
       if (mounted) {
         setState(() => _openingRulebook = false);
@@ -226,10 +234,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       final ResolvedDocument? document = await controller.resolveFaqDocument(
         game,
       );
-      if (!mounted || document == null) {
+      if (!mounted) {
+        return;
+      }
+      if (document == null) {
+        _showDocumentUnavailable(controller, title);
         return;
       }
       await _openResolvedDocument(controller, document, title);
+    } catch (_) {
+      if (mounted) {
+        _showDocumentUnavailable(controller, title);
+      }
     } finally {
       if (mounted) {
         setState(() => _openingFaq = false);
@@ -264,6 +280,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         ),
       ),
     );
+  }
+
+  void _showDocumentUnavailable(AppController controller, String title) {
+    if (!mounted) {
+      return;
+    }
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(controller.copy.documentUnavailable(title))),
+      );
   }
 }
 

@@ -23,9 +23,9 @@ class BoardGamePromptBuilder {
 如果用户问题超出当前桌游知识库范围，也必须返回 unknown。
 请只返回 JSON，不要添加代码块，不要添加额外说明。
 
-evidence 数组只能填写实际使用的知识文件名，例如 rulebook_zh.md；无法确认时返回空数组。
+evidence 数组只能填写实际使用的知识文件名，例如 rulebook_cn.md；无法确认时返回空数组。
 可用返回格式只有二选一：
-{"status":"answered","answer":"你的回答","evidence":["rulebook_zh.md"]}
+{"status":"answered","answer":"你的回答","evidence":["rulebook_cn.md"]}
 {"status":"unknown","answer":"当前知识库没有足够信息回答这个问题。","evidence":[]}
 
 当前桌游本地知识库如下：

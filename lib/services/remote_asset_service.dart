@@ -35,7 +35,7 @@ class RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async {
-    if (kIsWeb) {
+    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
       return null;
     }
     final File localFile = await _fileFor(remotePath);
@@ -118,6 +118,9 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    if (!_isUsableRemotePath(remotePath)) {
+      return null;
+    }
     final Map<String, String> headers = await _headers();
     for (final source in sources) {
       final Uri? uri = _buildFileUri(source, remotePath);
@@ -150,7 +153,7 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
-    if (kIsWeb) {
+    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
       return false;
     }
     final Map<String, dynamic>? remote = await _probeRemoteVersion(
@@ -191,6 +194,9 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    if (!_isUsableRemotePath(remotePath)) {
+      return null;
+    }
     final CachedAsset? asset = await ensureCached(
       sources: sources,
       remotePath: remotePath,
@@ -218,6 +224,9 @@ class RemoteAssetService {
     required List<String> remotePaths,
   }) async {
     for (final String path in remotePaths) {
+      if (!_isUsableRemotePath(path)) {
+        continue;
+      }
       final String? content = await loadText(
         sources: sources,
         remotePath: path,
@@ -230,7 +239,7 @@ class RemoteAssetService {
   }
 
   Future<File?> cachedFileFor(String remotePath) async {
-    if (kIsWeb) {
+    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
       return null;
     }
     final File file = await _fileFor(remotePath);
@@ -245,6 +254,9 @@ class RemoteAssetService {
     required Iterable<String> remotePaths,
   }) async {
     for (final String remotePath in remotePaths.toSet()) {
+      if (!_isUsableRemotePath(remotePath)) {
+        continue;
+      }
       await ensureCached(sources: sources, remotePath: remotePath);
     }
   }
@@ -340,6 +352,9 @@ class RemoteAssetService {
   }
 
   Uri? _buildFileUri(AssetSourceConfig source, String remotePath) {
+    if (!_isUsableRemotePath(remotePath)) {
+      return null;
+    }
     final Match? match = RegExp(
       r'^https?://([^/:]+)(?::(\d+))?(/.*)?$',
     ).firstMatch(source.testUrl);
@@ -362,6 +377,11 @@ class RemoteAssetService {
       port: port,
       path: uriPath,
     );
+  }
+
+  bool _isUsableRemotePath(String remotePath) {
+    final String normalized = remotePath.replaceAll('\\', '/').trim();
+    return normalized.isNotEmpty && !normalized.split('/').contains('..');
   }
 
   Future<Map<String, String>> _headers() async {

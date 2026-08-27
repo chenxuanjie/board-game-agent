@@ -1,6 +1,6 @@
 # APK 打包说明
 
-这是一个 Flutter 安卓原型项目。我在当前这台机器上准备代码时，系统里 **没有可直接使用的** `Java` 和 Android SDK，也没有配好 `PATH`，所以这里没法直接产出真正的 `debug APK`。不过项目结构已经按可打包工程整理好了，只要把 Android 工具链装好，就可以继续生成安装包。
+这是一个 Flutter 项目。当前仓库已经配置 Android release 签名和共享发布器，可以生成 Windows release、Android APK，并将 Android OTA 版本发布到配置的 WebDAV。版本号唯一来源是 `pubspec.yaml` 的 `version: x.y.z+build`。
 
 ## 1. 安装需要的工具
 
@@ -62,53 +62,65 @@ sdk.dir=C:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
 
 把这两个路径改成你自己机器上的真实路径。
 
-## 5. 安装项目依赖
+## 5. 安装项目依赖与本地校验
 
 在项目根目录执行：
 
 ```powershell
 flutter pub get
+flutter analyze
+flutter test
 ```
 
-## 6. 先本地运行调试
+## 6. 本地构建 Windows 和 Android
 
-如果你已经连上开启 USB 调试的安卓手机，或者已经启动了 Android 模拟器，可以执行：
+Windows release：
 
 ```powershell
-flutter run
+flutter build windows --release
 ```
 
-如果你的模拟器已经创建好了，也可以先手动启动它：
+产物路径：
 
-```powershell
-emulator -avd board_game_agent_api36
-```
+- `build/windows/x64/runner/Release/board_game_agent.exe`
 
-## 7. 生成 Debug APK
-
-在项目根目录执行：
-
-```powershell
-flutter build apk --debug
-```
-
-生成后的文件路径：
-
-- [android/build/app/outputs/flutter-apk/app-debug.apk](/C:/Study/MyCode/MyProject/board-game-agent/android/build/app/outputs/flutter-apk/app-debug.apk)
-
-## 8. 后续生成 Release APK
-
-如果你后面要生成正式一点的本地安装包，可以执行：
+Android release APK：
 
 ```powershell
 flutter build apk --release
 ```
 
-生成后的文件路径：
+产物路径：
 
-- [android/build/app/outputs/flutter-apk/app-release.apk](/C:/Study/MyCode/MyProject/board-game-agent/android/build/app/outputs/flutter-apk/app-release.apk)
+- `build/app/outputs/flutter-apk/app-release.apk`
 
-真正发布之前，建议再补自己的 Android 签名配置。
+## 7. 使用共享发布器
+
+发布器位于：
+
+- `C:\Study\MyCode\MyProject\shared_packages\flutter_release_publisher`
+
+使用技能目录中的 `profiles\board_game_agent.json`，不要把 WebDAV 密码写入项目仓库。构建 Windows：
+
+```powershell
+dart run bin/publish.dart compile --profile <profile-path> --target windows
+```
+
+发布 Android OTA：
+
+```powershell
+dart run bin/publish.dart release --profile <profile-path> --target android --bump-build
+```
+
+发布器会自动完成依赖安装、分析、测试、Android release 编译、版本化 APK、SHA-256、release 记录和 WebDAV 上传。上传顺序是 APK、release 记录、更新 manifest。
+
+本地 APK 和 release 记录保存在 `release/`；远端历史版本保存在 `apps/board_game_agent/updates/` 和 `apps/board_game_agent/releases/`。
+
+## 8. 先运行调试版
+
+```powershell
+flutter run
+```
 
 ## 9. 编译 iOS 版本
 

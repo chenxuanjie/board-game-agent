@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 2.0.0+18
+version: 2.0.0+19
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
@@ -44,40 +44,78 @@ flutter:
     - assets/catalog.json
     - assets/games/puerto_rico/images/
     - assets/games/puerto_rico/game.json
+    - assets/games/puerto_rico/manifest.json
+    - assets/games/puerto_rico/docs/local/knowledge/
     - assets/games/arkham_horror_lcg/images/
     - assets/games/arkham_horror_lcg/game.json
+    - assets/games/arkham_horror_lcg/manifest.json
+    - assets/games/arkham_horror_lcg/docs/local/knowledge/
     - assets/games/startups/images/
     - assets/games/startups/game.json
+    - assets/games/startups/manifest.json
+    - assets/games/startups/docs/local/knowledge/
     - assets/games/cabo/images/
     - assets/games/cabo/game.json
     - assets/games/cabo/manifest.json
+    - assets/games/cabo/docs/local/knowledge/
     - assets/games/carcassonne_3/images/
     - assets/games/carcassonne_3/game.json
+    - assets/games/carcassonne_3/manifest.json
+    - assets/games/carcassonne_3/docs/local/knowledge/
+    - assets/games/castles_of_burgundy_2019/images/
+    - assets/games/castles_of_burgundy_2019/game.json
+    - assets/games/castles_of_burgundy_2019/manifest.json
+    - assets/games/castles_of_burgundy_2019/docs/local/knowledge/
     - assets/games/harmonies/images/
     - assets/games/harmonies/game.json
+    - assets/games/harmonies/manifest.json
+    - assets/games/harmonies/docs/local/knowledge/
     - assets/games/war_chest/images/
     - assets/games/war_chest/game.json
+    - assets/games/war_chest/manifest.json
     - assets/games/decrypto/game.json
+    - assets/games/decrypto/manifest.json
     - assets/games/seven_wonders_duel/images/
     - assets/games/seven_wonders_duel/game.json
+    - assets/games/seven_wonders_duel/manifest.json
+    - assets/games/seven_wonders_duel/docs/local/knowledge/
     - assets/games/splendor/images/
     - assets/games/splendor/game.json
+    - assets/games/splendor/manifest.json
+    - assets/games/splendor/docs/local/knowledge/
     - assets/games/splendor_duel/game.json
+    - assets/games/splendor_duel/manifest.json
+    - assets/games/splendor_duel/docs/local/knowledge/
     - assets/games/exploding_kittens/images/
     - assets/games/exploding_kittens/game.json
+    - assets/games/exploding_kittens/manifest.json
+    - assets/games/exploding_kittens/docs/local/knowledge/
     - assets/games/citadels/images/
     - assets/games/citadels/game.json
+    - assets/games/citadels/manifest.json
     - assets/games/in_a_grove/images/
     - assets/games/in_a_grove/game.json
+    - assets/games/in_a_grove/manifest.json
     - assets/games/wriggle_roulette/images/
     - assets/games/wriggle_roulette/game.json
+    - assets/games/wriggle_roulette/manifest.json
     - assets/games/manila/images/
     - assets/games/manila/game.json
+    - assets/games/manila/manifest.json
+    - assets/games/manila/docs/local/knowledge/
     - assets/games/night_of_the_ninja/images/
     - assets/games/night_of_the_ninja/game.json
+    - assets/games/night_of_the_ninja/manifest.json
+    - assets/games/night_of_the_ninja/docs/local/knowledge/
     - assets/games/patchwork_10th_anniversary/images/
     - assets/games/patchwork_10th_anniversary/game.json
+    - assets/games/patchwork_10th_anniversary/manifest.json
+    - assets/games/patchwork_10th_anniversary/docs/local/knowledge/
     - assets/games/scout/images/
     - assets/games/scout/game.json
+    - assets/games/scout/manifest.json
+    - assets/games/scout/docs/local/knowledge/
     - assets/games/slay_the_spire/images/
     - assets/games/slay_the_spire/game.json
+    - assets/games/slay_the_spire/manifest.json
+    - assets/games/slay_the_spire/docs/local/knowledge/
