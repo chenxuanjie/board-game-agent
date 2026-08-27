@@ -13,6 +13,7 @@ import '../../theme/app_palette.dart';
 import '../app_copy.dart';
 import '../widgets/language_sheet.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/desktop_resolved_image.dart';
 import 'desktop_game_detail_pane.dart';
 
 enum _DesktopDestination {
@@ -941,7 +942,11 @@ class _DesktopRecentGamesCard extends StatelessWidget {
         children: controller.games.take(3).map((GameInfo game) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 9),
-            child: _DesktopGameRow(game: game, onTap: () => onOpenGame(game)),
+            child: _DesktopGameRow(
+              controller: controller,
+              game: game,
+              onTap: () => onOpenGame(game),
+            ),
           );
         }).toList(),
       ),
@@ -950,8 +955,13 @@ class _DesktopRecentGamesCard extends StatelessWidget {
 }
 
 class _DesktopGameRow extends StatelessWidget {
-  const _DesktopGameRow({required this.game, required this.onTap});
+  const _DesktopGameRow({
+    required this.controller,
+    required this.game,
+    required this.onTap,
+  });
 
+  final AppController controller;
   final GameInfo game;
   final VoidCallback onTap;
 
@@ -968,7 +978,7 @@ class _DesktopGameRow extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           child: Row(
             children: <Widget>[
-              _DesktopGameMark(game: game),
+              _DesktopGameMark(controller: controller, game: game),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1101,26 +1111,37 @@ class _DesktopStatusRow extends StatelessWidget {
 }
 
 class _DesktopGameMark extends StatelessWidget {
-  const _DesktopGameMark({required this.game});
+  const _DesktopGameMark({required this.controller, required this.game});
 
+  final AppController controller;
   final GameInfo game;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
-    return Container(
-      width: 36,
-      height: 36,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Color(game.cardAccent).withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        _shortGameMark(game.title),
-        style: Theme.of(
-          context,
-        ).textTheme.labelLarge?.copyWith(color: palette.onPrimary),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: DesktopResolvedImage(
+          controller: controller,
+          assetPath: game.coverAssetPath,
+          palette: palette,
+          placeholderBuilder: (BuildContext context) => Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Color(game.cardAccent).withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              _shortGameMark(game.title),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: palette.onPrimary),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1290,24 +1311,34 @@ class _DesktopGamesPane extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        gradient: LinearGradient(
-                          colors: <Color>[
-                            Color(game.cardAccent),
-                            palette.surfaceContainer,
-                          ],
-                        ),
-                      ),
-                      child: Text(
-                        _shortGameMark(game.title),
-                        style: Theme.of(context).textTheme.displaySmall
-                            ?.copyWith(
-                              color: palette.onPrimary,
-                              fontWeight: FontWeight.w800,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: DesktopResolvedImage(
+                        controller: controller,
+                        assetPath: game.coverAssetPath,
+                        palette: palette,
+                        placeholderBuilder: (BuildContext context) =>
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: <Color>[
+                                    Color(game.cardAccent),
+                                    palette.surfaceContainer,
+                                  ],
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _shortGameMark(game.title),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .displaySmall
+                                      ?.copyWith(
+                                        color: palette.onPrimary,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                ),
+                              ),
                             ),
                       ),
                     ),

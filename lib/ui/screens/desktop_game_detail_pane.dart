@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../models/game_info.dart';
 import '../../models/resolved_document.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../widgets/desktop_resolved_image.dart';
 import 'markdown_document_screen.dart';
 import 'pdf_document_screen.dart';
 
@@ -362,7 +361,7 @@ class _DesktopGameGallery extends StatelessWidget {
               onPageChanged: onPageChanged,
               itemBuilder: (BuildContext context, int index) {
                 final String path = paths[index];
-                return _DesktopResolvedImage(
+                return DesktopResolvedImage(
                   controller: controller,
                   assetPath: path,
                   palette: palette,
@@ -416,62 +415,6 @@ class _DesktopGameGallery extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _DesktopResolvedImage extends StatefulWidget {
-  const _DesktopResolvedImage({
-    required this.controller,
-    required this.assetPath,
-    required this.palette,
-  });
-
-  final AppController controller;
-  final String assetPath;
-  final AppPalette palette;
-
-  @override
-  State<_DesktopResolvedImage> createState() => _DesktopResolvedImageState();
-}
-
-class _DesktopResolvedImageState extends State<_DesktopResolvedImage> {
-  late Future<String?> _pathFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _pathFuture = widget.controller.resolveImagePath(widget.assetPath);
-  }
-
-  @override
-  void didUpdateWidget(covariant _DesktopResolvedImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.assetPath != widget.assetPath) {
-      _pathFuture = widget.controller.resolveImagePath(widget.assetPath);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: _pathFuture,
-      builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
-        final String? path = snapshot.data;
-        if (path == null || path.isEmpty) {
-          return DecoratedBox(
-            decoration: BoxDecoration(color: widget.palette.surfaceVariant),
-            child: Center(
-              child: Icon(
-                Icons.image_not_supported_outlined,
-                size: 38,
-                color: widget.palette.textSecondary,
-              ),
-            ),
-          );
-        }
-        return Image.file(File(path), fit: BoxFit.cover);
-      },
     );
   }
 }
@@ -1214,7 +1157,7 @@ class _DesktopGalleryGrid extends StatelessWidget {
         itemBuilder: (BuildContext context, int index) {
           return ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: _DesktopResolvedImage(
+            child: DesktopResolvedImage(
               controller: controller,
               assetPath: paths[index],
               palette: palette,
