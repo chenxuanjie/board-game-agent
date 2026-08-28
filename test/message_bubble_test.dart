@@ -22,7 +22,7 @@ void main() {
       source: AnswerSource.insufficient,
       evidence: <EvidenceChunk>[
         const EvidenceChunk(
-          sourcePath: 'assets/games/cabo/docs/faq_zh.md',
+          sourcePath: 'assets/games/cabo/docs/local/knowledge/faq_cn.md',
           content: '',
         ),
       ],
@@ -48,7 +48,7 @@ void main() {
     );
 
     expect(find.text('信息不足'), findsOneWidget);
-    expect(find.text('faq_zh.md'), findsOneWidget);
+    expect(find.text('faq_cn.md'), findsOneWidget);
     expect(find.text('重试'), findsOneWidget);
     await tester.tap(find.text('重试'));
     expect(retried, isTrue);

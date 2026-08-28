@@ -3,6 +3,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../widgets/document_failure_view.dart';
 
 class PdfDocumentScreen extends StatefulWidget {
   const PdfDocumentScreen({
@@ -25,6 +26,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
   late Future<String?> _localPathFuture;
   int _currentPage = 1;
   int _totalPages = 0;
+  int _viewerRevision = 0;
 
   @override
   void initState() {
@@ -32,9 +34,20 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
     _localPathFuture = widget.controller.cacheDocument(widget.remotePath);
   }
 
+  void _retryLoad() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _localPathFuture = widget.controller.cacheDocument(widget.remotePath);
+      _viewerRevision += 1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
+    final copy = widget.controller.copy;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       backgroundColor: palette.pageBackground,
@@ -45,13 +58,18 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || snapshot.data == null) {
-            return Center(
-              child: Text('PDF 加载失败：${snapshot.error ?? '未找到缓存或远端资源'}'),
+            return DocumentFailureView(
+              copy: copy,
+              title: widget.title,
+              kind: DocumentFailureKind.load,
+              onRetry: _retryLoad,
+              onBack: () => Navigator.of(context).maybePop(),
             );
           }
           return DecoratedBox(
             decoration: BoxDecoration(color: palette.pageBackground),
             child: PdfViewer.file(
+              key: ValueKey<int>(_viewerRevision),
               snapshot.data!,
               controller: _pdfController,
               useProgressiveLoading: false,
@@ -81,6 +99,15 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
                   setState(() {
                     _currentPage = pageNumber;
                   });
+                },
+                errorBannerBuilder: (context, error, stackTrace, documentRef) {
+                  return DocumentFailureView(
+                    copy: copy,
+                    title: widget.title,
+                    kind: DocumentFailureKind.render,
+                    onRetry: _retryLoad,
+                    onBack: () => Navigator.of(context).maybePop(),
+                  );
                 },
                 viewerOverlayBuilder: (context, size, handleLinkTap) {
                   return <Widget>[

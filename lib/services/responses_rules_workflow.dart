@@ -11,6 +11,7 @@ import '../models/asset_source_config.dart';
 import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
 import '../models/game_info.dart';
+import '../models/game_resource.dart';
 import '../models/rule_citation.dart';
 import '../models/rule_document.dart';
 import 'board_game_prompt_builder.dart';
@@ -622,6 +623,9 @@ class ResponsesRulesWorkflow {
     final List<ResponsesInputItem> inputs = <ResponsesInputItem>[];
     final List<RuleDocument> loaded = <RuleDocument>[];
     for (final RuleDocument document in documents.take(4)) {
+      if (isOtherStoragePath(document.path)) {
+        continue;
+      }
       if (document.url != null && _isPublicHttps(document.url!)) {
         inputs.add(
           ResponsesFileInput.url(
@@ -685,19 +689,31 @@ class ResponsesRulesWorkflow {
   }
 
   List<RuleDocument> _documentsForGame(GameInfo game) {
+    final Map<String, GameResource> resourcesByPath = <String, GameResource>{
+      for (final GameResource resource in game.resources)
+        if (!resource.isInOthersDirectory &&
+            resource.assetPathFor(game.slug).trim().isNotEmpty)
+          resource.assetPathFor(game.slug): resource,
+    };
+
     return game.knowledgeAssetPaths
+        .where((path) => path.trim().isNotEmpty && !isOtherStoragePath(path))
+        .toList(growable: false)
         .asMap()
         .entries
-        .map(
-          (entry) => RuleDocument(
-            id: '${game.slug}-knowledge-${entry.key}',
-            title: _documentTitle(entry.value),
+        .map((entry) {
+          final GameResource? resource = resourcesByPath[entry.value];
+          return RuleDocument(
+            id: resource?.id ?? '${game.slug}-knowledge-${entry.key}',
+            title: resource?.fileName ?? _documentTitle(entry.value),
             path: entry.value,
-            format: _documentFormat(entry.value),
-            language: _documentLanguage(entry.value),
-            sourceType: 'official',
-          ),
-        )
+            format: resource?.format ?? _documentFormat(entry.value),
+            language: resource?.language ?? _documentLanguage(entry.value),
+            sourceType: resource?.sourceClass ?? 'official',
+            version: resource?.edition,
+            url: resource?.sourceUrl,
+          );
+        })
         .toList(growable: false);
   }
 

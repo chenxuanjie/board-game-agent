@@ -1,5 +1,6 @@
 import 'app_language.dart';
 import 'game_info.dart';
+import 'game_resource.dart';
 
 class GameCatalogManifest {
   GameCatalogManifest({required this.version, required this.games});
@@ -56,6 +57,7 @@ class GameManifest {
     required this.rulebookPaths,
     required this.faqPaths,
     required this.knowledgePaths,
+    required this.resources,
     required this.locales,
   });
 
@@ -72,13 +74,19 @@ class GameManifest {
   final Map<String, String> rulebookPaths;
   final Map<String, String> faqPaths;
   final Map<String, List<String>> knowledgePaths;
+  final List<GameResource> resources;
   final Map<String, GameLocaleContent> locales;
 
-  factory GameManifest.fromJson(Map<String, dynamic> json) {
+  factory GameManifest.fromJson(
+    Map<String, dynamic> json, {
+    GameResourceManifest? resourceManifest,
+  }) {
     final Map<String, dynamic> documents =
         json['documents'] as Map<String, dynamic>? ?? <String, dynamic>{};
     final Map<String, dynamic> locales =
         json['locales'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final List<GameResource> manifestResources =
+        resourceManifest?.resources ?? const <GameResource>[];
 
     return GameManifest(
       id: json['id'] as String,
@@ -94,6 +102,12 @@ class GameManifest {
       rulebookPaths: _localizedStringMap(documents['rulebook']),
       faqPaths: _localizedStringMap(documents['faq']),
       knowledgePaths: _localizedStringListMap(documents['knowledge']),
+      resources: manifestResources.isNotEmpty
+          ? manifestResources
+          : _legacyResources(
+              slug: json['slug'] as String? ?? '',
+              documents: documents,
+            ),
       locales: locales.map(
         (key, value) => MapEntry(
           key,
@@ -106,12 +120,29 @@ class GameManifest {
   GameInfo toGameInfo(AppLanguage language) {
     final String localeKey = language == AppLanguage.zhHans ? 'zhHans' : 'en';
     final GameLocaleContent content = _resolveLocaleContent(localeKey);
-    final String rulebookPath = _resolveLocalizedPath(rulebookPaths, localeKey);
-    final String faqPath = _resolveLocalizedPath(faqPaths, localeKey);
-    final List<String> knowledge = _resolveLocalizedList(
-      knowledgePaths,
-      localeKey,
+    final GameResource? rulebookResource = _selectDocumentResource(
+      documentTypes: const <String>{'rulebook', 'how_to_play'},
+      localeKey: localeKey,
+      preferOfficialPdf: true,
     );
+    final GameResource? faqResource = _selectDocumentResource(
+      documentTypes: const <String>{'faq'},
+      localeKey: localeKey,
+    );
+    final String rulebookPath =
+        rulebookResource?.assetPathFor(slug) ??
+        _assetPath(_resolveLocalizedPath(rulebookPaths, localeKey));
+    final String faqPath =
+        faqResource?.assetPathFor(slug) ??
+        _assetPath(_resolveLocalizedPath(faqPaths, localeKey));
+    final List<String> knowledge = _selectKnowledgeResources(
+      localeKey,
+    ).map((resource) => resource.assetPathFor(slug)).toList(growable: false);
+    final List<String> fallbackKnowledge =
+        _resolveLocalizedList(knowledgePaths, localeKey)
+            .map(_assetPath)
+            .where((path) => path.trim().isNotEmpty)
+            .toList(growable: false);
 
     return GameInfo(
       id: id,
@@ -137,9 +168,10 @@ class GameManifest {
       supportedPlayers: supportedPlayers,
       recommendedPlayer: recommendedPlayer,
       rankBadges: content.rankBadges,
-      rulebookAssetPath: _assetPath(rulebookPath),
-      faqAssetPath: _assetPath(faqPath),
-      knowledgeAssetPaths: _resolveAssetList(knowledge),
+      rulebookAssetPath: rulebookPath,
+      faqAssetPath: faqPath,
+      knowledgeAssetPaths: knowledge.isNotEmpty ? knowledge : fallbackKnowledge,
+      resources: resources,
       heroTagline: content.heroTagline,
       assistantIntro: content.assistantIntro,
       summary: content.summary,
@@ -151,6 +183,103 @@ class GameManifest {
       assistantSkills: content.assistantSkills,
       quickPrompts: content.quickPrompts,
     );
+  }
+
+  GameResource? _selectDocumentResource({
+    required Set<String> documentTypes,
+    required String localeKey,
+    bool preferOfficialPdf = false,
+  }) {
+    final List<GameResource> candidates = resources
+        .where(
+          (resource) =>
+              documentTypes.contains(resource.documentType) &&
+              resource.isAvailable &&
+              resource.enabled &&
+              !resource.isInOthersDirectory &&
+              resource.isRenderableDocument &&
+              resource.path.trim().isNotEmpty,
+        )
+        .toList();
+    _sortResources(candidates, localeKey, preferOfficialPdf: preferOfficialPdf);
+    return candidates.isEmpty ? null : candidates.first;
+  }
+
+  List<GameResource> _selectKnowledgeResources(String localeKey) {
+    final List<GameResource> candidates = resources
+        .where(
+          (resource) =>
+              resource.aiEnabled &&
+              resource.isAvailable &&
+              !resource.isInOthersDirectory &&
+              resource.isMarkdown &&
+              resource.path.trim().isNotEmpty,
+        )
+        .toList();
+    final List<GameResource> preferred = candidates
+        .where((resource) => _languageRank(resource.language, localeKey) == 0)
+        .toList();
+    final List<GameResource> selected = preferred.isNotEmpty
+        ? preferred
+        : candidates
+              .where(
+                (resource) => _languageRank(resource.language, localeKey) < 3,
+              )
+              .toList();
+    _sortResources(selected, localeKey);
+    return List<GameResource>.unmodifiable(selected);
+  }
+
+  void _sortResources(
+    List<GameResource> values,
+    String localeKey, {
+    bool preferOfficialPdf = false,
+  }) {
+    values.sort((a, b) {
+      if (preferOfficialPdf) {
+        final int documentFormat = _documentFormatRank(
+          a,
+        ).compareTo(_documentFormatRank(b));
+        if (documentFormat != 0) return documentFormat;
+      }
+      final int language = _languageRank(
+        a.language,
+        localeKey,
+      ).compareTo(_languageRank(b.language, localeKey));
+      if (language != 0) return language;
+      final int priority = a.priority.compareTo(b.priority);
+      if (priority != 0) return priority;
+      return a.id.compareTo(b.id);
+    });
+  }
+
+  int _documentFormatRank(GameResource resource) {
+    if (resource.format == 'pdf' && resource.sourceClass == 'official') {
+      return 0;
+    }
+    if (resource.format == 'pdf') {
+      return 1;
+    }
+    return 2;
+  }
+
+  int _languageRank(String language, String localeKey) {
+    final String normalized = language.toLowerCase();
+    final bool wantsChinese = localeKey == 'zhHans';
+    if (wantsChinese) {
+      if (normalized == 'cn' || normalized == 'zh' || normalized == 'zhhans') {
+        return 0;
+      }
+      if (normalized == 'multi') return 1;
+      if (normalized == 'en') return 2;
+      return 3;
+    }
+    if (normalized == 'en') return 0;
+    if (normalized == 'multi') return 1;
+    if (normalized == 'cn' || normalized == 'zh' || normalized == 'zhhans') {
+      return 2;
+    }
+    return 3;
   }
 
   GameLocaleContent _resolveLocaleContent(String localeKey) {
@@ -202,8 +331,87 @@ class GameManifest {
     return <String>[];
   }
 
+  static List<GameResource> _legacyResources({
+    required String slug,
+    required Map<String, dynamic> documents,
+  }) {
+    final List<GameResource> result = <GameResource>[];
+    final Set<String> paths = <String>{};
+
+    void add(
+      String path, {
+      required String documentType,
+      required bool aiEnabled,
+      required int priority,
+    }) {
+      final String normalized = path.trim();
+      if (normalized.isEmpty || !paths.add(normalized)) return;
+      final String fileName = normalized.replaceAll('\\', '/').split('/').last;
+      final String idPath = normalized
+          .replaceAll('\\', '-')
+          .replaceAll('/', '-')
+          .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
+      result.add(
+        GameResource(
+          id: '$slug-legacy-$idPath',
+          path: normalized,
+          documentType: documentType,
+          sourceClass: 'unknown',
+          origin: 'legacy_game_json',
+          language: _legacyLanguage(fileName),
+          edition: 'unknown',
+          status: 'available',
+          enabled: true,
+          aiEnabled: aiEnabled,
+          priority: priority,
+          derivedFrom: const <String>[],
+          sourceUrl: null,
+          reviewStatus: 'unreviewed',
+          notes: 'Compatibility resource generated from legacy game.json.',
+        ),
+      );
+    }
+
+    final Map<String, String> rulebook = _localizedStringMap(
+      documents['rulebook'],
+    );
+    for (final String path in rulebook.values) {
+      add(path, documentType: 'rulebook', aiEnabled: false, priority: 10);
+    }
+
+    final Map<String, String> faq = _localizedStringMap(documents['faq']);
+    for (final String path in faq.values) {
+      add(path, documentType: 'faq', aiEnabled: false, priority: 20);
+    }
+
+    final Map<String, List<String>> knowledge = _localizedStringListMap(
+      documents['knowledge'],
+    );
+    for (final List<String> localizedPaths in knowledge.values) {
+      for (final String path in localizedPaths) {
+        add(path, documentType: 'other', aiEnabled: true, priority: 30);
+      }
+    }
+    return List<GameResource>.unmodifiable(result);
+  }
+
+  static String _legacyLanguage(String fileName) {
+    final String normalized = fileName.toLowerCase();
+    if (normalized.contains('_en.') || normalized.contains('-en.')) {
+      return 'en';
+    }
+    if (normalized.contains('_cn.') ||
+        normalized.contains('-cn.') ||
+        normalized.contains('_zh.') ||
+        normalized.contains('-zh.')) {
+      return 'cn';
+    }
+    return 'none';
+  }
+
   String _assetPath(String relativeOrAbsolutePath) {
-    if (relativeOrAbsolutePath.trim().isEmpty) {
+    if (relativeOrAbsolutePath.trim().isEmpty ||
+        isOtherStoragePath(relativeOrAbsolutePath)) {
       return '';
     }
     if (relativeOrAbsolutePath.startsWith('assets/')) {
@@ -216,6 +424,7 @@ class GameManifest {
     final List<String> resolved = relativePaths
         .where((path) => path.trim().isNotEmpty)
         .map(_assetPath)
+        .where((path) => path.trim().isNotEmpty)
         .toList();
     if (resolved.isNotEmpty) {
       return resolved;

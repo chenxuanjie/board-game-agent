@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import '../models/asset_source_config.dart';
 import '../models/evidence_chunk.dart';
 import '../models/game_info.dart';
+import '../models/game_resource.dart';
 import 'remote_asset_service.dart';
 
 /// Loads the knowledge files associated with a game.
@@ -28,7 +31,7 @@ class RuleKnowledgeRetriever {
     int totalChars = 0;
 
     for (final String remotePath in game.knowledgeAssetPaths) {
-      if (!remotePath.endsWith('.md')) {
+      if (!remotePath.endsWith('.md') || isOtherStoragePath(remotePath)) {
         continue;
       }
 
@@ -39,7 +42,8 @@ class RuleKnowledgeRetriever {
               sources: assetSourceConfigs,
               remotePaths: <String>[remotePath],
             ) ??
-            content;
+            content ??
+            await _loadBundledKnowledgeFile(remotePath);
         if (content == null) {
           continue;
         }
@@ -127,5 +131,13 @@ class RuleKnowledgeRetriever {
       }
     }
     return null;
+  }
+
+  Future<String?> _loadBundledKnowledgeFile(String assetPath) async {
+    try {
+      return await rootBundle.loadString(assetPath);
+    } catch (_) {
+      return null;
+    }
   }
 }

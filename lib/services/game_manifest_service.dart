@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
 import '../models/game_catalog_manifest.dart';
+import '../models/game_resource.dart';
 import 'remote_asset_service.dart';
 
 class GameManifestService {
@@ -28,21 +29,40 @@ class GameManifestService {
       if (!entry.enabled) {
         continue;
       }
-      final String manifestPath = 'assets/games/${entry.slug}/game.json';
+      final String gamePath = 'assets/games/${entry.slug}/game.json';
+      final String resourceManifestPath =
+          'assets/games/${entry.slug}/manifest.json';
       try {
-        final String raw = await loadManifestSource(
-          remotePath: manifestPath,
+        final String gameSource = await loadManifestSource(
+          remotePath: gamePath,
           remoteAssetService: remoteAssetService,
           sources: sources,
           preferRemote: preferRemote,
         );
+        GameResourceManifest? resourceManifest;
+        try {
+          final String resourceSource = await loadManifestSource(
+            remotePath: resourceManifestPath,
+            remoteAssetService: remoteAssetService,
+            sources: sources,
+            preferRemote: preferRemote,
+          );
+          resourceManifest = GameResourceManifest.fromJson(
+            jsonDecode(resourceSource) as Map<String, dynamic>,
+          );
+        } catch (error) {
+          debugPrint(
+            '[manifests] resource manifest unavailable for ${entry.slug}: $error',
+          );
+        }
         final GameManifest manifest = GameManifest.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>,
+          jsonDecode(gameSource) as Map<String, dynamic>,
+          resourceManifest: resourceManifest,
         );
         manifests.add(manifest);
       } catch (error) {
         debugPrint(
-          '[manifests] skipping ${entry.slug} because manifest could not be loaded: $error',
+          '[manifests] skipping ${entry.slug} because game.json could not be loaded: $error',
         );
       }
     }
@@ -64,6 +84,12 @@ class GameManifestService {
     List<AssetSourceConfig> sources = const [],
     bool preferRemote = false,
   }) async {
+    if (isOtherStoragePath(remotePath)) {
+      throw StateError(
+        'Resources under docs/others are excluded from runtime.',
+      );
+    }
+
     // 1. Check local cache
     final File? cached = await remoteAssetService.cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {

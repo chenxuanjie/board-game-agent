@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../widgets/document_failure_view.dart';
 
 class MarkdownDocumentScreen extends StatefulWidget {
   const MarkdownDocumentScreen({
@@ -29,9 +30,21 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
     _contentFuture = widget.controller.loadMarkdownDocument(widget.remotePath);
   }
 
+  void _retryLoad() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _contentFuture = widget.controller.loadMarkdownDocument(
+        widget.remotePath,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
+    final copy = widget.controller.copy;
     final Color cardTextColor = palette.textPrimary;
     final secondaryTextColor = cardTextColor.withValues(alpha: 0.82);
     return Scaffold(
@@ -44,14 +57,15 @@ class _MarkdownDocumentScreenState extends State<MarkdownDocumentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError || snapshot.data == null) {
-            return Center(
-              child: Text(
-                '文档加载失败：${snapshot.error ?? '未找到缓存或远端资源'}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: cardTextColor),
-              ),
+          if (snapshot.hasError ||
+              snapshot.data == null ||
+              snapshot.data!.trim().isEmpty) {
+            return DocumentFailureView(
+              copy: copy,
+              title: widget.title,
+              kind: DocumentFailureKind.load,
+              onRetry: _retryLoad,
+              onBack: () => Navigator.of(context).maybePop(),
             );
           }
 

@@ -1,3 +1,5 @@
+import 'game_resource.dart';
+
 class GameInfo {
   GameInfo({
     required this.id,
@@ -23,6 +25,7 @@ class GameInfo {
     required this.rulebookAssetPath,
     required this.faqAssetPath,
     List<String>? knowledgeAssetPaths,
+    List<GameResource>? resources,
     required this.heroTagline,
     required this.assistantIntro,
     required this.summary,
@@ -34,10 +37,16 @@ class GameInfo {
     required this.assistantSkills,
     required this.quickPrompts,
   }) : galleryAssetPaths = List<String>.unmodifiable(
-         galleryAssetPaths ?? <String>[coverAssetPath, bannerAssetPath],
+         (galleryAssetPaths ?? <String>[coverAssetPath, bannerAssetPath]).where(
+           (path) => path.trim().isNotEmpty,
+         ),
        ),
        knowledgeAssetPaths = List<String>.unmodifiable(
-         knowledgeAssetPaths ?? <String>[rulebookAssetPath, faqAssetPath],
+         (knowledgeAssetPaths ?? <String>[rulebookAssetPath, faqAssetPath])
+             .where((path) => path.trim().isNotEmpty),
+       ),
+       resources = List<GameResource>.unmodifiable(
+         resources ?? const <GameResource>[],
        );
 
   final String id;
@@ -63,6 +72,7 @@ class GameInfo {
   final String rulebookAssetPath;
   final String faqAssetPath;
   final List<String> knowledgeAssetPaths;
+  final List<GameResource> resources;
   final String heroTagline;
   final String assistantIntro;
   final String summary;

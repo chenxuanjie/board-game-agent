@@ -10,6 +10,9 @@ class AppCopy {
   bool get isChinese => language == AppLanguage.zhHans;
 
   String get appTitle => isChinese ? '桌游导师' : 'Board Game Agent';
+  String get startupDataUnavailable => isChinese
+      ? '暂时无法加载桌游资料，请稍后重试。'
+      : 'Board-game data is temporarily unavailable. Please try again later.';
   String get appSubtitle => isChinese
       ? '像 Ludomentor 一样的桌游入口与统一 AI 助手'
       : 'A Ludomentor-style board game library with a unified AI helper';
@@ -289,6 +292,35 @@ class AppCopy {
   String get detailPageTitle => isChinese ? '桌游详情' : 'Game Details';
   String get rulesBook => isChinese ? '规则书' : 'Rulebook';
   String get faq => isChinese ? 'FAQ' : 'FAQ';
+  String documentUnavailable(String title) {
+    final String normalized = _documentName(title);
+    return isChinese
+        ? '暂时找不到“$normalized”，资料可能还在同步中，请稍后再试。'
+        : '$normalized is temporarily unavailable. The resource may still be syncing; please try again later.';
+  }
+
+  String documentLoadFailed(String title) {
+    final String normalized = _documentName(title);
+    return isChinese
+        ? '“$normalized”暂时无法读取，请稍后重试。'
+        : '$normalized could not be loaded right now. Please try again later.';
+  }
+
+  String documentRenderFailed(String title) {
+    final String normalized = _documentName(title);
+    return isChinese
+        ? '“$normalized”暂时无法打开，文件可能损坏或格式暂不支持。'
+        : '$normalized could not be opened. The file may be damaged or unsupported.';
+  }
+
+  String _documentName(String title) {
+    return title.trim().isEmpty
+        ? (isChinese ? '这份资料' : 'This document')
+        : title.trim();
+  }
+
+  String get back => isChinese ? '返回' : 'Back';
+
   String get askAiAssistant => isChinese ? '询问AI助手' : 'Ask AI Assistant';
   String get imageGalleryHint =>
       isChinese ? '左右滑动查看图片' : 'Swipe to browse images';

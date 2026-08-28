@@ -87,7 +87,7 @@ void main() {
       responses: <AiResponse>[
         const AiResponse(
           text:
-              '{"status":"answered","answer":"Cabo 是竞争类游戏。","evidence":["faq_zh.md"]}',
+              '{"status":"answered","answer":"Cabo 是竞争类游戏。","evidence":["faq_cn.md"]}',
           model: 'test-model',
         ),
       ],
@@ -109,7 +109,7 @@ void main() {
     expect(reply.source, AnswerSource.rulebook);
     expect(reply.text, 'Cabo 是竞争类游戏。');
     expect(reply.evidence, hasLength(1));
-    expect(reply.evidence.single.sourceName, 'faq_zh.md');
+    expect(reply.evidence.single.sourceName, 'faq_cn.md');
   });
 
   test(
@@ -119,7 +119,7 @@ void main() {
         streams: <List<AiStreamEvent>>[
           <AiStreamEvent>[
             const AiStreamEvent(delta: '{"status":"answered","answer":"Cabo '),
-            const AiStreamEvent(delta: '是竞争类游戏。","evidence":["faq_zh.md"]}'),
+            const AiStreamEvent(delta: '是竞争类游戏。","evidence":["faq_cn.md"]}'),
           ],
         ],
       );
@@ -142,7 +142,7 @@ void main() {
       expect(events.map((event) => event.delta).join(), 'Cabo 是竞争类游戏。');
       expect(events.last.isDone, isTrue);
       expect(events.last.answer?.source, AnswerSource.rulebook);
-      expect(events.last.answer?.evidence.single.sourceName, 'faq_zh.md');
+      expect(events.last.answer?.evidence.single.sourceName, 'faq_cn.md');
     },
   );
 
@@ -243,11 +243,11 @@ GameInfo _gameInfo() {
     supportedPlayers: const <int>[2, 3, 4, 5],
     recommendedPlayer: 4,
     rankBadges: const <String>['2-5 人'],
-    rulebookAssetPath: 'assets/games/cabo/docs/rulebook_zh.md',
-    faqAssetPath: 'assets/games/cabo/docs/faq_zh.md',
+    rulebookAssetPath: 'assets/games/cabo/docs/local/knowledge/rulebook_cn.md',
+    faqAssetPath: 'assets/games/cabo/docs/local/knowledge/faq_cn.md',
     knowledgeAssetPaths: const <String>[
-      'assets/games/cabo/docs/rulebook_zh.md',
-      'assets/games/cabo/docs/faq_zh.md',
+      'assets/games/cabo/docs/local/knowledge/rulebook_cn.md',
+      'assets/games/cabo/docs/local/knowledge/faq_cn.md',
     ],
     heroTagline: '记住低分牌。',
     assistantIntro: '《Cabo》是一款节奏很快的记忆与推理卡牌游戏。',
