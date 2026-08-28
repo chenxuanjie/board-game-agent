@@ -22,9 +22,11 @@ import '../models/ai_conversation.dart';
 import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
+import '../models/desktop_library_resource.dart';
 import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
 import '../models/remote_library_update.dart';
+import '../models/remote_asset_file.dart';
 import '../models/resolved_document.dart';
 import '../models/evidence_chunk.dart';
 import '../services/ai_service.dart';
@@ -39,6 +41,19 @@ import '../theme/palette_registry.dart';
 import '../ui/app_copy.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
+
+enum LibraryLoadState { idle, loading, success, empty, failure }
+
+/// Result of reading the remote library manifests.
+///
+/// [warning] is non-fatal: a partial index can still be shown while the UI
+/// exposes that one or more game manifests were unavailable.
+class _RemoteLibraryIndexResult {
+  const _RemoteLibraryIndexResult({required this.resources, this.warning});
+
+  final List<DesktopLibraryResource> resources;
+  final String? warning;
+}
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -90,6 +105,11 @@ class AppController extends ChangeNotifier {
   int _aiModelRefreshGeneration = 0;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
+  List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
+  LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
+  String? _libraryLoadError;
+  Future<void>? _libraryRefreshFuture;
+  int _libraryRefreshGeneration = 0;
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
     state: ConnectivityState.unknown,
     message: '未检测',
@@ -157,6 +177,11 @@ class AppController extends ChangeNotifier {
   ConnectivityStatus get assetConnectivityStatus => _assetConnectivityStatus;
   Map<String, ConnectivityStatus> get assetSourceStatuses =>
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
+  List<DesktopLibraryResource> get libraryResources =>
+      List<DesktopLibraryResource>.unmodifiable(_libraryResources);
+  LibraryLoadState get libraryLoadState => _libraryLoadState;
+  String? get libraryLoadError => _libraryLoadError;
+  bool get isRefreshingLibrary => _libraryRefreshFuture != null;
   bool get isRefreshingServiceStatuses => _serviceStatusRefreshFuture != null;
   String? get selectedConversationId => _selectedConversationId;
   List<AppActivity> get activities =>
@@ -1317,6 +1342,598 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Refreshes the desktop library from the configured WebDAV index.
+  ///
+  /// A single in-flight request is shared by all callers so opening the page
+  /// and pressing refresh cannot race each other. When the remote index is
+  /// unavailable, bundled document entries remain visible while the state is
+  /// reported as failure and the UI keeps a retry action available.
+  Future<void> refreshLibraryResources() {
+    final Future<void>? active = _libraryRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+
+    final int generation = ++_libraryRefreshGeneration;
+    _libraryLoadState = LibraryLoadState.loading;
+    _libraryLoadError = null;
+    notifyListeners();
+
+    final Future<void> future = _refreshLibraryResources(generation);
+    _libraryRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_libraryRefreshFuture, future)) {
+            _libraryRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _refreshLibraryResources(int generation) async {
+    try {
+      final _RemoteLibraryIndexResult index = await _loadRemoteLibraryIndex();
+      if (generation != _libraryRefreshGeneration) {
+        return;
+      }
+
+      _libraryResources = index.resources;
+      _libraryLoadState = index.resources.isEmpty
+          ? LibraryLoadState.empty
+          : LibraryLoadState.success;
+      _libraryLoadError = index.warning;
+    } catch (error) {
+      if (generation != _libraryRefreshGeneration) {
+        return;
+      }
+      _libraryResources = _buildBundledLibraryResources();
+      _libraryLoadState = LibraryLoadState.failure;
+      _libraryLoadError = _safeStatusError(error);
+      debugPrint('[assets] desktop library index unavailable: $error');
+    }
+    notifyListeners();
+  }
+
+  /// Reads the authoritative per-game `manifest.json` files from WebDAV.
+  ///
+  /// A manifest is small metadata, not a document download. The actual PDF or
+  /// Markdown bytes are fetched only when the user opens or downloads one
+  /// resource. The remote catalog is used only to discover games that are not
+  /// present in the bundled catalog yet.
+  Future<_RemoteLibraryIndexResult> _loadRemoteLibraryIndex() async {
+    final List<String> slugs = await _remoteLibraryGameSlugs();
+    if (slugs.isEmpty) {
+      throw StateError('远端资料库没有可检查的游戏索引');
+    }
+
+    final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
+    final List<String> failedSlugs = <String>[];
+    int loadedManifestCount = 0;
+
+    await Future.wait<void>(
+      slugs.map((String slug) async {
+        final String path = 'assets/games/$slug/manifest.json';
+        try {
+          final String? source = await _remoteAssetService.fetchRemoteText(
+            sources: _assetSourceConfigs,
+            remotePath: path,
+          );
+          if (source == null || source.trim().isEmpty) {
+            failedSlugs.add(slug);
+            return;
+          }
+          final Map<String, dynamic> manifest =
+              jsonDecode(source) as Map<String, dynamic>;
+          resources.addAll(_parseRemoteManifestResources(slug, manifest));
+          loadedManifestCount += 1;
+        } catch (error) {
+          failedSlugs.add(slug);
+          debugPrint('[assets] manifest unavailable for $slug: $error');
+        }
+      }),
+    );
+
+    if (loadedManifestCount == 0) {
+      // If a legacy remote library has no manifests, retain the existing
+      // bounded directory walk as a compatibility fallback.
+      final List<RemoteAssetFile> files = await _remoteAssetService
+          .listFilesRecursively(
+            sources: _assetSourceConfigs,
+            remotePath: 'assets/games',
+          );
+      final List<DesktopLibraryResource> fallback =
+          _buildRemoteLibraryResources(files);
+      if (fallback.isEmpty) {
+        throw StateError('远端资料库索引为空或格式不可识别');
+      }
+      return _RemoteLibraryIndexResult(
+        resources: fallback,
+        warning: '远端未提供标准 manifest，已使用目录索引。',
+      );
+    }
+
+    final Map<String, DesktopLibraryResource> unique =
+        <String, DesktopLibraryResource>{};
+    for (final DesktopLibraryResource resource in resources) {
+      unique[resource.remotePath] = resource;
+    }
+    final List<DesktopLibraryResource> normalized = unique.values.toList()
+      ..sort(_compareLibraryResources);
+    final String? warning = failedSlugs.isEmpty
+        ? null
+        : '已有 $loadedManifestCount 个游戏索引同步，${failedSlugs.length} 个索引暂不可用。';
+    return _RemoteLibraryIndexResult(
+      resources: List<DesktopLibraryResource>.unmodifiable(normalized),
+      warning: warning,
+    );
+  }
+
+  Future<List<String>> _remoteLibraryGameSlugs() async {
+    final Set<String> slugs = <String>{
+      for (final GameInfo game in _games) game.slug,
+    };
+    try {
+      final String? source = await _remoteAssetService.fetchRemoteText(
+        sources: _assetSourceConfigs,
+        remotePath: 'assets/catalog.json',
+      );
+      if (source != null && source.trim().isNotEmpty) {
+        final Map<String, dynamic> catalog =
+            jsonDecode(source) as Map<String, dynamic>;
+        final List<dynamic> games =
+            catalog['games'] as List<dynamic>? ?? const <dynamic>[];
+        for (final dynamic entry in games) {
+          if (entry is! Map<String, dynamic> || entry['enabled'] == false) {
+            continue;
+          }
+          final String? slug = entry['slug'] as String?;
+          if (slug != null && _isSafeGameSlug(slug)) {
+            slugs.add(slug);
+          }
+        }
+      }
+    } catch (error) {
+      debugPrint(
+        '[assets] remote catalog unavailable for library index: $error',
+      );
+    }
+    final List<String> sorted = slugs.toList();
+    sorted.sort();
+    return sorted;
+  }
+
+  bool _isSafeGameSlug(String slug) {
+    return slug.isNotEmpty && RegExp(r'^[a-z0-9][a-z0-9_-]*$').hasMatch(slug);
+  }
+
+  List<DesktopLibraryResource> _parseRemoteManifestResources(
+    String slug,
+    Map<String, dynamic> manifest,
+  ) {
+    final GameInfo? localGame = _games
+        .where((GameInfo game) => game.slug == slug)
+        .cast<GameInfo?>()
+        .firstWhere((GameInfo? game) => game != null, orElse: () => null);
+    final String gameTitle =
+        localGame?.title ?? _remoteManifestTitle(manifest, slug);
+    final List<dynamic> entries =
+        manifest['resources'] as List<dynamic>? ?? const <dynamic>[];
+    final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
+
+    for (final dynamic raw in entries) {
+      if (raw is! Map<String, dynamic>) {
+        continue;
+      }
+      final String relativePath = (raw['path'] as String? ?? '')
+          .replaceAll('\\', '/')
+          .replaceFirst(RegExp(r'^/+'), '')
+          .trim();
+      final String status = (raw['status'] as String? ?? 'unknown').trim();
+      if (relativePath.isEmpty ||
+          relativePath.split('/').contains('..') ||
+          relativePath.startsWith('/') ||
+          !_isDisplayableManifestStatus(status) ||
+          raw['enabled'] == false) {
+        continue;
+      }
+      // The resource-management skill explicitly excludes unclassified raw
+      // material from runtime reading, caching, and download operations.
+      final String relativeLower = relativePath.toLowerCase();
+      if (relativeLower.startsWith('docs/others/')) {
+        continue;
+      }
+      if (!relativePath.startsWith('docs/')) {
+        continue;
+      }
+
+      final String remotePath = 'assets/games/$slug/$relativePath';
+      final String documentType = raw['documentType'] as String? ?? '';
+      final String languageCode = raw['language'] as String? ?? '';
+      final String sourceClass = raw['sourceClass'] as String? ?? 'unknown';
+      resources.add(
+        DesktopLibraryResource(
+          id: (raw['id'] as String?)?.trim().isNotEmpty == true
+              ? raw['id'] as String
+              : 'remote:$remotePath',
+          gameSlug: slug,
+          gameTitle: gameTitle,
+          remotePath: remotePath,
+          title: _libraryResourceTitle(
+            relativePath,
+            documentType: documentType,
+          ),
+          language: _libraryResourceLanguage(
+            relativePath,
+            explicitCode: languageCode,
+          ),
+          type: _libraryResourceType(relativePath, documentType: documentType),
+          format: _libraryResourceFormat(relativePath),
+          isRemote: true,
+          status: status,
+          enabled: raw['enabled'] as bool? ?? true,
+          sourceClass: sourceClass,
+        ),
+      );
+    }
+    return resources;
+  }
+
+  String _remoteManifestTitle(Map<String, dynamic> manifest, String slug) {
+    final Map<String, dynamic>? game = manifest['game'] is Map<String, dynamic>
+        ? manifest['game'] as Map<String, dynamic>
+        : null;
+    final Map<String, dynamic>? titles = game?['title'] is Map<String, dynamic>
+        ? game!['title'] as Map<String, dynamic>
+        : null;
+    final String? localized =
+        titles?['cn'] as String? ??
+        titles?['zhHans'] as String? ??
+        titles?['en'] as String?;
+    return localized?.trim().isNotEmpty == true ? localized!.trim() : slug;
+  }
+
+  List<DesktopLibraryResource> _buildRemoteLibraryResources(
+    List<RemoteAssetFile> files,
+  ) {
+    final Map<String, GameInfo> gamesBySlug = <String, GameInfo>{
+      for (final GameInfo game in _games) game.slug: game,
+    };
+    final Map<String, DesktopLibraryResource> unique =
+        <String, DesktopLibraryResource>{};
+
+    for (final RemoteAssetFile file in files) {
+      final String normalized = file.remotePath
+          .replaceAll('\\', '/')
+          .replaceFirst(RegExp(r'^/+'), '');
+      final RegExpMatch? match = RegExp(
+        r'^assets/games/([^/]+)/docs/(.+)$',
+      ).firstMatch(normalized);
+      if (match == null) {
+        continue;
+      }
+      final String relative = match.group(2)!;
+      final String lower = normalized.toLowerCase();
+      final String relativeLower = relative.toLowerCase();
+      if (lower.contains('/tmp/') ||
+          relativeLower.startsWith('.') ||
+          relativeLower.startsWith('others/')) {
+        continue;
+      }
+
+      final String slug = match.group(1)!;
+      final GameInfo? game = gamesBySlug[slug];
+      final String gameTitle = game == null ? slug : game.title;
+      final DesktopLibraryResource resource = DesktopLibraryResource(
+        id: 'remote:$normalized',
+        gameSlug: slug,
+        gameTitle: gameTitle,
+        remotePath: normalized,
+        title: _libraryResourceTitle(relative),
+        language: _libraryResourceLanguage(relative),
+        type: _libraryResourceType(relative),
+        format: _libraryResourceFormat(relative),
+        isRemote: true,
+      );
+      unique[normalized] = resource;
+    }
+
+    final List<DesktopLibraryResource> resources = unique.values.toList();
+    resources.sort(_compareLibraryResources);
+    return List<DesktopLibraryResource>.unmodifiable(resources);
+  }
+
+  List<DesktopLibraryResource> _buildBundledLibraryResources() {
+    final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
+    final Set<String> paths = <String>{};
+    int fallbackIndex = 0;
+
+    for (final GameInfo game in _games) {
+      final List<String> candidates = <String>[
+        game.rulebookAssetPath,
+        game.faqAssetPath,
+        ...game.knowledgeAssetPaths,
+      ];
+      for (final String path in candidates) {
+        final String normalized = path.replaceAll('\\', '/').trim();
+        if (normalized.isEmpty || !paths.add(normalized)) {
+          continue;
+        }
+        final String relative = normalized.contains('/docs/')
+            ? normalized.split('/docs/').last
+            : normalized.split('/').last;
+        resources.add(
+          DesktopLibraryResource(
+            // Keep the first two compatibility ids stable for existing
+            // desktop automation while remote entries use their full path.
+            id: '$fallbackIndex',
+            gameSlug: game.slug,
+            gameTitle: game.title,
+            remotePath: normalized,
+            title: _libraryResourceTitle(relative),
+            language: _libraryResourceLanguage(relative),
+            type: _libraryResourceType(relative),
+            format: _libraryResourceFormat(relative),
+            isRemote: false,
+          ),
+        );
+        fallbackIndex += 1;
+      }
+    }
+    return List<DesktopLibraryResource>.unmodifiable(resources);
+  }
+
+  DesktopLibraryResourceType _libraryResourceType(
+    String path, {
+    String? documentType,
+  }) {
+    final String explicit = documentType?.trim().toLowerCase() ?? '';
+    switch (explicit) {
+      case 'rulebook':
+      case 'how_to_play':
+        return DesktopLibraryResourceType.rulebook;
+      case 'faq':
+      case 'ruling':
+      case 'errata':
+        return DesktopLibraryResourceType.faq;
+      case 'asset_index':
+        return DesktopLibraryResourceType.assetIndex;
+      case 'rules_reference':
+        return DesktopLibraryResourceType.reference;
+      case 'player_aid':
+        return DesktopLibraryResourceType.playerAid;
+      case 'supplement':
+      case 'variant':
+      case 'campaign_guide':
+      case 'scenario_book':
+        return DesktopLibraryResourceType.supplement;
+    }
+
+    final String lower = path.toLowerCase();
+    if (lower.contains('asset_index') || lower.contains('/index/')) {
+      return DesktopLibraryResourceType.assetIndex;
+    }
+    if (lower.contains('faq') ||
+        lower.contains('answer') ||
+        lower.contains('ruling') ||
+        lower.contains('errata')) {
+      return DesktopLibraryResourceType.faq;
+    }
+    if (lower.contains('reference')) {
+      return DesktopLibraryResourceType.reference;
+    }
+    if (lower.contains('rulebook') ||
+        lower.contains('rules') ||
+        lower.contains('how_to_play')) {
+      return DesktopLibraryResourceType.rulebook;
+    }
+    if (lower.contains('player_aid') || lower.contains('player-aid')) {
+      return DesktopLibraryResourceType.playerAid;
+    }
+    if (lower.contains('supplement')) {
+      return DesktopLibraryResourceType.supplement;
+    }
+    return DesktopLibraryResourceType.other;
+  }
+
+  DesktopLibraryResourceFormat _libraryResourceFormat(String path) {
+    final String lower = path.toLowerCase();
+    final int dot = lower.lastIndexOf('.');
+    final String extension = dot < 0 ? '' : lower.substring(dot + 1);
+    switch (extension) {
+      case 'md':
+      case 'markdown':
+        return DesktopLibraryResourceFormat.markdown;
+      case 'pdf':
+        return DesktopLibraryResourceFormat.pdf;
+      case 'html':
+      case 'htm':
+        return DesktopLibraryResourceFormat.html;
+      case 'txt':
+        return DesktopLibraryResourceFormat.text;
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+        return DesktopLibraryResourceFormat.image;
+      default:
+        return DesktopLibraryResourceFormat.other;
+    }
+  }
+
+  String _libraryResourceLanguage(String path, {String? explicitCode}) {
+    final String explicit = explicitCode?.trim().toLowerCase() ?? '';
+    if (explicit == 'cn' ||
+        explicit == 'zh' ||
+        explicit == 'zh-cn' ||
+        explicit == 'zh-hans' ||
+        explicit == 'z_hans') {
+      return '中文';
+    }
+    if (explicit == 'en' || explicit == 'en-us' || explicit == 'en-gb') {
+      return '英文';
+    }
+    if (explicit == 'multi' || explicit == 'mixed') {
+      return '多语言';
+    }
+    if (explicit == 'none' || explicit == 'unknown') {
+      return '未标注';
+    }
+
+    final String lower = path.toLowerCase();
+    if (RegExp(r'(^|[_\-.])(zh|cn|z[_-]?hans)([_\-.]|$)').hasMatch(lower) ||
+        lower.contains('/zh/')) {
+      return '中文';
+    }
+    if (RegExp(r'(^|[_\-.])en([_\-.]|$)').hasMatch(lower) ||
+        lower.contains('/en/')) {
+      return '英文';
+    }
+    return '未标注';
+  }
+
+  String _libraryResourceTitle(String path, {String? documentType}) {
+    final String normalized = path.replaceAll('\\', '/');
+    final String fileName = normalized.split('/').last;
+    final int dot = fileName.lastIndexOf('.');
+    final String stem = dot <= 0 ? fileName : fileName.substring(0, dot);
+    final DesktopLibraryResourceType type = _libraryResourceType(
+      path,
+      documentType: documentType,
+    );
+    switch (type) {
+      case DesktopLibraryResourceType.rulebook:
+        return '规则书';
+      case DesktopLibraryResourceType.faq:
+        return 'FAQ';
+      case DesktopLibraryResourceType.assetIndex:
+        return '资料索引';
+      case DesktopLibraryResourceType.reference:
+        return '规则参考';
+      case DesktopLibraryResourceType.playerAid:
+        return '玩家辅助';
+      case DesktopLibraryResourceType.supplement:
+        return '补充资料';
+      case DesktopLibraryResourceType.other:
+        return stem.replaceAll(RegExp(r'[_-]+'), ' ').trim();
+    }
+  }
+
+  bool _isDisplayableManifestStatus(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'available':
+      case 'unverified':
+      case 'needs_review':
+      case 'unknown':
+        return true;
+      case 'missing':
+      case 'superseded':
+      case 'blocked':
+        return false;
+      default:
+        // Newer manifest versions may add a non-terminal status. Keep it
+        // visible rather than silently hiding a resource the server can list.
+        return true;
+    }
+  }
+
+  int _compareLibraryResources(
+    DesktopLibraryResource left,
+    DesktopLibraryResource right,
+  ) {
+    final int game = left.gameTitle.compareTo(right.gameTitle);
+    if (game != 0) return game;
+    final int type = left.type.index.compareTo(right.type.index);
+    if (type != 0) return type;
+    return left.remotePath.compareTo(right.remotePath);
+  }
+
+  Future<ResolvedDocument?> resolveLibraryResource(
+    DesktopLibraryResource resource,
+  ) async {
+    if (!resource.canOpen) {
+      return null;
+    }
+    if (!resource.isRemote) {
+      final GameInfo? game = _games
+          .where((GameInfo item) => item.slug == resource.gameSlug)
+          .cast<GameInfo?>()
+          .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+      if (game != null &&
+          resource.type == DesktopLibraryResourceType.rulebook) {
+        return resolveRulebookDocument(game);
+      }
+      if (game != null && resource.type == DesktopLibraryResourceType.faq) {
+        return resolveFaqDocument(game);
+      }
+      return ResolvedDocument(
+        remotePath: resource.remotePath,
+        renderType: resource.format == DesktopLibraryResourceFormat.pdf
+            ? DocumentRenderType.pdf
+            : DocumentRenderType.markdown,
+        label: resource.title,
+      );
+    }
+
+    final String? localPath = await cacheDocument(resource.remotePath);
+    if (localPath == null) {
+      return null;
+    }
+    return ResolvedDocument(
+      remotePath: resource.remotePath,
+      renderType: resource.format == DesktopLibraryResourceFormat.pdf
+          ? DocumentRenderType.pdf
+          : DocumentRenderType.markdown,
+      label: resource.title,
+    );
+  }
+
+  Future<String?> downloadLibraryResource({
+    required DesktopLibraryResource resource,
+    required String directoryPath,
+  }) async {
+    if (kIsWeb || directoryPath.trim().isEmpty) {
+      return null;
+    }
+    final CachedAsset? cached = await _remoteAssetService.ensureCached(
+      sources: _assetSourceConfigs,
+      remotePath: resource.remotePath,
+      forceRefresh: true,
+      allowCachedFallback: false,
+    );
+    if (cached == null || !cached.exists) {
+      return null;
+    }
+    final File source = File(cached.localPath);
+    if (!await source.exists()) {
+      return null;
+    }
+
+    final Directory directory = Directory(directoryPath.trim());
+    await directory.create(recursive: true);
+    final String fileName = _safeDownloadFileName(resource.fileName);
+    if (fileName.isEmpty) {
+      return null;
+    }
+    final File destination = File(
+      '${directory.path}${Platform.pathSeparator}$fileName',
+    );
+    if (source.absolute.path.toLowerCase() ==
+        destination.absolute.path.toLowerCase()) {
+      return destination.path;
+    }
+    await source.copy(destination.path);
+    return destination.path;
+  }
+
+  String _safeDownloadFileName(String fileName) {
+    final String sanitized = fileName
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
+        .replaceFirst(RegExp(r'[ .]+$'), '')
+        .trim();
+    return sanitized.isEmpty ? 'library-resource' : sanitized;
+  }
+
   Future<void> _initializeRemoteLibrary() async {
     try {
       // Warm the image cache first so the update probe has a stable baseline
@@ -1650,10 +2267,11 @@ class AppController extends ChangeNotifier {
     required String fallbackRemotePath,
     required String fallbackLabel,
   }) async {
-    final List<String> candidates = _documentCandidates(
-      game: game,
-      baseName: baseName,
-    );
+    final String fallback = fallbackRemotePath.trim();
+    final List<String> candidates = [
+      if (fallback.isNotEmpty) fallback,
+      ..._documentCandidates(game: game, baseName: baseName),
+    ];
     for (final candidate in candidates) {
       final CachedAsset? cached = await _remoteAssetService.ensureCached(
         sources: _assetSourceConfigs,
@@ -1683,9 +2301,12 @@ class AppController extends ChangeNotifier {
       checkedAt: DateTime.now(),
     );
     notifyListeners();
+    if (fallback.isEmpty) {
+      return null;
+    }
     return ResolvedDocument(
-      remotePath: fallbackRemotePath,
-      renderType: fallbackRemotePath.endsWith('.pdf')
+      remotePath: fallback,
+      renderType: fallback.endsWith('.pdf')
           ? DocumentRenderType.pdf
           : DocumentRenderType.markdown,
       label: fallbackLabel,

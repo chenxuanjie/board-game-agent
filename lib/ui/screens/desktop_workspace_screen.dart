@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../models/app_activity.dart';
@@ -8,8 +10,10 @@ import '../../models/app_language.dart';
 import '../../models/ai_conversation.dart';
 import '../../models/chat_message.dart';
 import '../../models/color_scheme_option.dart';
+import '../../models/desktop_library_resource.dart';
 import '../../models/game_info.dart';
 import '../../models/remote_library_update.dart';
+import '../../models/resolved_document.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
@@ -17,6 +21,8 @@ import '../widgets/language_sheet.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/desktop_resolved_image.dart';
 import 'desktop_game_detail_pane.dart';
+import 'markdown_document_screen.dart';
+import 'pdf_document_screen.dart';
 
 enum _DesktopDestination {
   home,
@@ -25,6 +31,24 @@ enum _DesktopDestination {
   assistant,
   library,
   settings,
+}
+
+double _desktopActivityPanelWidth(double overlayWidth) {
+  final double availableWidth = math.max(0, overlayWidth - 24);
+  if (availableWidth == 0) return 0;
+
+  // Keep the panel compact on narrow windows while capping it on large
+  // monitors. The available-width clamp prevents overflow in very small
+  // windows where even the preferred minimum cannot fit.
+  final double preferredWidth = overlayWidth * 0.36;
+  final double clampedPreferred = math.max(280, math.min(340, preferredWidth));
+  return math.min(availableWidth, clampedPreferred);
+}
+
+double _desktopActivityPanelMaxHeight(double overlayHeight) {
+  final double availableHeight = math.max(0, overlayHeight - 24);
+  if (availableHeight == 0) return 0;
+  return math.min(520, availableHeight);
 }
 
 class DesktopWorkspaceScreen extends StatefulWidget {
@@ -91,6 +115,7 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
                         activityButtonKey: _activityButtonKey,
                         onNew: () =>
                             _selectDestination(_DesktopDestination.games),
+                        onSearch: _openSearch,
                         onOpenActivities: _openActivityCenter,
                         unreadActivityCount:
                             widget.controller.unreadActivityCount,
@@ -194,6 +219,16 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
     });
   }
 
+  Future<void> _openSearch() async {
+    final GameInfo? result = await showDialog<GameInfo>(
+      context: context,
+      builder: (BuildContext dialogContext) =>
+          _DesktopSearchDialog(games: widget.controller.games),
+    );
+    if (!mounted || result == null) return;
+    _openGame(result);
+  }
+
   Future<void> _openActivityCenter() async {
     final AppController controller = widget.controller;
     await controller.markActivitiesRead();
@@ -207,8 +242,11 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
 
     final Offset anchor = button.localToGlobal(Offset.zero, ancestor: overlay);
     final Size overlaySize = overlay.size;
-    final double panelWidth = math.min(390, overlaySize.width - 24);
-    final double panelMaxHeight = math.min(580, overlaySize.height - 24);
+    final double panelWidth = _desktopActivityPanelWidth(overlaySize.width);
+    final double panelMaxHeight = _desktopActivityPanelMaxHeight(
+      overlaySize.height,
+    );
+    if (panelWidth <= 0 || panelMaxHeight <= 0) return;
     final double left = (anchor.dx + button.size.width - panelWidth)
         .clamp(12.0, math.max(12.0, overlaySize.width - panelWidth - 12.0))
         .toDouble();
@@ -703,6 +741,7 @@ class _DesktopTopBar extends StatelessWidget {
     required this.compact,
     required this.activityButtonKey,
     required this.onNew,
+    required this.onSearch,
     required this.onOpenActivities,
     required this.unreadActivityCount,
     this.primaryAction,
@@ -713,6 +752,7 @@ class _DesktopTopBar extends StatelessWidget {
   final bool compact;
   final GlobalKey activityButtonKey;
   final VoidCallback onNew;
+  final VoidCallback onSearch;
   final VoidCallback onOpenActivities;
   final int unreadActivityCount;
   final VoidCallback? primaryAction;
@@ -786,7 +826,7 @@ class _DesktopTopBar extends StatelessWidget {
           ),
           IconButton(
             tooltip: '搜索',
-            onPressed: () {},
+            onPressed: onSearch,
             icon: const Icon(Icons.search_rounded),
           ),
           const SizedBox(width: 6),
@@ -803,6 +843,158 @@ class _DesktopTopBar extends StatelessWidget {
               label: Text(compact ? '新建' : '新建'),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _DesktopSearchDialog extends StatefulWidget {
+  const _DesktopSearchDialog({required this.games});
+
+  final List<GameInfo> games;
+
+  @override
+  State<_DesktopSearchDialog> createState() => _DesktopSearchDialogState();
+}
+
+class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
+  late final TextEditingController _queryController;
+
+  @override
+  void initState() {
+    super.initState();
+    _queryController = TextEditingController()
+      ..addListener(_handleQueryChanged);
+  }
+
+  @override
+  void dispose() {
+    _queryController
+      ..removeListener(_handleQueryChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleQueryChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    final String query = _queryController.text.trim().toLowerCase();
+    final List<GameInfo> results = widget.games
+        .where((GameInfo game) {
+          if (query.isEmpty) return true;
+          final String searchable = <String?>[
+            game.title,
+            game.subtitle,
+            game.slug,
+            game.editionLabel,
+          ].whereType<String>().join(' ').toLowerCase();
+          return searchable.contains(query);
+        })
+        .toList(growable: false);
+    final double maxHeight = math.min(
+      680,
+      math.max(180, MediaQuery.sizeOf(context).height - 48),
+    );
+
+    return Dialog(
+      key: const ValueKey<String>('desktop-search-dialog'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 640, maxHeight: maxHeight),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 18, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      '搜索桌游',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: palette.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                key: const ValueKey<String>('desktop-search-field'),
+                controller: _queryController,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: '输入名称或英文名',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _queryController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '清除',
+                          onPressed: _queryController.clear,
+                          icon: const Icon(Icons.clear_rounded),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: results.isEmpty
+                    ? Center(
+                        child: Text(
+                          widget.games.isEmpty ? '暂无可用游戏' : '没有找到匹配的桌游',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: palette.textSecondary),
+                        ),
+                      )
+                    : ListView.separated(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemCount: results.length,
+                        separatorBuilder: (BuildContext context, int index) =>
+                            const SizedBox(height: 4),
+                        itemBuilder: (BuildContext context, int index) {
+                          final GameInfo game = results[index];
+                          return ListTile(
+                            key: ValueKey<String>(
+                              'desktop-search-result-${game.id}',
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            leading: CircleAvatar(
+                              backgroundColor: Color(game.cardAccent),
+                              child: Text(
+                                game.title.isEmpty
+                                    ? '?'
+                                    : game.title.characters.first,
+                                style: TextStyle(color: palette.onPrimary),
+                              ),
+                            ),
+                            title: Text(game.title),
+                            subtitle: Text(
+                              game.subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => Navigator.of(context).pop(game),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -904,6 +1096,7 @@ class _DesktopHomePane extends StatelessWidget {
                   _DesktopRecentGamesCard(
                     controller: controller,
                     onOpenGame: onOpenGame,
+                    onOpenAll: onOpenGames,
                   ),
                   const SizedBox(height: 16),
                   _DesktopActivityCard(
@@ -922,6 +1115,7 @@ class _DesktopHomePane extends StatelessWidget {
                     child: _DesktopRecentGamesCard(
                       controller: controller,
                       onOpenGame: onOpenGame,
+                      onOpenAll: onOpenGames,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -1118,10 +1312,12 @@ class _DesktopRecentGamesCard extends StatelessWidget {
   const _DesktopRecentGamesCard({
     required this.controller,
     required this.onOpenGame,
+    required this.onOpenAll,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
+  final VoidCallback onOpenAll;
 
   @override
   Widget build(BuildContext context) {
@@ -1129,7 +1325,7 @@ class _DesktopRecentGamesCard extends StatelessWidget {
       title: '最近游戏',
       action: IconButton(
         tooltip: '查看全部',
-        onPressed: () {},
+        onPressed: onOpenAll,
         icon: const Icon(Icons.arrow_outward_rounded),
       ),
       child: Column(
@@ -1273,97 +1469,140 @@ class _DesktopActivityPopupState extends State<_DesktopActivityPopup> {
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     final AppCopy copy = widget.controller.copy;
-    final double listMaxHeight = math.max(96, widget.maxHeight - 82);
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, Widget? child) {
         final List<AppActivity> activities = widget.controller.activities;
-        return Material(
-          color: Colors.transparent,
-          elevation: 18,
-          shadowColor: Colors.black.withValues(alpha: 0.32),
-          borderRadius: BorderRadius.circular(16),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: palette.surface,
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool compact = constraints.maxWidth < 320;
+            final EdgeInsets panelPadding = EdgeInsets.fromLTRB(
+              compact ? 12 : 16,
+              compact ? 10 : 14,
+              compact ? 12 : 16,
+              compact ? 10 : 12,
+            );
+            final double listMaxHeight = math.max(
+              0,
+              widget.maxHeight - (compact ? 74 : 82),
+            );
+            return Material(
+              color: Colors.transparent,
+              elevation: 18,
+              shadowColor: Colors.black.withValues(alpha: 0.32),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: palette.outline),
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: widget.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Row(
+              child: DecoratedBox(
+                key: const ValueKey<String>('desktop-activity-popup'),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: palette.outline),
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: widget.maxHeight),
+                  child: Padding(
+                    padding: panelPadding,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        Icon(
-                          Icons.notifications_none_rounded,
-                          color: palette.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          copy.activityTitle,
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(
-                                color: palette.textPrimary,
-                                fontWeight: FontWeight.w700,
+                        Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.notifications_none_rounded,
+                              size: compact ? 21 : 24,
+                              color: palette.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              copy.activityTitle,
+                              style:
+                                  (compact
+                                          ? Theme.of(
+                                              context,
+                                            ).textTheme.titleMedium
+                                          : Theme.of(
+                                              context,
+                                            ).textTheme.titleLarge)
+                                      ?.copyWith(
+                                        color: palette.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                            ),
+                            if (activities.isNotEmpty) ...<Widget>[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.primary.withValues(
+                                    alpha: 0.14,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${activities.length}',
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: palette.primary,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                ),
                               ),
+                            ],
+                            const Spacer(),
+                            IconButton(
+                              tooltip: copy.dialogClose,
+                              visualDensity: compact
+                                  ? VisualDensity.compact
+                                  : VisualDensity.standard,
+                              onPressed: widget.onClose,
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
                         ),
-                        if (activities.isNotEmpty) ...<Widget>[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: palette.primary.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                        Divider(height: 16, color: palette.outline),
+                        if (activities.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             child: Text(
-                              '${activities.length}',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: palette.primary,
-                                    fontWeight: FontWeight.w800,
+                              copy.activityEmpty,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: palette.textSecondary),
+                            ),
+                          )
+                        else
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: listMaxHeight,
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              itemCount: activities.length,
+                              separatorBuilder:
+                                  (BuildContext context, int index) => Divider(
+                                    height: 1,
+                                    color: palette.outline,
+                                  ),
+                              itemBuilder: (BuildContext context, int index) =>
+                                  _DesktopActivityTile(
+                                    activity: activities[index],
+                                    compact: false,
+                                    controller: widget.controller,
                                   ),
                             ),
                           ),
-                        ],
-                        const Spacer(),
-                        IconButton(
-                          tooltip: copy.dialogClose,
-                          onPressed: widget.onClose,
-                          icon: const Icon(Icons.close_rounded),
-                        ),
                       ],
                     ),
-                    Divider(height: 16, color: palette.outline),
-                    if (activities.isNotEmpty)
-                      ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: listMaxHeight),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          padding: EdgeInsets.zero,
-                          itemCount: activities.length,
-                          separatorBuilder: (BuildContext context, int index) =>
-                              Divider(height: 1, color: palette.outline),
-                          itemBuilder: (BuildContext context, int index) =>
-                              _DesktopActivityTile(
-                                activity: activities[index],
-                                compact: false,
-                                controller: widget.controller,
-                              ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -2395,7 +2634,19 @@ class _DesktopLibraryPane extends StatefulWidget {
 }
 
 class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
-  int _filter = 0;
+  DesktopLibraryResourceType? _filter;
+  String? _openingItemId;
+  String? _downloadingItemId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(widget.controller.refreshLibraryResources());
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2407,30 +2658,13 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
       );
     }
     final AppPalette palette = AppPalette.of(context);
-    final GameInfo game = widget.controller.featuredGame;
-    final List<_LibraryItem> items = <_LibraryItem>[
-      _LibraryItem(
-        icon: Icons.menu_book_outlined,
-        title: '${game.title} · 官方规则书',
-        meta: '${game.rulebookAssetPath} · 已索引',
-        type: 0,
-      ),
-      _LibraryItem(
-        icon: Icons.fact_check_outlined,
-        title: '${game.title} · 官方 FAQ',
-        meta: '${game.faqAssetPath} · 已索引',
-        type: 1,
-      ),
-      const _LibraryItem(
-        icon: Icons.sticky_note_2_outlined,
-        title: '我的笔记',
-        meta: '当前工作区 · 个人',
-        type: 2,
-      ),
-    ];
-    final List<_LibraryItem> visible = _filter == 0
+    final List<DesktopLibraryResource> items =
+        widget.controller.libraryResources;
+    final List<DesktopLibraryResource> visible = _filter == null
         ? items
-        : items.where((_LibraryItem item) => item.type == _filter - 1).toList();
+        : items
+              .where((DesktopLibraryResource item) => item.type == _filter)
+              .toList(growable: false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 28),
       children: <Widget>[
@@ -2450,8 +2684,46 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
               icon: const Icon(Icons.file_upload_outlined),
               label: const Text('导入'),
             ),
+            const SizedBox(width: 8),
+            IconButton(
+              key: const ValueKey<String>('desktop-library-refresh'),
+              tooltip: '刷新资料库',
+              onPressed: widget.controller.isRefreshingLibrary
+                  ? null
+                  : () =>
+                        unawaited(widget.controller.refreshLibraryResources()),
+              icon: widget.controller.isRefreshingLibrary
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
           ],
         ),
+        if (widget.controller.libraryLoadState == LibraryLoadState.failure)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _LibraryStatusBanner(
+              icon: Icons.cloud_off_rounded,
+              color: palette.warning,
+              message: '远端资料库暂时不可用，当前显示本地备用索引。',
+              detail: widget.controller.libraryLoadError,
+              actionLabel: '重试',
+              onAction: () =>
+                  unawaited(widget.controller.refreshLibraryResources()),
+            ),
+          ),
+        if (widget.controller.libraryLoadState == LibraryLoadState.success)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _LibraryStatusBanner(
+              icon: Icons.cloud_done_rounded,
+              color: palette.success,
+              message: '已同步远端索引 · ${items.length} 项',
+            ),
+          ),
         const SizedBox(height: 18),
         Container(
           padding: const EdgeInsets.all(6),
@@ -2465,34 +2737,67 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
             children: <Widget>[
               _LibraryFilterChip(
                 label: '全部',
-                selected: _filter == 0,
-                onTap: () => setState(() => _filter = 0),
+                selected: _filter == null,
+                onTap: () => setState(() => _filter = null),
               ),
               _LibraryFilterChip(
                 label: '规则书',
-                selected: _filter == 1,
-                onTap: () => setState(() => _filter = 1),
+                selected: _filter == DesktopLibraryResourceType.rulebook,
+                onTap: () => setState(
+                  () => _filter = DesktopLibraryResourceType.rulebook,
+                ),
               ),
               _LibraryFilterChip(
                 label: 'FAQ',
-                selected: _filter == 2,
-                onTap: () => setState(() => _filter = 2),
+                selected: _filter == DesktopLibraryResourceType.faq,
+                onTap: () =>
+                    setState(() => _filter = DesktopLibraryResourceType.faq),
               ),
               _LibraryFilterChip(
-                label: '笔记',
-                selected: _filter == 3,
-                onTap: () => setState(() => _filter = 3),
+                label: '索引',
+                selected: _filter == DesktopLibraryResourceType.assetIndex,
+                onTap: () => setState(
+                  () => _filter = DesktopLibraryResourceType.assetIndex,
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        ...visible.map(
-          (_LibraryItem item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _LibraryItemTile(item: item),
+        if (widget.controller.libraryLoadState == LibraryLoadState.loading &&
+            items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 56),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (widget.controller.libraryLoadState == LibraryLoadState.empty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 56),
+            child: Center(child: Text('远端资料库暂无可展示的索引')),
+          )
+        else if (visible.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 56),
+            child: Center(child: Text('当前筛选没有资料')),
+          )
+        else ...[
+          const SizedBox(height: 12),
+          ...visible.map(
+            (DesktopLibraryResource resource) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _LibraryItemTile(
+                key: ValueKey<String>('library-item-${resource.id}'),
+                resource: resource,
+                isLoading:
+                    _openingItemId == resource.id ||
+                    _downloadingItemId == resource.id,
+                isDownloading: _downloadingItemId == resource.id,
+                onOpen: () => _openItem(resource),
+                onDownload: () => _downloadItem(resource),
+                onDelete: () => _deleteItem(resource),
+              ),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -2502,20 +2807,189 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(content: Text('该功能正在开发中')));
   }
+
+  Future<void> _openItem(DesktopLibraryResource resource) async {
+    if (_openingItemId != null || _downloadingItemId != null) return;
+    if (!resource.canOpen) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('该资源暂不支持在线阅读，请先下载')));
+      return;
+    }
+
+    setState(() => _openingItemId = resource.id);
+    try {
+      final ResolvedDocument? document = await widget.controller
+          .resolveLibraryResource(resource);
+      if (!mounted) return;
+      if (document == null) {
+        _showDocumentUnavailable(resource.title);
+        return;
+      }
+      await _openResolvedDocument(
+        document,
+        '${resource.gameTitle} · ${_displayResourceTitle(resource)}',
+      );
+    } catch (error) {
+      if (mounted) _showDocumentUnavailable(resource.title, error: error);
+    } finally {
+      if (mounted) setState(() => _openingItemId = null);
+    }
+  }
+
+  Future<void> _downloadItem(DesktopLibraryResource resource) async {
+    if (_openingItemId != null || _downloadingItemId != null) return;
+    if (kIsWeb) {
+      _showDownloadUnavailable('当前 Web 端不支持选择本地下载目录');
+      return;
+    }
+
+    setState(() => _downloadingItemId = resource.id);
+    try {
+      final String? directory = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择下载目录',
+      );
+      if (!mounted || directory == null || directory.trim().isEmpty) {
+        return;
+      }
+      final String? destination = await widget.controller
+          .downloadLibraryResource(
+            resource: resource,
+            directoryPath: directory,
+          );
+      if (!mounted) return;
+      if (destination == null) {
+        _showDownloadUnavailable('下载失败，请检查资料库连接后重试');
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('已下载到 $destination')));
+    } catch (error) {
+      if (mounted) _showDownloadUnavailable('下载失败：$error');
+    } finally {
+      if (mounted) setState(() => _downloadingItemId = null);
+    }
+  }
+
+  void _deleteItem(DesktopLibraryResource resource) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('暂时无法删除远端资源，相关功能正在开发中')));
+  }
+
+  String _displayResourceTitle(DesktopLibraryResource resource) {
+    if (!resource.isRemote &&
+        resource.type == DesktopLibraryResourceType.rulebook) {
+      return '官方规则书';
+    }
+    if (!resource.isRemote && resource.type == DesktopLibraryResourceType.faq) {
+      return '官方 FAQ';
+    }
+    return resource.title;
+  }
+
+  void _showDownloadUnavailable(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openResolvedDocument(
+    ResolvedDocument document,
+    String title,
+  ) async {
+    if (document.renderType == DocumentRenderType.markdown) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => MarkdownDocumentScreen(
+            controller: widget.controller,
+            remotePath: document.remotePath,
+            title: title,
+          ),
+        ),
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PdfDocumentScreen(
+          controller: widget.controller,
+          title: title,
+          remotePath: document.remotePath,
+        ),
+      ),
+    );
+  }
+
+  void _showDocumentUnavailable(String title, {Object? error}) {
+    final String suffix = error == null ? '' : '：$error';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('$title暂不可用$suffix')));
+  }
 }
 
-class _LibraryItem {
-  const _LibraryItem({
+class _LibraryStatusBanner extends StatelessWidget {
+  const _LibraryStatusBanner({
     required this.icon,
-    required this.title,
-    required this.meta,
-    required this.type,
+    required this.color,
+    required this.message,
+    this.detail,
+    this.actionLabel,
+    this.onAction,
   });
 
   final IconData icon;
-  final String title;
-  final String meta;
-  final int type;
+  final Color color;
+  final String message;
+  final String? detail;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (detail != null && detail!.trim().isNotEmpty)
+                  Text(
+                    detail!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: palette.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (actionLabel != null && onAction != null)
+            TextButton(onPressed: onAction, child: Text(actionLabel!)),
+        ],
+      ),
+    );
+  }
 }
 
 class _LibraryFilterChip extends StatelessWidget {
@@ -2548,53 +3022,140 @@ class _LibraryFilterChip extends StatelessWidget {
 }
 
 class _LibraryItemTile extends StatelessWidget {
-  const _LibraryItemTile({required this.item});
+  const _LibraryItemTile({
+    super.key,
+    required this.resource,
+    required this.isLoading,
+    required this.isDownloading,
+    required this.onOpen,
+    required this.onDownload,
+    required this.onDelete,
+  });
 
-  final _LibraryItem item;
+  final DesktopLibraryResource resource;
+  final bool isLoading;
+  final bool isDownloading;
+  final VoidCallback onOpen;
+  final VoidCallback onDownload;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: palette.surface,
+    final IconData icon = switch (resource.type) {
+      DesktopLibraryResourceType.rulebook => Icons.menu_book_outlined,
+      DesktopLibraryResourceType.faq => Icons.fact_check_outlined,
+      DesktopLibraryResourceType.assetIndex => Icons.list_alt_rounded,
+      DesktopLibraryResourceType.reference => Icons.rule_rounded,
+      DesktopLibraryResourceType.playerAid => Icons.style_outlined,
+      DesktopLibraryResourceType.supplement => Icons.library_books_outlined,
+      DesktopLibraryResourceType.other => Icons.description_outlined,
+    };
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isLoading || !resource.canOpen ? null : onOpen,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: palette.outline),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: palette.primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(item.icon, color: palette.primary),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: palette.outline),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(item.title, style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 3),
-                Text(item.meta, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: palette.primary.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: palette.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '${resource.gameTitle} · ${resource.title}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${resource.typeLabel} · ${resource.language} · ${resource.formatLabel}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      resource.remotePath,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isLoading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                PopupMenuButton<_LibraryItemAction>(
+                  key: ValueKey<String>('library-more-${resource.id}'),
+                  tooltip: '更多',
+                  onSelected: (_LibraryItemAction action) {
+                    switch (action) {
+                      case _LibraryItemAction.open:
+                        onOpen();
+                      case _LibraryItemAction.download:
+                        onDownload();
+                      case _LibraryItemAction.delete:
+                        onDelete();
+                    }
+                  },
+                  itemBuilder: (BuildContext context) =>
+                      <PopupMenuEntry<_LibraryItemAction>>[
+                        PopupMenuItem<_LibraryItemAction>(
+                          value: _LibraryItemAction.open,
+                          enabled: resource.canOpen,
+                          child: Text(resource.canOpen ? '打开' : '打开（暂不支持）'),
+                        ),
+                        const PopupMenuItem<_LibraryItemAction>(
+                          value: _LibraryItemAction.download,
+                          child: Text('下载'),
+                        ),
+                        const PopupMenuItem<_LibraryItemAction>(
+                          value: _LibraryItemAction.delete,
+                          child: Text('删除'),
+                        ),
+                      ],
+                  icon: isDownloading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.more_horiz_rounded),
+                ),
+            ],
           ),
-          IconButton(
-            tooltip: '更多',
-            onPressed: () {},
-            icon: const Icon(Icons.more_horiz_rounded),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
+
+enum _LibraryItemAction { open, download, delete }
 
 class _DesktopSettingsPane extends StatelessWidget {
   const _DesktopSettingsPane({

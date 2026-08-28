@@ -6,9 +6,11 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:webdav_storage/webdav_storage.dart';
 
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
+import '../models/remote_asset_file.dart';
 import 'board_game_remote_layout.dart';
 
 class RemoteAssetService {
@@ -206,6 +208,134 @@ class RemoteAssetService {
     }
   }
 
+  /// Enumerates files below a logical WebDAV directory.
+  ///
+  /// The shared [WebDavStorageClient] performs the actual `PROPFIND` request;
+  /// this service only applies the app's canonical path layout and flattens
+  /// the bounded recursive walk into paths the UI can consume.
+  Future<List<RemoteAssetFile>> listFilesRecursively({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+    int maxDepth = 6,
+    int maxEntries = 1000,
+  }) async {
+    if (sources.isEmpty) {
+      return const <RemoteAssetFile>[];
+    }
+    if (maxDepth < 0) {
+      throw ArgumentError.value(maxDepth, 'maxDepth');
+    }
+    if (maxEntries <= 0) {
+      throw ArgumentError.value(maxEntries, 'maxEntries');
+    }
+
+    Object? lastError;
+    for (final AssetSourceConfig source in sources) {
+      try {
+        final List<RemoteAssetFile> files = await _listFromSource(
+          source: source,
+          remotePath: remotePath,
+          maxDepth: maxDepth,
+          maxEntries: maxEntries,
+        );
+        debugPrint(
+          '[assets] listed ${files.length} files below $remotePath from ${source.id}',
+        );
+        return files;
+      } catch (error) {
+        lastError = error;
+        debugPrint('[assets] list failed for ${source.id}: $error');
+      }
+    }
+
+    if (lastError != null) {
+      throw lastError;
+    }
+    return const <RemoteAssetFile>[];
+  }
+
+  Future<List<RemoteAssetFile>> _listFromSource({
+    required AssetSourceConfig source,
+    required String remotePath,
+    required int maxDepth,
+    required int maxEntries,
+  }) async {
+    final Uri? parsed = Uri.tryParse(source.testUrl.trim());
+    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
+      throw ArgumentError.value(source.testUrl, 'source.testUrl');
+    }
+    await _ensureAuthLoaded();
+    final WebDavStorageClient storage = WebDavStorageClient(
+      config: WebDavConfig(
+        baseUri: BoardGameRemoteLayout.normalizeBaseUri(parsed),
+        username: _username ?? _defaultUsername,
+        password: _password ?? _defaultPassword,
+        timeout: const Duration(seconds: 8),
+      ),
+      httpClient: _client,
+    );
+
+    final List<RemoteAssetFile> files = <RemoteAssetFile>[];
+    final List<_RemoteDirectoryRequest> pending = <_RemoteDirectoryRequest>[
+      _RemoteDirectoryRequest(path: remotePath, depth: 0),
+    ];
+    final Set<String> visited = <String>{};
+    try {
+      while (pending.isNotEmpty && files.length < maxEntries) {
+        final _RemoteDirectoryRequest request = pending.removeAt(0);
+        if (!visited.add(request.path)) {
+          continue;
+        }
+        final List<RemoteResource> entries = await storage.list(
+          BoardGameRemoteLayout.assetPath(request.path),
+        );
+        for (final RemoteResource entry in entries) {
+          final String childPath = _joinRemotePath(request.path, entry.name);
+          if (entry.isCollection) {
+            if (request.depth < maxDepth) {
+              pending.add(
+                _RemoteDirectoryRequest(
+                  path: childPath,
+                  depth: request.depth + 1,
+                ),
+              );
+            }
+            continue;
+          }
+          files.add(
+            RemoteAssetFile(
+              remotePath: childPath,
+              name: entry.name,
+              sourceId: source.id,
+              etag: entry.etag,
+            ),
+          );
+          if (files.length >= maxEntries) {
+            break;
+          }
+        }
+      }
+      return List<RemoteAssetFile>.unmodifiable(files);
+    } finally {
+      // The injected client remains owned by RemoteAssetService.
+      storage.close();
+    }
+  }
+
+  String _joinRemotePath(String parent, String name) {
+    final String normalizedParent = parent
+        .replaceAll('\\', '/')
+        .replaceFirst(RegExp(r'/+$'), '');
+    final String normalizedName = name.replaceAll('\\', '/').trim();
+    if (normalizedName.isEmpty ||
+        normalizedName.contains('/') ||
+        normalizedName == '.' ||
+        normalizedName == '..') {
+      throw FormatException('Invalid WebDAV resource name: $name');
+    }
+    return '$normalizedParent/$normalizedName';
+  }
+
   Future<File> _fileFor(String remotePath) async {
     final Directory base = await _cacheRoot();
     final String sanitized = remotePath.replaceAll('\\', '/');
@@ -378,4 +508,11 @@ class RemoteAssetService {
       debugPrint('[assets] auth fallback in use: $_defaultUsername');
     }
   }
+}
+
+class _RemoteDirectoryRequest {
+  const _RemoteDirectoryRequest({required this.path, required this.depth});
+
+  final String path;
+  final int depth;
 }

@@ -237,7 +237,11 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     try {
       final ResolvedDocument? document = await widget.controller
           .resolveRulebookDocument(game);
-      if (!mounted || document == null) return;
+      if (!mounted) return;
+      if (document == null) {
+        _showDocumentUnavailable('规则书');
+        return;
+      }
       await _openResolvedDocument(document, '规则书');
     } finally {
       if (mounted) setState(() => _openingRulebook = false);
@@ -250,7 +254,11 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     try {
       final ResolvedDocument? document = await widget.controller
           .resolveFaqDocument(game);
-      if (!mounted || document == null) return;
+      if (!mounted) return;
+      if (document == null) {
+        _showDocumentUnavailable('FAQ');
+        return;
+      }
       await _openResolvedDocument(document, 'FAQ');
     } finally {
       if (mounted) setState(() => _openingFaq = false);
@@ -282,6 +290,12 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
         ),
       ),
     );
+  }
+
+  void _showDocumentUnavailable(String title) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('$title暂不可用')));
   }
 }
 

@@ -136,9 +136,7 @@ class AppCopy {
   String get statusLoading => isChinese ? '加载中' : 'Loading';
   String get aiStatusDefaultReady => isChinese ? '默认可用' : 'Ready by default';
   String get activityTitle => isChinese ? '消息' : 'Notifications';
-  String get activityEmpty => isChinese
-      ? '暂无消息，服务刷新和 AI 回答完成后会显示在这里。'
-      : 'No notifications yet. Service refreshes and completed AI answers will appear here.';
+  String get activityEmpty => isChinese ? '暂无消息' : 'No notifications';
   String get activityViewAll => isChinese ? '查看全部' : 'View all';
   String get activityRefreshServices =>
       isChinese ? '刷新服务状态' : 'Refresh service status';

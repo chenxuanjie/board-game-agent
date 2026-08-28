@@ -6,16 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:board_game_agent/models/ai_api_config.dart';
 import 'package:board_game_agent/models/ai_answer_mode.dart';
+import 'package:board_game_agent/models/ai_api_config.dart';
+import 'package:board_game_agent/models/answer_source.dart';
 import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/board_game_ai_answer.dart';
-import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
+import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/models/remote_asset_file.dart';
-import 'package:board_game_agent/models/answer_source.dart';
 import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/game_manifest_service.dart';
 import 'package:board_game_agent/services/preferences_service.dart';
@@ -25,60 +25,70 @@ import 'package:board_game_agent/services/tts_service.dart';
 import 'package:board_game_agent/state/app_controller.dart';
 import 'package:board_game_agent/theme/app_theme.dart';
 import 'package:board_game_agent/theme/palette_registry.dart';
-import 'package:board_game_agent/ui/screens/desktop_game_detail_pane.dart';
+import 'package:board_game_agent/ui/screens/desktop_workspace_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('detail hero remains visible at desktop widths', (
+  testWidgets('activity popup keeps empty state and adapts to window width', (
     WidgetTester tester,
   ) async {
     final AppController controller = await _createController();
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    for (final double width in <double>[900, 1280, 3840]) {
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.buildTheme(PaletteRegistry.classic),
-          home: SizedBox(
-            width: width,
-            height: 900,
-            child: DesktopGameDetailPane(
-              controller: controller,
-              game: controller.games.firstWhere(
-                (GameInfo game) => game.id == 'startups',
-              ),
-              onBack: () {},
-              onAskAi: () {},
-            ),
-          ),
-        ),
-      );
+    for (final MapEntry<Size, double> testCase in <MapEntry<Size, double>>[
+      const MapEntry<Size, double>(Size(1440, 900), 340),
+      const MapEntry<Size, double>(Size(823, 900), 300),
+      const MapEntry<Size, double>(Size(640, 480), 280),
+    ]) {
+      final Size size = testCase.key;
+      await tester.binding.setSurfaceSize(size);
+      await tester.pumpWidget(_buildApp(controller));
       await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull, reason: 'width=$width');
-      expect(find.text('初创公司'), findsWidgets, reason: 'width=$width');
-      expect(find.text('评分'), findsOneWidget, reason: 'width=$width');
-      expect(find.text('询问 AI'), findsOneWidget, reason: 'width=$width');
-      expect(find.text('游戏简介'), findsOneWidget, reason: 'width=$width');
-      final Size contentSize = tester.getSize(
-        find.byKey(const ValueKey<String>('desktop-detail-content')),
+      expect(find.byTooltip('消息'), findsOneWidget, reason: 'size=$size');
+      await tester.tap(find.byTooltip('消息'));
+      await tester.pumpAndSettle();
+
+      final Finder panel = find.byKey(
+        const ValueKey<String>('desktop-activity-popup'),
+      );
+      expect(panel, findsOneWidget, reason: 'size=$size');
+      expect(
+        find.descendant(of: panel, matching: find.text('暂无消息')),
+        findsOneWidget,
+        reason: 'size=$size',
       );
       expect(
-        contentSize.width,
-        lessThanOrEqualTo(1600),
-        reason: 'width=$width',
+        find.descendant(of: panel, matching: find.text('刷新服务状态')),
+        findsNothing,
+        reason: 'size=$size',
       );
-      final Finder hero = find.byKey(
-        const ValueKey<String>('desktop-detail-hero'),
-      );
-      expect(hero, findsOneWidget, reason: 'width=$width');
+      final Size panelSize = tester.getSize(panel);
+      expect(panelSize.width, greaterThan(0), reason: 'size=$size');
       expect(
-        tester.getSize(hero).width,
-        greaterThan(0),
-        reason: 'width=$width',
+        panelSize.width,
+        lessThanOrEqualTo(testCase.value),
+        reason: 'size=$size',
       );
+      expect(
+        panelSize.height,
+        lessThanOrEqualTo(size.height - 24),
+        reason: 'size=$size',
+      );
+      expect(tester.takeException(), isNull, reason: 'size=$size');
+
+      await tester.tap(find.byTooltip('关闭'));
+      await tester.pumpAndSettle();
     }
   });
+}
+
+Widget _buildApp(AppController controller) {
+  return MaterialApp(
+    theme: AppTheme.buildTheme(PaletteRegistry.classic),
+    home: DesktopWorkspaceScreen(controller: controller, onOpenAbout: () {}),
+  );
 }
 
 Future<AppController> _createController() async {
@@ -91,9 +101,6 @@ Future<AppController> _createController() async {
     speechService: SpeechService(),
     ttsService: TtsService(),
   );
-  // Loading the bundled manifests is enough for this page test. Avoid the
-  // controller's startup speech/TTS and remote polling tasks so the test is
-  // deterministic and cannot be held open by a platform channel or timer.
   await controller.reloadGames();
   return controller;
 }
@@ -102,9 +109,7 @@ class _NoNetworkAssetService extends RemoteAssetService {
   _NoNetworkAssetService() : super(client: _NoopHttpClient());
 
   @override
-  Future<File?> cachedFileFor(String remotePath) async {
-    return null;
-  }
+  Future<File?> cachedFileFor(String remotePath) async => null;
 
   @override
   Future<CachedAsset?> ensureCached({
@@ -112,17 +117,13 @@ class _NoNetworkAssetService extends RemoteAssetService {
     required String remotePath,
     bool forceRefresh = false,
     bool allowCachedFallback = true,
-  }) async {
-    return null;
-  }
+  }) async => null;
 
   @override
   Future<String?> fetchRemoteText({
     required List<AssetSourceConfig> sources,
     required String remotePath,
-  }) async {
-    return null;
-  }
+  }) async => null;
 
   @override
   Future<List<RemoteAssetFile>> listFilesRecursively({
@@ -130,17 +131,13 @@ class _NoNetworkAssetService extends RemoteAssetService {
     required String remotePath,
     int maxDepth = 6,
     int maxEntries = 1000,
-  }) async {
-    return const <RemoteAssetFile>[];
-  }
+  }) async => const <RemoteAssetFile>[];
 
   @override
   Future<bool> hasRemoteChanged({
     required List<AssetSourceConfig> sources,
     required String remotePath,
-  }) async {
-    return false;
-  }
+  }) async => false;
 }
 
 class _NoopHttpClient extends http.BaseClient {
