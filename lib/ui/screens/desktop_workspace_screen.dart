@@ -2654,7 +2654,7 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
       return _DesktopNoGamesPane(
         controller: widget.controller,
         title: '资料库暂为空',
-        message: '游戏资料加载完成后，规则书、FAQ 和笔记会显示在这里。',
+        message: '游戏资料加载完成后，规则书、FAQ 和其他资料会显示在这里。',
       );
     }
     final AppPalette palette = AppPalette.of(context);
@@ -2690,8 +2690,9 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
               tooltip: '刷新资料库',
               onPressed: widget.controller.isRefreshingLibrary
                   ? null
-                  : () =>
-                        unawaited(widget.controller.refreshLibraryResources()),
+                  : () => unawaited(
+                      widget.controller.refreshLibraryResources(force: true),
+                    ),
               icon: widget.controller.isRefreshingLibrary
                   ? const SizedBox(
                       width: 20,
@@ -2708,20 +2709,12 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
             child: _LibraryStatusBanner(
               icon: Icons.cloud_off_rounded,
               color: palette.warning,
-              message: '远端资料库暂时不可用，当前显示本地备用索引。',
+              message: '远端资料库暂时不可用，继续显示本地缓存。',
               detail: widget.controller.libraryLoadError,
               actionLabel: '重试',
-              onAction: () =>
-                  unawaited(widget.controller.refreshLibraryResources()),
-            ),
-          ),
-        if (widget.controller.libraryLoadState == LibraryLoadState.success)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: _LibraryStatusBanner(
-              icon: Icons.cloud_done_rounded,
-              color: palette.success,
-              message: '已同步远端索引 · ${items.length} 项',
+              onAction: () => unawaited(
+                widget.controller.refreshLibraryResources(force: true),
+              ),
             ),
           ),
         const SizedBox(height: 18),
@@ -2754,11 +2747,10 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
                     setState(() => _filter = DesktopLibraryResourceType.faq),
               ),
               _LibraryFilterChip(
-                label: '索引',
-                selected: _filter == DesktopLibraryResourceType.assetIndex,
-                onTap: () => setState(
-                  () => _filter = DesktopLibraryResourceType.assetIndex,
-                ),
+                label: '其他',
+                selected: _filter == DesktopLibraryResourceType.other,
+                onTap: () =>
+                    setState(() => _filter = DesktopLibraryResourceType.other),
               ),
             ],
           ),
@@ -2772,7 +2764,7 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
         else if (widget.controller.libraryLoadState == LibraryLoadState.empty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 56),
-            child: Center(child: Text('远端资料库暂无可展示的索引')),
+            child: Center(child: Text('远端资料库暂无可展示的资料')),
           )
         else if (visible.isEmpty)
           const Padding(
@@ -3045,10 +3037,10 @@ class _LibraryItemTile extends StatelessWidget {
     final IconData icon = switch (resource.type) {
       DesktopLibraryResourceType.rulebook => Icons.menu_book_outlined,
       DesktopLibraryResourceType.faq => Icons.fact_check_outlined,
-      DesktopLibraryResourceType.assetIndex => Icons.list_alt_rounded,
-      DesktopLibraryResourceType.reference => Icons.rule_rounded,
-      DesktopLibraryResourceType.playerAid => Icons.style_outlined,
-      DesktopLibraryResourceType.supplement => Icons.library_books_outlined,
+      DesktopLibraryResourceType.assetIndex => Icons.description_outlined,
+      DesktopLibraryResourceType.reference => Icons.description_outlined,
+      DesktopLibraryResourceType.playerAid => Icons.description_outlined,
+      DesktopLibraryResourceType.supplement => Icons.description_outlined,
       DesktopLibraryResourceType.other => Icons.description_outlined,
     };
     return Material(
@@ -3090,15 +3082,6 @@ class _LibraryItemTile extends StatelessWidget {
                     Text(
                       '${resource.typeLabel} · ${resource.language} · ${resource.formatLabel}',
                       style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      resource.remotePath,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: palette.textSecondary,
-                      ),
                     ),
                   ],
                 ),

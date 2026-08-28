@@ -9,6 +9,7 @@ import '../models/assistant_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
+import '../models/desktop_library_resource.dart';
 
 class PreferencesService {
   static const _languageKey = 'app_language';
@@ -23,6 +24,7 @@ class PreferencesService {
   static const _assistantModeKey = 'assistant_mode';
   static const _selectedConversationKey = 'selected_conversation_id';
   static const _activitiesKey = 'app_activities';
+  static const _desktopLibraryResourcesKey = 'desktop_library_resources_v1';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -195,6 +197,51 @@ class PreferencesService {
       jsonEncode(
         activities.map((AppActivity activity) => activity.toMap()).toList(),
       ),
+    );
+  }
+
+  /// Loads the lightweight desktop library index. Document bytes are never
+  /// stored here; they remain in the asset cache and are fetched on demand.
+  Future<List<DesktopLibraryResource>> loadDesktopLibraryResources() async {
+    final prefs = await _prefs;
+    final String? stored = prefs.getString(_desktopLibraryResourcesKey);
+    if (stored == null || stored.trim().isEmpty) {
+      return const <DesktopLibraryResource>[];
+    }
+
+    try {
+      final Object? decoded = jsonDecode(stored);
+      final List<Object?> entries;
+      if (decoded is List<Object?>) {
+        entries = decoded;
+      } else if (decoded is Map<String, dynamic> &&
+          decoded['resources'] is List<Object?>) {
+        entries = decoded['resources'] as List<Object?>;
+      } else {
+        return const <DesktopLibraryResource>[];
+      }
+      return entries
+          .whereType<Map<String, dynamic>>()
+          .map(DesktopLibraryResource.fromMap)
+          .whereType<DesktopLibraryResource>()
+          .toList(growable: false);
+    } catch (_) {
+      return const <DesktopLibraryResource>[];
+    }
+  }
+
+  Future<void> saveDesktopLibraryResources(
+    Iterable<DesktopLibraryResource> resources,
+  ) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _desktopLibraryResourcesKey,
+      jsonEncode(<String, dynamic>{
+        'schemaVersion': 1,
+        'resources': resources
+            .map((DesktopLibraryResource resource) => resource.toMap())
+            .toList(growable: false),
+      }),
     );
   }
 }

@@ -67,12 +67,64 @@ void main() {
     );
     final DesktopLibraryResource reference = controller.libraryResources
         .singleWhere((resource) => resource.id == 'reference-en');
-    expect(reference.type, DesktopLibraryResourceType.reference);
+    expect(reference.type, DesktopLibraryResourceType.other);
+    expect(reference.typeLabel, '其他');
     expect(reference.language, '英文');
     expect(reference.canOpen, isTrue);
     expect(remote.cachedPaths, isEmpty);
     expect(remote.listCalled, isFalse);
   });
+
+  test(
+    'desktop library keeps the persisted index when remote refresh fails',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final Map<String, String> manifestResponses = <String, String>{
+        'assets/catalog.json':
+            '{"version":1,"games":[{"slug":"puerto_rico","order":10,"enabled":true}]}',
+        'assets/games/puerto_rico/manifest.json': '''
+{
+  "schemaVersion": 3,
+  "game": {"slug": "puerto_rico", "title": {"cn": "波多黎各"}},
+  "resources": [
+    {"id":"rulebook-cn","path":"docs/local/knowledge/rulebook_cn.md","documentType":"rulebook","language":"cn","status":"available","enabled":true},
+    {"id":"faq-cn","path":"docs/local/knowledge/faq_cn.md","documentType":"faq","language":"cn","status":"available","enabled":true}
+  ]
+}
+''',
+      };
+      final AppController first = _createController(
+        _ManifestAssetService(manifestResponses),
+      );
+      await first.reloadGames();
+      await first.refreshLibraryResources();
+      expect(first.libraryResources, hasLength(2));
+      first.dispose();
+
+      final _ManifestAssetService offline = _ManifestAssetService(
+        <String, String>{},
+      );
+      final AppController second = _createController(offline);
+      addTearDown(second.dispose);
+      await second.reloadGames();
+      await second.refreshLibraryResources();
+
+      expect(second.libraryLoadState, LibraryLoadState.failure);
+      expect(second.libraryResources, hasLength(2));
+      expect(offline.cachedPaths, isEmpty);
+    },
+  );
+}
+
+AppController _createController(RemoteAssetService remote) {
+  return AppController(
+    preferencesService: PreferencesService(),
+    aiService: _FakeAiService(),
+    gameManifestService: GameManifestService(),
+    remoteAssetService: remote,
+    speechService: SpeechService(),
+    ttsService: TtsService(),
+  );
 }
 
 class _ManifestAssetService extends RemoteAssetService {

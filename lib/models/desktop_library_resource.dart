@@ -1,6 +1,8 @@
 enum DesktopLibraryResourceType {
   rulebook,
   faq,
+  // Kept for source compatibility with older callers and cached data. New
+  // resources are normalized to [other] unless they are a rulebook or FAQ.
   assetIndex,
   reference,
   playerAid,
@@ -43,6 +45,167 @@ class DesktopLibraryResource {
   final bool enabled;
   final String sourceClass;
 
+  /// Creates a copy while keeping the resource's stable identity by default.
+  DesktopLibraryResource copyWith({
+    String? id,
+    String? gameSlug,
+    String? gameTitle,
+    String? remotePath,
+    String? title,
+    String? language,
+    DesktopLibraryResourceType? type,
+    DesktopLibraryResourceFormat? format,
+    bool? isRemote,
+    String? status,
+    bool? enabled,
+    String? sourceClass,
+  }) {
+    return DesktopLibraryResource(
+      id: id ?? this.id,
+      gameSlug: gameSlug ?? this.gameSlug,
+      gameTitle: gameTitle ?? this.gameTitle,
+      remotePath: remotePath ?? this.remotePath,
+      title: title ?? this.title,
+      language: language ?? this.language,
+      type: type ?? this.type,
+      format: format ?? this.format,
+      isRemote: isRemote ?? this.isRemote,
+      status: status ?? this.status,
+      enabled: enabled ?? this.enabled,
+      sourceClass: sourceClass ?? this.sourceClass,
+    );
+  }
+
+  /// Stable enum codes used by the persisted desktop library index.
+  String get typeCode {
+    switch (type) {
+      case DesktopLibraryResourceType.rulebook:
+        return 'rulebook';
+      case DesktopLibraryResourceType.faq:
+        return 'faq';
+      case DesktopLibraryResourceType.assetIndex:
+      case DesktopLibraryResourceType.reference:
+      case DesktopLibraryResourceType.playerAid:
+      case DesktopLibraryResourceType.supplement:
+      case DesktopLibraryResourceType.other:
+        return 'other';
+    }
+  }
+
+  String get formatCode {
+    switch (format) {
+      case DesktopLibraryResourceFormat.markdown:
+        return 'markdown';
+      case DesktopLibraryResourceFormat.pdf:
+        return 'pdf';
+      case DesktopLibraryResourceFormat.html:
+        return 'html';
+      case DesktopLibraryResourceFormat.text:
+        return 'text';
+      case DesktopLibraryResourceFormat.image:
+        return 'image';
+      case DesktopLibraryResourceFormat.other:
+        return 'other';
+    }
+  }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'id': id,
+      'gameSlug': gameSlug,
+      'gameTitle': gameTitle,
+      'remotePath': remotePath,
+      'title': title,
+      'language': language,
+      'type': typeCode,
+      'format': formatCode,
+      'isRemote': isRemote,
+      'status': status,
+      'enabled': enabled,
+      'sourceClass': sourceClass,
+    };
+  }
+
+  /// Parses one persisted index entry. Invalid entries are ignored by the
+  /// preference service instead of making the whole app fail to start.
+  static DesktopLibraryResource? fromMap(Map<String, dynamic> map) {
+    String? stringValue(Object? value) {
+      if (value is! String) return null;
+      final String normalized = value.trim();
+      return normalized.isEmpty ? null : normalized;
+    }
+
+    final String? id = stringValue(map['id']);
+    final String? gameSlug = stringValue(map['gameSlug']);
+    final String? gameTitle = stringValue(map['gameTitle']);
+    final String? remotePath = stringValue(map['remotePath']);
+    final String? title = stringValue(map['title']);
+    final String? language = stringValue(map['language']);
+    if (id == null ||
+        gameSlug == null ||
+        gameTitle == null ||
+        remotePath == null ||
+        title == null ||
+        language == null) {
+      return null;
+    }
+
+    return DesktopLibraryResource(
+      id: id,
+      gameSlug: gameSlug,
+      gameTitle: gameTitle,
+      remotePath: remotePath,
+      title: title,
+      language: language,
+      type: _typeFromCode(map['type'] ?? map['typeCode']),
+      format: _formatFromCode(map['format'] ?? map['formatCode']),
+      isRemote: map['isRemote'] is bool ? map['isRemote'] as bool : true,
+      status: stringValue(map['status']) ?? 'available',
+      enabled: map['enabled'] is bool ? map['enabled'] as bool : true,
+      sourceClass: stringValue(map['sourceClass']) ?? 'unknown',
+    );
+  }
+
+  static DesktopLibraryResourceType _typeFromCode(Object? raw) {
+    final String code = raw?.toString().trim().toLowerCase() ?? '';
+    switch (code) {
+      case 'rulebook':
+      case 'how_to_play':
+        return DesktopLibraryResourceType.rulebook;
+      case 'faq':
+      case 'ruling':
+      case 'errata':
+        return DesktopLibraryResourceType.faq;
+      default:
+        // The desktop library intentionally exposes only three categories.
+        return DesktopLibraryResourceType.other;
+    }
+  }
+
+  static DesktopLibraryResourceFormat _formatFromCode(Object? raw) {
+    switch (raw?.toString().trim().toLowerCase()) {
+      case 'markdown':
+      case 'md':
+        return DesktopLibraryResourceFormat.markdown;
+      case 'pdf':
+        return DesktopLibraryResourceFormat.pdf;
+      case 'html':
+      case 'htm':
+        return DesktopLibraryResourceFormat.html;
+      case 'text':
+      case 'txt':
+        return DesktopLibraryResourceFormat.text;
+      case 'image':
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+        return DesktopLibraryResourceFormat.image;
+      default:
+        return DesktopLibraryResourceFormat.other;
+    }
+  }
+
   bool get canOpen =>
       format == DesktopLibraryResourceFormat.markdown ||
       format == DesktopLibraryResourceFormat.pdf;
@@ -60,13 +223,9 @@ class DesktopLibraryResource {
       case DesktopLibraryResourceType.faq:
         return 'FAQ';
       case DesktopLibraryResourceType.assetIndex:
-        return '索引';
       case DesktopLibraryResourceType.reference:
-        return '规则参考';
       case DesktopLibraryResourceType.playerAid:
-        return '玩家辅助';
       case DesktopLibraryResourceType.supplement:
-        return '补充资料';
       case DesktopLibraryResourceType.other:
         return '其他';
     }

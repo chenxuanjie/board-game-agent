@@ -49,10 +49,15 @@ enum LibraryLoadState { idle, loading, success, empty, failure }
 /// [warning] is non-fatal: a partial index can still be shown while the UI
 /// exposes that one or more game manifests were unavailable.
 class _RemoteLibraryIndexResult {
-  const _RemoteLibraryIndexResult({required this.resources, this.warning});
+  const _RemoteLibraryIndexResult({
+    required this.resources,
+    this.warning,
+    this.failedSlugs = const <String>{},
+  });
 
   final List<DesktopLibraryResource> resources;
   final String? warning;
+  final Set<String> failedSlugs;
 }
 
 class AppController extends ChangeNotifier {
@@ -109,6 +114,8 @@ class AppController extends ChangeNotifier {
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
   Future<void>? _libraryRefreshFuture;
+  Future<void>? _libraryCacheLoadFuture;
+  bool _libraryCacheLoadAttempted = false;
   int _libraryRefreshGeneration = 0;
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
     state: ConnectivityState.unknown,
@@ -341,6 +348,7 @@ class AppController extends ChangeNotifier {
     }
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
     _games = await _loadGamesForLanguage(_language);
+    await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -385,6 +393,7 @@ class AppController extends ChangeNotifier {
 
     _language = next;
     _games = await _loadGamesForLanguage(_language);
+    _refreshLibraryGameTitles();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -398,6 +407,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> reloadGames() async {
     _games = await _loadGamesForLanguage(_language);
+    _refreshLibraryGameTitles();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -1342,22 +1352,28 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Refreshes the desktop library from the configured WebDAV index.
-  ///
-  /// A single in-flight request is shared by all callers so opening the page
-  /// and pressing refresh cannot race each other. When the remote index is
-  /// unavailable, bundled document entries remain visible while the state is
-  /// reported as failure and the UI keeps a retry action available.
-  Future<void> refreshLibraryResources() {
+  /// Loads the persisted index first, then checks the authoritative WebDAV
+  /// manifests in the background. A single in-flight request is shared by all
+  /// callers so opening the page and pressing refresh cannot race each other.
+  /// Existing cached rows stay visible while this network request runs.
+  Future<void> refreshLibraryResources({bool force = false}) {
     final Future<void>? active = _libraryRefreshFuture;
     if (active != null) {
       return active;
     }
 
     final int generation = ++_libraryRefreshGeneration;
-    _libraryLoadState = LibraryLoadState.loading;
-    _libraryLoadError = null;
-    notifyListeners();
+    // Only a cold start without any local index should occupy the content
+    // area with a spinner. Refresh-button callers can force a network check,
+    // but still keep already-rendered rows in place.
+    if (_libraryResources.isEmpty) {
+      _libraryLoadState = LibraryLoadState.loading;
+      _libraryLoadError = null;
+      notifyListeners();
+    } else if (force) {
+      _libraryLoadError = null;
+      notifyListeners();
+    }
 
     final Future<void> future = _refreshLibraryResources(generation);
     _libraryRefreshFuture = future;
@@ -1372,13 +1388,44 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _refreshLibraryResources(int generation) async {
+    await _ensureLibraryCacheLoaded();
+    if (generation != _libraryRefreshGeneration) {
+      return;
+    }
+
+    // Cache loading can provide the first visible rows when this method is
+    // called before AppController.initialize() has completed.
+    if (_libraryResources.isNotEmpty &&
+        _libraryLoadState == LibraryLoadState.loading) {
+      _libraryLoadState = LibraryLoadState.success;
+      notifyListeners();
+    }
+
     try {
       final _RemoteLibraryIndexResult index = await _loadRemoteLibraryIndex();
       if (generation != _libraryRefreshGeneration) {
         return;
       }
 
-      _libraryResources = index.resources;
+      final List<DesktopLibraryResource> remoteResources =
+          _localizeLibraryResources(index.resources);
+      final List<DesktopLibraryResource> nextResources =
+          _mergePartialLibraryResources(remoteResources, index.failedSlugs);
+      final bool changed = !_sameLibraryIndex(_libraryResources, nextResources);
+      if (changed || _libraryResources.isEmpty) {
+        _libraryResources = nextResources;
+        try {
+          await _preferencesService.saveDesktopLibraryResources(
+            _libraryResources,
+          );
+        } catch (error) {
+          // A persistence failure must not turn a successful remote request
+          // into a false network failure. The next launch can retry caching.
+          debugPrint(
+            '[assets] desktop library index cache write failed: $error',
+          );
+        }
+      }
       _libraryLoadState = index.resources.isEmpty
           ? LibraryLoadState.empty
           : LibraryLoadState.success;
@@ -1387,12 +1434,151 @@ class AppController extends ChangeNotifier {
       if (generation != _libraryRefreshGeneration) {
         return;
       }
-      _libraryResources = _buildBundledLibraryResources();
+      if (_libraryResources.isEmpty) {
+        _libraryResources = _buildBundledLibraryResources();
+      }
       _libraryLoadState = LibraryLoadState.failure;
       _libraryLoadError = _safeStatusError(error);
       debugPrint('[assets] desktop library index unavailable: $error');
     }
     notifyListeners();
+  }
+
+  /// Restores only index metadata. The actual PDF/Markdown/HTML bytes remain
+  /// in [RemoteAssetService]'s document cache and are never read here.
+  Future<void> _ensureLibraryCacheLoaded() {
+    if (_libraryCacheLoadAttempted) {
+      return Future<void>.value();
+    }
+    final Future<void>? active = _libraryCacheLoadFuture;
+    if (active != null) {
+      return active;
+    }
+
+    final Future<void> future = () async {
+      try {
+        final List<DesktopLibraryResource> cached = await _preferencesService
+            .loadDesktopLibraryResources();
+        if (cached.isNotEmpty) {
+          _libraryResources = _localizeLibraryResources(cached);
+          _libraryLoadState = LibraryLoadState.success;
+        }
+      } catch (error) {
+        debugPrint('[assets] desktop library index cache read failed: $error');
+      } finally {
+        _libraryCacheLoadAttempted = true;
+      }
+    }();
+    _libraryCacheLoadFuture = future;
+    return future.whenComplete(() {
+      if (identical(_libraryCacheLoadFuture, future)) {
+        _libraryCacheLoadFuture = null;
+      }
+    });
+  }
+
+  List<DesktopLibraryResource> _localizeLibraryResources(
+    Iterable<DesktopLibraryResource> resources,
+  ) {
+    final Map<String, GameInfo> gamesBySlug = <String, GameInfo>{
+      for (final GameInfo game in _games) game.slug: game,
+    };
+    return resources
+        .map(
+          (DesktopLibraryResource resource) => resource.copyWith(
+            gameTitle:
+                gamesBySlug[resource.gameSlug]?.title ?? resource.gameTitle,
+            type: _normalizeLibraryResourceType(resource.type),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  void _refreshLibraryGameTitles() {
+    if (_libraryResources.isEmpty) {
+      return;
+    }
+    _libraryResources = _localizeLibraryResources(_libraryResources);
+  }
+
+  DesktopLibraryResourceType _normalizeLibraryResourceType(
+    DesktopLibraryResourceType type,
+  ) {
+    switch (type) {
+      case DesktopLibraryResourceType.rulebook:
+        return DesktopLibraryResourceType.rulebook;
+      case DesktopLibraryResourceType.faq:
+        return DesktopLibraryResourceType.faq;
+      case DesktopLibraryResourceType.assetIndex:
+      case DesktopLibraryResourceType.reference:
+      case DesktopLibraryResourceType.playerAid:
+      case DesktopLibraryResourceType.supplement:
+      case DesktopLibraryResourceType.other:
+        return DesktopLibraryResourceType.other;
+    }
+  }
+
+  bool _sameLibraryIndex(
+    List<DesktopLibraryResource> left,
+    List<DesktopLibraryResource> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    final Map<String, DesktopLibraryResource> leftByPath =
+        <String, DesktopLibraryResource>{
+          for (final DesktopLibraryResource resource in left)
+            resource.remotePath: resource,
+        };
+    final Map<String, DesktopLibraryResource> rightByPath =
+        <String, DesktopLibraryResource>{
+          for (final DesktopLibraryResource resource in right)
+            resource.remotePath: resource,
+        };
+    if (leftByPath.length != rightByPath.length) {
+      return false;
+    }
+    for (final String path in leftByPath.keys) {
+      final DesktopLibraryResource? a = leftByPath[path];
+      final DesktopLibraryResource? b = rightByPath[path];
+      if (a == null ||
+          b == null ||
+          a.id != b.id ||
+          a.gameSlug != b.gameSlug ||
+          a.title != b.title ||
+          a.language != b.language ||
+          a.typeCode != b.typeCode ||
+          a.formatCode != b.formatCode ||
+          a.isRemote != b.isRemote ||
+          a.status != b.status ||
+          a.enabled != b.enabled ||
+          a.sourceClass != b.sourceClass) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  List<DesktopLibraryResource> _mergePartialLibraryResources(
+    List<DesktopLibraryResource> remoteResources,
+    Set<String> failedSlugs,
+  ) {
+    if (failedSlugs.isEmpty || _libraryResources.isEmpty) {
+      return remoteResources;
+    }
+    final Set<String> remotePaths = <String>{
+      for (final DesktopLibraryResource resource in remoteResources)
+        resource.remotePath,
+    };
+    final List<DesktopLibraryResource> merged = <DesktopLibraryResource>[
+      ...remoteResources,
+      for (final DesktopLibraryResource resource in _libraryResources)
+        if (failedSlugs.contains(resource.gameSlug) &&
+            remotePaths.add(resource.remotePath))
+          resource,
+    ];
+    merged.sort(_compareLibraryResources);
+    return List<DesktopLibraryResource>.unmodifiable(merged);
   }
 
   /// Reads the authoritative per-game `manifest.json` files from WebDAV.
@@ -1404,7 +1590,7 @@ class AppController extends ChangeNotifier {
   Future<_RemoteLibraryIndexResult> _loadRemoteLibraryIndex() async {
     final List<String> slugs = await _remoteLibraryGameSlugs();
     if (slugs.isEmpty) {
-      throw StateError('远端资料库没有可检查的游戏索引');
+      throw StateError('远端资料库没有可检查的游戏资料');
     }
 
     final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
@@ -1445,11 +1631,11 @@ class AppController extends ChangeNotifier {
       final List<DesktopLibraryResource> fallback =
           _buildRemoteLibraryResources(files);
       if (fallback.isEmpty) {
-        throw StateError('远端资料库索引为空或格式不可识别');
+        throw StateError('远端资料库为空或格式不可识别');
       }
       return _RemoteLibraryIndexResult(
         resources: fallback,
-        warning: '远端未提供标准 manifest，已使用目录索引。',
+        warning: '远端未提供标准 manifest，已使用目录清单。',
       );
     }
 
@@ -1462,10 +1648,11 @@ class AppController extends ChangeNotifier {
       ..sort(_compareLibraryResources);
     final String? warning = failedSlugs.isEmpty
         ? null
-        : '已有 $loadedManifestCount 个游戏索引同步，${failedSlugs.length} 个索引暂不可用。';
+        : '已有 $loadedManifestCount 个游戏资料同步，${failedSlugs.length} 个资料暂不可用。';
     return _RemoteLibraryIndexResult(
       resources: List<DesktopLibraryResource>.unmodifiable(normalized),
       warning: warning,
+      failedSlugs: Set<String>.unmodifiable(failedSlugs),
     );
   }
 
@@ -1659,6 +1846,8 @@ class AppController extends ChangeNotifier {
         if (normalized.isEmpty || !paths.add(normalized)) {
           continue;
         }
+        final bool isRulebook = path == game.rulebookAssetPath;
+        final bool isFaq = path == game.faqAssetPath;
         final String relative = normalized.contains('/docs/')
             ? normalized.split('/docs/').last
             : normalized.split('/').last;
@@ -1670,9 +1859,23 @@ class AppController extends ChangeNotifier {
             gameSlug: game.slug,
             gameTitle: game.title,
             remotePath: normalized,
-            title: _libraryResourceTitle(relative),
+            title: _libraryResourceTitle(
+              relative,
+              documentType: isRulebook
+                  ? 'rulebook'
+                  : isFaq
+                  ? 'faq'
+                  : null,
+            ),
             language: _libraryResourceLanguage(relative),
-            type: _libraryResourceType(relative),
+            type: _libraryResourceType(
+              relative,
+              documentType: isRulebook
+                  ? 'rulebook'
+                  : isFaq
+                  ? 'faq'
+                  : null,
+            ),
             format: _libraryResourceFormat(relative),
             isRemote: false,
           ),
@@ -1697,22 +1900,16 @@ class AppController extends ChangeNotifier {
       case 'errata':
         return DesktopLibraryResourceType.faq;
       case 'asset_index':
-        return DesktopLibraryResourceType.assetIndex;
       case 'rules_reference':
-        return DesktopLibraryResourceType.reference;
       case 'player_aid':
-        return DesktopLibraryResourceType.playerAid;
       case 'supplement':
       case 'variant':
       case 'campaign_guide':
       case 'scenario_book':
-        return DesktopLibraryResourceType.supplement;
+        return DesktopLibraryResourceType.other;
     }
 
     final String lower = path.toLowerCase();
-    if (lower.contains('asset_index') || lower.contains('/index/')) {
-      return DesktopLibraryResourceType.assetIndex;
-    }
     if (lower.contains('faq') ||
         lower.contains('answer') ||
         lower.contains('ruling') ||
@@ -1720,18 +1917,14 @@ class AppController extends ChangeNotifier {
       return DesktopLibraryResourceType.faq;
     }
     if (lower.contains('reference')) {
-      return DesktopLibraryResourceType.reference;
+      return DesktopLibraryResourceType.other;
     }
     if (lower.contains('rulebook') ||
-        lower.contains('rules') ||
-        lower.contains('how_to_play')) {
+        lower.contains('how_to_play') ||
+        lower.contains('learn_to_play') ||
+        lower.endsWith('rules_official_page.html') ||
+        lower.endsWith('rules_official_page.htm')) {
       return DesktopLibraryResourceType.rulebook;
-    }
-    if (lower.contains('player_aid') || lower.contains('player-aid')) {
-      return DesktopLibraryResourceType.playerAid;
-    }
-    if (lower.contains('supplement')) {
-      return DesktopLibraryResourceType.supplement;
     }
     return DesktopLibraryResourceType.other;
   }
@@ -1936,6 +2129,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> _initializeRemoteLibrary() async {
     try {
+      await refreshLibraryResources();
       // Warm the image cache first so the update probe has a stable baseline
       // and cannot race with the version manifest writes performed by
       // ensureCached().
