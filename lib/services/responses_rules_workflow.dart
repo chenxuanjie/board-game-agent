@@ -15,6 +15,8 @@ import '../models/game_resource.dart';
 import '../models/rule_citation.dart';
 import '../models/rule_document.dart';
 import 'board_game_prompt_builder.dart';
+import 'board_game_question_classifier.dart';
+import 'board_game_question_router.dart';
 import 'remote_asset_service.dart';
 import 'ai_service.dart';
 import 'responses_compaction_store.dart';
@@ -35,13 +37,20 @@ class ResponsesRulesWorkflow {
     required ResponsesAiClient responsesClient,
     BoardGamePromptBuilder? promptBuilder,
     ResponsesCompactionStore? compactionStore,
+    BoardGameQuestionRouter? questionRouter,
+    BoardGameQuestionClassifier? questionClassifier,
   }) : _responsesClient = responsesClient,
        _promptBuilder = promptBuilder ?? BoardGamePromptBuilder(),
-       _compactionStore = compactionStore ?? InMemoryResponsesCompactionStore();
+       _compactionStore = compactionStore ?? InMemoryResponsesCompactionStore(),
+       _questionRouter = questionRouter ?? const BoardGameQuestionRouter(),
+       _questionClassifier =
+           questionClassifier ?? BoardGameQuestionClassifier();
 
   final ResponsesAiClient _responsesClient;
   final BoardGamePromptBuilder _promptBuilder;
   final ResponsesCompactionStore _compactionStore;
+  final BoardGameQuestionRouter _questionRouter;
+  final BoardGameQuestionClassifier _questionClassifier;
   final Map<String, List<ResponsesInputItem>> _compactionInputsByContext =
       <String, List<ResponsesInputItem>>{};
   Future<void>? _compactionLoadFuture;
@@ -74,6 +83,23 @@ class ResponsesRulesWorkflow {
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
     );
+
+    if (answerMode == AiAnswerMode.knowledgeThenDirect) {
+      final BoardGameQuestionRoutingDecision routing =
+          await _resolveQuestionRoute(
+            context: context,
+            language: language,
+            game: game,
+            useGlobalMode: useGlobalMode,
+          );
+      if (routing.route == BoardGameQuestionRoute.general) {
+        return _runGeneralConversationStage(
+          context: context,
+          language: language,
+          game: game,
+        );
+      }
+    }
 
     final _StageResult official = await _runDocumentStage(
       context: context,
@@ -126,6 +152,32 @@ class ResponsesRulesWorkflow {
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
     );
+
+    if (answerMode == AiAnswerMode.knowledgeThenDirect) {
+      final BoardGameQuestionRoutingDecision localRouting = _questionRouter
+          .decide(prompt: prompt, game: game, useGlobalMode: useGlobalMode);
+      if (localRouting.needsModelClassification) {
+        yield const BoardGameAiStreamEvent(status: 'routing');
+      }
+      final BoardGameQuestionRoutingDecision routing =
+          await _resolveQuestionRoute(
+            context: context,
+            language: language,
+            game: game,
+            useGlobalMode: useGlobalMode,
+            localDecision: localRouting,
+            abortTrigger: abortTrigger,
+          );
+      if (routing.route == BoardGameQuestionRoute.general) {
+        yield* _streamGeneralConversationStage(
+          context: context,
+          language: language,
+          game: game,
+          abortTrigger: abortTrigger,
+        );
+        return;
+      }
+    }
 
     yield const BoardGameAiStreamEvent(status: 'official');
     BoardGameAiAnswer? officialAnswer;
@@ -259,6 +311,36 @@ class ResponsesRulesWorkflow {
     );
   }
 
+  Future<BoardGameQuestionRoutingDecision> _resolveQuestionRoute({
+    required _WorkflowContext context,
+    required AppLanguage language,
+    required GameInfo game,
+    required bool useGlobalMode,
+    BoardGameQuestionRoutingDecision? localDecision,
+    Future<void>? abortTrigger,
+  }) async {
+    final BoardGameQuestionRoutingDecision local =
+        localDecision ??
+        _questionRouter.decide(
+          prompt: context.prompt,
+          game: game,
+          useGlobalMode: useGlobalMode,
+        );
+    if (!local.needsModelClassification) return local;
+    return _questionClassifier.classifyResponses(
+      client: _responsesClient,
+      endpoint: _endpoint(context.config),
+      language: language,
+      game: game,
+      useGlobalMode: useGlobalMode,
+      prompt: context.prompt,
+      fallback: _questionRouter.fallback(useGlobalMode: useGlobalMode),
+      reasoningEffort: context.config.reasoningEffort.requestValue,
+      serviceTier: context.config.responseSpeed.serviceTier,
+      abortTrigger: abortTrigger,
+    );
+  }
+
   Future<_StageResult> _runDocumentStage({
     required _WorkflowContext context,
     required List<RuleDocument> documents,
@@ -375,6 +457,67 @@ class ResponsesRulesWorkflow {
     } catch (_) {
       return const _StageResult();
     }
+  }
+
+  Future<BoardGameAiAnswer> _runGeneralConversationStage({
+    required _WorkflowContext context,
+    required AppLanguage language,
+    required GameInfo game,
+  }) async {
+    try {
+      final ResponsesResponse response = await _responsesClient.complete(
+        _generalConversationRequest(context, language: language, game: game),
+      );
+      await _rememberCompaction(context, response);
+      final String text = response.text.trim();
+      if (text.isEmpty) return _unknownAnswer(language);
+      return BoardGameAiAnswer(text: text, source: AnswerSource.generalAdvice);
+    } catch (_) {
+      return _unknownAnswer(language);
+    }
+  }
+
+  Stream<BoardGameAiStreamEvent> _streamGeneralConversationStage({
+    required _WorkflowContext context,
+    required AppLanguage language,
+    required GameInfo game,
+    Future<void>? abortTrigger,
+  }) async* {
+    yield const BoardGameAiStreamEvent(status: 'answering');
+    final StringBuffer buffer = StringBuffer();
+    await for (final ResponsesStreamEvent event in _responsesClient.stream(
+      _generalConversationRequest(context, language: language, game: game),
+      abortTrigger: abortTrigger,
+    )) {
+      if (event.response != null) {
+        await _rememberCompaction(context, event.response!);
+        if (event.type == ResponsesStreamEventType.completed &&
+            buffer.isEmpty &&
+            event.response!.text.trim().isNotEmpty) {
+          final String completedText = event.response!.text.trim();
+          buffer.write(completedText);
+          yield BoardGameAiStreamEvent(delta: completedText);
+        }
+      }
+      if (event.type == ResponsesStreamEventType.textDelta &&
+          event.delta.isNotEmpty) {
+        buffer.write(event.delta);
+        yield BoardGameAiStreamEvent(delta: event.delta);
+      }
+      if (event.type == ResponsesStreamEventType.error) {
+        throw StateError(event.errorMessage ?? 'Responses request failed.');
+      }
+    }
+    final String text = buffer.toString().trim();
+    if (text.isEmpty) {
+      final BoardGameAiAnswer answer = _unknownAnswer(language);
+      yield BoardGameAiStreamEvent(answer: answer, isDone: true);
+      return;
+    }
+    yield BoardGameAiStreamEvent(
+      answer: BoardGameAiAnswer(text: text, source: AnswerSource.generalAdvice),
+      isDone: true,
+    );
   }
 
   Stream<_StageStreamEvent> _streamWebStage({
@@ -495,6 +638,23 @@ class ResponsesRulesWorkflow {
     ),
     input: context.conversation,
     tools: const <ResponsesToolDefinition>[ResponsesToolDefinition.webSearch()],
+    maxOutputTokens: 1200,
+    reasoningEffort: context.config.reasoningEffort.requestValue,
+    serviceTier: context.config.responseSpeed.serviceTier,
+    contextManagement: _contextManagementFor(context.config),
+  );
+
+  ResponsesRequest _generalConversationRequest(
+    _WorkflowContext context, {
+    required AppLanguage language,
+    required GameInfo game,
+  }) => ResponsesRequest(
+    endpoint: _endpoint(context.config),
+    instructions: _promptBuilder.buildGeneralConversationSystemPrompt(
+      language: language,
+      game: game,
+    ),
+    input: context.conversation,
     maxOutputTokens: 1200,
     reasoningEffort: context.config.reasoningEffort.requestValue,
     serviceTier: context.config.responseSpeed.serviceTier,

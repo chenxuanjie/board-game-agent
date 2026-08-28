@@ -105,6 +105,65 @@ $gameProfile$knowledgeBlock
 ''';
   }
 
+  String buildGeneralConversationSystemPrompt({
+    required AppLanguage language,
+    required GameInfo game,
+  }) {
+    final String todayLabel = _todayString(language);
+    if (language == AppLanguage.zhHans) {
+      return '''你是一个通用 AI 助手。
+今天的日期：$todayLabel。
+用户当前使用的是桌游应用，但本次问题未被识别为当前桌游规则问题。
+请像普通 AI 一样直接回答，不要主动加载、引用或编造桌游规则资料，也不要强行把问题关联到《${game.title}》。
+如果用户之后明确提到这款桌游、规则、卡牌、回合或其他游戏内容，再围绕对应桌游回答。
+回答清晰、简洁、自然。''';
+    }
+    return '''You are a general AI assistant.
+Today's date: $todayLabel.
+The user is currently using a board-game app, but this prompt was not identified as a question about the current game's rules.
+Answer like a normal assistant. Do not load, cite, or invent board-game sources, and do not force the question to be about ${game.title}.
+If the user explicitly mentions this game, its rules, cards, turns, or other game content later, answer in that game context.
+Keep the response clear, concise, and natural.''';
+  }
+
+  String buildQuestionClassificationSystemPrompt({
+    required AppLanguage language,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) {
+    final String scope = useGlobalMode
+        ? '用户位于独立 AI 入口。'
+        : '用户位于《${game.title}》的专属桌游助手页面。';
+    if (language == AppLanguage.zhHans) {
+      return '''你是 AI 请求路由分类器，不负责回答用户问题。
+$scope
+请判断用户当前问题是否需要读取《${game.title}》的规则资料、知识库或联网规则来源。
+
+route 只能是：
+- "general"：普通聊天、写作、翻译、编程、生活咨询或与桌游规则无关的问题；
+- "game_knowledge"：涉及《${game.title}》、桌游规则、卡牌、回合、玩家、设置、得分、胜利条件或具体玩法的问题。
+
+只返回严格 JSON，不要 Markdown，不要解释：
+{"route":"general","confidence":"high"}
+或
+{"route":"game_knowledge","confidence":"high"}
+''';
+    }
+    return '''You are an AI request router, not the answerer.
+$scope
+Decide whether the user's current question requires ${game.title} rule documents, the game knowledge base, or web rule sources.
+
+route must be one of:
+- "general": ordinary conversation, writing, translation, programming, lifestyle advice, or anything unrelated to game rules;
+- "game_knowledge": ${game.title}, board-game rules, cards, turns, players, setup, scoring, victory conditions, or gameplay questions.
+
+Return strict JSON only, with no Markdown or explanation:
+{"route":"general","confidence":"high"}
+or
+{"route":"game_knowledge","confidence":"high"}
+''';
+  }
+
   String buildResponsesDocumentInstructions({
     required AppLanguage language,
     required GameInfo game,
