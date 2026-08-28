@@ -142,6 +142,9 @@ void main() {
       ),
       startedAt: startedAt,
       completedAt: completedAt,
+      terminalEventType: 'response.completed',
+      rawEventCount: 3,
+      outputItemCount: 1,
       requestCount: 1,
       contextKey: 'global|scope-fingerprint',
     );
@@ -172,5 +175,8 @@ void main() {
     expect(stageMap['completedAt'], completedAt.toIso8601String());
     expect(stageMap['outputTokens'], 8);
     expect(stageMap['reasoningTokens'], 3);
+    expect(stageMap['terminalEventType'], 'response.completed');
+    expect(stageMap['rawEventCount'], 3);
+    expect(stageMap['outputItemCount'], 1);
   });
 }

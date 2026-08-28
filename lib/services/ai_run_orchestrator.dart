@@ -43,6 +43,7 @@ class AiRunOrchestrator {
       AiKnowledgeScope? scope,
       String? status,
       String? responseId,
+      String? terminalEventType,
       AiStageResult? stageResult,
       BoardGameAiAnswer? answer,
       String? errorCode,
@@ -56,6 +57,7 @@ class AiRunOrchestrator {
         timestamp: DateTime.now(),
         stageId: stageId,
         scope: scope,
+        rawType: terminalEventType ?? stageResult?.terminalEventType,
         status: status,
         responseId: responseId,
         sessionId: sessionId,
@@ -137,6 +139,7 @@ class AiRunOrchestrator {
           status: AiRunStatus.cancelled,
           stages: results,
           responseId: result.responseId,
+          terminalEventType: result.terminalEventType,
           sessionId: sessionId,
           contextKey: contextKey,
           model: result.model ?? model,
@@ -159,6 +162,7 @@ class AiRunOrchestrator {
           status: AiRunStatus.completed,
           stages: <AiStageResult>[...results],
           responseId: result.responseId,
+          terminalEventType: result.terminalEventType,
           sessionId: sessionId,
           contextKey: contextKey,
           model: result.model ?? model,
@@ -171,6 +175,7 @@ class AiRunOrchestrator {
           scope: stage.scope,
           status: 'completed',
           responseId: result.responseId,
+          terminalEventType: result.terminalEventType,
           stageResult: result,
           answer: result.answer,
           runResult: runResult,
@@ -209,6 +214,7 @@ class AiRunOrchestrator {
       status: terminalStatus,
       stages: results,
       responseId: terminalStage?.responseId,
+      terminalEventType: terminalStage?.terminalEventType,
       contextKey: contextKey,
       model: terminalStage?.model ?? model,
       startedAt: runStartedAt,
@@ -275,6 +281,7 @@ class AiRunOrchestrator {
       stages: stageResults,
       events: events,
       responseId: terminal?.responseId,
+      terminalEventType: terminal?.rawType,
       sessionId: sessionId,
       contextKey: contextKey,
       model: terminal?.model ?? model,
@@ -290,6 +297,7 @@ class AiRunOrchestrator {
     required AiRunStatus status,
     required List<AiStageResult> stages,
     String? responseId,
+    String? terminalEventType,
     String? sessionId,
     String? contextKey,
     String? model,
@@ -304,12 +312,18 @@ class AiRunOrchestrator {
     int outputTokens = 0;
     int reasoningTokens = 0;
     int citationCount = 0;
+    int rawEventCount = 0;
+    int outputItemCount = 0;
+    String? latestTerminalEventType = terminalEventType;
     for (final AiStageResult stage in stages) {
       requestCount += stage.requestCount;
       inputTokens += stage.usage?.promptTokens ?? 0;
       outputTokens += stage.usage?.completionTokens ?? 0;
       reasoningTokens += stage.usage?.reasoningTokens ?? 0;
       citationCount += stage.citations.length;
+      rawEventCount += stage.rawEventCount;
+      outputItemCount += stage.outputItemCount;
+      latestTerminalEventType ??= stage.terminalEventType;
     }
     return AiRunResult(
       runId: runId,
@@ -325,6 +339,9 @@ class AiRunOrchestrator {
       model: model,
       startedAt: startedAt,
       completedAt: completedAt,
+      terminalEventType: latestTerminalEventType,
+      rawEventCount: rawEventCount,
+      outputItemCount: outputItemCount,
       requestCount: requestCount,
       inputTokens: inputTokens,
       outputTokens: outputTokens,

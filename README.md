@@ -101,6 +101,24 @@
 
 这意味着 `ResponsesRulesWorkflow` 当前是项目自己的过渡编排层，而不是某个官方框架类。后续继续扩展工具调用、重试、取消、评测和多 Agent 能力时，应优先把路由、阶段执行、流式归并、上下文存储拆成独立组件，避免所有能力继续堆叠在同一个类中。
 
+## Phase 3–7 落地状态
+
+Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段编排；后续阶段当前实现如下：
+
+| 阶段 | 当前落地内容 | 关键边界 |
+| --- | --- | --- |
+| Phase 3：上下文范围 | 通用入口默认不读取当前桌游文件；桌游入口按当前桌游加载资料；通用入口可显式开启“使用当前桌游资料”；问题路由先走本地规则，模糊问题才调用一次结构化分类 | 路由器是应用层策略，不是模型自动行为；`knowledgeOnly` 不会偷偷退回普通聊天 |
+| Phase 4：结构化答案与引用 | 官方/社区阶段使用 JSON Schema；`sourceIds` 必须全部来自本阶段声明的真实目录；Web 阶段只接受 Responses annotations 的 HTTP(S) 引用；没有有效引用不会标记为联网回答 | 混入伪造来源、缺失来源或无效 JSON 时，阶段只会进入 `insufficient`，不会提交气泡 |
+| Phase 5：Session 与 Compaction | Session/Compaction 按知识范围、桌游、供应商、模型、认证指纹和生成设置隔离；`store=false` 显式发送；最新 compaction item 替换旧本地窗口并加密持久化；自定义接口不支持 Compaction 时自动降级 | 切换模型/供应商/知识范围会清理同一上下文作用域的旧压缩状态，避免串上下文 |
+| Phase 6：可靠性与遥测 | 每次 Run 保存 `runId`、上下文、阶段、模型、responseId、请求数、输入/输出/推理 tokens、时间、终止事件、错误和引用计数；默认主程序使用本地有界 `SharedPreferences` 账本 | 遥测写入失败不会覆盖正常答案；账本不保存 API key、提示词或文件内容 |
+| Phase 7：发布与验收 | 工作流和共享客户端覆盖完成边界、尾部 output item、取消/失败、引用校验、Compaction 恢复和能力降级测试；发布前分别执行 Web、Windows、Android 构建检查 | 单元测试/模拟客户端不等于真实线上接口验证；真实 OpenAI 或自定义服务商需在目标环境提供可用凭据后再做 smoke test |
+
+### 当前固定验收集
+
+`test/responses_rules_workflow_test.dart`、`test/ai_run_orchestrator_test.dart`、`test/ai_run_telemetry_test.dart` 和共享包的 `test/responses_client_test.dart` 覆盖以下行为：普通问题不加载桌游文件、官方/社区/Web 顺序、Web 中间文本不进入气泡、真实引用校验、尾部失败不覆盖已收集诊断、等待 `response.completed`、最近 12 条输入、Compaction 跨实例恢复和替换旧窗口、模型/知识范围隔离、自定义 Responses 能力降级、遥测有界持久化，以及事件状态一致性。
+
+当前没有把 LibreChat、Open WebUI、Vercel AI SDK 或 Agents SDK 当作 Flutter 运行时依赖；它们只提供架构和交互参考。Responses API 的字段与事件语义由 `shared_packages/app_ai_client` 统一映射，应用层只提交经过阶段校验的最终答案。
+
 ## 相关文档
 
 - 环境安装与 APK 打包步骤见 [BUILD_APK.md](/C:/Study/MyCode/MyProject/board-game-agent/BUILD_APK.md)

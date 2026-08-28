@@ -16,6 +16,7 @@ import 'services/speech_service.dart';
 import 'services/tts_service.dart';
 import 'services/realtime_voice_service.dart';
 import 'services/responses_compaction_store.dart';
+import 'services/ai_run_telemetry.dart';
 import 'services/responses_rules_workflow.dart';
 import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
@@ -44,6 +45,7 @@ Future<void> main() async {
       responsesWorkflow: ResponsesRulesWorkflow(
         responsesClient: OpenAiDartResponsesAiClient(),
         compactionStore: SecureResponsesCompactionStore(),
+        telemetrySink: SharedPreferencesAiRunTelemetrySink(),
       ),
     ),
     gameManifestService: GameManifestService(),

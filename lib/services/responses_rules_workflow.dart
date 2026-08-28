@@ -72,6 +72,15 @@ class ResponsesRulesWorkflow {
     _responsesClient.close();
   }
 
+  Future<void> _recordTelemetry(AiRunResult result) async {
+    try {
+      await _telemetrySink.record(result);
+    } on Object {
+      // Observability must never convert a valid answer into a failed chat.
+      // The sink remains independently retryable on the next run.
+    }
+  }
+
   Future<BoardGameAiAnswer> generateReply({
     required String prompt,
     required AppLanguage language,
@@ -124,7 +133,7 @@ class ResponsesRulesWorkflow {
             ),
           ],
         );
-        await _telemetrySink.record(run);
+        await _recordTelemetry(run);
         return run.answer ?? _unknownAnswer(language);
       }
     }
@@ -143,7 +152,7 @@ class ResponsesRulesWorkflow {
         useCurrentGameKnowledge: useCurrentGameKnowledge,
       ),
     );
-    await _telemetrySink.record(run);
+    await _recordTelemetry(run);
     return run.answer ?? _unknownAnswer(language);
   }
 
@@ -586,7 +595,7 @@ class ResponsesRulesWorkflow {
           }
         case AiRunEventType.completed:
           if (event.runResult != null) {
-            await _telemetrySink.record(event.runResult!);
+            await _recordTelemetry(event.runResult!);
           }
           final BoardGameAiAnswer? answer = event.answer;
           if (answer == null) {
@@ -610,7 +619,7 @@ class ResponsesRulesWorkflow {
         case AiRunEventType.incomplete:
         case AiRunEventType.cancelled:
           if (event.runResult != null) {
-            await _telemetrySink.record(event.runResult!);
+            await _recordTelemetry(event.runResult!);
           }
           final AiStageResult? stageResult = event.stageResult;
           final bool isBenignInsufficient =
@@ -672,6 +681,7 @@ class ResponsesRulesWorkflow {
       responseId: result.responseId,
       model: result.model,
       usage: result.usage,
+      terminalEventType: result.terminalEventType,
       requestCount: result.requestCount > 0
           ? result.requestCount
           : result.responseId == null
@@ -751,6 +761,7 @@ class ResponsesRulesWorkflow {
           responseId: response.id,
           model: response.model,
           usage: response.usage,
+          terminalEventType: _responseTerminalEventType(response),
           requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
@@ -771,6 +782,7 @@ class ResponsesRulesWorkflow {
         responseId: response.id,
         model: response.model,
         usage: response.usage,
+        terminalEventType: _responseTerminalEventType(response),
         requestCount: 1,
       );
     } catch (error) {
@@ -824,6 +836,9 @@ class ResponsesRulesWorkflow {
         responseId: collected.response?.id,
         model: collected.response?.model,
         usage: collected.response?.usage,
+        terminalEventType: collected.terminalEventType,
+        rawEventCount: collected.rawEventCount,
+        outputItemCount: collected.outputItemCount,
         requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
@@ -845,6 +860,9 @@ class ResponsesRulesWorkflow {
       responseId: collected.response?.id,
       model: collected.response?.model,
       usage: collected.response?.usage,
+      terminalEventType: collected.terminalEventType,
+      rawEventCount: collected.rawEventCount,
+      outputItemCount: collected.outputItemCount,
       requestCount: 1,
     );
   }
@@ -867,6 +885,7 @@ class ResponsesRulesWorkflow {
           responseId: response.id,
           model: response.model,
           usage: response.usage,
+          terminalEventType: _responseTerminalEventType(response),
           requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
@@ -883,6 +902,7 @@ class ResponsesRulesWorkflow {
           responseId: response.id,
           model: response.model,
           usage: response.usage,
+          terminalEventType: _responseTerminalEventType(response),
           requestCount: 1,
         );
       }
@@ -897,6 +917,7 @@ class ResponsesRulesWorkflow {
         responseId: response.id,
         model: response.model,
         usage: response.usage,
+        terminalEventType: _responseTerminalEventType(response),
         requestCount: 1,
       );
     } catch (error) {
@@ -927,6 +948,7 @@ class ResponsesRulesWorkflow {
           responseId: response.id,
           model: response.model,
           usage: response.usage,
+          terminalEventType: _responseTerminalEventType(response),
           requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
@@ -945,6 +967,7 @@ class ResponsesRulesWorkflow {
         responseId: response.id,
         model: response.model,
         usage: response.usage,
+        terminalEventType: _responseTerminalEventType(response),
         requestCount: 1,
       );
     } catch (error) {
@@ -982,6 +1005,9 @@ class ResponsesRulesWorkflow {
         responseId: collected.response?.id,
         model: collected.response?.model,
         usage: collected.response?.usage,
+        terminalEventType: collected.terminalEventType,
+        rawEventCount: collected.rawEventCount,
+        outputItemCount: collected.outputItemCount,
         requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
@@ -1001,6 +1027,9 @@ class ResponsesRulesWorkflow {
       responseId: collected.response?.id,
       model: collected.response?.model,
       usage: collected.response?.usage,
+      terminalEventType: collected.terminalEventType,
+      rawEventCount: collected.rawEventCount,
+      outputItemCount: collected.outputItemCount,
       requestCount: 1,
     );
   }
@@ -1026,6 +1055,9 @@ class ResponsesRulesWorkflow {
         responseId: collected.response?.id,
         model: collected.response?.model,
         usage: collected.response?.usage,
+        terminalEventType: collected.terminalEventType,
+        rawEventCount: collected.rawEventCount,
+        outputItemCount: collected.outputItemCount,
         requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
@@ -1051,6 +1083,9 @@ class ResponsesRulesWorkflow {
         responseId: collected.response?.id,
         model: collected.response?.model,
         usage: collected.response?.usage,
+        terminalEventType: collected.terminalEventType,
+        rawEventCount: collected.rawEventCount,
+        outputItemCount: collected.outputItemCount,
         requestCount: 1,
       );
     }
@@ -1069,6 +1104,9 @@ class ResponsesRulesWorkflow {
       responseId: collected.response?.id,
       model: collected.response?.model,
       usage: collected.response?.usage,
+      terminalEventType: collected.terminalEventType,
+      rawEventCount: collected.rawEventCount,
+      outputItemCount: collected.outputItemCount,
       requestCount: 1,
     );
   }
@@ -1100,6 +1138,9 @@ class ResponsesRulesWorkflow {
         responseId: collected.response?.id,
         model: collected.response?.model,
         usage: collected.response?.usage,
+        terminalEventType: collected.terminalEventType,
+        rawEventCount: collected.rawEventCount,
+        outputItemCount: collected.outputItemCount,
         requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
@@ -1119,6 +1160,9 @@ class ResponsesRulesWorkflow {
       responseId: collected.response?.id,
       model: collected.response?.model,
       usage: collected.response?.usage,
+      terminalEventType: collected.terminalEventType,
+      rawEventCount: collected.rawEventCount,
+      outputItemCount: collected.outputItemCount,
       requestCount: 1,
     );
   }
@@ -1147,6 +1191,7 @@ class ResponsesRulesWorkflow {
           responseId: response.id,
           model: response.model,
           usage: response.usage,
+          terminalEventType: _responseTerminalEventType(response),
           requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
@@ -1168,6 +1213,7 @@ class ResponsesRulesWorkflow {
         responseId: response.id,
         model: response.model,
         usage: response.usage,
+        terminalEventType: _responseTerminalEventType(response),
         requestCount: 1,
       );
     } catch (error) {
@@ -1188,22 +1234,31 @@ class ResponsesRulesWorkflow {
     String text = '';
     ResponsesResponse? response;
     ResponsesStreamEventType? terminalType;
+    String? terminalEventType;
     String? errorCode;
     String? errorMessage;
     final List<ResponsesWebSearchCitation> webCitations =
         <ResponsesWebSearchCitation>[];
     final List<ResponsesInputItem> outputItems = <ResponsesInputItem>[];
+    final Set<String> outputItemKeys = <String>{};
+    int rawEventCount = 0;
     try {
       await for (final ResponsesStreamEvent event in _responsesClient.stream(
         request,
         abortTrigger: abortTrigger,
       )) {
+        rawEventCount += 1;
         if (event.response != null) {
           response = event.response;
           await _rememberCompaction(context, event.response!);
         }
         if (event.outputItem != null) {
-          outputItems.add(event.outputItem!);
+          final Map<String, dynamic> value = event.outputItem!.value;
+          final String key =
+              value['id'] is String && (value['id'] as String).trim().isNotEmpty
+              ? 'id:${(value['id'] as String).trim()}'
+              : 'json:${jsonEncode(value)}';
+          if (outputItemKeys.add(key)) outputItems.add(event.outputItem!);
         }
         switch (event.type) {
           case ResponsesStreamEventType.textDelta:
@@ -1220,23 +1275,29 @@ class ResponsesRulesWorkflow {
               webCitations.add(citation);
             }
           case ResponsesStreamEventType.completed:
-            terminalType = ResponsesStreamEventType.completed;
-            if (event.response != null) {
-              response = event.response;
-              text = _preferCompleteText(text, event.response!.text);
+            if (terminalType == null) {
+              terminalType = ResponsesStreamEventType.completed;
+              terminalEventType = event.rawType ?? 'response.completed';
+              if (event.response != null) {
+                response = event.response;
+                text = _preferCompleteText(text, event.response!.text);
+              }
             }
           case ResponsesStreamEventType.incomplete:
-            terminalType = ResponsesStreamEventType.incomplete;
-            errorCode = event.errorCode;
-            errorMessage = event.errorMessage;
+            terminalType ??= ResponsesStreamEventType.incomplete;
+            terminalEventType ??= event.rawType ?? 'response.incomplete';
+            errorCode ??= event.errorCode;
+            errorMessage ??= event.errorMessage;
           case ResponsesStreamEventType.failed:
-            terminalType = ResponsesStreamEventType.failed;
-            errorCode = event.errorCode;
-            errorMessage = event.errorMessage;
+            terminalType ??= ResponsesStreamEventType.failed;
+            terminalEventType ??= event.rawType ?? 'response.failed';
+            errorCode ??= event.errorCode;
+            errorMessage ??= event.errorMessage;
           case ResponsesStreamEventType.error:
-            terminalType = ResponsesStreamEventType.error;
-            errorCode = event.errorCode;
-            errorMessage = event.errorMessage;
+            terminalType ??= ResponsesStreamEventType.error;
+            terminalEventType ??= event.rawType ?? 'error';
+            errorCode ??= event.errorCode;
+            errorMessage ??= event.errorMessage;
           case ResponsesStreamEventType.status:
           case ResponsesStreamEventType.outputItemAdded:
           case ResponsesStreamEventType.outputItemDone:
@@ -1254,17 +1315,31 @@ class ResponsesRulesWorkflow {
         // lets the transport close cleanly instead of cancelling it early.
       }
       terminalType ??= ResponsesStreamEventType.incomplete;
+      terminalEventType ??= 'stream.end';
       errorMessage ??= terminalType == ResponsesStreamEventType.incomplete
           ? 'Responses stream ended before response.completed.'
           : null;
     } catch (error) {
-      terminalType = ResponsesStreamEventType.error;
-      errorCode = _stageErrorCode(error);
-      errorMessage = _describeStageError(error);
+      terminalType ??= ResponsesStreamEventType.error;
+      terminalEventType ??= 'transport.error';
+      errorCode ??= _stageErrorCode(error);
+      errorMessage ??= _describeStageError(error);
     }
 
     final ResponsesStreamEventType finalTerminalType = terminalType;
     final ResponsesResponse? collectedResponse = response;
+    if (collectedResponse != null) {
+      for (final ResponsesInputItem item in collectedResponse.outputItems) {
+        final Map<String, dynamic> value = item is ResponsesRawInput
+            ? item.value
+            : item.toJson();
+        final String key =
+            value['id'] is String && (value['id'] as String).trim().isNotEmpty
+            ? 'id:${(value['id'] as String).trim()}'
+            : 'json:${jsonEncode(value)}';
+        if (outputItemKeys.add(key)) outputItems.add(item);
+      }
+    }
     if (collectedResponse != null &&
         collectedResponse.outputItems.isEmpty &&
         outputItems.isNotEmpty) {
@@ -1286,6 +1361,9 @@ class ResponsesRulesWorkflow {
       text: text,
       response: response,
       webCitations: List<ResponsesWebSearchCitation>.unmodifiable(webCitations),
+      terminalEventType: terminalEventType,
+      rawEventCount: rawEventCount,
+      outputItemCount: outputItems.length,
       errorCode: errorCode,
       errorMessage: errorMessage,
     );
@@ -1319,6 +1397,16 @@ class ResponsesRulesWorkflow {
       'incomplete' => AiStageStatus.incomplete,
       'cancelled' || 'canceled' => AiStageStatus.cancelled,
       _ => null,
+    };
+  }
+
+  String _responseTerminalEventType(ResponsesResponse response) {
+    final String status = response.status?.trim().toLowerCase() ?? '';
+    return switch (status) {
+      'failed' => 'response.failed',
+      'incomplete' => 'response.incomplete',
+      'cancelled' || 'canceled' => 'response.cancelled',
+      _ => 'response.completed',
     };
   }
 
@@ -1384,6 +1472,7 @@ class ResponsesRulesWorkflow {
       reasoningEffort: context.config.reasoningEffort.requestValue,
       serviceTier: context.config.responseSpeed.serviceTier,
       contextManagement: _contextManagementFor(context.config),
+      store: false,
     );
   }
 
@@ -1428,6 +1517,7 @@ class ResponsesRulesWorkflow {
     reasoningEffort: context.config.reasoningEffort.requestValue,
     serviceTier: context.config.responseSpeed.serviceTier,
     contextManagement: _contextManagementFor(context.config),
+    store: false,
   );
 
   ResponsesRequest _generalConversationRequest(
@@ -1445,6 +1535,7 @@ class ResponsesRulesWorkflow {
     reasoningEffort: context.config.reasoningEffort.requestValue,
     serviceTier: context.config.responseSpeed.serviceTier,
     contextManagement: _contextManagementFor(context.config),
+    store: false,
   );
 
   ResponsesRequest _knowledgeRequest(
@@ -1464,6 +1555,7 @@ class ResponsesRulesWorkflow {
     reasoningEffort: context.config.reasoningEffort.requestValue,
     serviceTier: context.config.responseSpeed.serviceTier,
     contextManagement: _contextManagementFor(context.config),
+    store: false,
   );
 
   List<ResponsesContextManagement> _contextManagementFor(AiApiConfig config) {
@@ -1538,6 +1630,10 @@ class ResponsesRulesWorkflow {
               config.model.trim(),
               config.apiKey.trim(),
               config.apiKeyHeader.trim(),
+              config.chatPath.trim(),
+              config.providerPreset.name,
+              config.reasoningEffort.name,
+              config.responseSpeed.name,
               'current-game-knowledge:$useCurrentGameKnowledge',
             ].join('|'),
           ),
@@ -1646,16 +1742,36 @@ class ResponsesRulesWorkflow {
       final String status = '${decoded['status'] ?? ''}'.toLowerCase();
       final String answer = '${decoded['answer'] ?? ''}'.trim();
       if (status != 'answered' || answer.isEmpty) return const _ParsedAnswer();
-      final Set<String> ids =
-          (decoded['sourceIds'] is List
-                  ? (decoded['sourceIds'] as List).whereType<String>()
-                  : const <String>[])
-              .toSet();
+      final dynamic rawSourceIds = decoded['sourceIds'];
+      if (rawSourceIds is! List) return const _ParsedAnswer();
+      if (rawSourceIds.isEmpty ||
+          rawSourceIds.any(
+            (dynamic value) => value is! String || value.trim().isEmpty,
+          )) {
+        return const _ParsedAnswer();
+      }
+      final List<String> ids = rawSourceIds
+          .cast<String>()
+          .map((String value) => value.trim())
+          .where((String value) => value.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (ids.isEmpty) return const _ParsedAnswer();
+      final Set<String> declaredIds = documents
+          .map((RuleDocument document) => document.id.trim())
+          .where((String id) => id.isNotEmpty)
+          .toSet();
+      // Do not silently discard an invented ID while accepting the rest. A
+      // structured answer is source-grounded only when every claimed source
+      // belongs to the exact document set sent in this stage.
+      if (ids.any((String id) => !declaredIds.contains(id))) {
+        return const _ParsedAnswer();
+      }
       final List<RuleCitation> citations = documents
-          .where((document) => ids.contains(document.id))
+          .where((document) => ids.contains(document.id.trim()))
           .map((document) => document.toCitation())
-          .toList();
-      if (citations.isEmpty) return const _ParsedAnswer();
+          .toList(growable: false);
+      if (citations.length != ids.length) return const _ParsedAnswer();
       return _ParsedAnswer(
         answer: BoardGameAiAnswer(
           text: answer,
@@ -1828,7 +1944,8 @@ class ResponsesRulesWorkflow {
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     model: config.model,
-    apiKeyHeader: 'Authorization',
+    apiKeyHeader: config.apiKeyHeader,
+    chatPath: config.chatPath,
   );
 
   BoardGameAiAnswer _unknownAnswer(AppLanguage language) => BoardGameAiAnswer(
@@ -1937,6 +2054,7 @@ class _StageResult {
     this.responseId,
     this.model,
     this.usage,
+    this.terminalEventType,
     this.requestCount = 0,
     this.errorCode,
     this.errorMessage,
@@ -1948,6 +2066,7 @@ class _StageResult {
   final String? responseId;
   final String? model;
   final AiUsage? usage;
+  final String? terminalEventType;
   final int requestCount;
   final String? errorCode;
   final String? errorMessage;
@@ -1959,6 +2078,9 @@ class _CollectedStream {
     required this.text,
     required this.response,
     required this.webCitations,
+    this.terminalEventType,
+    this.rawEventCount = 0,
+    this.outputItemCount = 0,
     this.errorCode,
     this.errorMessage,
   });
@@ -1967,6 +2089,9 @@ class _CollectedStream {
   final String text;
   final ResponsesResponse? response;
   final List<ResponsesWebSearchCitation> webCitations;
+  final String? terminalEventType;
+  final int rawEventCount;
+  final int outputItemCount;
   final String? errorCode;
   final String? errorMessage;
 }

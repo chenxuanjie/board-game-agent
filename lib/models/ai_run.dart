@@ -121,6 +121,9 @@ class AiStageResult {
     this.usage,
     this.startedAt,
     this.completedAt,
+    this.terminalEventType,
+    this.rawEventCount = 0,
+    this.outputItemCount = 0,
     this.requestCount = 0,
     this.contextKey,
     this.errorCode,
@@ -138,6 +141,16 @@ class AiStageResult {
   final AiUsage? usage;
   final DateTime? startedAt;
   final DateTime? completedAt;
+
+  /// The provider event that committed or terminated this stage, for example
+  /// `response.completed` or `response.failed`.
+  final String? terminalEventType;
+
+  /// Number of normalized provider events observed by the adapter.
+  final int rawEventCount;
+
+  /// Number of output-item lifecycle events retained for this stage.
+  final int outputItemCount;
   final int requestCount;
   final String? contextKey;
   final String? errorCode;
@@ -165,6 +178,9 @@ class AiStageResult {
       usage: usage,
       startedAt: startedAt ?? this.startedAt,
       completedAt: completedAt ?? this.completedAt,
+      terminalEventType: terminalEventType,
+      rawEventCount: rawEventCount,
+      outputItemCount: outputItemCount,
       requestCount: requestCount,
       contextKey: contextKey ?? this.contextKey,
       errorCode: errorCode,
@@ -186,6 +202,9 @@ class AiStageResult {
     if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
     if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
     if (contextKey != null) 'contextKey': contextKey,
+    if (terminalEventType != null) 'terminalEventType': terminalEventType,
+    'rawEventCount': rawEventCount,
+    'outputItemCount': outputItemCount,
     'requestCount': requestCount,
     'citationCount': citations.length,
     if (errorCode != null) 'errorCode': errorCode,
@@ -258,6 +277,9 @@ class AiRunResult {
     this.model,
     this.startedAt,
     this.completedAt,
+    this.terminalEventType,
+    this.rawEventCount = 0,
+    this.outputItemCount = 0,
     this.requestCount = 0,
     this.inputTokens = 0,
     this.outputTokens = 0,
@@ -278,6 +300,9 @@ class AiRunResult {
   final String? model;
   final DateTime? startedAt;
   final DateTime? completedAt;
+  final String? terminalEventType;
+  final int rawEventCount;
+  final int outputItemCount;
   final int requestCount;
   final int inputTokens;
   final int outputTokens;
@@ -303,6 +328,9 @@ class AiRunResult {
     if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
     if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
     'requestCount': requestCount,
+    if (terminalEventType != null) 'terminalEventType': terminalEventType,
+    'rawEventCount': rawEventCount,
+    'outputItemCount': outputItemCount,
     'inputTokens': inputTokens,
     'outputTokens': outputTokens,
     'reasoningTokens': reasoningTokens,
