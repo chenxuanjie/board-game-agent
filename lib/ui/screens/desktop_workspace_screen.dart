@@ -161,8 +161,7 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
           controller: controller,
           compact: compact,
           onOpenGames: () => _selectDestination(_DesktopDestination.games),
-          onOpenAssistant: () =>
-              _openAssistantForGame(controller.featuredGame.id),
+          onOpenAssistant: _openAssistant,
           onOpenLibrary: () => _selectDestination(_DesktopDestination.library),
           onOpenGame: _openGame,
           onOpenActivities: _openActivityCenter,
@@ -1101,6 +1100,7 @@ class _DesktopHomePane extends StatelessWidget {
       return _DesktopNoGamesPane(controller: controller);
     }
     final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = controller.copy;
     final GameInfo game = controller.featuredGame;
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -1115,7 +1115,7 @@ class _DesktopHomePane extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: Text(
-                '继续游玩',
+                copy.desktopContinuePlaying,
                 style: Theme.of(context).textTheme.displaySmall?.copyWith(
                   color: palette.textPrimary,
                   fontWeight: FontWeight.w700,
@@ -1125,17 +1125,21 @@ class _DesktopHomePane extends StatelessWidget {
             FilledButton.icon(
               onPressed: onOpenGames,
               icon: const Icon(Icons.play_arrow_rounded),
-              label: const Text('开始'),
+              label: Text(copy.desktopStart),
             ),
           ],
         ),
         const SizedBox(height: 18),
-        _DesktopFeaturedGameCard(game: game, onTap: () => onOpenGame(game)),
+        _DesktopFeaturedGameCard(
+          copy: copy,
+          game: game,
+          onTap: () => onOpenGame(game),
+        ),
         const SizedBox(height: 16),
         _DesktopSurface(
-          title: '快捷操作',
+          title: copy.desktopQuickActions,
           action: IconButton(
-            tooltip: '打开 AI 助手',
+            tooltip: copy.desktopOpenGlobalAssistant,
             onPressed: onOpenAssistant,
             icon: const Icon(Icons.more_horiz_rounded),
           ),
@@ -1145,17 +1149,17 @@ class _DesktopHomePane extends StatelessWidget {
             children: <Widget>[
               _DesktopQuickAction(
                 icon: Icons.chat_bubble_outline_rounded,
-                label: '询问 AI',
+                label: copy.desktopAskAi,
                 onTap: onOpenAssistant,
               ),
               _DesktopQuickAction(
                 icon: Icons.layers_outlined,
-                label: '我的游戏',
+                label: copy.desktopGames,
                 onTap: onOpenGames,
               ),
               _DesktopQuickAction(
                 icon: Icons.menu_book_outlined,
-                label: '资料库',
+                label: copy.desktopLibrary,
                 onTap: onOpenLibrary,
               ),
             ],
@@ -1171,6 +1175,7 @@ class _DesktopHomePane extends StatelessWidget {
                 children: <Widget>[
                   _DesktopRecentGamesCard(
                     controller: controller,
+                    copy: copy,
                     onOpenGame: onOpenGame,
                     onOpenAll: onOpenGames,
                   ),
@@ -1190,6 +1195,7 @@ class _DesktopHomePane extends StatelessWidget {
                     flex: 11,
                     child: _DesktopRecentGamesCard(
                       controller: controller,
+                      copy: copy,
                       onOpenGame: onOpenGame,
                       onOpenAll: onOpenGames,
                     ),
@@ -1213,8 +1219,13 @@ class _DesktopHomePane extends StatelessWidget {
 }
 
 class _DesktopFeaturedGameCard extends StatelessWidget {
-  const _DesktopFeaturedGameCard({required this.game, required this.onTap});
+  const _DesktopFeaturedGameCard({
+    required this.copy,
+    required this.game,
+    required this.onTap,
+  });
 
+  final AppCopy copy;
   final GameInfo game;
   final VoidCallback onTap;
 
@@ -1257,7 +1268,7 @@ class _DesktopFeaturedGameCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    '上次对局',
+                    copy.desktopLastGame,
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: palette.primary,
                       letterSpacing: 1.2,
@@ -1297,7 +1308,7 @@ class _DesktopFeaturedGameCard extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: onTap,
                     icon: const Icon(Icons.arrow_forward_rounded),
-                    label: const Text('继续'),
+                    label: Text(copy.desktopContinue),
                   ),
                 ],
               ),
@@ -1387,20 +1398,22 @@ class _DesktopQuickAction extends StatelessWidget {
 class _DesktopRecentGamesCard extends StatelessWidget {
   const _DesktopRecentGamesCard({
     required this.controller,
+    required this.copy,
     required this.onOpenGame,
     required this.onOpenAll,
   });
 
   final AppController controller;
+  final AppCopy copy;
   final ValueChanged<GameInfo> onOpenGame;
   final VoidCallback onOpenAll;
 
   @override
   Widget build(BuildContext context) {
     return _DesktopSurface(
-      title: '最近游戏',
+      title: copy.desktopRecentGames,
       action: IconButton(
-        tooltip: '查看全部',
+        tooltip: copy.activityViewAll,
         onPressed: onOpenAll,
         icon: const Icon(Icons.arrow_outward_rounded),
       ),
@@ -1856,13 +1869,13 @@ class _DesktopGameMark extends StatelessWidget {
 class _DesktopNoGamesPane extends StatefulWidget {
   const _DesktopNoGamesPane({
     required this.controller,
-    this.title = '还没有可用的游戏',
-    this.message = '游戏资料还没有加载完成。你可以重试加载，或先到设置检查资料来源。',
+    this.title,
+    this.message,
   });
 
   final AppController controller;
-  final String title;
-  final String message;
+  final String? title;
+  final String? message;
 
   @override
   State<_DesktopNoGamesPane> createState() => _DesktopNoGamesPaneState();
@@ -1874,6 +1887,7 @@ class _DesktopNoGamesPaneState extends State<_DesktopNoGamesPane> {
 
   Future<void> _reload() async {
     if (_loading) return;
+    final AppCopy copy = widget.controller.copy;
     setState(() {
       _loading = true;
       _error = null;
@@ -1881,11 +1895,11 @@ class _DesktopNoGamesPaneState extends State<_DesktopNoGamesPane> {
     try {
       await widget.controller.reloadGames();
       if (mounted && !widget.controller.hasGames) {
-        setState(() => _error = '没有找到可用的游戏资料，请检查本地资源或资料来源配置。');
+        setState(() => _error = copy.desktopNoGamesMissing);
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _error = '加载失败：$error');
+        setState(() => _error = copy.desktopNoGamesLoadFailed(error));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -1895,6 +1909,9 @@ class _DesktopNoGamesPaneState extends State<_DesktopNoGamesPane> {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = widget.controller.copy;
+    final String title = widget.title ?? copy.desktopNoGamesTitle;
+    final String message = widget.message ?? copy.desktopNoGamesMessage;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
@@ -1918,7 +1935,7 @@ class _DesktopNoGamesPaneState extends State<_DesktopNoGamesPane> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  widget.title,
+                  title,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: palette.textPrimary,
@@ -1927,7 +1944,7 @@ class _DesktopNoGamesPaneState extends State<_DesktopNoGamesPane> {
                 ),
                 const SizedBox(height: 9),
                 Text(
-                  widget.message,
+                  message,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: palette.textSecondary,
@@ -1960,16 +1977,22 @@ class _DesktopNoGamesPaneState extends State<_DesktopNoGamesPane> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.refresh_rounded),
-                      label: Text(_loading ? '加载中…' : '重新加载'),
+                      label: Text(
+                        _loading
+                            ? copy.desktopNoGamesLoading
+                            : copy.desktopNoGamesRetry,
+                      ),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => ScaffoldMessenger.of(context)
                         ..hideCurrentSnackBar()
                         ..showSnackBar(
-                          const SnackBar(content: Text('请打开左侧“设置”，检查资料来源配置。')),
+                          SnackBar(
+                            content: Text(copy.desktopCheckSettingsHint),
+                          ),
                         ),
                       icon: const Icon(Icons.settings_outlined),
-                      label: const Text('检查设置'),
+                      label: Text(copy.desktopCheckSettings),
                     ),
                   ],
                 ),
@@ -2137,7 +2160,9 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     final String assistantTitle = useGlobalMode
         ? controller.copy.globalAiTitle
         : '${game.title}助手';
-    final String assistantSubtitle = useGlobalMode ? '跨桌游知识问答' : '官方资料已加载';
+    final String assistantSubtitle = useGlobalMode
+        ? controller.copy.desktopCrossGameQuestions
+        : controller.copy.desktopOfficialLoaded;
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
       child: DecoratedBox(
@@ -2261,7 +2286,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                                 bottom: 14,
                                 child: FloatingActionButton.small(
                                   heroTag: 'assistant-jump-to-bottom',
-                                  tooltip: '回到底部',
+                                  tooltip: controller.copy.desktopJumpToBottom,
                                   onPressed: _scrollToBottom,
                                   child: const Icon(Icons.south_rounded),
                                 ),
@@ -2425,6 +2450,7 @@ class _DesktopAssistantEmptyPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = controller.copy;
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
       child: DecoratedBox(
@@ -2441,10 +2467,13 @@ class _DesktopAssistantEmptyPane extends StatelessWidget {
               children: <Widget>[
                 Icon(Icons.forum_outlined, size: 42, color: palette.primary),
                 const SizedBox(height: 14),
-                Text('还没有会话', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  copy.desktopNoSession,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  '进入某款桌游的详情页并点击“询问 AI”，或打开通用助手开始聊天。',
+                  copy.desktopNoSessionHint,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: palette.textSecondary,
@@ -2454,7 +2483,7 @@ class _DesktopAssistantEmptyPane extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: () => controller.openGlobalAssistant(),
                   icon: const Icon(Icons.auto_awesome_rounded),
-                  label: const Text('打开通用助手'),
+                  label: Text(copy.desktopOpenGlobalAssistant),
                 ),
               ],
             ),
@@ -2776,6 +2805,7 @@ class _DesktopComposer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = controller.copy;
     return AnimatedBuilder(
       animation: draftController,
       builder: (BuildContext context, Widget? child) {
@@ -2793,7 +2823,7 @@ class _DesktopComposer extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
                 IconButton(
-                  tooltip: '语音输入',
+                  tooltip: copy.desktopVoiceInput,
                   onPressed: controller.isSending ? null : onMic,
                   icon: Icon(
                     controller.isListening
@@ -2808,8 +2838,8 @@ class _DesktopComposer extends StatelessWidget {
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
                     onSubmitted: canSend ? (_) => onSend() : null,
-                    decoration: const InputDecoration(
-                      hintText: '输入问题…',
+                    decoration: InputDecoration(
+                      hintText: copy.desktopInputHint,
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
@@ -2818,7 +2848,9 @@ class _DesktopComposer extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: controller.isSending ? '停止生成' : '发送',
+                  tooltip: controller.isSending
+                      ? copy.desktopStopGenerating
+                      : copy.desktopSend,
                   onPressed: controller.isSending
                       ? controller.stopGenerating
                       : canSend

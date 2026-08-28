@@ -39,7 +39,15 @@ class _LibraryResourceDocumentScreenState
 
   Future<Object?> _loadContent() async {
     if (widget.document.renderType == DocumentRenderType.image) {
-      return widget.controller.cacheDocument(widget.document.remotePath);
+      // Desktop caches remote images, while bundled fallback images can be
+      // rendered directly from Flutter's asset bundle when no remote copy is
+      // available.
+      return await widget.controller.resolveImagePath(
+            widget.document.remotePath,
+          ) ??
+          (widget.document.remotePath.startsWith('assets/')
+              ? widget.document.remotePath
+              : null);
     }
     final String? content = await widget.controller.loadLibraryResourceText(
       widget.document.remotePath,
@@ -72,17 +80,32 @@ class _LibraryResourceDocumentScreenState
             );
           }
           if (widget.document.renderType == DocumentRenderType.image) {
+            final String path = snapshot.data! as String;
             return InteractiveViewer(
               minScale: 0.5,
               maxScale: 5,
               child: Center(
-                child: Image.file(
-                  File(snapshot.data! as String),
-                  fit: BoxFit.contain,
-                  errorBuilder:
-                      (BuildContext context, Object error, StackTrace? stack) =>
-                          Text('图片加载失败：$error'),
-                ),
+                child: path.startsWith('assets/')
+                    ? Image.asset(
+                        path,
+                        fit: BoxFit.contain,
+                        errorBuilder:
+                            (
+                              BuildContext context,
+                              Object error,
+                              StackTrace? stack,
+                            ) => Text('图片加载失败：$error'),
+                      )
+                    : Image.file(
+                        File(path),
+                        fit: BoxFit.contain,
+                        errorBuilder:
+                            (
+                              BuildContext context,
+                              Object error,
+                              StackTrace? stack,
+                            ) => Text('图片加载失败：$error'),
+                      ),
               ),
             );
           }

@@ -263,14 +263,33 @@ class GameManifest {
   }
 
   static Map<String, List<String>> _localizedStringListMap(dynamic value) {
-    final Map<String, dynamic> map =
-        value as Map<String, dynamic>? ?? <String, dynamic>{};
-    return map.map((key, dynamic value) => MapEntry(key, _stringList(value)));
+    if (value is List) {
+      // Some manifests use one language-neutral list instead of a localized
+      // map. Keep it under a fallback key so locale resolution can still
+      // consume it without special-casing every caller.
+      return <String, List<String>>{'default': _stringList(value)};
+    }
+    if (value is! Map) {
+      return <String, List<String>>{};
+    }
+    return value.map(
+      (key, dynamic value) => MapEntry(key.toString(), _stringList(value)),
+    );
   }
 
   static List<String> _stringList(dynamic value) {
-    final List<dynamic> list = value as List<dynamic>? ?? const <dynamic>[];
-    return list.map((item) => item as String).toList();
+    if (value is String) {
+      final String normalized = value.trim();
+      return normalized.isEmpty ? <String>[] : <String>[normalized];
+    }
+    if (value is! Iterable) {
+      return <String>[];
+    }
+    return value
+        .whereType<String>()
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
   }
 
   static List<int> _intList(dynamic value) {

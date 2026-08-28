@@ -2490,7 +2490,7 @@ class AppController extends ChangeNotifier {
     if (localPath == null) {
       if (remotePath.startsWith('assets/')) {
         try {
-          return rootBundle.loadString(remotePath);
+          return await rootBundle.loadString(remotePath);
         } catch (_) {
           return null;
         }
