@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 
@@ -179,4 +181,39 @@ void main() {
     expect(stageMap['rawEventCount'], 3);
     expect(stageMap['outputItemCount'], 1);
   });
+
+  test(
+    'cancels before starting a stage when the abort signal is already set',
+    () async {
+      final Completer<void> abort = Completer<void>()..complete();
+      bool executed = false;
+      final List<AiRunEvent> events = await const AiRunOrchestrator()
+          .stream(
+            runId: 'run-cancelled-before-stage',
+            abortTrigger: abort.future,
+            stages: <AiStageDefinition>[
+              AiStageDefinition(
+                stageId: 'general',
+                scope: AiKnowledgeScope.general(),
+                execute: () async {
+                  executed = true;
+                  return const AiStageResult(
+                    stageId: 'general',
+                    scope: AiKnowledgeScope.general(),
+                    status: AiStageStatus.answered,
+                  );
+                },
+              ),
+            ],
+          )
+          .toList();
+
+      expect(executed, isFalse);
+      expect(events.map((AiRunEvent event) => event.type), <AiRunEventType>[
+        AiRunEventType.runStarted,
+        AiRunEventType.cancelled,
+      ]);
+      expect(events.last.runResult?.status, AiRunStatus.cancelled);
+    },
+  );
 }
