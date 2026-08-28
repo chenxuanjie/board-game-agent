@@ -11,6 +11,7 @@ import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/game_info.dart';
+import 'package:board_game_agent/models/game_resource.dart';
 import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
 import 'package:board_game_agent/services/responses_compaction_store.dart';
@@ -223,6 +224,257 @@ void main() {
     expect(client.completeRequests, 2);
     expect(client.requests[1].tools.single.kind, ResponsesToolKind.webSearch);
   });
+
+  test('keeps official and community documents in separate stages', () async {
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        _response(
+          '{"status":"answered","answer":"官方规则回答","sourceIds":["official-rulebook"]}',
+        ),
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+
+    final BoardGameAiAnswer answer = await workflow.generateReply(
+      prompt: '规则问题',
+      language: AppLanguage.zhHans,
+      game: _gameWithSources(),
+      answerMode: AiAnswerMode.knowledgeOnly,
+      useGlobalMode: false,
+      config: _config(),
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _FakeRemoteAssetService(),
+      conversationHistory: const <ChatMessage>[],
+    );
+
+    expect(answer.source, AnswerSource.official);
+    expect(client.requests, hasLength(1));
+    final List<ResponsesFileInput> files = client.requests.single.input
+        .whereType<ResponsesFileInput>()
+        .toList();
+    expect(files, hasLength(1));
+    expect(files.single.filename, 'rulebook_en.md');
+  });
+
+  test('does not expose buffered stage text before response.completed', () async {
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        _response(
+          '{"status":"answered","answer":"最终规则答案","sourceIds":["puerto_rico-knowledge-0"]}',
+        ),
+      ],
+      streams: <List<ResponsesStreamEvent>>[
+        <ResponsesStreamEvent>[
+          const ResponsesStreamEvent.text('{"status":"answered","answer":"中间"'),
+          const ResponsesStreamEvent.text('间文本"}'),
+          ResponsesStreamEvent.completed(
+            ResponsesResponse(
+              text:
+                  '{"status":"answered","answer":"最终规则答案","sourceIds":["puerto_rico-knowledge-0"]}',
+              model: 'test-model',
+              id: 'resp-stream',
+            ),
+          ),
+        ],
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+
+    final List<BoardGameAiStreamEvent> events = await workflow
+        .streamReply(
+          prompt: '规则问题',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeOnly,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const <AssetSourceConfig>[],
+          remoteAssetService: _FakeRemoteAssetService(),
+          conversationHistory: const <ChatMessage>[],
+        )
+        .toList();
+
+    expect(
+      events.map((BoardGameAiStreamEvent event) => event.delta).join(),
+      '最终规则答案',
+    );
+    expect(
+      events.where(
+        (BoardGameAiStreamEvent event) => event.delta.contains('中间'),
+      ),
+      isEmpty,
+    );
+    expect(events.last.answer?.text, '最终规则答案');
+    expect(events.last.isDone, isTrue);
+  });
+
+  test(
+    'commits an explicit insufficient answer when knowledge stages find nothing',
+    () async {
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
+        ],
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+      );
+
+      final List<BoardGameAiStreamEvent> events = await workflow
+          .streamReply(
+            prompt: '没有资料的问题',
+            language: AppLanguage.zhHans,
+            game: _game(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: _config(),
+            assetSourceConfigs: const <AssetSourceConfig>[],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: const <ChatMessage>[],
+          )
+          .toList();
+
+      expect(events.last.isDone, isTrue);
+      expect(events.last.isFailure, isFalse);
+      expect(events.last.status, 'insufficient');
+      expect(events.last.answer?.source, AnswerSource.insufficient);
+      expect(events.last.answer?.text, contains('资料不足'));
+    },
+  );
+
+  test('persists a compaction output item emitted during streaming', () async {
+    final InMemoryResponsesCompactionStore store =
+        InMemoryResponsesCompactionStore();
+    final _FakeResponsesClient firstClient = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        ResponsesResponse(
+          text:
+              '{"status":"answered","answer":"流式答案","sourceIds":["puerto_rico-knowledge-0"]}',
+          model: 'test-model',
+          id: 'resp-stream-compaction',
+        ),
+      ],
+      streams: <List<ResponsesStreamEvent>>[
+        <ResponsesStreamEvent>[
+          const ResponsesStreamEvent(
+            type: ResponsesStreamEventType.outputItemDone,
+            outputItem: ResponsesRawInput(<String, dynamic>{
+              'type': 'compaction',
+              'id': 'cmp-stream',
+              'encrypted_content': 'opaque-stream',
+            }),
+          ),
+          ResponsesStreamEvent.completed(
+            ResponsesResponse(
+              text:
+                  '{"status":"answered","answer":"流式答案","sourceIds":["puerto_rico-knowledge-0"]}',
+              model: 'test-model',
+              id: 'resp-stream-compaction',
+            ),
+          ),
+        ],
+      ],
+    );
+    final ResponsesRulesWorkflow firstWorkflow = ResponsesRulesWorkflow(
+      responsesClient: firstClient,
+      compactionStore: store,
+    );
+
+    final List<BoardGameAiStreamEvent> firstEvents = await firstWorkflow
+        .streamReply(
+          prompt: '第一问',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeOnly,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const <AssetSourceConfig>[],
+          remoteAssetService: _FakeRemoteAssetService(),
+          conversationHistory: const <ChatMessage>[],
+        )
+        .toList();
+    expect(firstEvents.last.answer?.text, '流式答案');
+
+    final _FakeResponsesClient secondClient = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        _response(
+          '{"status":"answered","answer":"第二次答案","sourceIds":["puerto_rico-knowledge-0"]}',
+        ),
+      ],
+    );
+    final ResponsesRulesWorkflow secondWorkflow = ResponsesRulesWorkflow(
+      responsesClient: secondClient,
+      compactionStore: store,
+    );
+    await secondWorkflow.generateReply(
+      prompt: '第二问',
+      language: AppLanguage.zhHans,
+      game: _game(),
+      answerMode: AiAnswerMode.knowledgeOnly,
+      useGlobalMode: false,
+      config: _config(),
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _FakeRemoteAssetService(),
+      conversationHistory: const <ChatMessage>[],
+    );
+    expect(
+      secondClient.requests.single.input
+          .whereType<ResponsesRawInput>()
+          .single
+          .value['id'],
+      'cmp-stream',
+    );
+  });
+
+  test(
+    'reports a late stream failure without committing the buffered text',
+    () async {
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: const <ResponsesResponse>[],
+        streams: <List<ResponsesStreamEvent>>[
+          <ResponsesStreamEvent>[
+            const ResponsesStreamEvent.text(
+              '{"status":"answered","answer":"部分答案',
+            ),
+            const ResponsesStreamEvent.failed(
+              'upstream failed',
+              errorCode: 'upstream_failed',
+            ),
+          ],
+        ],
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+      );
+
+      final List<BoardGameAiStreamEvent> events = await workflow
+          .streamReply(
+            prompt: '规则问题',
+            language: AppLanguage.zhHans,
+            game: _game(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: _config(),
+            assetSourceConfigs: const <AssetSourceConfig>[],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: const <ChatMessage>[],
+          )
+          .toList();
+
+      expect(
+        events.where((BoardGameAiStreamEvent event) => event.delta.isNotEmpty),
+        isEmpty,
+      );
+      expect(events.last.isDone, isTrue);
+      expect(events.last.isFailure, isTrue);
+      expect(events.last.runEvent?.stageResult?.bufferedText, contains('部分答案'));
+      expect(events.last.runEvent?.stageResult?.errorCode, 'upstream_failed');
+    },
+  );
 
   test(
     'falls back to model knowledge when web search has no citations',
@@ -523,6 +775,77 @@ GameInfo _game() => GameInfo(
   quickPrompts: const <String>[],
 );
 
+GameInfo _gameWithSources() => GameInfo(
+  id: 'demo',
+  slug: 'demo',
+  title: 'Demo',
+  subtitle: 'Demo',
+  coverAssetPath: '',
+  bannerAssetPath: '',
+  cardAccent: 0,
+  score: '',
+  scoreCountLabel: '',
+  releaseYear: '',
+  categoryLine: '',
+  learningDifficulty: '',
+  perPlayerTime: '',
+  setupTime: '',
+  languageRequirement: '',
+  supportedPlayers: const <int>[2],
+  recommendedPlayer: 2,
+  rankBadges: const <String>[],
+  rulebookAssetPath: 'assets/games/demo/docs/local/knowledge/rulebook_en.md',
+  faqAssetPath: '',
+  knowledgeAssetPaths: const <String>[
+    'assets/games/demo/docs/local/knowledge/rulebook_en.md',
+    'assets/games/demo/docs/community/answers/ruling_cn.md',
+  ],
+  resources: <GameResource>[
+    _testResource(
+      id: 'official-rulebook',
+      path: 'docs/local/knowledge/rulebook_en.md',
+      sourceClass: 'official_extracted',
+    ),
+    _testResource(
+      id: 'community-ruling',
+      path: 'docs/community/answers/ruling_cn.md',
+      sourceClass: 'community',
+    ),
+  ],
+  heroTagline: '',
+  assistantIntro: '',
+  summary: '',
+  mentorPitch: '',
+  playTime: '',
+  playerCount: '',
+  complexity: '',
+  roundFlow: const <String>[],
+  assistantSkills: const <String>[],
+  quickPrompts: const <String>[],
+);
+
+GameResource _testResource({
+  required String id,
+  required String path,
+  required String sourceClass,
+}) => GameResource(
+  id: id,
+  path: path,
+  documentType: 'rulebook',
+  sourceClass: sourceClass,
+  origin: 'test',
+  language: 'en',
+  edition: 'test',
+  status: 'available',
+  enabled: true,
+  aiEnabled: true,
+  priority: 1,
+  derivedFrom: const <String>[],
+  sourceUrl: null,
+  reviewStatus: 'checked',
+  notes: null,
+);
+
 ResponsesResponse _response(String text) =>
     ResponsesResponse(text: text, model: 'test-model');
 
@@ -553,9 +876,10 @@ class _UnavailableRemoteAssetService extends RemoteAssetService {
 }
 
 class _FakeResponsesClient implements ResponsesAiClient {
-  _FakeResponsesClient({required this.responses});
+  _FakeResponsesClient({required this.responses, this.streams = const []});
 
   final List<ResponsesResponse> responses;
+  final List<List<ResponsesStreamEvent>> streams;
   final List<ResponsesRequest> requests = <ResponsesRequest>[];
 
   int get completeRequests => requests.length;
@@ -575,6 +899,10 @@ class _FakeResponsesClient implements ResponsesAiClient {
     Future<void>? abortTrigger,
   }) async* {
     requests.add(request);
+    if (streams.isNotEmpty) {
+      yield* Stream<ResponsesStreamEvent>.fromIterable(streams.removeAt(0));
+      return;
+    }
     yield ResponsesStreamEvent.completed(responses.removeAt(0));
   }
 

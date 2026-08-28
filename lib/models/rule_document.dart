@@ -9,6 +9,7 @@ class RuleDocument {
     required this.format,
     required this.language,
     required this.sourceType,
+    this.derivedFrom = const <String>[],
     this.version,
     this.url,
   });
@@ -19,6 +20,13 @@ class RuleDocument {
   final String format;
   final String language;
   final String sourceType;
+
+  /// IDs or paths of the source materials used to derive this document.
+  ///
+  /// This is kept at the retrieval boundary so a locally translated or
+  /// extracted document can still be assigned to the correct provenance
+  /// stage instead of being mixed with an unrelated source class.
+  final List<String> derivedFrom;
   final String? version;
   final String? url;
 
