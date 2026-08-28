@@ -2104,7 +2104,7 @@ class AppController extends ChangeNotifier {
 
     final Directory directory = Directory(directoryPath.trim());
     await directory.create(recursive: true);
-    final String fileName = _safeDownloadFileName(resource.fileName);
+    final String fileName = _downloadFileName(resource);
     if (fileName.isEmpty) {
       return null;
     }
@@ -2125,6 +2125,61 @@ class AppController extends ChangeNotifier {
         .replaceFirst(RegExp(r'[ .]+$'), '')
         .trim();
     return sanitized.isEmpty ? 'library-resource' : sanitized;
+  }
+
+  /// Builds the user-facing download name from the same localized metadata
+  /// shown in the desktop library card instead of exposing the WebDAV stem.
+  ///
+  /// The resource list may have been loaded before the user switched language,
+  /// so the current [GameInfo] is resolved by slug at download time. This
+  /// keeps the file name in sync with the language currently displayed by the
+  /// app without requiring another remote index request.
+  String _downloadFileName(DesktopLibraryResource resource) {
+    final GameInfo? game = _games
+        .where((GameInfo item) => item.slug == resource.gameSlug)
+        .cast<GameInfo?>()
+        .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+    final String gameTitle =
+        (game?.title.trim().isNotEmpty == true
+                ? game!.title
+                : resource.gameTitle)
+            .trim();
+    final String resourceTitle = _localizedLibraryResourceTitle(resource);
+    final String extension = _fileExtension(resource.fileName);
+    final String stem = gameTitle.isEmpty
+        ? resourceTitle
+        : '$gameTitle · $resourceTitle';
+    return _safeDownloadFileName('$stem$extension');
+  }
+
+  String _localizedLibraryResourceTitle(DesktopLibraryResource resource) {
+    final bool isChinese = _language == AppLanguage.zhHans;
+    switch (resource.type) {
+      case DesktopLibraryResourceType.rulebook:
+        return isChinese ? '规则书' : 'Rulebook';
+      case DesktopLibraryResourceType.faq:
+        return 'FAQ';
+      case DesktopLibraryResourceType.assetIndex:
+        return isChinese ? '资料索引' : 'Asset index';
+      case DesktopLibraryResourceType.reference:
+        return isChinese ? '规则参考' : 'Rules reference';
+      case DesktopLibraryResourceType.playerAid:
+        return isChinese ? '玩家辅助' : 'Player aid';
+      case DesktopLibraryResourceType.supplement:
+        return isChinese ? '补充资料' : 'Supplement';
+      case DesktopLibraryResourceType.other:
+        final String fallback = resource.title.trim();
+        return fallback.isEmpty ? (isChinese ? '资料' : 'Resource') : fallback;
+    }
+  }
+
+  String _fileExtension(String fileName) {
+    final String normalized = fileName.trim();
+    final int dot = normalized.lastIndexOf('.');
+    if (dot <= 0 || dot == normalized.length - 1) {
+      return '';
+    }
+    return normalized.substring(dot);
   }
 
   Future<void> _initializeRemoteLibrary() async {
