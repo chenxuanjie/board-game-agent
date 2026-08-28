@@ -27,9 +27,13 @@ class AiRunOrchestrator {
   Stream<AiRunEvent> stream({
     required String runId,
     required List<AiStageDefinition> stages,
+    String? sessionId,
+    String? contextKey,
+    String? model,
     Future<void>? abortTrigger,
   }) async* {
     int sequence = 0;
+    final DateTime runStartedAt = DateTime.now();
     bool abortRequested = false;
     abortTrigger?.then((_) => abortRequested = true);
 
@@ -43,6 +47,7 @@ class AiRunOrchestrator {
       BoardGameAiAnswer? answer,
       String? errorCode,
       String? errorMessage,
+      AiRunResult? runResult,
     }) {
       return AiRunEvent(
         runId: runId,
@@ -53,10 +58,16 @@ class AiRunOrchestrator {
         scope: scope,
         status: status,
         responseId: responseId,
+        sessionId: sessionId,
+        contextKey: contextKey,
+        model: stageResult?.model ?? model,
+        usage: stageResult?.usage,
+        requestCount: stageResult?.requestCount ?? 0,
         stageResult: stageResult,
         answer: answer,
         errorCode: errorCode,
         errorMessage: errorMessage,
+        runResult: runResult,
       );
     }
 
@@ -65,7 +76,21 @@ class AiRunOrchestrator {
 
     for (final AiStageDefinition stage in stages) {
       if (abortRequested) {
-        yield next(type: AiRunEventType.cancelled, status: 'cancelled');
+        final AiRunResult result = _buildRunResult(
+          runId: runId,
+          status: AiRunStatus.cancelled,
+          stages: results,
+          sessionId: sessionId,
+          contextKey: contextKey,
+          model: model,
+          startedAt: runStartedAt,
+          completedAt: DateTime.now(),
+        );
+        yield next(
+          type: AiRunEventType.cancelled,
+          status: 'cancelled',
+          runResult: result,
+        );
         return;
       }
 
@@ -76,6 +101,7 @@ class AiRunOrchestrator {
         status: stage.stageId,
       );
 
+      final DateTime stageStartedAt = DateTime.now();
       AiStageResult result;
       try {
         result = await stage.execute();
@@ -87,6 +113,11 @@ class AiRunOrchestrator {
           errorMessage: '$error',
         );
       }
+      result = result.copyWith(
+        startedAt: result.startedAt ?? stageStartedAt,
+        completedAt: result.completedAt ?? DateTime.now(),
+        contextKey: result.contextKey ?? contextKey,
+      );
       results.add(result);
       yield next(
         type: AiRunEventType.stageCompleted,
@@ -101,16 +132,39 @@ class AiRunOrchestrator {
       );
 
       if (abortRequested || result.status == AiStageStatus.cancelled) {
+        final AiRunResult runResult = _buildRunResult(
+          runId: runId,
+          status: AiRunStatus.cancelled,
+          stages: results,
+          responseId: result.responseId,
+          sessionId: sessionId,
+          contextKey: contextKey,
+          model: result.model ?? model,
+          startedAt: runStartedAt,
+          completedAt: DateTime.now(),
+        );
         yield next(
           type: AiRunEventType.cancelled,
           stageId: stage.stageId,
           status: 'cancelled',
           stageResult: result,
+          runResult: runResult,
         );
         return;
       }
 
       if (result.hasAnswer) {
+        final AiRunResult runResult = _buildRunResult(
+          runId: runId,
+          status: AiRunStatus.completed,
+          stages: <AiStageResult>[...results],
+          responseId: result.responseId,
+          sessionId: sessionId,
+          contextKey: contextKey,
+          model: result.model ?? model,
+          startedAt: runStartedAt,
+          completedAt: DateTime.now(),
+        );
         yield next(
           type: AiRunEventType.completed,
           stageId: stage.stageId,
@@ -119,6 +173,7 @@ class AiRunOrchestrator {
           responseId: result.responseId,
           stageResult: result,
           answer: result.answer,
+          runResult: runResult,
         );
         return;
       }
@@ -146,6 +201,21 @@ class AiRunOrchestrator {
     final AiRunEventType terminalType = hasFailure
         ? AiRunEventType.failed
         : AiRunEventType.incomplete;
+    final AiRunStatus terminalStatus = hasFailure
+        ? AiRunStatus.failed
+        : AiRunStatus.incomplete;
+    final AiRunResult runResult = _buildRunResult(
+      runId: runId,
+      status: terminalStatus,
+      stages: results,
+      responseId: terminalStage?.responseId,
+      contextKey: contextKey,
+      model: terminalStage?.model ?? model,
+      startedAt: runStartedAt,
+      completedAt: DateTime.now(),
+      errorCode: terminalStage?.errorCode,
+      errorMessage: terminalStage?.errorMessage,
+    );
     yield next(
       type: terminalType,
       status: hasFailure ? 'failed' : 'incomplete',
@@ -154,18 +224,25 @@ class AiRunOrchestrator {
       stageResult: terminalStage,
       errorCode: terminalStage?.errorCode,
       errorMessage: terminalStage?.errorMessage,
+      runResult: runResult,
     );
   }
 
   Future<AiRunResult> run({
     required String runId,
     required List<AiStageDefinition> stages,
+    String? sessionId,
+    String? contextKey,
+    String? model,
     Future<void>? abortTrigger,
   }) async {
     final List<AiRunEvent> events = <AiRunEvent>[];
     await for (final AiRunEvent event in stream(
       runId: runId,
       stages: stages,
+      sessionId: sessionId,
+      contextKey: contextKey,
+      model: model,
       abortTrigger: abortTrigger,
     )) {
       events.add(event);
@@ -181,10 +258,13 @@ class AiRunOrchestrator {
       }
     }
     final List<AiStageResult> stageResults = events
+        .where(
+          (AiRunEvent event) => event.type == AiRunEventType.stageCompleted,
+        )
         .map((AiRunEvent event) => event.stageResult)
         .whereType<AiStageResult>()
         .toList(growable: false);
-    return AiRunResult(
+    return _buildRunResult(
       runId: runId,
       status: switch (terminal?.type) {
         AiRunEventType.completed => AiRunStatus.completed,
@@ -192,12 +272,66 @@ class AiRunOrchestrator {
         AiRunEventType.incomplete => AiRunStatus.incomplete,
         _ => AiRunStatus.failed,
       },
-      answer: terminal?.answer,
       stages: stageResults,
-      events: List<AiRunEvent>.unmodifiable(events),
+      events: events,
       responseId: terminal?.responseId,
+      sessionId: sessionId,
+      contextKey: contextKey,
+      model: terminal?.model ?? model,
+      startedAt: events.isEmpty ? null : events.first.timestamp,
+      completedAt: events.isEmpty ? null : events.last.timestamp,
       errorCode: terminal?.errorCode,
       errorMessage: terminal?.errorMessage,
+    );
+  }
+
+  AiRunResult _buildRunResult({
+    required String runId,
+    required AiRunStatus status,
+    required List<AiStageResult> stages,
+    String? responseId,
+    String? sessionId,
+    String? contextKey,
+    String? model,
+    DateTime? startedAt,
+    DateTime? completedAt,
+    List<AiRunEvent> events = const <AiRunEvent>[],
+    String? errorCode,
+    String? errorMessage,
+  }) {
+    int requestCount = 0;
+    int inputTokens = 0;
+    int outputTokens = 0;
+    int reasoningTokens = 0;
+    int citationCount = 0;
+    for (final AiStageResult stage in stages) {
+      requestCount += stage.requestCount;
+      inputTokens += stage.usage?.promptTokens ?? 0;
+      outputTokens += stage.usage?.completionTokens ?? 0;
+      reasoningTokens += stage.usage?.reasoningTokens ?? 0;
+      citationCount += stage.citations.length;
+    }
+    return AiRunResult(
+      runId: runId,
+      status: status,
+      answer: stages.where((AiStageResult stage) => stage.hasAnswer).isEmpty
+          ? null
+          : stages.lastWhere((AiStageResult stage) => stage.hasAnswer).answer,
+      stages: List<AiStageResult>.unmodifiable(stages),
+      events: List<AiRunEvent>.unmodifiable(events),
+      responseId: responseId,
+      sessionId: sessionId,
+      contextKey: contextKey,
+      model: model,
+      startedAt: startedAt,
+      completedAt: completedAt,
+      requestCount: requestCount,
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      reasoningTokens: reasoningTokens,
+      citationCount: citationCount,
+      errorCode: errorCode,
+      errorMessage: errorMessage,
     );
   }
 }

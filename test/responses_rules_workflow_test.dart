@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:board_game_agent/models/ai_answer_mode.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
+import 'package:board_game_agent/models/ai_run.dart';
 import 'package:board_game_agent/models/answer_source.dart';
 import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/asset_source_config.dart';
@@ -16,6 +17,7 @@ import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
 import 'package:board_game_agent/services/responses_compaction_store.dart';
 import 'package:board_game_agent/services/responses_rules_workflow.dart';
+import 'package:board_game_agent/services/ai_run_telemetry.dart';
 
 void main() {
   test('uses the selected game knowledge paths as official documents', () async {
@@ -728,6 +730,169 @@ void main() {
       expect(compactions.single.value['encrypted_content'], 'opaque-persisted');
     },
   );
+
+  test(
+    'global knowledge-only does not load game files unless explicitly enabled',
+    () async {
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: <ResponsesResponse>[_response('普通知识库未启用')],
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+      );
+
+      final BoardGameAiAnswer answer = await workflow.generateReply(
+        prompt: '规则问题',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeOnly,
+        useGlobalMode: true,
+        useCurrentGameKnowledge: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _FakeRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      expect(answer.source, AnswerSource.insufficient);
+      expect(client.requests, isEmpty);
+    },
+  );
+
+  test(
+    'a compaction item replaces the old local conversation window',
+    () async {
+      final InMemoryResponsesCompactionStore store =
+          InMemoryResponsesCompactionStore();
+      final _FakeResponsesClient firstClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          ResponsesResponse(
+            text: '第一次回答',
+            model: 'test-model',
+            outputItems: const <ResponsesInputItem>[
+              ResponsesRawInput(<String, dynamic>{
+                'type': 'compaction',
+                'id': 'cmp-replaces-history',
+                'encrypted_content': 'opaque',
+              }),
+            ],
+          ),
+        ],
+      );
+      final ResponsesRulesWorkflow firstWorkflow = ResponsesRulesWorkflow(
+        responsesClient: firstClient,
+        compactionStore: store,
+      );
+      await firstWorkflow.generateReply(
+        prompt: '第一问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _UnavailableRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      final _FakeResponsesClient secondClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          ResponsesResponse(
+            text: '第二次回答',
+            model: 'test-model',
+            webSearchCitations: const <ResponsesWebSearchCitation>[
+              ResponsesWebSearchCitation(
+                url: 'https://example.test/compaction',
+                title: '压缩后的上下文',
+              ),
+            ],
+          ),
+        ],
+      );
+      final ResponsesRulesWorkflow secondWorkflow = ResponsesRulesWorkflow(
+        responsesClient: secondClient,
+        compactionStore: store,
+      );
+      final List<ChatMessage> history = List<ChatMessage>.generate(
+        12,
+        (int index) => ChatMessage(
+          id: 'old-$index',
+          role: index.isEven ? ChatRole.user : ChatRole.assistant,
+          text: 'old-history-$index',
+          timestamp: DateTime(2026, 1, 1).add(Duration(minutes: index)),
+        ),
+      );
+      await secondWorkflow.generateReply(
+        prompt: '第二问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _UnavailableRemoteAssetService(),
+        conversationHistory: history,
+      );
+
+      final List<ResponsesTextInput> texts = secondClient.requests.single.input
+          .whereType<ResponsesTextInput>()
+          .toList();
+      expect(texts.map((ResponsesTextInput item) => item.text), <String>[
+        '第二问',
+      ]);
+      expect(
+        secondClient.requests.single.input
+            .whereType<ResponsesRawInput>()
+            .single
+            .value['id'],
+        'cmp-replaces-history',
+      );
+    },
+  );
+
+  test('telemetry records run status, model, session, and usage', () async {
+    final InMemoryAiRunTelemetrySink telemetry = InMemoryAiRunTelemetrySink();
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        ResponsesResponse(
+          text: '普通回答',
+          model: 'telemetry-model',
+          id: 'resp-telemetry',
+          usage: const AiUsage(
+            promptTokens: 10,
+            completionTokens: 6,
+            totalTokens: 16,
+            reasoningTokens: 2,
+          ),
+        ),
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+      telemetrySink: telemetry,
+    );
+    await workflow.generateReply(
+      prompt: '你好，你能做什么？',
+      language: AppLanguage.zhHans,
+      game: _game(),
+      answerMode: AiAnswerMode.knowledgeThenDirect,
+      useGlobalMode: true,
+      config: _config(),
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: _UnavailableRemoteAssetService(),
+      conversationHistory: const <ChatMessage>[],
+    );
+
+    expect(telemetry.recent, hasLength(1));
+    final result = telemetry.recent.single;
+    expect(result.status, AiRunStatus.completed);
+    expect(result.model, 'telemetry-model');
+    expect(result.sessionId, result.contextKey);
+    expect(result.requestCount, 1);
+    expect(result.inputTokens, 10);
+    expect(result.outputTokens, 6);
+    expect(result.reasoningTokens, 2);
+  });
 }
 
 AiApiConfig _config() => const AiApiConfig(

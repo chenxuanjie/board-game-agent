@@ -22,6 +22,7 @@ import 'remote_asset_service.dart';
 import 'ai_service.dart';
 import 'responses_compaction_store.dart';
 import 'ai_run_orchestrator.dart';
+import 'ai_run_telemetry.dart';
 
 /// Stage-based rule workflow for the Responses API.
 ///
@@ -41,12 +42,14 @@ class ResponsesRulesWorkflow {
     ResponsesCompactionStore? compactionStore,
     BoardGameQuestionRouter? questionRouter,
     BoardGameQuestionClassifier? questionClassifier,
+    AiRunTelemetrySink? telemetrySink,
   }) : _responsesClient = responsesClient,
        _promptBuilder = promptBuilder ?? BoardGamePromptBuilder(),
        _compactionStore = compactionStore ?? InMemoryResponsesCompactionStore(),
        _questionRouter = questionRouter ?? const BoardGameQuestionRouter(),
        _questionClassifier =
            questionClassifier ?? BoardGameQuestionClassifier(),
+       _telemetrySink = telemetrySink ?? InMemoryAiRunTelemetrySink(),
        _orchestrator = const AiRunOrchestrator();
 
   final ResponsesAiClient _responsesClient;
@@ -54,14 +57,18 @@ class ResponsesRulesWorkflow {
   final ResponsesCompactionStore _compactionStore;
   final BoardGameQuestionRouter _questionRouter;
   final BoardGameQuestionClassifier _questionClassifier;
+  final AiRunTelemetrySink _telemetrySink;
   final AiRunOrchestrator _orchestrator;
   final Map<String, List<ResponsesInputItem>> _compactionInputsByContext =
       <String, List<ResponsesInputItem>>{};
+  final Map<String, String> _activeCompactionContextByScope =
+      <String, String>{};
   Future<void>? _compactionLoadFuture;
   bool _compactionLoaded = false;
 
   void close() {
     _compactionInputsByContext.clear();
+    _activeCompactionContextByScope.clear();
     _responsesClient.close();
   }
 
@@ -75,6 +82,7 @@ class ResponsesRulesWorkflow {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
   }) async {
     await _ensureCompactionLoaded();
     final _WorkflowContext context = await _prepare(
@@ -86,6 +94,7 @@ class ResponsesRulesWorkflow {
       assetSourceConfigs: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
 
     if (answerMode == AiAnswerMode.knowledgeThenDirect) {
@@ -95,10 +104,14 @@ class ResponsesRulesWorkflow {
             language: language,
             game: game,
             useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
           );
       if (routing.route == BoardGameQuestionRoute.general) {
         final AiRunResult run = await _orchestrator.run(
           runId: _runId(),
+          sessionId: context.session.id,
+          contextKey: context.contextKey,
+          model: context.config.model,
           stages: <AiStageDefinition>[
             AiStageDefinition(
               stageId: 'general',
@@ -111,20 +124,26 @@ class ResponsesRulesWorkflow {
             ),
           ],
         );
+        await _telemetrySink.record(run);
         return run.answer ?? _unknownAnswer(language);
       }
     }
 
     final AiRunResult run = await _orchestrator.run(
       runId: _runId(),
+      sessionId: context.session.id,
+      contextKey: context.contextKey,
+      model: context.config.model,
       stages: _stageDefinitions(
         context: context,
         language: language,
         game: game,
         answerMode: answerMode,
         useGlobalMode: useGlobalMode,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
       ),
     );
+    await _telemetrySink.record(run);
     return run.answer ?? _unknownAnswer(language);
   }
 
@@ -138,6 +157,7 @@ class ResponsesRulesWorkflow {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {
     await _ensureCompactionLoaded();
@@ -150,11 +170,17 @@ class ResponsesRulesWorkflow {
       assetSourceConfigs: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
 
     if (answerMode == AiAnswerMode.knowledgeThenDirect) {
       final BoardGameQuestionRoutingDecision localRouting = _questionRouter
-          .decide(prompt: prompt, game: game, useGlobalMode: useGlobalMode);
+          .decide(
+            prompt: prompt,
+            game: game,
+            useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
+          );
       if (localRouting.needsModelClassification) {
         yield const BoardGameAiStreamEvent(status: 'routing');
       }
@@ -164,6 +190,7 @@ class ResponsesRulesWorkflow {
             language: language,
             game: game,
             useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
             localDecision: localRouting,
             abortTrigger: abortTrigger,
           );
@@ -182,6 +209,9 @@ class ResponsesRulesWorkflow {
               ),
             ),
           ],
+          contextKey: context.contextKey,
+          sessionId: context.session.id,
+          model: context.config.model,
           language: language,
           abortTrigger: abortTrigger,
         );
@@ -197,8 +227,12 @@ class ResponsesRulesWorkflow {
         game: game,
         answerMode: answerMode,
         useGlobalMode: useGlobalMode,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
         abortTrigger: abortTrigger,
       ),
+      contextKey: context.contextKey,
+      sessionId: context.session.id,
+      model: context.config.model,
       language: language,
       abortTrigger: abortTrigger,
     );
@@ -213,23 +247,47 @@ class ResponsesRulesWorkflow {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    required bool useCurrentGameKnowledge,
   }) async {
+    final String contextKey = _contextKey(
+      config: config,
+      game: game,
+      useGlobalMode: useGlobalMode,
+    );
+    await _activateCompactionContext(
+      contextKey: contextKey,
+      game: game,
+      useGlobalMode: useGlobalMode,
+    );
+    final List<ResponsesInputItem> compaction = _compactionInputsFor(
+      config: config,
+      game: game,
+      useGlobalMode: useGlobalMode,
+    );
+    // A provider compaction item is a replacement snapshot, not an extra
+    // history message. Once present, discard the older local input window and
+    // send only the opaque snapshot plus the current user turn.
+    final List<ResponsesInputItem> conversation = compaction.isNotEmpty
+        ? <ResponsesInputItem>[...compaction, ResponsesTextInput(prompt)]
+        : _conversationInputs(conversationHistory, prompt);
+    final String scopeKey = useGlobalMode ? 'global' : 'game:${game.slug}';
     return _WorkflowContext(
       prompt: prompt,
       language: language,
       game: game,
       config: config,
       useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
+      contextKey: contextKey,
+      session: AiSession(
+        id: contextKey,
+        contextKey: contextKey,
+        scopeKey: scopeKey,
+        model: config.model.trim(),
+      ),
       sources: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
-      conversation: <ResponsesInputItem>[
-        ..._compactionInputsFor(
-          config: config,
-          game: game,
-          useGlobalMode: useGlobalMode,
-        ),
-        ..._conversationInputs(conversationHistory, prompt),
-      ],
+      conversation: conversation,
       documents: _documentsForGame(game),
     );
   }
@@ -239,6 +297,7 @@ class ResponsesRulesWorkflow {
     required AppLanguage language,
     required GameInfo game,
     required bool useGlobalMode,
+    required bool useCurrentGameKnowledge,
     BoardGameQuestionRoutingDecision? localDecision,
     Future<void>? abortTrigger,
   }) async {
@@ -248,6 +307,7 @@ class ResponsesRulesWorkflow {
           prompt: context.prompt,
           game: game,
           useGlobalMode: useGlobalMode,
+          useCurrentGameKnowledge: useCurrentGameKnowledge,
         );
     if (!local.needsModelClassification) return local;
     return _questionClassifier.classifyResponses(
@@ -257,7 +317,11 @@ class ResponsesRulesWorkflow {
       game: game,
       useGlobalMode: useGlobalMode,
       prompt: context.prompt,
-      fallback: _questionRouter.fallback(useGlobalMode: useGlobalMode),
+      fallback: _questionRouter.fallback(
+        useGlobalMode: useGlobalMode,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
+      ),
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
       reasoningEffort: context.config.reasoningEffort.requestValue,
       serviceTier: context.config.responseSpeed.serviceTier,
       abortTrigger: abortTrigger,
@@ -270,7 +334,29 @@ class ResponsesRulesWorkflow {
     required GameInfo game,
     required AiAnswerMode answerMode,
     required bool useGlobalMode,
+    required bool useCurrentGameKnowledge,
   }) {
+    if (useGlobalMode && !useCurrentGameKnowledge) {
+      if (answerMode == AiAnswerMode.knowledgeOnly) {
+        return <AiStageDefinition>[_unavailableKnowledgeStage(gameId: game.id)];
+      }
+      return <AiStageDefinition>[
+        AiStageDefinition(
+          stageId: 'fallback',
+          scope: AiKnowledgeScope.fallback(gameId: game.id),
+          execute: () async => _asAiStageResult(
+            stageId: 'fallback',
+            scope: AiKnowledgeScope.fallback(gameId: game.id),
+            result: await _runKnowledgeStage(
+              context: context,
+              language: language,
+              game: game,
+              useGlobalMode: useGlobalMode,
+            ),
+          ),
+        ),
+      ];
+    }
     final List<AiStageDefinition> stages = <AiStageDefinition>[
       AiStageDefinition(
         stageId: 'official',
@@ -350,8 +436,31 @@ class ResponsesRulesWorkflow {
     required GameInfo game,
     required AiAnswerMode answerMode,
     required bool useGlobalMode,
+    required bool useCurrentGameKnowledge,
     required Future<void>? abortTrigger,
   }) {
+    if (useGlobalMode && !useCurrentGameKnowledge) {
+      if (answerMode == AiAnswerMode.knowledgeOnly) {
+        return <AiStageDefinition>[_unavailableKnowledgeStage(gameId: game.id)];
+      }
+      final AiKnowledgeScope fallbackScope = AiKnowledgeScope.fallback(
+        gameId: game.id,
+      );
+      return <AiStageDefinition>[
+        AiStageDefinition(
+          stageId: 'fallback',
+          scope: fallbackScope,
+          execute: () => _streamKnowledgeStageResult(
+            context: context,
+            scope: fallbackScope,
+            language: language,
+            game: game,
+            useGlobalMode: useGlobalMode,
+            abortTrigger: abortTrigger,
+          ),
+        ),
+      ];
+    }
     final AiKnowledgeScope officialScope = AiKnowledgeScope.official(
       gameId: game.id,
     );
@@ -427,15 +536,34 @@ class ResponsesRulesWorkflow {
     return stages;
   }
 
+  AiStageDefinition _unavailableKnowledgeStage({required String gameId}) {
+    final AiKnowledgeScope scope = AiKnowledgeScope.official(gameId: gameId);
+    return AiStageDefinition(
+      stageId: 'knowledge_scope',
+      scope: scope,
+      execute: () async => AiStageResult(
+        stageId: 'knowledge_scope',
+        scope: scope,
+        status: AiStageStatus.skipped,
+      ),
+    );
+  }
+
   Stream<BoardGameAiStreamEvent> _streamOrchestrated({
     required String runId,
     required List<AiStageDefinition> stages,
+    required String sessionId,
+    required String contextKey,
+    required String model,
     required AppLanguage language,
     Future<void>? abortTrigger,
   }) async* {
     await for (final AiRunEvent event in _orchestrator.stream(
       runId: runId,
       stages: stages,
+      sessionId: sessionId,
+      contextKey: contextKey,
+      model: model,
       abortTrigger: abortTrigger,
     )) {
       switch (event.type) {
@@ -455,6 +583,9 @@ class ResponsesRulesWorkflow {
             );
           }
         case AiRunEventType.completed:
+          if (event.runResult != null) {
+            await _telemetrySink.record(event.runResult!);
+          }
           final BoardGameAiAnswer? answer = event.answer;
           if (answer == null) {
             yield BoardGameAiStreamEvent(
@@ -476,6 +607,9 @@ class ResponsesRulesWorkflow {
         case AiRunEventType.failed:
         case AiRunEventType.incomplete:
         case AiRunEventType.cancelled:
+          if (event.runResult != null) {
+            await _telemetrySink.record(event.runResult!);
+          }
           final AiStageResult? stageResult = event.stageResult;
           final bool isBenignInsufficient =
               event.type == AiRunEventType.incomplete &&
@@ -534,6 +668,13 @@ class ResponsesRulesWorkflow {
       bufferedText: result.bufferedText,
       citations: result.answer?.citations ?? const <RuleCitation>[],
       responseId: result.responseId,
+      model: result.model,
+      usage: result.usage,
+      requestCount: result.requestCount > 0
+          ? result.requestCount
+          : result.responseId == null
+          ? 0
+          : 1,
       errorCode: result.errorCode,
       errorMessage: result.errorMessage,
     );
@@ -593,6 +734,7 @@ class ResponsesRulesWorkflow {
         _documentRequest(
           context,
           prepared.inputs,
+          documents: prepared.documents,
           language: language,
           game: game,
           source: source,
@@ -605,6 +747,9 @@ class ResponsesRulesWorkflow {
           status: terminalStatus,
           bufferedText: response.text,
           responseId: response.id,
+          model: response.model,
+          usage: response.usage,
+          requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
               : 'Responses response failed.',
@@ -622,10 +767,14 @@ class ResponsesRulesWorkflow {
         answer: parsed.answer,
         bufferedText: response.text,
         responseId: response.id,
+        model: response.model,
+        usage: response.usage,
+        requestCount: 1,
       );
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
+        requestCount: 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -657,6 +806,7 @@ class ResponsesRulesWorkflow {
       request: _documentRequest(
         context,
         prepared.inputs,
+        documents: prepared.documents,
         language: language,
         game: game,
         source: source,
@@ -670,6 +820,9 @@ class ResponsesRulesWorkflow {
         status: _stageStatusForTerminal(collected.terminalType),
         bufferedText: collected.text,
         responseId: collected.response?.id,
+        model: collected.response?.model,
+        usage: collected.response?.usage,
+        requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
       );
@@ -688,6 +841,9 @@ class ResponsesRulesWorkflow {
       answer: parsed.answer,
       bufferedText: collected.text,
       responseId: collected.response?.id,
+      model: collected.response?.model,
+      usage: collected.response?.usage,
+      requestCount: 1,
     );
   }
 
@@ -707,16 +863,25 @@ class ResponsesRulesWorkflow {
           status: terminalStatus,
           bufferedText: response.text,
           responseId: response.id,
+          model: response.model,
+          usage: response.usage,
+          requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
               : 'Responses response failed.',
         );
       }
-      if (response.text.trim().isEmpty || response.webSearchCitations.isEmpty) {
+      final List<ResponsesWebSearchCitation> citations = _validWebCitations(
+        response.webSearchCitations,
+      );
+      if (response.text.trim().isEmpty || citations.isEmpty) {
         return _StageResult(
           status: AiStageStatus.insufficient,
           bufferedText: response.text,
           responseId: response.id,
+          model: response.model,
+          usage: response.usage,
+          requestCount: 1,
         );
       }
       return _StageResult(
@@ -724,16 +889,18 @@ class ResponsesRulesWorkflow {
         answer: BoardGameAiAnswer(
           text: response.text.trim(),
           source: AnswerSource.web,
-          citations: response.webSearchCitations
-              .map(_webCitation)
-              .toList(growable: false),
+          citations: citations.map(_webCitation).toList(growable: false),
         ),
         bufferedText: response.text,
         responseId: response.id,
+        model: response.model,
+        usage: response.usage,
+        requestCount: 1,
       );
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
+        requestCount: 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -756,6 +923,9 @@ class ResponsesRulesWorkflow {
           status: terminalStatus,
           bufferedText: response.text,
           responseId: response.id,
+          model: response.model,
+          usage: response.usage,
+          requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
               : 'Responses response failed.',
@@ -771,10 +941,14 @@ class ResponsesRulesWorkflow {
             : BoardGameAiAnswer(text: text, source: AnswerSource.generalAdvice),
         bufferedText: response.text,
         responseId: response.id,
+        model: response.model,
+        usage: response.usage,
+        requestCount: 1,
       );
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
+        requestCount: 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -804,6 +978,9 @@ class ResponsesRulesWorkflow {
         status: _stageStatusForTerminal(collected.terminalType),
         bufferedText: collected.text,
         responseId: collected.response?.id,
+        model: collected.response?.model,
+        usage: collected.response?.usage,
+        requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
       );
@@ -820,6 +997,9 @@ class ResponsesRulesWorkflow {
           : BoardGameAiAnswer(text: text, source: AnswerSource.generalAdvice),
       bufferedText: collected.text,
       responseId: collected.response?.id,
+      model: collected.response?.model,
+      usage: collected.response?.usage,
+      requestCount: 1,
     );
   }
 
@@ -842,15 +1022,18 @@ class ResponsesRulesWorkflow {
         status: _stageStatusForTerminal(collected.terminalType),
         bufferedText: collected.text,
         responseId: collected.response?.id,
+        model: collected.response?.model,
+        usage: collected.response?.usage,
+        requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
       );
     }
     final List<ResponsesWebSearchCitation> responseCitations =
-        <ResponsesWebSearchCitation>[
+        _validWebCitations(<ResponsesWebSearchCitation>[
           ...collected.webCitations,
           ...?collected.response?.webSearchCitations,
-        ];
+        ]);
     final Map<String, ResponsesWebSearchCitation> uniqueCitations =
         <String, ResponsesWebSearchCitation>{
           for (final ResponsesWebSearchCitation citation in responseCitations)
@@ -864,6 +1047,9 @@ class ResponsesRulesWorkflow {
         status: AiStageStatus.insufficient,
         bufferedText: collected.text,
         responseId: collected.response?.id,
+        model: collected.response?.model,
+        usage: collected.response?.usage,
+        requestCount: 1,
       );
     }
     return AiStageResult(
@@ -879,6 +1065,9 @@ class ResponsesRulesWorkflow {
       ),
       bufferedText: collected.text,
       responseId: collected.response?.id,
+      model: collected.response?.model,
+      usage: collected.response?.usage,
+      requestCount: 1,
     );
   }
 
@@ -907,6 +1096,9 @@ class ResponsesRulesWorkflow {
         status: _stageStatusForTerminal(collected.terminalType),
         bufferedText: collected.text,
         responseId: collected.response?.id,
+        model: collected.response?.model,
+        usage: collected.response?.usage,
+        requestCount: 1,
         errorCode: collected.errorCode,
         errorMessage: collected.errorMessage,
       );
@@ -923,6 +1115,9 @@ class ResponsesRulesWorkflow {
           : BoardGameAiAnswer(text: text, source: AnswerSource.modelKnowledge),
       bufferedText: collected.text,
       responseId: collected.response?.id,
+      model: collected.response?.model,
+      usage: collected.response?.usage,
+      requestCount: 1,
     );
   }
 
@@ -948,6 +1143,9 @@ class ResponsesRulesWorkflow {
           status: terminalStatus,
           bufferedText: response.text,
           responseId: response.id,
+          model: response.model,
+          usage: response.usage,
+          requestCount: 1,
           errorMessage: terminalStatus == AiStageStatus.incomplete
               ? 'Responses response was incomplete.'
               : 'Responses response failed.',
@@ -966,10 +1164,14 @@ class ResponsesRulesWorkflow {
               ),
         bufferedText: response.text,
         responseId: response.id,
+        model: response.model,
+        usage: response.usage,
+        requestCount: 1,
       );
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
+        requestCount: 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -1141,6 +1343,7 @@ class ResponsesRulesWorkflow {
   ResponsesRequest _documentRequest(
     _WorkflowContext context,
     List<ResponsesInputItem> files, {
+    required List<RuleDocument> documents,
     required AppLanguage language,
     required GameInfo game,
     required AnswerSource source,
@@ -1152,6 +1355,10 @@ class ResponsesRulesWorkflow {
       language: language,
       game: game,
       sourceLabel: sourceLabel,
+      sourceIds: documents
+          .map((RuleDocument document) => document.id)
+          .where((String id) => id.trim().isNotEmpty)
+          .toList(growable: false),
     );
     return ResponsesRequest(
       endpoint: _endpoint(context.config),
@@ -1164,11 +1371,41 @@ class ResponsesRulesWorkflow {
         ),
       ],
       maxOutputTokens: 1200,
+      structuredOutput: _documentStructuredOutput(
+        documents
+            .map((RuleDocument document) => document.id)
+            .toList(growable: false),
+      ),
       reasoningEffort: context.config.reasoningEffort.requestValue,
       serviceTier: context.config.responseSpeed.serviceTier,
       contextManagement: _contextManagementFor(context.config),
     );
   }
+
+  ResponsesStructuredOutput _documentStructuredOutput(List<String> sourceIds) =>
+      ResponsesStructuredOutput.jsonSchema(
+        name: 'rule_answer',
+        description: 'A source-grounded answer from the declared rule files.',
+        schema: <String, dynamic>{
+          'type': 'object',
+          'additionalProperties': false,
+          'properties': <String, dynamic>{
+            'status': <String, dynamic>{
+              'type': 'string',
+              'enum': <String>['answered', 'insufficient'],
+            },
+            'answer': <String, dynamic>{'type': 'string'},
+            'sourceIds': <String, dynamic>{
+              'type': 'array',
+              'items': <String, dynamic>{
+                'type': 'string',
+                if (sourceIds.isNotEmpty) 'enum': sourceIds,
+              },
+            },
+          },
+          'required': <String>['status', 'answer', 'sourceIds'],
+        },
+      );
 
   ResponsesRequest _webRequest(
     _WorkflowContext context, {
@@ -1263,13 +1500,13 @@ class ResponsesRulesWorkflow {
         )
         .toList(growable: false);
     if (compactionItems.isEmpty) return;
-    _compactionInputsByContext[_contextKey(
-      config: context.config,
-      game: context.game,
-      useGlobalMode: context.useGlobalMode,
-    )] = List<ResponsesInputItem>.unmodifiable(
-      compactionItems,
-    );
+    // A response may contain more than one compaction item. The last item is
+    // the newest provider snapshot; sending older opaque snapshots as well
+    // can reintroduce stale context or exceed the provider's input contract.
+    _compactionInputsByContext[context.contextKey] =
+        List<ResponsesInputItem>.unmodifiable(<ResponsesInputItem>[
+          compactionItems.last,
+        ]);
     try {
       await _compactionStore.save(_compactionInputsByContext);
     } catch (_) {
@@ -1317,6 +1554,36 @@ class ResponsesRulesWorkflow {
       _compactionInputsByContext.clear();
     } finally {
       _compactionLoaded = true;
+    }
+  }
+
+  Future<void> _activateCompactionContext({
+    required String contextKey,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) async {
+    final String scopeKey = useGlobalMode ? 'global' : 'game:${game.slug}';
+    final String? previous = _activeCompactionContextByScope[scopeKey];
+    if (previous == contextKey &&
+        !_compactionInputsByContext.keys.any(
+          (String key) => key.startsWith('$scopeKey|') && key != contextKey,
+        )) {
+      return;
+    }
+    _activeCompactionContextByScope[scopeKey] = contextKey;
+
+    final bool removed = _compactionInputsByContext.keys
+        .where(
+          (String key) => key.startsWith('$scopeKey|') && key != contextKey,
+        )
+        .toList(growable: false)
+        .map((String key) => _compactionInputsByContext.remove(key))
+        .any((List<ResponsesInputItem>? value) => value != null);
+    if (!removed) return;
+    try {
+      await _compactionStore.save(_compactionInputsByContext);
+    } catch (_) {
+      // The active request remains usable if cleanup persistence is unavailable.
     }
   }
 
@@ -1586,6 +1853,28 @@ class ResponsesRulesWorkflow {
     title: item.title,
     url: item.url,
   );
+
+  List<ResponsesWebSearchCitation> _validWebCitations(
+    Iterable<ResponsesWebSearchCitation> citations,
+  ) {
+    final Map<String, ResponsesWebSearchCitation> unique =
+        <String, ResponsesWebSearchCitation>{};
+    for (final ResponsesWebSearchCitation citation in citations) {
+      final Uri? uri = Uri.tryParse(citation.url.trim());
+      if (uri == null ||
+          (uri.scheme != 'https' && uri.scheme != 'http') ||
+          uri.host.trim().isEmpty) {
+        continue;
+      }
+      unique[citation.url.trim()] = ResponsesWebSearchCitation(
+        url: citation.url.trim(),
+        title: citation.title.trim().isEmpty
+            ? citation.url.trim()
+            : citation.title.trim(),
+      );
+    }
+    return unique.values.toList(growable: false);
+  }
 }
 
 class _WorkflowContext {
@@ -1595,6 +1884,9 @@ class _WorkflowContext {
     required this.game,
     required this.config,
     required this.useGlobalMode,
+    required this.useCurrentGameKnowledge,
+    required this.contextKey,
+    required this.session,
     required this.sources,
     required this.remoteAssetService,
     required this.conversation,
@@ -1606,6 +1898,9 @@ class _WorkflowContext {
   final GameInfo game;
   final AiApiConfig config;
   final bool useGlobalMode;
+  final bool useCurrentGameKnowledge;
+  final String contextKey;
+  final AiSession session;
   final List<AssetSourceConfig> sources;
   final RemoteAssetService remoteAssetService;
   final List<ResponsesInputItem> conversation;
@@ -1631,6 +1926,9 @@ class _StageResult {
     this.answer,
     this.bufferedText = '',
     this.responseId,
+    this.model,
+    this.usage,
+    this.requestCount = 0,
     this.errorCode,
     this.errorMessage,
   });
@@ -1639,6 +1937,9 @@ class _StageResult {
   final BoardGameAiAnswer? answer;
   final String bufferedText;
   final String? responseId;
+  final String? model;
+  final AiUsage? usage;
+  final int requestCount;
   final String? errorCode;
   final String? errorMessage;
 }

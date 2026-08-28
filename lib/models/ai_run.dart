@@ -1,3 +1,5 @@
+import 'package:app_ai_client/app_ai_client.dart';
+
 import 'board_game_ai_answer.dart';
 import 'rule_citation.dart';
 
@@ -60,6 +62,23 @@ class AiKnowledgeScope {
   int get hashCode => Object.hash(code, gameId);
 }
 
+/// A client-managed conversation session. The ID is derived from the
+/// knowledge scope and provider fingerprint, so switching model/provider
+/// cannot accidentally reuse opaque state from another session.
+class AiSession {
+  const AiSession({
+    required this.id,
+    required this.contextKey,
+    required this.scopeKey,
+    required this.model,
+  });
+
+  final String id;
+  final String contextKey;
+  final String scopeKey;
+  final String model;
+}
+
 enum AiRunEventType {
   runStarted,
   stageStarted,
@@ -98,6 +117,12 @@ class AiStageResult {
     this.bufferedText = '',
     this.citations = const <RuleCitation>[],
     this.responseId,
+    this.model,
+    this.usage,
+    this.startedAt,
+    this.completedAt,
+    this.requestCount = 0,
+    this.contextKey,
     this.errorCode,
     this.errorMessage,
   });
@@ -109,6 +134,12 @@ class AiStageResult {
   final String bufferedText;
   final List<RuleCitation> citations;
   final String? responseId;
+  final String? model;
+  final AiUsage? usage;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final int requestCount;
+  final String? contextKey;
   final String? errorCode;
   final String? errorMessage;
 
@@ -116,6 +147,47 @@ class AiStageResult {
       status == AiStageStatus.answered &&
       answer != null &&
       answer!.text.trim().isNotEmpty;
+
+  AiStageResult copyWith({
+    DateTime? startedAt,
+    DateTime? completedAt,
+    String? contextKey,
+  }) {
+    return AiStageResult(
+      stageId: stageId,
+      scope: scope,
+      status: status,
+      answer: answer,
+      bufferedText: bufferedText,
+      citations: citations,
+      responseId: responseId,
+      model: model,
+      usage: usage,
+      startedAt: startedAt ?? this.startedAt,
+      completedAt: completedAt ?? this.completedAt,
+      requestCount: requestCount,
+      contextKey: contextKey ?? this.contextKey,
+      errorCode: errorCode,
+      errorMessage: errorMessage,
+    );
+  }
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+    'stageId': stageId,
+    'scope': scope.code,
+    'status': status.name,
+    if (responseId != null) 'responseId': responseId,
+    if (model != null) 'model': model,
+    if (usage != null) ...<String, dynamic>{
+      'inputTokens': usage!.promptTokens,
+      'outputTokens': usage!.completionTokens,
+      'reasoningTokens': usage!.reasoningTokens,
+    },
+    'requestCount': requestCount,
+    'citationCount': citations.length,
+    if (errorCode != null) 'errorCode': errorCode,
+    if (errorMessage != null) 'errorMessage': errorMessage,
+  };
 }
 
 /// A normalized business event consumed by the UI or an observability sink.
@@ -129,6 +201,11 @@ class AiRunEvent {
     this.scope,
     this.rawType,
     this.responseId,
+    this.sessionId,
+    this.contextKey,
+    this.model,
+    this.usage,
+    this.requestCount = 0,
     this.delta = '',
     this.status,
     this.citation,
@@ -137,6 +214,7 @@ class AiRunEvent {
     this.errorMessage,
     this.stageResult,
     this.answer,
+    this.runResult,
   });
 
   final String runId;
@@ -147,6 +225,11 @@ class AiRunEvent {
   final AiKnowledgeScope? scope;
   final String? rawType;
   final String? responseId;
+  final String? sessionId;
+  final String? contextKey;
+  final String? model;
+  final AiUsage? usage;
+  final int requestCount;
   final String delta;
   final String? status;
   final RuleCitation? citation;
@@ -155,6 +238,7 @@ class AiRunEvent {
   final String? errorMessage;
   final AiStageResult? stageResult;
   final BoardGameAiAnswer? answer;
+  final AiRunResult? runResult;
 }
 
 /// The complete outcome of a single orchestrated answer run.
@@ -166,6 +250,16 @@ class AiRunResult {
     this.stages = const <AiStageResult>[],
     this.events = const <AiRunEvent>[],
     this.responseId,
+    this.sessionId,
+    this.contextKey,
+    this.model,
+    this.startedAt,
+    this.completedAt,
+    this.requestCount = 0,
+    this.inputTokens = 0,
+    this.outputTokens = 0,
+    this.reasoningTokens = 0,
+    this.citationCount = 0,
     this.errorCode,
     this.errorMessage,
   });
@@ -176,6 +270,16 @@ class AiRunResult {
   final List<AiStageResult> stages;
   final List<AiRunEvent> events;
   final String? responseId;
+  final String? sessionId;
+  final String? contextKey;
+  final String? model;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final int requestCount;
+  final int inputTokens;
+  final int outputTokens;
+  final int reasoningTokens;
+  final int citationCount;
   final String? errorCode;
   final String? errorMessage;
 
@@ -185,4 +289,23 @@ class AiRunResult {
           .map((AiStageResult stage) => stage.bufferedText)
           .where((String value) => value.trim().isNotEmpty)
           .join();
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+    'runId': runId,
+    'status': status.name,
+    if (contextKey != null) 'contextKey': contextKey,
+    if (sessionId != null) 'sessionId': sessionId,
+    if (model != null) 'model': model,
+    if (responseId != null) 'responseId': responseId,
+    if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
+    if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
+    'requestCount': requestCount,
+    'inputTokens': inputTokens,
+    'outputTokens': outputTokens,
+    'reasoningTokens': reasoningTokens,
+    'citationCount': citationCount,
+    if (errorCode != null) 'errorCode': errorCode,
+    if (errorMessage != null) 'errorMessage': errorMessage,
+    'stages': stages.map((AiStageResult stage) => stage.toMap()).toList(),
+  };
 }

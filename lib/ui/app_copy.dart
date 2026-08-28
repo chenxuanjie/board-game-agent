@@ -224,6 +224,11 @@ class AppCopy {
   String get smartSupplementSwitchHintOff => isChinese
       ? '只依据当前桌游知识库回答；知识库没有写到的内容会直接回答不知道。'
       : 'Answer only from the current game knowledge base, and say you do not know when the knowledge base does not cover the question.';
+  String get useCurrentGameKnowledgeLabel =>
+      isChinese ? '使用当前桌游资料' : 'Use current game sources';
+  String get useCurrentGameKnowledgeHint => isChinese
+      ? '通用助手中允许按当前选中的桌游查阅规则资料；关闭后仍会识别明确的桌游问题。'
+      : 'Let the standalone assistant use selected game sources; explicit game questions still work when off.';
   String get askAnything => isChinese ? '现在就问它' : 'Ask anything now';
   String get helperSectionTitle =>
       isChinese ? '这个版本已经能做什么' : 'What this build already does';

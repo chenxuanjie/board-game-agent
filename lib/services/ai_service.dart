@@ -50,6 +50,7 @@ abstract class AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
   });
 
   Stream<BoardGameAiStreamEvent> streamReply({
@@ -62,6 +63,7 @@ abstract class AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   });
 

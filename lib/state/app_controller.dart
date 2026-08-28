@@ -80,6 +80,7 @@ class AppController extends ChangeNotifier {
   String _selectedGameId = 'puerto-rico';
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
+  bool _globalUseCurrentGameKnowledge = false;
   AiApiConfig _aiApiConfig = AiApiConfig.defaultOpenAi;
   List<AiApiConfig> _customAiPresets = <AiApiConfig>[];
   List<AiModel> _availableAiModels = <AiModel>[];
@@ -145,6 +146,7 @@ class AppController extends ChangeNotifier {
   bool get hasSelectedAiModel => _aiApiConfig.model.trim().isNotEmpty;
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
+  bool get globalUseCurrentGameKnowledge => _globalUseCurrentGameKnowledge;
   AiApiConfig get aiApiConfig => _aiApiConfig;
   List<AiApiConfig> get customAiPresets =>
       List<AiApiConfig>.unmodifiable(_customAiPresets);
@@ -202,6 +204,8 @@ class AppController extends ChangeNotifier {
     _checkForUpdates = await _preferencesService.loadCheckForUpdates();
     _gameAnswerMode = await _preferencesService.loadGameAnswerMode();
     _globalAnswerMode = await _preferencesService.loadGlobalAnswerMode();
+    _globalUseCurrentGameKnowledge = await _preferencesService
+        .loadGlobalUseCurrentGameKnowledge();
     _customAiPresets = await _preferencesService.loadAiCustomPresets();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
     if (_isSaveableCustomPreset(_aiApiConfig)) {
@@ -489,6 +493,13 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setGlobalUseCurrentGameKnowledge(bool enabled) async {
+    if (_globalUseCurrentGameKnowledge == enabled) return;
+    _globalUseCurrentGameKnowledge = enabled;
+    await _preferencesService.saveGlobalUseCurrentGameKnowledge(enabled);
+    notifyListeners();
+  }
+
   Future<void> speakMessage(String text) async {
     if (!voiceReplyAvailable) {
       return;
@@ -667,6 +678,9 @@ class AppController extends ChangeNotifier {
         conversationHistory: List<ChatMessage>.unmodifiable(
           messages.where((ChatMessage item) => item.id != draftId),
         ),
+        useCurrentGameKnowledge: useGlobalMode
+            ? _globalUseCurrentGameKnowledge
+            : true,
         abortTrigger: generationAbort.future,
       )) {
         if (generation.wasStopped) {

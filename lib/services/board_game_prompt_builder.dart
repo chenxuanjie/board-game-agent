@@ -130,13 +130,18 @@ Keep the response clear, concise, and natural.''';
     required AppLanguage language,
     required GameInfo game,
     required bool useGlobalMode,
+    bool useCurrentGameKnowledge = false,
   }) {
     final String scope = useGlobalMode
         ? '用户位于独立 AI 入口。'
         : '用户位于《${game.title}》的专属桌游助手页面。';
+    final String explicitScope = useCurrentGameKnowledge
+        ? '用户已显式开启“使用当前桌游资料”，无明确普通聊天信号时优先判定为 game_knowledge。'
+        : '';
     if (language == AppLanguage.zhHans) {
       return '''你是 AI 请求路由分类器，不负责回答用户问题。
 $scope
+$explicitScope
 请判断用户当前问题是否需要读取《${game.title}》的规则资料、知识库或联网规则来源。
 
 route 只能是：
@@ -149,8 +154,15 @@ route 只能是：
 {"route":"game_knowledge","confidence":"high"}
 ''';
     }
+    final String englishScope = useGlobalMode
+        ? 'The user is in the standalone AI entry.'
+        : 'The user is in the dedicated assistant for ${game.title}.';
+    final String englishExplicitScope = useCurrentGameKnowledge
+        ? 'The user explicitly enabled current-game knowledge; absent a clear general-chat signal, prefer game_knowledge.'
+        : '';
     return '''You are an AI request router, not the answerer.
-$scope
+$englishScope
+$englishExplicitScope
 Decide whether the user's current question requires ${game.title} rule documents, the game knowledge base, or web rule sources.
 
 route must be one of:
@@ -168,7 +180,11 @@ or
     required AppLanguage language,
     required GameInfo game,
     required String sourceLabel,
+    List<String> sourceIds = const <String>[],
   }) {
+    final String declaredSourceIds = sourceIds.isEmpty
+        ? '（本阶段没有可用 sourceId）'
+        : sourceIds.map((String id) => '- $id').join('\n');
     if (language == AppLanguage.zhHans) {
       return '''你是《${game.title}》的桌游规则助手。
 当前阶段只能依据附件中的$sourceLabel回答，不能调用联网搜索，也不能使用模型常识补全。
@@ -177,7 +193,9 @@ or
 只返回 JSON，不要 Markdown 代码块：
 {"status":"answered","answer":"中文答案","sourceIds":["附件中声明的 sourceId"]}
 {"status":"insufficient","answer":"","sourceIds":[]}
-附件来源 ID 只能使用请求中声明的 sourceId，不要伪造来源。''';
+附件来源 ID 只能使用请求中声明的 sourceId，不要伪造来源。
+本阶段声明的 sourceId：
+$declaredSourceIds''';
     }
     return '''You are the ${game.title} board-game rules assistant.
 Use only the attached $sourceLabel documents in this stage. Do not use web search or general knowledge.
@@ -186,7 +204,9 @@ If the documents do not directly support the answer, return status=insufficient 
 Return JSON only, without code fences:
 {"status":"answered","answer":"Chinese answer","sourceIds":["declared sourceId"]}
 {"status":"insufficient","answer":"","sourceIds":[]}
-Only use source IDs declared by the app. Do not invent citations.''';
+Only use source IDs declared by the app. Do not invent citations.
+Source IDs declared for this stage:
+$declaredSourceIds''';
   }
 
   String buildResponsesWebInstructions({

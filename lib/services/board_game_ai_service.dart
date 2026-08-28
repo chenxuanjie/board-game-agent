@@ -67,6 +67,7 @@ class BoardGameAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
   }) async {
     if (_responsesEnabled(config)) {
       return _responsesWorkflow!.generateReply(
@@ -79,6 +80,7 @@ class BoardGameAiService implements AiService {
         assetSourceConfigs: assetSourceConfigs,
         remoteAssetService: remoteAssetService,
         conversationHistory: conversationHistory,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
       );
     }
     if (answerMode == AiAnswerMode.knowledgeThenDirect) {
@@ -89,6 +91,7 @@ class BoardGameAiService implements AiService {
             game: game,
             config: config,
             useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
           );
       if (routing.route == BoardGameQuestionRoute.general) {
         return _answerGeneralConversation(
@@ -176,6 +179,7 @@ class BoardGameAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {
     if (_responsesEnabled(config)) {
@@ -189,13 +193,19 @@ class BoardGameAiService implements AiService {
         assetSourceConfigs: assetSourceConfigs,
         remoteAssetService: remoteAssetService,
         conversationHistory: conversationHistory,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
         abortTrigger: abortTrigger,
       );
       return;
     }
     if (answerMode == AiAnswerMode.knowledgeThenDirect) {
       final BoardGameQuestionRoutingDecision localRouting = _questionRouter
-          .decide(prompt: prompt, game: game, useGlobalMode: useGlobalMode);
+          .decide(
+            prompt: prompt,
+            game: game,
+            useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
+          );
       if (localRouting.needsModelClassification) {
         yield const BoardGameAiStreamEvent(status: 'routing');
       }
@@ -206,6 +216,7 @@ class BoardGameAiService implements AiService {
             game: game,
             config: config,
             useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
             localDecision: localRouting,
           );
       if (routing.route == BoardGameQuestionRoute.general) {
@@ -350,6 +361,7 @@ class BoardGameAiService implements AiService {
     required GameInfo game,
     required AiApiConfig config,
     required bool useGlobalMode,
+    bool useCurrentGameKnowledge = false,
     BoardGameQuestionRoutingDecision? localDecision,
   }) async {
     final BoardGameQuestionRoutingDecision local =
@@ -358,10 +370,12 @@ class BoardGameAiService implements AiService {
           prompt: prompt,
           game: game,
           useGlobalMode: useGlobalMode,
+          useCurrentGameKnowledge: useCurrentGameKnowledge,
         );
     if (!local.needsModelClassification) return local;
     final BoardGameQuestionRoutingDecision fallback = _questionRouter.fallback(
       useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
     return _questionClassifier.classifyChat(
       client: _aiClient,
@@ -369,6 +383,7 @@ class BoardGameAiService implements AiService {
       language: language,
       game: game,
       useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
       prompt: prompt,
       fallback: fallback,
     );

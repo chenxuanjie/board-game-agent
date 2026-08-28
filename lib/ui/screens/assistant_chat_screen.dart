@@ -437,6 +437,18 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         );
                       },
                     ),
+                    if (widget.useGlobalMode)
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        secondary: Icon(
+                          Icons.menu_book_rounded,
+                          color: palette.primary,
+                        ),
+                        title: Text(copy.useCurrentGameKnowledgeLabel),
+                        subtitle: Text(copy.useCurrentGameKnowledgeHint),
+                        value: controller.globalUseCurrentGameKnowledge,
+                        onChanged: controller.setGlobalUseCurrentGameKnowledge,
+                      ),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
                       secondary: Icon(

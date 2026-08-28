@@ -41,12 +41,19 @@ class BoardGameQuestionRouter {
     required String prompt,
     required GameInfo game,
     required bool useGlobalMode,
-  }) => decide(prompt: prompt, game: game, useGlobalMode: useGlobalMode).route;
+    bool useCurrentGameKnowledge = false,
+  }) => decide(
+    prompt: prompt,
+    game: game,
+    useGlobalMode: useGlobalMode,
+    useCurrentGameKnowledge: useCurrentGameKnowledge,
+  ).route;
 
   BoardGameQuestionRoutingDecision decide({
     required String prompt,
     required GameInfo game,
     required bool useGlobalMode,
+    bool useCurrentGameKnowledge = false,
   }) {
     final String normalized = _normalize(prompt);
     if (normalized.isEmpty) {
@@ -95,11 +102,11 @@ class BoardGameQuestionRouter {
     // A dedicated game page is already scoped to the selected game. Keep
     // allowing natural short questions with omitted subjects, while the
     // standalone assistant remains ordinary-chat-first.
-    if (!useGlobalMode) {
+    if (!useGlobalMode || useCurrentGameKnowledge) {
       return const BoardGameQuestionRoutingDecision(
         route: BoardGameQuestionRoute.gameKnowledge,
         confidence: BoardGameQuestionConfidence.low,
-        reason: 'dedicated_game_scope',
+        reason: 'explicit_game_scope',
       );
     }
     return const BoardGameQuestionRoutingDecision(
@@ -113,14 +120,23 @@ class BoardGameQuestionRouter {
     required String prompt,
     required GameInfo game,
     required bool useGlobalMode,
+    bool useCurrentGameKnowledge = false,
   }) {
-    return route(prompt: prompt, game: game, useGlobalMode: useGlobalMode) ==
+    return route(
+          prompt: prompt,
+          game: game,
+          useGlobalMode: useGlobalMode,
+          useCurrentGameKnowledge: useCurrentGameKnowledge,
+        ) ==
         BoardGameQuestionRoute.gameKnowledge;
   }
 
-  BoardGameQuestionRoutingDecision fallback({required bool useGlobalMode}) {
+  BoardGameQuestionRoutingDecision fallback({
+    required bool useGlobalMode,
+    bool useCurrentGameKnowledge = false,
+  }) {
     return BoardGameQuestionRoutingDecision(
-      route: useGlobalMode
+      route: useGlobalMode && !useCurrentGameKnowledge
           ? BoardGameQuestionRoute.general
           : BoardGameQuestionRoute.gameKnowledge,
       confidence: BoardGameQuestionConfidence.low,
