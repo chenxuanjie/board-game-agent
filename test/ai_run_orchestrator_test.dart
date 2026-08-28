@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:app_ai_client/app_ai_client.dart';
 
 import 'package:board_game_agent/models/ai_run.dart';
 import 'package:board_game_agent/models/board_game_ai_answer.dart';
@@ -121,5 +122,55 @@ void main() {
     expect(result.status, AiRunStatus.completed);
     expect(result.responseId, 'resp-general');
     expect(result.events.last.responseId, 'resp-general');
+  });
+
+  test('serializes run and stage observability fields', () async {
+    final DateTime startedAt = DateTime(2026, 8, 28, 10, 0);
+    final DateTime completedAt = startedAt.add(const Duration(seconds: 2));
+    final AiStageResult stage = AiStageResult(
+      stageId: 'general',
+      scope: const AiKnowledgeScope.general(),
+      status: AiStageStatus.answered,
+      answer: BoardGameAiAnswer(text: '回答', source: AnswerSource.generalAdvice),
+      responseId: 'resp-observable',
+      model: 'model-observable',
+      usage: const AiUsage(
+        promptTokens: 12,
+        completionTokens: 8,
+        totalTokens: 20,
+        reasoningTokens: 3,
+      ),
+      startedAt: startedAt,
+      completedAt: completedAt,
+      requestCount: 1,
+      contextKey: 'global|scope-fingerprint',
+    );
+    final AiRunResult result = AiRunResult(
+      runId: 'run-observable',
+      status: AiRunStatus.completed,
+      stages: <AiStageResult>[stage],
+      contextKey: 'global|scope-fingerprint',
+      sessionId: 'session-observable',
+      model: 'model-observable',
+      startedAt: startedAt,
+      completedAt: completedAt,
+      requestCount: 1,
+      inputTokens: 12,
+      outputTokens: 8,
+      reasoningTokens: 3,
+      citationCount: 0,
+    );
+
+    final Map<String, dynamic> map = result.toMap();
+    final Map<String, dynamic> stageMap =
+        (map['stages'] as List<dynamic>).single as Map<String, dynamic>;
+    expect(map['contextKey'], 'global|scope-fingerprint');
+    expect(map['sessionId'], 'session-observable');
+    expect(map['reasoningTokens'], 3);
+    expect(stageMap['contextKey'], 'global|scope-fingerprint');
+    expect(stageMap['startedAt'], startedAt.toIso8601String());
+    expect(stageMap['completedAt'], completedAt.toIso8601String());
+    expect(stageMap['outputTokens'], 8);
+    expect(stageMap['reasoningTokens'], 3);
   });
 }

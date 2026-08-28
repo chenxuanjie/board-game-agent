@@ -850,6 +850,149 @@ void main() {
     },
   );
 
+  test(
+    'drains output-item metadata that arrives after response.completed',
+    () async {
+      final InMemoryResponsesCompactionStore store =
+          InMemoryResponsesCompactionStore();
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: const <ResponsesResponse>[],
+        streams: <List<ResponsesStreamEvent>>[
+          <ResponsesStreamEvent>[
+            ResponsesStreamEvent.completed(
+              ResponsesResponse(
+                text:
+                    '{"status":"answered","answer":"流式答案","sourceIds":["puerto_rico-knowledge-0"]}',
+                model: 'test-model',
+                id: 'resp-drain',
+              ),
+            ),
+            const ResponsesStreamEvent(
+              type: ResponsesStreamEventType.outputItemDone,
+              outputItem: ResponsesRawInput(<String, dynamic>{
+                'type': 'compaction',
+                'id': 'cmp-after-completed',
+                'encrypted_content': 'opaque-after-completed',
+              }),
+            ),
+          ],
+        ],
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+        compactionStore: store,
+      );
+
+      final List<BoardGameAiStreamEvent> events = await workflow
+          .streamReply(
+            prompt: '规则问题',
+            language: AppLanguage.zhHans,
+            game: _game(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: _config(),
+            assetSourceConfigs: const <AssetSourceConfig>[],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: const <ChatMessage>[],
+          )
+          .toList();
+
+      expect(events.last.answer?.text, '流式答案');
+
+      final _FakeResponsesClient nextClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[_response('下一轮')],
+      );
+      final ResponsesRulesWorkflow nextWorkflow = ResponsesRulesWorkflow(
+        responsesClient: nextClient,
+        compactionStore: store,
+      );
+      await nextWorkflow.generateReply(
+        prompt: '下一问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeOnly,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _FakeRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+      expect(
+        nextClient.requests.single.input
+            .whereType<ResponsesRawInput>()
+            .single
+            .value['id'],
+        'cmp-after-completed',
+      );
+    },
+  );
+
+  test(
+    'changing the current-game knowledge scope invalidates old compaction',
+    () async {
+      final InMemoryResponsesCompactionStore store =
+          InMemoryResponsesCompactionStore();
+      final _FakeResponsesClient firstClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          ResponsesResponse(
+            text: '通用兜底',
+            model: 'test-model',
+            outputItems: const <ResponsesInputItem>[
+              ResponsesRawInput(<String, dynamic>{
+                'type': 'compaction',
+                'id': 'cmp-general-only',
+                'encrypted_content': 'opaque-general-only',
+              }),
+            ],
+          ),
+        ],
+      );
+      final ResponsesRulesWorkflow firstWorkflow = ResponsesRulesWorkflow(
+        responsesClient: firstClient,
+        compactionStore: store,
+      );
+      await firstWorkflow.generateReply(
+        prompt: '你好',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: true,
+        useCurrentGameKnowledge: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _UnavailableRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      final _FakeResponsesClient secondClient = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
+        ],
+      );
+      final ResponsesRulesWorkflow secondWorkflow = ResponsesRulesWorkflow(
+        responsesClient: secondClient,
+        compactionStore: store,
+      );
+      await secondWorkflow.generateReply(
+        prompt: '规则问题',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeOnly,
+        useGlobalMode: true,
+        useCurrentGameKnowledge: true,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _FakeRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      expect(
+        secondClient.requests.single.input.whereType<ResponsesRawInput>(),
+        isEmpty,
+      );
+    },
+  );
+
   test('telemetry records run status, model, session, and usage', () async {
     final InMemoryAiRunTelemetrySink telemetry = InMemoryAiRunTelemetrySink();
     final _FakeResponsesClient client = _FakeResponsesClient(
@@ -893,6 +1036,48 @@ void main() {
     expect(result.outputTokens, 6);
     expect(result.reasoningTokens, 2);
   });
+
+  test(
+    'custom Responses without web search still reaches the knowledge fallback',
+    () async {
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: <ResponsesResponse>[
+          _response('{"status":"insufficient","answer":"","sourceIds":[]}'),
+          _response('没有联网工具也可以继续回答'),
+        ],
+        onComplete:
+            (ResponsesRequest request, List<ResponsesResponse> responses) {
+              if (request.tools.isNotEmpty) {
+                throw StateError(
+                  'web_search is not supported by this provider',
+                );
+              }
+              return responses.removeAt(0);
+            },
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+      );
+
+      final BoardGameAiAnswer answer = await workflow.generateReply(
+        prompt: '规则问题',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _FakeRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      expect(answer.text, '没有联网工具也可以继续回答');
+      expect(answer.source, AnswerSource.modelKnowledge);
+      expect(client.requests, hasLength(3));
+      expect(client.requests[1].tools, isNotEmpty);
+      expect(client.requests[2].tools, isEmpty);
+    },
+  );
 }
 
 AiApiConfig _config() => const AiApiConfig(
@@ -1041,10 +1226,19 @@ class _UnavailableRemoteAssetService extends RemoteAssetService {
 }
 
 class _FakeResponsesClient implements ResponsesAiClient {
-  _FakeResponsesClient({required this.responses, this.streams = const []});
+  _FakeResponsesClient({
+    required this.responses,
+    this.streams = const [],
+    this.onComplete,
+  });
 
   final List<ResponsesResponse> responses;
   final List<List<ResponsesStreamEvent>> streams;
+  final ResponsesResponse Function(
+    ResponsesRequest request,
+    List<ResponsesResponse> responses,
+  )?
+  onComplete;
   final List<ResponsesRequest> requests = <ResponsesRequest>[];
 
   int get completeRequests => requests.length;
@@ -1055,6 +1249,7 @@ class _FakeResponsesClient implements ResponsesAiClient {
     Future<void>? abortTrigger,
   }) async {
     requests.add(request);
+    if (onComplete != null) return onComplete!(request, responses);
     return responses.removeAt(0);
   }
 

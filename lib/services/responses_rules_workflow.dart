@@ -253,6 +253,7 @@ class ResponsesRulesWorkflow {
       config: config,
       game: game,
       useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
     await _activateCompactionContext(
       contextKey: contextKey,
@@ -263,6 +264,7 @@ class ResponsesRulesWorkflow {
       config: config,
       game: game,
       useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
     // A provider compaction item is a replacement snapshot, not an extra
     // history message. Once present, discard the older local input window and
@@ -1246,7 +1248,10 @@ class ResponsesRulesWorkflow {
           case ResponsesStreamEventType.unknown:
             break;
         }
-        if (terminalType != null) break;
+        // Keep consuming the provider stream after the terminal response
+        // event. Responses API completion is the commit boundary, but
+        // draining the stream preserves any trailing output-item metadata and
+        // lets the transport close cleanly instead of cancelling it early.
       }
       terminalType ??= ResponsesStreamEventType.incomplete;
       errorMessage ??= terminalType == ResponsesStreamEventType.incomplete
@@ -1478,12 +1483,14 @@ class ResponsesRulesWorkflow {
     required AiApiConfig config,
     required GameInfo game,
     required bool useGlobalMode,
+    required bool useCurrentGameKnowledge,
   }) {
     return List<ResponsesInputItem>.unmodifiable(
       _compactionInputsByContext[_contextKey(
             config: config,
             game: game,
             useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
           )] ??
           const <ResponsesInputItem>[],
     );
@@ -1519,6 +1526,7 @@ class ResponsesRulesWorkflow {
     required AiApiConfig config,
     required GameInfo game,
     required bool useGlobalMode,
+    required bool useCurrentGameKnowledge,
   }) {
     final String scope = useGlobalMode ? 'global' : 'game:${game.slug}';
     final String endpointFingerprint = sha256
@@ -1530,6 +1538,7 @@ class ResponsesRulesWorkflow {
               config.model.trim(),
               config.apiKey.trim(),
               config.apiKeyHeader.trim(),
+              'current-game-knowledge:$useCurrentGameKnowledge',
             ].join('|'),
           ),
         )
