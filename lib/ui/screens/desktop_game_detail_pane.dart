@@ -7,6 +7,7 @@ import '../../theme/app_palette.dart';
 import '../widgets/desktop_resolved_image.dart';
 import 'markdown_document_screen.dart';
 import 'pdf_document_screen.dart';
+import 'library_resource_document_screen.dart';
 
 /// Wide-screen game details for the Windows workspace.
 ///
@@ -275,6 +276,18 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
           builder: (_) => MarkdownDocumentScreen(
             controller: widget.controller,
             remotePath: document.remotePath,
+            title: title,
+          ),
+        ),
+      );
+      return;
+    }
+    if (document.renderType != DocumentRenderType.pdf) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => LibraryResourceDocumentScreen(
+            controller: widget.controller,
+            document: document,
             title: title,
           ),
         ),

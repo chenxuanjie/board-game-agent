@@ -23,6 +23,7 @@ import '../widgets/desktop_resolved_image.dart';
 import 'desktop_game_detail_pane.dart';
 import 'markdown_document_screen.dart';
 import 'pdf_document_screen.dart';
+import 'library_resource_document_screen.dart';
 
 enum _DesktopDestination {
   home,
@@ -41,12 +42,19 @@ double _desktopActivityPanelWidth(double overlayWidth) {
   // monitors. The available-width clamp prevents overflow in very small
   // windows where even the preferred minimum cannot fit.
   final double preferredWidth = overlayWidth * 0.36;
-  final double clampedPreferred = math.max(280, math.min(340, preferredWidth));
+  // Leave a small allowance for SafeArea/overlay padding so the rendered
+  // panel remains within the viewport on very small desktop windows.
+  final double clampedPreferred = math.max(
+    240,
+    math.min(332, preferredWidth - 8),
+  );
   return math.min(availableWidth, clampedPreferred);
 }
 
 double _desktopActivityPanelMaxHeight(double overlayHeight) {
-  final double availableHeight = math.max(0, overlayHeight - 24);
+  // The follower is anchored below the top bar, so leave enough room for the
+  // header and safe-area insets instead of allowing the popup to run offscreen.
+  final double availableHeight = math.max(0, overlayHeight - 100);
   if (availableHeight == 0) return 0;
   return math.min(520, availableHeight);
 }
@@ -69,6 +77,7 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   _DesktopDestination _destination = _DesktopDestination.home;
   _DesktopDestination _detailReturnDestination = _DesktopDestination.games;
   final GlobalKey _activityButtonKey = GlobalKey();
+  final LayerLink _activityLayerLink = LayerLink();
   RemoteLibraryUpdate? _lastSeenUpdate;
   bool _showingUpdateDialog = false;
 
@@ -112,7 +121,9 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
                       _DesktopTopBar(
                         title: _destinationTitle(copy),
                         compact: compact,
+                        copy: copy,
                         activityButtonKey: _activityButtonKey,
+                        activityLayerLink: _activityLayerLink,
                         onNew: () =>
                             _selectDestination(_DesktopDestination.games),
                         onSearch: _openSearch,
@@ -222,8 +233,10 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   Future<void> _openSearch() async {
     final GameInfo? result = await showDialog<GameInfo>(
       context: context,
-      builder: (BuildContext dialogContext) =>
-          _DesktopSearchDialog(games: widget.controller.games),
+      builder: (BuildContext dialogContext) => _DesktopSearchDialog(
+        games: widget.controller.games,
+        copy: widget.controller.copy,
+      ),
     );
     if (!mounted || result == null) return;
     _openGame(result);
@@ -231,28 +244,15 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
 
   Future<void> _openActivityCenter() async {
     final AppController controller = widget.controller;
-    await controller.markActivitiesRead();
     if (!mounted) return;
     final AppCopy copy = controller.copy;
-    final RenderBox? button =
-        _activityButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final RenderBox? overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (button == null || overlay == null || !button.hasSize) return;
-
-    final Offset anchor = button.localToGlobal(Offset.zero, ancestor: overlay);
-    final Size overlaySize = overlay.size;
+    final Size overlaySize = MediaQuery.sizeOf(context);
     final double panelWidth = _desktopActivityPanelWidth(overlaySize.width);
     final double panelMaxHeight = _desktopActivityPanelMaxHeight(
       overlaySize.height,
     );
     if (panelWidth <= 0 || panelMaxHeight <= 0) return;
-    final double left = (anchor.dx + button.size.width - panelWidth)
-        .clamp(12.0, math.max(12.0, overlaySize.width - panelWidth - 12.0))
-        .toDouble();
-    final double top = (anchor.dy + button.size.height + 8)
-        .clamp(12.0, math.max(12.0, overlaySize.height - panelMaxHeight - 12.0))
-        .toDouble();
+    bool markedRead = false;
 
     await showGeneralDialog<void>(
       context: context,
@@ -288,13 +288,24 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
             Animation<double> animation,
             Animation<double> secondaryAnimation,
           ) {
+            if (!markedRead) {
+              markedRead = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  unawaited(controller.markActivitiesRead());
+                }
+              });
+            }
             return Stack(
               children: <Widget>[
-                Positioned(
-                  left: left,
-                  top: top,
-                  width: panelWidth,
-                  child: SafeArea(
+                CompositedTransformFollower(
+                  link: _activityLayerLink,
+                  showWhenUnlinked: false,
+                  targetAnchor: Alignment.bottomRight,
+                  followerAnchor: Alignment.topRight,
+                  offset: const Offset(0, 8),
+                  child: SizedBox(
+                    width: panelWidth,
                     child: _DesktopActivityPopup(
                       controller: controller,
                       maxHeight: panelMaxHeight,
@@ -311,18 +322,18 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   String _destinationTitle(AppCopy copy) {
     switch (_destination) {
       case _DesktopDestination.home:
-        return '首页';
+        return copy.desktopHome;
       case _DesktopDestination.games:
-        return '我的游戏';
+        return copy.desktopGames;
       case _DesktopDestination.gameDetail:
-        return '桌游详情';
+        return copy.desktopGameDetail;
       case _DesktopDestination.assistant:
         return widget.controller.selectedConversation?.title ??
             copy.globalAiTitle;
       case _DesktopDestination.library:
-        return '资料库';
+        return copy.desktopLibrary;
       case _DesktopDestination.settings:
-        return '设置';
+        return copy.desktopSettings;
     }
   }
 
@@ -449,6 +460,7 @@ class _DesktopSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = controller.copy;
     final double width = compact ? 76 : 214;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -469,46 +481,46 @@ class _DesktopSidebar extends StatelessWidget {
           _DesktopBrand(compact: compact),
           const SizedBox(height: 30),
           if (!compact) ...[
-            _DesktopNavLabel(label: '工作区'),
+            _DesktopNavLabel(label: copy.desktopWorkspace),
             const SizedBox(height: 8),
           ],
           ...<Widget>[
             _DesktopNavItem(
               compact: compact,
               icon: Icons.home_outlined,
-              label: '首页',
+              label: copy.desktopHome,
               selected: destination == _DesktopDestination.home,
               onTap: () => onSelected(_DesktopDestination.home),
             ),
             _DesktopNavItem(
               compact: compact,
               icon: Icons.layers_outlined,
-              label: '我的游戏',
+              label: copy.desktopGames,
               selected: destination == _DesktopDestination.games,
               onTap: () => onSelected(_DesktopDestination.games),
             ),
             _DesktopNavItem(
               compact: compact,
               icon: Icons.chat_bubble_outline_rounded,
-              label: 'AI 助手',
+              label: copy.globalAiTitle,
               selected: destination == _DesktopDestination.assistant,
               onTap: () => onSelected(_DesktopDestination.assistant),
             ),
             _DesktopNavItem(
               compact: compact,
               icon: Icons.menu_book_outlined,
-              label: '资料库',
+              label: copy.desktopLibrary,
               selected: destination == _DesktopDestination.library,
               onTap: () => onSelected(_DesktopDestination.library),
             ),
           ],
           const SizedBox(height: 18),
-          if (!compact) _DesktopNavLabel(label: '系统'),
+          if (!compact) _DesktopNavLabel(label: copy.desktopSystem),
           if (!compact) const SizedBox(height: 8),
           _DesktopNavItem(
             compact: compact,
             icon: Icons.tune_rounded,
-            label: '设置',
+            label: copy.desktopSettings,
             selected: destination == _DesktopDestination.settings,
             onTap: () => onSelected(_DesktopDestination.settings),
           ),
@@ -739,7 +751,9 @@ class _DesktopTopBar extends StatelessWidget {
   const _DesktopTopBar({
     required this.title,
     required this.compact,
+    required this.copy,
     required this.activityButtonKey,
+    required this.activityLayerLink,
     required this.onNew,
     required this.onSearch,
     required this.onOpenActivities,
@@ -750,7 +764,9 @@ class _DesktopTopBar extends StatelessWidget {
 
   final String title;
   final bool compact;
+  final AppCopy copy;
   final GlobalKey activityButtonKey;
+  final LayerLink activityLayerLink;
   final VoidCallback onNew;
   final VoidCallback onSearch;
   final VoidCallback onOpenActivities;
@@ -781,67 +797,94 @@ class _DesktopTopBar extends StatelessWidget {
               ),
             ),
           ),
-          Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              IconButton(
-                key: activityButtonKey,
-                tooltip: '消息',
-                onPressed: onOpenActivities,
-                icon: const Icon(Icons.notifications_none_rounded),
-              ),
-              if (unreadActivityCount > 0)
-                Positioned(
-                  top: 7,
-                  right: 7,
-                  child: IgnorePointer(
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 16),
-                      height: 16,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: palette.error,
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(
-                          color: palette.pageBackground,
-                          width: 2,
+          CompositedTransformTarget(
+            link: activityLayerLink,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                IconButton(
+                  key: activityButtonKey,
+                  tooltip: copy.activityTitle,
+                  onPressed: onOpenActivities,
+                  icon: const Icon(Icons.notifications_none_rounded),
+                ),
+                if (unreadActivityCount > 0)
+                  Positioned(
+                    top: 7,
+                    right: 7,
+                    child: IgnorePointer(
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 16),
+                        height: 16,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: palette.error,
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(
+                            color: palette.pageBackground,
+                            width: 2,
+                          ),
                         ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        unreadActivityCount > 99
-                            ? '99+'
-                            : '$unreadActivityCount',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: palette.onPrimary,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          height: 1,
+                        alignment: Alignment.center,
+                        child: Text(
+                          unreadActivityCount > 99
+                              ? '99+'
+                              : '$unreadActivityCount',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: palette.onPrimary,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                              ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-          IconButton(
-            tooltip: '搜索',
-            onPressed: onSearch,
-            icon: const Icon(Icons.search_rounded),
-          ),
-          const SizedBox(width: 6),
-          if (primaryAction != null)
-            FilledButton.icon(
-              onPressed: primaryAction,
-              icon: const Icon(Icons.chat_bubble_outline_rounded),
-              label: Text(primaryLabel ?? '询问 AI'),
+          if (compact)
+            IconButton(
+              tooltip: copy.desktopSearchAction,
+              onPressed: onSearch,
+              icon: const Icon(Icons.search_rounded),
             )
           else
-            FilledButton.icon(
-              onPressed: onNew,
-              icon: const Icon(Icons.add_rounded),
-              label: Text(compact ? '新建' : '新建'),
+            Tooltip(
+              message: copy.desktopSearchAction,
+              excludeFromSemantics: true,
+              child: OutlinedButton.icon(
+                onPressed: onSearch,
+                icon: const Icon(Icons.search_rounded),
+                label: Text(copy.desktopSearchAction),
+              ),
             ),
+          const SizedBox(width: 6),
+          if (primaryAction != null)
+            compact
+                ? IconButton.filled(
+                    tooltip: primaryLabel ?? copy.askAiAssistant,
+                    onPressed: primaryAction,
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  )
+                : FilledButton.icon(
+                    onPressed: primaryAction,
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    label: Text(primaryLabel ?? copy.askAiAssistant),
+                  )
+          else
+            compact
+                ? IconButton.filled(
+                    tooltip: copy.desktopCreate,
+                    onPressed: onNew,
+                    icon: const Icon(Icons.add_rounded),
+                  )
+                : FilledButton.icon(
+                    onPressed: onNew,
+                    icon: const Icon(Icons.add_rounded),
+                    label: Text(copy.desktopCreate),
+                  ),
         ],
       ),
     );
@@ -849,9 +892,10 @@ class _DesktopTopBar extends StatelessWidget {
 }
 
 class _DesktopSearchDialog extends StatefulWidget {
-  const _DesktopSearchDialog({required this.games});
+  const _DesktopSearchDialog({required this.games, required this.copy});
 
   final List<GameInfo> games;
+  final AppCopy copy;
 
   @override
   State<_DesktopSearchDialog> createState() => _DesktopSearchDialogState();
@@ -882,17 +926,37 @@ class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
-    final String query = _queryController.text.trim().toLowerCase();
+    final List<String> queryTokens = _searchTokens(_queryController.text);
     final List<GameInfo> results = widget.games
         .where((GameInfo game) {
-          if (query.isEmpty) return true;
+          if (queryTokens.isEmpty) return true;
           final String searchable = <String?>[
             game.title,
             game.subtitle,
             game.slug,
             game.editionLabel,
+            ...game.aliases,
+            ...game.designers,
+            ...game.publishers,
+            ...game.keywords,
+            game.categoryLine,
+            game.learningDifficulty,
+            game.perPlayerTime,
+            game.setupTime,
+            game.languageRequirement,
+            ...game.rankBadges,
+            game.heroTagline,
+            game.assistantIntro,
+            game.summary,
+            game.mentorPitch,
+            game.playTime,
+            game.playerCount,
+            game.complexity,
+            ...game.roundFlow,
+            ...game.assistantSkills,
+            ...game.quickPrompts,
           ].whereType<String>().join(' ').toLowerCase();
-          return searchable.contains(query);
+          return queryTokens.every(searchable.contains);
         })
         .toList(growable: false);
     final double maxHeight = math.min(
@@ -914,7 +978,7 @@ class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      '搜索桌游',
+                      widget.copy.desktopSearchTitle,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: palette.textPrimary,
                         fontWeight: FontWeight.w700,
@@ -922,7 +986,7 @@ class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: widget.copy.dialogClose,
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                   ),
@@ -935,7 +999,7 @@ class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
                 autofocus: true,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: '输入名称或英文名',
+                  hintText: widget.copy.desktopSearchHint,
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _queryController.text.isEmpty
                       ? null
@@ -951,7 +1015,9 @@ class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
                 child: results.isEmpty
                     ? Center(
                         child: Text(
-                          widget.games.isEmpty ? '暂无可用游戏' : '没有找到匹配的桌游',
+                          widget.games.isEmpty
+                              ? widget.copy.desktopNoGames
+                              : widget.copy.desktopNoSearchResults,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: palette.textSecondary),
                         ),
@@ -997,6 +1063,16 @@ class _DesktopSearchDialogState extends State<_DesktopSearchDialog> {
         ),
       ),
     );
+  }
+
+  List<String> _searchTokens(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\p{L}\p{N}_-]+', unicode: true), ' ')
+        .split(RegExp(r'\s+'))
+        .map((String token) => token.trim())
+        .where((String token) => token.isNotEmpty)
+        .toList(growable: false);
   }
 }
 
@@ -2008,6 +2084,9 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
   late final TextEditingController _draftController;
   late final ScrollController _scrollController;
   bool _showMessageTimes = false;
+  bool _showJumpToBottom = false;
+  String? _lastConversationId;
+  bool _followNewMessages = true;
   Timer? _messageTimesTimer;
 
   AppController get controller => widget.controller;
@@ -2016,13 +2095,14 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
   void initState() {
     super.initState();
     _draftController = TextEditingController();
-    _scrollController = ScrollController();
+    _scrollController = ScrollController()..addListener(_handleScrollChanged);
     controller.addListener(_handleControllerChanged);
   }
 
   @override
   void dispose() {
     controller.removeListener(_handleControllerChanged);
+    _scrollController.removeListener(_handleScrollChanged);
     _draftController.dispose();
     _scrollController.dispose();
     _messageTimesTimer?.cancel();
@@ -2034,8 +2114,8 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     if (!controller.hasGames) {
       return _DesktopNoGamesPane(
         controller: controller,
-        title: 'AI 助手暂不可用',
-        message: '请先加载至少一个游戏资料，AI 助手才能建立对应的规则上下文。',
+        title: controller.copy.desktopAssistantUnavailable,
+        message: controller.copy.desktopAssistantUnavailableMessage,
       );
     }
     final AppPalette palette = AppPalette.of(context);
@@ -2048,7 +2128,12 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     final List<ChatMessage> messages = controller.messagesForContext(
       useGlobalMode: useGlobalMode,
     );
-    final GameInfo game = controller.featuredGame;
+    final GameInfo game = selectedConversation.gameId == null
+        ? controller.featuredGame
+        : controller.games.firstWhere(
+            (GameInfo item) => item.id == selectedConversation.gameId,
+            orElse: () => controller.featuredGame,
+          );
     final String assistantTitle = useGlobalMode
         ? controller.copy.globalAiTitle
         : '${game.title}助手';
@@ -2061,96 +2146,152 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: palette.outline),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            SizedBox(
-              width: 205,
-              child: _DesktopAssistantSessions(controller: controller),
-            ),
-            Expanded(
-              child: Column(
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 14, 14),
-                    child: Row(
-                      children: <Widget>[
-                        const _AssistantAppMark(),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                assistantTitle,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              Text(
-                                assistantSubtitle,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '清空对话',
-                          onPressed: () =>
-                              controller.clearConversationForContext(
-                                useGlobalMode: useGlobalMode,
-                              ),
-                          icon: const Icon(Icons.delete_sweep_outlined),
-                        ),
-                      ],
-                    ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool narrow = constraints.maxWidth < 900;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                if (!narrow)
+                  SizedBox(
+                    width: 205,
+                    child: _DesktopAssistantSessions(controller: controller),
                   ),
-                  Divider(height: 1, color: palette.outline),
-                  Expanded(
-                    child: ListView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-                      children: <Widget>[
-                        for (final ChatMessage message in messages)
-                          MessageBubble(
-                            message: message,
-                            palette: palette,
-                            copy: controller.copy,
-                            onSpeak: message.role == ChatRole.assistant
-                                ? () => controller.speakMessage(message.text)
-                                : () {},
-                            speakTooltip: controller.copy.speakAgain,
-                            onRetry: message.canRetry
-                                ? () => controller.retryMessage(
-                                    message,
+                Expanded(
+                  child: Column(
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 14, 14),
+                        child: Row(
+                          children: <Widget>[
+                            const _AssistantAppMark(),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    assistantTitle,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  Text(
+                                    assistantSubtitle,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (narrow)
+                              IconButton(
+                                tooltip: controller.copy.desktopSessionTitle,
+                                onPressed: () => _showAssistantSheet(
+                                  title: controller.copy.desktopSessionTitle,
+                                  child: _DesktopAssistantSessions(
+                                    controller: controller,
+                                  ),
+                                ),
+                                icon: const Icon(Icons.forum_outlined),
+                              ),
+                            if (narrow)
+                              IconButton(
+                                tooltip: controller.copy.desktopContextTitle,
+                                onPressed: () => _showAssistantSheet(
+                                  title: controller.copy.desktopContextTitle,
+                                  child: _DesktopContextPanel(
+                                    controller: controller,
                                     useGlobalMode: useGlobalMode,
-                                  )
-                                : null,
-                            retryTooltip: controller.copy.retry,
-                            showTimestamp: _showMessageTimes,
-                            onTap: _toggleMessageTimes,
-                          ),
-                      ],
-                    ),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.tune_rounded),
+                              ),
+                            IconButton(
+                              tooltip: controller.copy.desktopClearConversation,
+                              onPressed: () =>
+                                  controller.clearConversationForContext(
+                                    useGlobalMode: useGlobalMode,
+                                  ),
+                              icon: const Icon(Icons.delete_sweep_outlined),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: palette.outline),
+                      Expanded(
+                        child: Stack(
+                          children: <Widget>[
+                            ListView(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.fromLTRB(
+                                18,
+                                14,
+                                18,
+                                14,
+                              ),
+                              children: <Widget>[
+                                for (final ChatMessage message in messages)
+                                  MessageBubble(
+                                    message: message,
+                                    palette: palette,
+                                    copy: controller.copy,
+                                    onSpeak: message.role == ChatRole.assistant
+                                        ? () => controller.speakMessage(
+                                            message.text,
+                                          )
+                                        : () {},
+                                    speakTooltip: controller.copy.speakAgain,
+                                    onRetry: message.canRetry
+                                        ? () => controller.retryMessage(
+                                            message,
+                                            useGlobalMode: useGlobalMode,
+                                          )
+                                        : null,
+                                    retryTooltip: controller.copy.retry,
+                                    showTimestamp: _showMessageTimes,
+                                    onTap: _toggleMessageTimes,
+                                  ),
+                              ],
+                            ),
+                            if (_showJumpToBottom)
+                              Positioned(
+                                right: 18,
+                                bottom: 14,
+                                child: FloatingActionButton.small(
+                                  heroTag: 'assistant-jump-to-bottom',
+                                  tooltip: '回到底部',
+                                  onPressed: _scrollToBottom,
+                                  child: const Icon(Icons.south_rounded),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                        child: _DesktopComposer(
+                          controller: controller,
+                          draftController: _draftController,
+                          onSend: _send,
+                          onMic: _toggleListening,
+                        ),
+                      ),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                    child: _DesktopComposer(
+                ),
+                if (!narrow)
+                  SizedBox(
+                    width: 220,
+                    child: _DesktopContextPanel(
                       controller: controller,
-                      draftController: _draftController,
-                      onSend: _send,
-                      onMic: _toggleListening,
+                      useGlobalMode: useGlobalMode,
                     ),
                   ),
-                ],
-              ),
-            ),
-            SizedBox(
-              width: 220,
-              child: _DesktopContextPanel(
-                controller: controller,
-                useGlobalMode: useGlobalMode,
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -2158,16 +2299,72 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
 
   void _handleControllerChanged() {
     if (!mounted) return;
+    _followNewMessages = _isNearBottom();
+    final String? conversationId = controller.selectedConversationId;
+    if (conversationId != _lastConversationId) {
+      _lastConversationId = conversationId;
+      _showJumpToBottom = false;
+      _forceScrollToBottom = true;
+    }
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent + 80,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-        );
-      }
+      if (_forceScrollToBottom || _followNewMessages) _scrollToBottom();
+      _forceScrollToBottom = false;
     });
+  }
+
+  bool _forceScrollToBottom = true;
+
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) return true;
+    final ScrollPosition position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels < 96;
+  }
+
+  void _handleScrollChanged() {
+    if (!mounted) return;
+    final bool show = !_isNearBottom();
+    if (show != _showJumpToBottom) {
+      setState(() => _showJumpToBottom = show);
+    }
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Future<void> _showAssistantSheet({
+    required String title,
+    required Widget child,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext context) => SafeArea(
+        child: SizedBox(
+          height: math.min(MediaQuery.sizeOf(context).height * 0.72, 560),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Expanded(child: child),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _toggleMessageTimes() {
@@ -2286,7 +2483,10 @@ class _DesktopAssistantSessions extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text('会话', style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            controller.copy.desktopSessionTitle,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 12),
           Expanded(
             child: ListView(
@@ -2300,9 +2500,10 @@ class _DesktopAssistantSessions extends StatelessWidget {
                           ? Icons.chat_rounded
                           : Icons.chat_bubble_outline_rounded,
                       title: conversation.title,
-                      subtitle: conversation.isGlobal
-                          ? '跨桌游问答 · ${conversation.messageCount} 条消息'
-                          : '规则问答 · ${conversation.messageCount} 条消息',
+                      subtitle: controller.copy.desktopConversationSummary(
+                        conversation.isGlobal,
+                        conversation.messageCount,
+                      ),
                       selected:
                           conversation.id == controller.selectedConversationId,
                       onTap: () =>
@@ -2425,6 +2626,14 @@ class _DesktopContextPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
+    final AiConversation? selectedConversation =
+        controller.selectedConversation;
+    final GameInfo selectedGame = selectedConversation?.gameId == null
+        ? controller.featuredGame
+        : controller.games.firstWhere(
+            (GameInfo item) => item.id == selectedConversation!.gameId,
+            orElse: () => controller.featuredGame,
+          );
     final bool smartSupplement = controller.allowSmartSupplement(
       useGlobalMode: useGlobalMode,
     );
@@ -2437,19 +2646,33 @@ class _DesktopContextPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text('上下文', style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            controller.copy.desktopContextTitle,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 13),
           _DesktopContextLine(
             icon: Icons.casino_outlined,
-            label: useGlobalMode ? '全部资料' : controller.featuredGame.title,
+            label: useGlobalMode
+                ? controller.copy.desktopAllResources
+                : selectedGame.title,
           ),
-          _DesktopContextLine(icon: Icons.menu_book_outlined, label: '规则书'),
-          _DesktopContextLine(icon: Icons.fact_check_outlined, label: 'FAQ'),
+          _DesktopContextLine(
+            icon: Icons.menu_book_outlined,
+            label: controller.copy.desktopRulebook,
+          ),
+          _DesktopContextLine(
+            icon: Icons.fact_check_outlined,
+            label: controller.copy.desktopFaq,
+          ),
           const SizedBox(height: 18),
-          Text('回答模式', style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            controller.copy.desktopAnswerModeTitle,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 8),
           _DesktopContextToggle(
-            label: '官方资料优先',
+            label: controller.copy.desktopOfficialFirst,
             selected: !smartSupplement,
             onTap: () => controller.setAllowSmartSupplement(
               false,
@@ -2457,7 +2680,7 @@ class _DesktopContextPanel extends StatelessWidget {
             ),
           ),
           _DesktopContextToggle(
-            label: '允许智能补充',
+            label: controller.copy.desktopSmartSupplement,
             selected: smartSupplement,
             onTap: () => controller.setAllowSmartSupplement(
               true,
@@ -2650,11 +2873,12 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
 
   @override
   Widget build(BuildContext context) {
+    final AppCopy copy = widget.controller.copy;
     if (!widget.controller.hasGames) {
       return _DesktopNoGamesPane(
         controller: widget.controller,
-        title: '资料库暂为空',
-        message: '游戏资料加载完成后，规则书、FAQ 和其他资料会显示在这里。',
+        title: copy.desktopLibraryEmptyTitle,
+        message: copy.desktopLibraryEmptyMessage,
       );
     }
     final AppPalette palette = AppPalette.of(context);
@@ -2665,147 +2889,177 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
         : items
               .where((DesktopLibraryResource item) => item.type == _filter)
               .toList(growable: false);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 26, 28, 28),
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                '规则资料',
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  color: palette.textPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            FilledButton.icon(
-              onPressed: _showImportComingSoon,
-              icon: const Icon(Icons.file_upload_outlined),
-              label: const Text('导入'),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              key: const ValueKey<String>('desktop-library-refresh'),
-              tooltip: '刷新资料库',
-              onPressed: widget.controller.isRefreshingLibrary
-                  ? null
-                  : () => unawaited(
-                      widget.controller.refreshLibraryResources(force: true),
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+          sliver: SliverToBoxAdapter(
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    copy.desktopLibraryTitle,
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      color: palette.textPrimary,
+                      fontWeight: FontWeight.w700,
                     ),
-              icon: widget.controller.isRefreshingLibrary
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: _showImportComingSoon,
+                  icon: const Icon(Icons.file_upload_outlined),
+                  label: Text(copy.desktopImport),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  key: const ValueKey<String>('desktop-library-refresh'),
+                  tooltip: copy.desktopRefreshLibrary,
+                  onPressed: widget.controller.isRefreshingLibrary
+                      ? null
+                      : () => unawaited(
+                          widget.controller.refreshLibraryResources(
+                            force: true,
+                          ),
+                        ),
+                  icon: widget.controller.isRefreshingLibrary
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         if (widget.controller.libraryLoadState == LibraryLoadState.failure)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: _LibraryStatusBanner(
-              icon: Icons.cloud_off_rounded,
-              color: palette.warning,
-              message: '远端资料库暂时不可用，继续显示本地缓存。',
-              detail: widget.controller.libraryLoadError,
-              actionLabel: '重试',
-              onAction: () => unawaited(
-                widget.controller.refreshLibraryResources(force: true),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(28, 12, 28, 0),
+            sliver: SliverToBoxAdapter(
+              child: _LibraryStatusBanner(
+                icon: Icons.cloud_off_rounded,
+                color: palette.warning,
+                message: copy.desktopLibraryUnavailable,
+                detail: widget.controller.libraryLoadError,
+                actionLabel: copy.desktopRetry,
+                onAction: () => unawaited(
+                  widget.controller.refreshLibraryResources(force: true),
+                ),
               ),
             ),
           ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: palette.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: palette.outline),
-          ),
-          child: Wrap(
-            spacing: 4,
-            children: <Widget>[
-              _LibraryFilterChip(
-                label: '全部',
-                selected: _filter == null,
-                onTap: () => setState(() => _filter = null),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(28, 18, 28, 0),
+          sliver: SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: palette.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: palette.outline),
               ),
-              _LibraryFilterChip(
-                label: '规则书',
-                selected: _filter == DesktopLibraryResourceType.rulebook,
-                onTap: () => setState(
-                  () => _filter = DesktopLibraryResourceType.rulebook,
-                ),
+              child: Wrap(
+                spacing: 4,
+                children: <Widget>[
+                  _LibraryFilterChip(
+                    label: copy.desktopAll,
+                    selected: _filter == null,
+                    onTap: () => setState(() => _filter = null),
+                  ),
+                  _LibraryFilterChip(
+                    label: copy.desktopRulebook,
+                    selected: _filter == DesktopLibraryResourceType.rulebook,
+                    onTap: () => setState(
+                      () => _filter = DesktopLibraryResourceType.rulebook,
+                    ),
+                  ),
+                  _LibraryFilterChip(
+                    label: copy.desktopFaq,
+                    selected: _filter == DesktopLibraryResourceType.faq,
+                    onTap: () => setState(
+                      () => _filter = DesktopLibraryResourceType.faq,
+                    ),
+                  ),
+                  _LibraryFilterChip(
+                    label: copy.desktopLibraryOther,
+                    selected: _filter == DesktopLibraryResourceType.other,
+                    onTap: () => setState(
+                      () => _filter = DesktopLibraryResourceType.other,
+                    ),
+                  ),
+                ],
               ),
-              _LibraryFilterChip(
-                label: 'FAQ',
-                selected: _filter == DesktopLibraryResourceType.faq,
-                onTap: () =>
-                    setState(() => _filter = DesktopLibraryResourceType.faq),
-              ),
-              _LibraryFilterChip(
-                label: '其他',
-                selected: _filter == DesktopLibraryResourceType.other,
-                onTap: () =>
-                    setState(() => _filter = DesktopLibraryResourceType.other),
-              ),
-            ],
+            ),
           ),
         ),
         if (widget.controller.libraryLoadState == LibraryLoadState.loading &&
             items.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 56),
-            child: Center(child: CircularProgressIndicator()),
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 56),
+              child: Center(child: CircularProgressIndicator()),
+            ),
           )
         else if (widget.controller.libraryLoadState == LibraryLoadState.empty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 56),
-            child: Center(child: Text('远端资料库暂无可展示的资料')),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 56),
+              child: Center(child: Text(copy.desktopLibraryNoResources)),
+            ),
           )
         else if (visible.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 56),
-            child: Center(child: Text('当前筛选没有资料')),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 56),
+              child: Center(child: Text(copy.desktopLibraryFilterNoResources)),
+            ),
           )
-        else ...[
-          const SizedBox(height: 12),
-          ...visible.map(
-            (DesktopLibraryResource resource) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _LibraryItemTile(
-                key: ValueKey<String>('library-item-${resource.id}'),
-                resource: resource,
-                isLoading:
-                    _openingItemId == resource.id ||
-                    _downloadingItemId == resource.id,
-                isDownloading: _downloadingItemId == resource.id,
-                onOpen: () => _openItem(resource),
-                onDownload: () => _downloadItem(resource),
-                onDelete: () => _deleteItem(resource),
-              ),
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(28, 12, 28, 28),
+            sliver: SliverList.builder(
+              itemCount: visible.length,
+              itemBuilder: (BuildContext context, int index) {
+                final DesktopLibraryResource resource = visible[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _LibraryItemTile(
+                    key: ValueKey<String>('library-item-${resource.id}'),
+                    resource: resource,
+                    copy: copy,
+                    isLoading:
+                        _openingItemId == resource.id ||
+                        _downloadingItemId == resource.id,
+                    isDownloading: _downloadingItemId == resource.id,
+                    onOpen: () => _openItem(resource),
+                    onDownload: () => _downloadItem(resource),
+                    onDelete: () => _deleteItem(resource),
+                  ),
+                );
+              },
             ),
           ),
-        ],
       ],
     );
   }
 
   void _showImportComingSoon() {
+    final AppCopy copy = widget.controller.copy;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('该功能正在开发中')));
+      ..showSnackBar(SnackBar(content: Text(copy.desktopImportComingSoon)));
   }
 
   Future<void> _openItem(DesktopLibraryResource resource) async {
     if (_openingItemId != null || _downloadingItemId != null) return;
     if (!resource.canOpen) {
+      final AppCopy copy = widget.controller.copy;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('该资源暂不支持在线阅读，请先下载')));
+        ..showSnackBar(
+          SnackBar(content: Text(copy.desktopOpenUnavailableMessage)),
+        );
       return;
     }
 
@@ -2839,7 +3093,7 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
     setState(() => _downloadingItemId = resource.id);
     try {
       final String? directory = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择下载目录',
+        dialogTitle: widget.controller.copy.desktopDownloadDirectory,
       );
       if (!mounted || directory == null || directory.trim().isEmpty) {
         return;
@@ -2851,34 +3105,52 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
           );
       if (!mounted) return;
       if (destination == null) {
-        _showDownloadUnavailable('下载失败，请检查资料库连接后重试');
+        _showDownloadUnavailable(widget.controller.copy.desktopDownloadFailed);
         return;
       }
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('已下载到 $destination')));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.desktopDownloadedTo(destination),
+            ),
+          ),
+        );
     } catch (error) {
-      if (mounted) _showDownloadUnavailable('下载失败：$error');
+      if (mounted) {
+        _showDownloadUnavailable(
+          widget.controller.copy.desktopDownloadError(error),
+        );
+      }
     } finally {
       if (mounted) setState(() => _downloadingItemId = null);
     }
   }
 
   void _deleteItem(DesktopLibraryResource resource) {
+    final AppCopy copy = widget.controller.copy;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('暂时无法删除远端资源，相关功能正在开发中')));
+      ..showSnackBar(SnackBar(content: Text(copy.desktopDeleteUnavailable)));
   }
 
   String _displayResourceTitle(DesktopLibraryResource resource) {
-    if (!resource.isRemote &&
-        resource.type == DesktopLibraryResourceType.rulebook) {
-      return '官方规则书';
+    final AppCopy copy = widget.controller.copy;
+    switch (resource.type) {
+      case DesktopLibraryResourceType.rulebook:
+        return resource.isRemote
+            ? copy.desktopRulebook
+            : '官方${copy.desktopRulebook}';
+      case DesktopLibraryResourceType.faq:
+        return resource.isRemote ? copy.desktopFaq : '官方 ${copy.desktopFaq}';
+      case DesktopLibraryResourceType.assetIndex:
+      case DesktopLibraryResourceType.reference:
+      case DesktopLibraryResourceType.playerAid:
+      case DesktopLibraryResourceType.supplement:
+      case DesktopLibraryResourceType.other:
+        return resource.title.replaceAll(RegExp(r'[_-]+'), ' ').trim();
     }
-    if (!resource.isRemote && resource.type == DesktopLibraryResourceType.faq) {
-      return '官方 FAQ';
-    }
-    return resource.title;
   }
 
   void _showDownloadUnavailable(String message) {
@@ -2897,6 +3169,18 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
           builder: (_) => MarkdownDocumentScreen(
             controller: widget.controller,
             remotePath: document.remotePath,
+            title: title,
+          ),
+        ),
+      );
+      return;
+    }
+    if (document.renderType != DocumentRenderType.pdf) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => LibraryResourceDocumentScreen(
+            controller: widget.controller,
+            document: document,
             title: title,
           ),
         ),
@@ -3017,6 +3301,7 @@ class _LibraryItemTile extends StatelessWidget {
   const _LibraryItemTile({
     super.key,
     required this.resource,
+    required this.copy,
     required this.isLoading,
     required this.isDownloading,
     required this.onOpen,
@@ -3025,6 +3310,7 @@ class _LibraryItemTile extends StatelessWidget {
   });
 
   final DesktopLibraryResource resource;
+  final AppCopy copy;
   final bool isLoading;
   final bool isDownloading;
   final VoidCallback onOpen;
@@ -3073,14 +3359,14 @@ class _LibraryItemTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      '${resource.gameTitle} · ${resource.title}',
+                      '${resource.gameTitle} · ${_displayTitle()}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${resource.typeLabel} · ${resource.language} · ${resource.formatLabel}',
+                      '${_typeLabel()} · ${_languageLabel()} · ${_formatLabel()}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -3095,7 +3381,7 @@ class _LibraryItemTile extends StatelessWidget {
               else
                 PopupMenuButton<_LibraryItemAction>(
                   key: ValueKey<String>('library-more-${resource.id}'),
-                  tooltip: '更多',
+                  tooltip: copy.desktopMore,
                   onSelected: (_LibraryItemAction action) {
                     switch (action) {
                       case _LibraryItemAction.open:
@@ -3111,15 +3397,19 @@ class _LibraryItemTile extends StatelessWidget {
                         PopupMenuItem<_LibraryItemAction>(
                           value: _LibraryItemAction.open,
                           enabled: resource.canOpen,
-                          child: Text(resource.canOpen ? '打开' : '打开（暂不支持）'),
+                          child: Text(
+                            resource.canOpen
+                                ? copy.desktopOpen
+                                : copy.desktopOpenUnavailable,
+                          ),
                         ),
-                        const PopupMenuItem<_LibraryItemAction>(
+                        PopupMenuItem<_LibraryItemAction>(
                           value: _LibraryItemAction.download,
-                          child: Text('下载'),
+                          child: Text(copy.desktopDownload),
                         ),
-                        const PopupMenuItem<_LibraryItemAction>(
+                        PopupMenuItem<_LibraryItemAction>(
                           value: _LibraryItemAction.delete,
-                          child: Text('删除'),
+                          child: Text(copy.desktopDelete),
                         ),
                       ],
                   icon: isDownloading
@@ -3135,6 +3425,65 @@ class _LibraryItemTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _displayTitle() {
+    switch (resource.type) {
+      case DesktopLibraryResourceType.rulebook:
+        return copy.desktopRulebook;
+      case DesktopLibraryResourceType.faq:
+        return copy.desktopFaq;
+      case DesktopLibraryResourceType.assetIndex:
+      case DesktopLibraryResourceType.reference:
+      case DesktopLibraryResourceType.playerAid:
+      case DesktopLibraryResourceType.supplement:
+      case DesktopLibraryResourceType.other:
+        final String title = resource.title.trim();
+        return title
+            .replaceAll(RegExp(r'[_-]+'), ' ')
+            .replaceFirst(RegExp(r'\.[^.]+$'), '')
+            .trim();
+    }
+  }
+
+  String _typeLabel() {
+    switch (resource.type) {
+      case DesktopLibraryResourceType.rulebook:
+        return copy.desktopRulebook;
+      case DesktopLibraryResourceType.faq:
+        return copy.desktopFaq;
+      case DesktopLibraryResourceType.assetIndex:
+      case DesktopLibraryResourceType.reference:
+      case DesktopLibraryResourceType.playerAid:
+      case DesktopLibraryResourceType.supplement:
+      case DesktopLibraryResourceType.other:
+        return copy.desktopLibraryOther;
+    }
+  }
+
+  String _languageLabel() {
+    final String language = resource.language.trim();
+    if (language == '中文') return copy.isChinese ? '中文' : 'Chinese';
+    if (language == '英文') return copy.isChinese ? '英文' : 'English';
+    if (language == '多语言') return copy.isChinese ? '多语言' : 'Multilingual';
+    return copy.isChinese ? language : 'Unspecified';
+  }
+
+  String _formatLabel() {
+    switch (resource.format) {
+      case DesktopLibraryResourceFormat.markdown:
+        return 'Markdown';
+      case DesktopLibraryResourceFormat.pdf:
+        return 'PDF';
+      case DesktopLibraryResourceFormat.html:
+        return 'HTML';
+      case DesktopLibraryResourceFormat.text:
+        return copy.isChinese ? '文本' : 'Text';
+      case DesktopLibraryResourceFormat.image:
+        return copy.isChinese ? '图片' : 'Image';
+      case DesktopLibraryResourceFormat.other:
+        return copy.isChinese ? '文件' : 'File';
+    }
   }
 }
 

@@ -5,6 +5,10 @@ class GameInfo {
       slug: '__empty__',
       title: '暂无游戏',
       subtitle: '游戏资料尚未加载',
+      aliases: const <String>[],
+      designers: const <String>[],
+      publishers: const <String>[],
+      keywords: const <String>[],
       coverAssetPath: '',
       bannerAssetPath: '',
       galleryAssetPaths: const <String>[],
@@ -42,6 +46,10 @@ class GameInfo {
     required this.title,
     required this.subtitle,
     this.editionLabel,
+    List<String>? aliases,
+    List<String>? designers,
+    List<String>? publishers,
+    List<String>? keywords,
     required this.coverAssetPath,
     required this.bannerAssetPath,
     List<String>? galleryAssetPaths,
@@ -70,7 +78,11 @@ class GameInfo {
     required this.roundFlow,
     required this.assistantSkills,
     required this.quickPrompts,
-  }) : galleryAssetPaths = List<String>.unmodifiable(
+  }) : aliases = List<String>.unmodifiable(aliases ?? const <String>[]),
+       designers = List<String>.unmodifiable(designers ?? const <String>[]),
+       publishers = List<String>.unmodifiable(publishers ?? const <String>[]),
+       keywords = List<String>.unmodifiable(keywords ?? const <String>[]),
+       galleryAssetPaths = List<String>.unmodifiable(
          galleryAssetPaths ?? <String>[coverAssetPath, bannerAssetPath],
        ),
        knowledgeAssetPaths = List<String>.unmodifiable(
@@ -82,6 +94,10 @@ class GameInfo {
   final String title;
   final String subtitle;
   final String? editionLabel;
+  final List<String> aliases;
+  final List<String> designers;
+  final List<String> publishers;
+  final List<String> keywords;
   final String coverAssetPath;
   final String bannerAssetPath;
   final List<String> galleryAssetPaths;

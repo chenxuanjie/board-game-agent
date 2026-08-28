@@ -208,7 +208,10 @@ class DesktopLibraryResource {
 
   bool get canOpen =>
       format == DesktopLibraryResourceFormat.markdown ||
-      format == DesktopLibraryResourceFormat.pdf;
+      format == DesktopLibraryResourceFormat.pdf ||
+      format == DesktopLibraryResourceFormat.html ||
+      format == DesktopLibraryResourceFormat.text ||
+      format == DesktopLibraryResourceFormat.image;
 
   String get fileName {
     final String normalized = remotePath.replaceAll('\\', '/');

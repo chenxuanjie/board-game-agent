@@ -1,4 +1,4 @@
-enum DocumentRenderType { pdf, markdown }
+enum DocumentRenderType { pdf, markdown, html, text, image }
 
 class ResolvedDocument {
   const ResolvedDocument({

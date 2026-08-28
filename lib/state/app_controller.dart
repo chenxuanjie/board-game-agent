@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
@@ -2061,9 +2062,7 @@ class AppController extends ChangeNotifier {
       }
       return ResolvedDocument(
         remotePath: resource.remotePath,
-        renderType: resource.format == DesktopLibraryResourceFormat.pdf
-            ? DocumentRenderType.pdf
-            : DocumentRenderType.markdown,
+        renderType: _documentRenderTypeForFormat(resource.format),
         label: resource.title,
       );
     }
@@ -2074,11 +2073,28 @@ class AppController extends ChangeNotifier {
     }
     return ResolvedDocument(
       remotePath: resource.remotePath,
-      renderType: resource.format == DesktopLibraryResourceFormat.pdf
-          ? DocumentRenderType.pdf
-          : DocumentRenderType.markdown,
+      renderType: _documentRenderTypeForFormat(resource.format),
       label: resource.title,
     );
+  }
+
+  DocumentRenderType _documentRenderTypeForFormat(
+    DesktopLibraryResourceFormat format,
+  ) {
+    switch (format) {
+      case DesktopLibraryResourceFormat.pdf:
+        return DocumentRenderType.pdf;
+      case DesktopLibraryResourceFormat.html:
+        return DocumentRenderType.html;
+      case DesktopLibraryResourceFormat.text:
+        return DocumentRenderType.text;
+      case DesktopLibraryResourceFormat.image:
+        return DocumentRenderType.image;
+      case DesktopLibraryResourceFormat.markdown:
+        return DocumentRenderType.markdown;
+      case DesktopLibraryResourceFormat.other:
+        return DocumentRenderType.text;
+    }
   }
 
   Future<String?> downloadLibraryResource({
@@ -2466,8 +2482,19 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String?> loadMarkdownDocument(String remotePath) async {
+    return loadLibraryResourceText(remotePath);
+  }
+
+  Future<String?> loadLibraryResourceText(String remotePath) async {
     final String? localPath = await cacheDocument(remotePath);
     if (localPath == null) {
+      if (remotePath.startsWith('assets/')) {
+        try {
+          return rootBundle.loadString(remotePath);
+        } catch (_) {
+          return null;
+        }
+      }
       return null;
     }
     return File(localPath).readAsString();
@@ -2536,9 +2563,7 @@ class AppController extends ChangeNotifier {
         notifyListeners();
         return ResolvedDocument(
           remotePath: candidate,
-          renderType: candidate.endsWith('.pdf')
-              ? DocumentRenderType.pdf
-              : DocumentRenderType.markdown,
+          renderType: _documentRenderTypeForPath(candidate),
           label: fallbackLabel,
         );
       }
@@ -2555,11 +2580,22 @@ class AppController extends ChangeNotifier {
     }
     return ResolvedDocument(
       remotePath: fallback,
-      renderType: fallback.endsWith('.pdf')
-          ? DocumentRenderType.pdf
-          : DocumentRenderType.markdown,
+      renderType: _documentRenderTypeForPath(fallback),
       label: fallbackLabel,
     );
+  }
+
+  DocumentRenderType _documentRenderTypeForPath(String path) {
+    final String normalized = path.toLowerCase();
+    if (normalized.endsWith('.pdf')) return DocumentRenderType.pdf;
+    if (normalized.endsWith('.html') || normalized.endsWith('.htm')) {
+      return DocumentRenderType.html;
+    }
+    if (normalized.endsWith('.txt')) return DocumentRenderType.text;
+    if (RegExp(r'\.(png|jpe?g|webp|gif|bmp)$').hasMatch(normalized)) {
+      return DocumentRenderType.image;
+    }
+    return DocumentRenderType.markdown;
   }
 
   List<String> _documentCandidates({
