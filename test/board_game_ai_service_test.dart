@@ -82,6 +82,67 @@ void main() {
     },
   );
 
+  test(
+    'smart supplement answers ordinary questions without loading game knowledge',
+    () async {
+      final _FakeAiClient client = _FakeAiClient(
+        responses: <AiResponse>[
+          const AiResponse(text: '你好，我可以帮你解答问题。', model: 'test-model'),
+        ],
+      );
+      final _FakeRemoteAssetService remote = _FakeRemoteAssetService();
+      final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+      final BoardGameAiAnswer reply = await service.generateReply(
+        prompt: '你好，你能做什么？',
+        language: AppLanguage.zhHans,
+        game: _gameInfo(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: true,
+        config: AiApiConfig.defaultOpenAi,
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: remote,
+        conversationHistory: const <ChatMessage>[],
+      );
+
+      expect(reply.text, '你好，我可以帮你解答问题。');
+      expect(reply.source, AnswerSource.generalAdvice);
+      expect(client.requestCount, 1);
+      expect(remote.loadCount, 0);
+    },
+  );
+
+  test('classifies an ambiguous legacy prompt before general chat', () async {
+    final _FakeAiClient client = _FakeAiClient(
+      responses: <AiResponse>[
+        const AiResponse(
+          text: '{"route":"general","confidence":"high"}',
+          model: 'test-model',
+        ),
+        const AiResponse(text: '分类后的普通回答', model: 'test-model'),
+      ],
+    );
+    final _FakeRemoteAssetService remote = _FakeRemoteAssetService();
+    final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+    final BoardGameAiAnswer reply = await service.generateReply(
+      prompt: '你最近怎么样？',
+      language: AppLanguage.zhHans,
+      game: _gameInfo(),
+      answerMode: AiAnswerMode.knowledgeThenDirect,
+      useGlobalMode: true,
+      config: AiApiConfig.defaultOpenAi,
+      assetSourceConfigs: const <AssetSourceConfig>[],
+      remoteAssetService: remote,
+      conversationHistory: const <ChatMessage>[],
+    );
+
+    expect(reply.text, '分类后的普通回答');
+    expect(reply.source, AnswerSource.generalAdvice);
+    expect(client.requestCount, 2);
+    expect(remote.loadCount, 0);
+  });
+
   test('knowledge answer returns rulebook source and matched evidence', () async {
     final _FakeAiClient client = _FakeAiClient(
       responses: <AiResponse>[
@@ -344,11 +405,14 @@ class _FakeResponsesClient implements ResponsesAiClient {
 class _FakeRemoteAssetService extends RemoteAssetService {
   _FakeRemoteAssetService() : super(client: http.Client());
 
+  int loadCount = 0;
+
   @override
   Future<String?> loadTextFromAny({
     required List<AssetSourceConfig> sources,
     required List<String> remotePaths,
   }) async {
+    loadCount += 1;
     return '# Cabo test knowledge\nCabo is a competitive card game.';
   }
 }

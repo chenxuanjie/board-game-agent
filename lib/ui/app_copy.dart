@@ -119,6 +119,9 @@ class AppCopy {
   String get aiReplyFailed => isChinese
       ? '这次回答失败了，请稍后再试。'
       : 'The assistant could not answer this time. Please try again.';
+  String get aiReplyIncomplete => isChinese
+      ? '回答未完成，可点击重试。'
+      : 'The answer was not completed. You can retry.';
   String get copyAnswer => isChinese ? '复制回答' : 'Copy answer';
   String get answerCopied => isChinese ? '回答已复制' : 'Answer copied';
   String get retry => isChinese ? '重试' : 'Retry';
@@ -138,6 +141,8 @@ class AppCopy {
       isChinese ? '正在查找社区资料…' : 'Checking community sources…';
   String get aiWorkflowSearchingWeb =>
       isChinese ? '正在联网搜索…' : 'Searching the web…';
+  String get aiWorkflowRouting =>
+      isChinese ? '正在判断问题范围…' : 'Classifying the question…';
   String get aiWorkflowPreparingAnswer =>
       isChinese ? '正在整理答案…' : 'Preparing the answer…';
   String get aiWorkflowWorking => isChinese ? '正在处理…' : 'Working…';
@@ -146,6 +151,7 @@ class AppCopy {
     'official' => aiWorkflowFindingOfficial,
     'community' => aiWorkflowFindingCommunity,
     'web_search' => aiWorkflowSearchingWeb,
+    'routing' => aiWorkflowRouting,
     'answering' => aiWorkflowPreparingAnswer,
     _ => aiWorkflowWorking,
   };
@@ -206,18 +212,23 @@ class AppCopy {
   String get enterAssistant => isChinese ? '进入 AI 助手' : 'Open AI Assistant';
   String get assistantMode => isChinese ? '桌游助手' : 'Board Game Assistant';
   String get assistantModeHint => isChinese
-      ? '你可以先只按本桌游知识库回答；如果打开智能补充，知识不够时会再结合当前桌游详情直接作答。'
-      : 'You can keep answers limited to the local game knowledge base, or allow a direct fallback that uses the current game profile when knowledge is insufficient.';
+      ? '你可以只按本桌游知识库回答；打开智能补充后，普通问题直接回答，桌游问题才查资料。'
+      : 'Keep answers limited to the local game knowledge base, or let smart supplement route general questions directly and search only for game questions.';
   String get knowledgeOnlyLabel => isChinese ? '仅知识库' : 'Knowledge Only';
   String get smartSupplementLabel => isChinese ? '智能补充' : 'Smart Supplement';
   String get smartSupplementSwitchLabel =>
       isChinese ? '知识不足时智能补充' : 'Supplement when knowledge is insufficient';
   String get smartSupplementSwitchHintOn => isChinese
-      ? '先按当前桌游知识库回答；若知识库没有足够信息，再结合这款桌游的详情直接回答。'
-      : 'Answer from the current game knowledge base first, then fall back to a direct answer that uses the current game profile when needed.';
+      ? '先判断问题范围：普通问题直接回答；桌游问题才查资料，资料不足时再智能补充。'
+      : 'Route first: answer general questions directly, search sources for game questions, and supplement only when needed.';
   String get smartSupplementSwitchHintOff => isChinese
       ? '只依据当前桌游知识库回答；知识库没有写到的内容会直接回答不知道。'
       : 'Answer only from the current game knowledge base, and say you do not know when the knowledge base does not cover the question.';
+  String get useCurrentGameKnowledgeLabel =>
+      isChinese ? '使用当前桌游资料' : 'Use current game sources';
+  String get useCurrentGameKnowledgeHint => isChinese
+      ? '通用助手中允许按当前选中的桌游查阅规则资料；关闭后仍会识别明确的桌游问题。'
+      : 'Let the standalone assistant use selected game sources; explicit game questions still work when off.';
   String get askAnything => isChinese ? '现在就问它' : 'Ask anything now';
   String get helperSectionTitle =>
       isChinese ? '这个版本已经能做什么' : 'What this build already does';

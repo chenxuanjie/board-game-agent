@@ -14,6 +14,8 @@ import '../models/evidence_chunk.dart';
 import '../models/game_info.dart';
 import 'ai_service.dart';
 import 'board_game_prompt_builder.dart';
+import 'board_game_question_classifier.dart';
+import 'board_game_question_router.dart';
 import 'knowledge_answer_parser.dart';
 import 'remote_asset_service.dart';
 import 'rule_knowledge_retriever.dart';
@@ -34,18 +36,25 @@ class BoardGameAiService implements AiService {
     BoardGamePromptBuilder? promptBuilder,
     KnowledgeAnswerParser? answerParser,
     ResponsesRulesWorkflow? responsesWorkflow,
+    BoardGameQuestionRouter? questionRouter,
+    BoardGameQuestionClassifier? questionClassifier,
   }) : _aiClient = aiClient,
        _knowledgeRetriever =
            knowledgeRetriever ?? const RuleKnowledgeRetriever(),
        _promptBuilder = promptBuilder ?? BoardGamePromptBuilder(),
        _answerParser = answerParser ?? KnowledgeAnswerParser(),
-       _responsesWorkflow = responsesWorkflow;
+       _responsesWorkflow = responsesWorkflow,
+       _questionRouter = questionRouter ?? const BoardGameQuestionRouter(),
+       _questionClassifier =
+           questionClassifier ?? BoardGameQuestionClassifier();
 
   final AiClient _aiClient;
   final RuleKnowledgeRetriever _knowledgeRetriever;
   final BoardGamePromptBuilder _promptBuilder;
   final KnowledgeAnswerParser _answerParser;
   final ResponsesRulesWorkflow? _responsesWorkflow;
+  final BoardGameQuestionRouter _questionRouter;
+  final BoardGameQuestionClassifier _questionClassifier;
 
   @override
   Future<BoardGameAiAnswer> generateReply({
@@ -58,6 +67,7 @@ class BoardGameAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
   }) async {
     if (_responsesEnabled(config)) {
       return _responsesWorkflow!.generateReply(
@@ -70,7 +80,27 @@ class BoardGameAiService implements AiService {
         assetSourceConfigs: assetSourceConfigs,
         remoteAssetService: remoteAssetService,
         conversationHistory: conversationHistory,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
       );
+    }
+    if (answerMode == AiAnswerMode.knowledgeThenDirect) {
+      final BoardGameQuestionRoutingDecision routing =
+          await _resolveLegacyQuestionRoute(
+            prompt: prompt,
+            language: language,
+            game: game,
+            config: config,
+            useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
+          );
+      if (routing.route == BoardGameQuestionRoute.general) {
+        return _answerGeneralConversation(
+          language: language,
+          game: game,
+          config: config,
+          conversation: _buildConversationMessages(conversationHistory, prompt),
+        );
+      }
     }
     final List<EvidenceChunk> evidence = await _knowledgeRetriever.retrieve(
       game: game,
@@ -149,6 +179,7 @@ class BoardGameAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {
     if (_responsesEnabled(config)) {
@@ -162,9 +193,42 @@ class BoardGameAiService implements AiService {
         assetSourceConfigs: assetSourceConfigs,
         remoteAssetService: remoteAssetService,
         conversationHistory: conversationHistory,
+        useCurrentGameKnowledge: useCurrentGameKnowledge,
         abortTrigger: abortTrigger,
       );
       return;
+    }
+    if (answerMode == AiAnswerMode.knowledgeThenDirect) {
+      final BoardGameQuestionRoutingDecision localRouting = _questionRouter
+          .decide(
+            prompt: prompt,
+            game: game,
+            useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
+          );
+      if (localRouting.needsModelClassification) {
+        yield const BoardGameAiStreamEvent(status: 'routing');
+      }
+      final BoardGameQuestionRoutingDecision routing =
+          await _resolveLegacyQuestionRoute(
+            prompt: prompt,
+            language: language,
+            game: game,
+            config: config,
+            useGlobalMode: useGlobalMode,
+            useCurrentGameKnowledge: useCurrentGameKnowledge,
+            localDecision: localRouting,
+          );
+      if (routing.route == BoardGameQuestionRoute.general) {
+        yield* _streamGeneralConversation(
+          language: language,
+          game: game,
+          config: config,
+          conversation: _buildConversationMessages(conversationHistory, prompt),
+          abortTrigger: abortTrigger,
+        );
+        return;
+      }
     }
     final List<EvidenceChunk> evidence = await _knowledgeRetriever.retrieve(
       game: game,
@@ -291,6 +355,40 @@ class BoardGameAiService implements AiService {
             config.providerPreset == AiProviderPreset.custom);
   }
 
+  Future<BoardGameQuestionRoutingDecision> _resolveLegacyQuestionRoute({
+    required String prompt,
+    required AppLanguage language,
+    required GameInfo game,
+    required AiApiConfig config,
+    required bool useGlobalMode,
+    bool useCurrentGameKnowledge = false,
+    BoardGameQuestionRoutingDecision? localDecision,
+  }) async {
+    final BoardGameQuestionRoutingDecision local =
+        localDecision ??
+        _questionRouter.decide(
+          prompt: prompt,
+          game: game,
+          useGlobalMode: useGlobalMode,
+          useCurrentGameKnowledge: useCurrentGameKnowledge,
+        );
+    if (!local.needsModelClassification) return local;
+    final BoardGameQuestionRoutingDecision fallback = _questionRouter.fallback(
+      useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
+    );
+    return _questionClassifier.classifyChat(
+      client: _aiClient,
+      endpoint: _endpointFor(config),
+      language: language,
+      game: game,
+      useGlobalMode: useGlobalMode,
+      useCurrentGameKnowledge: useCurrentGameKnowledge,
+      prompt: prompt,
+      fallback: fallback,
+    );
+  }
+
   Future<BoardGameAiAnswer> _answerFromKnowledgeOnly({
     required AppLanguage language,
     required GameInfo game,
@@ -364,6 +462,34 @@ class BoardGameAiService implements AiService {
     );
   }
 
+  Future<BoardGameAiAnswer> _answerGeneralConversation({
+    required AppLanguage language,
+    required GameInfo game,
+    required AiApiConfig config,
+    required List<AiMessage> conversation,
+  }) async {
+    final String answer = await _complete(
+      config: config,
+      systemPrompt: _promptBuilder.buildGeneralConversationSystemPrompt(
+        language: language,
+        game: game,
+      ),
+      conversation: conversation,
+      options: _generationOptions(
+        config,
+        temperature: 0.7,
+        topP: 0.95,
+        maxCompletionTokens: 1024,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+      ),
+    );
+    return BoardGameAiAnswer(
+      text: answer.trim(),
+      source: AnswerSource.generalAdvice,
+    );
+  }
+
   Future<String> _complete({
     required AiApiConfig config,
     required String systemPrompt,
@@ -429,6 +555,46 @@ class BoardGameAiService implements AiService {
         source: AnswerSource.generalAdvice,
         evidence: evidence,
       ),
+      isDone: true,
+    );
+  }
+
+  Stream<BoardGameAiStreamEvent> _streamGeneralConversation({
+    required AppLanguage language,
+    required GameInfo game,
+    required AiApiConfig config,
+    required List<AiMessage> conversation,
+    Future<void>? abortTrigger,
+  }) async* {
+    final String systemPrompt = _promptBuilder
+        .buildGeneralConversationSystemPrompt(language: language, game: game);
+    final StringBuffer answerText = StringBuffer();
+    await for (final AiStreamEvent event in _aiClient.stream(
+      AiRequest(
+        endpoint: _endpointFor(config),
+        messages: <AiMessage>[AiMessage.system(systemPrompt), ...conversation],
+        options: _generationOptions(
+          config,
+          temperature: 0.7,
+          topP: 0.95,
+          maxCompletionTokens: 1024,
+          frequencyPenalty: 0,
+          presencePenalty: 0,
+        ),
+      ),
+      abortTrigger: abortTrigger,
+    )) {
+      if (event.delta.isEmpty) continue;
+      answerText.write(event.delta);
+      yield BoardGameAiStreamEvent(delta: event.delta);
+    }
+
+    final String text = answerText.toString().trim();
+    if (text.isEmpty) {
+      throw StateError('The AI streaming response was empty.');
+    }
+    yield BoardGameAiStreamEvent(
+      answer: BoardGameAiAnswer(text: text, source: AnswerSource.generalAdvice),
       isDone: true,
     );
   }

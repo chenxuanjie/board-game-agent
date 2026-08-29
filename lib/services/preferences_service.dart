@@ -16,6 +16,8 @@ class PreferencesService {
   static const _assetSourceOrderKey = 'asset_source_order';
   static const _gameAnswerModeKey = 'game_answer_mode';
   static const _globalAnswerModeKey = 'global_answer_mode';
+  static const _globalUseCurrentGameKnowledgeKey =
+      'global_use_current_game_knowledge';
   static const _checkForUpdatesKey = 'check_for_updates';
   static const _assistantModeKey = 'assistant_mode';
 
@@ -124,6 +126,16 @@ class PreferencesService {
   Future<void> saveGlobalAnswerMode(AiAnswerMode mode) async {
     final prefs = await _prefs;
     await prefs.setString(_globalAnswerModeKey, mode.code);
+  }
+
+  Future<bool> loadGlobalUseCurrentGameKnowledge() async {
+    final prefs = await _prefs;
+    return prefs.getBool(_globalUseCurrentGameKnowledgeKey) ?? false;
+  }
+
+  Future<void> saveGlobalUseCurrentGameKnowledge(bool enabled) async {
+    final prefs = await _prefs;
+    await prefs.setBool(_globalUseCurrentGameKnowledgeKey, enabled);
   }
 
   Future<bool> loadCheckForUpdates() async {
