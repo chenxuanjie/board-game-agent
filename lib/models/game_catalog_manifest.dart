@@ -47,6 +47,10 @@ class GameManifest {
     required this.id,
     required this.slug,
     required this.editionLabels,
+    required this.aliases,
+    required this.designers,
+    required this.publishers,
+    required this.keywords,
     required this.coverAsset,
     required this.bannerAsset,
     required this.galleryAssets,
@@ -64,6 +68,10 @@ class GameManifest {
   final String id;
   final String slug;
   final Map<String, String> editionLabels;
+  final Map<String, List<String>> aliases;
+  final Map<String, List<String>> designers;
+  final Map<String, List<String>> publishers;
+  final Map<String, List<String>> keywords;
   final String coverAsset;
   final String bannerAsset;
   final List<String> galleryAssets;
@@ -92,6 +100,10 @@ class GameManifest {
       id: json['id'] as String,
       slug: json['slug'] as String,
       editionLabels: _localizedStringMap(json['editionLabel']),
+      aliases: _localizedStringListMap(json['aliases']),
+      designers: _localizedStringListMap(json['designers']),
+      publishers: _localizedStringListMap(json['publishers']),
+      keywords: _localizedStringListMap(json['keywords']),
       coverAsset: json['coverAsset'] as String? ?? '',
       bannerAsset: json['bannerAsset'] as String? ?? '',
       galleryAssets: _stringList(json['galleryAssets']),
@@ -153,6 +165,22 @@ class GameManifest {
           editionLabels[localeKey] ??
           editionLabels['en'] ??
           editionLabels['zhHans'],
+      aliases: <String>{
+        ..._resolveLocalizedList(aliases, localeKey),
+        ...content.aliases,
+      }.toList(growable: false),
+      designers: <String>{
+        ..._resolveLocalizedList(designers, localeKey),
+        ...content.designers,
+      }.toList(growable: false),
+      publishers: <String>{
+        ..._resolveLocalizedList(publishers, localeKey),
+        ...content.publishers,
+      }.toList(growable: false),
+      keywords: <String>{
+        ..._resolveLocalizedList(keywords, localeKey),
+        ...content.keywords,
+      }.toList(growable: false),
       coverAssetPath: _assetPath(coverAsset),
       bannerAssetPath: _assetPath(bannerAsset),
       galleryAssetPaths: _resolveAssetList(galleryAssets),
@@ -444,14 +472,33 @@ class GameManifest {
   }
 
   static Map<String, List<String>> _localizedStringListMap(dynamic value) {
-    final Map<String, dynamic> map =
-        value as Map<String, dynamic>? ?? <String, dynamic>{};
-    return map.map((key, dynamic value) => MapEntry(key, _stringList(value)));
+    if (value is List) {
+      // Some manifests use one language-neutral list instead of a localized
+      // map. Keep it under a fallback key so locale resolution can still
+      // consume it without special-casing every caller.
+      return <String, List<String>>{'default': _stringList(value)};
+    }
+    if (value is! Map) {
+      return <String, List<String>>{};
+    }
+    return value.map(
+      (key, dynamic value) => MapEntry(key.toString(), _stringList(value)),
+    );
   }
 
   static List<String> _stringList(dynamic value) {
-    final List<dynamic> list = value as List<dynamic>? ?? const <dynamic>[];
-    return list.map((item) => item as String).toList();
+    if (value is String) {
+      final String normalized = value.trim();
+      return normalized.isEmpty ? <String>[] : <String>[normalized];
+    }
+    if (value is! Iterable) {
+      return <String>[];
+    }
+    return value
+        .whereType<String>()
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
   }
 
   static List<int> _intList(dynamic value) {
@@ -478,6 +525,10 @@ class GameLocaleContent {
   GameLocaleContent({
     required this.title,
     required this.subtitle,
+    required this.aliases,
+    required this.designers,
+    required this.publishers,
+    required this.keywords,
     required this.scoreCountLabel,
     required this.releaseYear,
     required this.categoryLine,
@@ -500,6 +551,10 @@ class GameLocaleContent {
 
   final String title;
   final String subtitle;
+  final List<String> aliases;
+  final List<String> designers;
+  final List<String> publishers;
+  final List<String> keywords;
   final String scoreCountLabel;
   final String releaseYear;
   final String categoryLine;
@@ -523,6 +578,10 @@ class GameLocaleContent {
     return GameLocaleContent(
       title: json['title'] as String? ?? '',
       subtitle: json['subtitle'] as String? ?? '',
+      aliases: GameManifest._stringList(json['aliases']),
+      designers: GameManifest._stringList(json['designers']),
+      publishers: GameManifest._stringList(json['publishers']),
+      keywords: GameManifest._stringList(json['keywords']),
       scoreCountLabel: json['scoreCountLabel'] as String? ?? '',
       releaseYear: json['releaseYear'] as String? ?? '',
       categoryLine: json['categoryLine'] as String? ?? '',

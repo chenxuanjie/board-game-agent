@@ -1,12 +1,57 @@
 import 'game_resource.dart';
 
 class GameInfo {
+  factory GameInfo.empty() {
+    return GameInfo(
+      id: '__empty__',
+      slug: '__empty__',
+      title: '暂无游戏',
+      subtitle: '游戏资料尚未加载',
+      aliases: const <String>[],
+      designers: const <String>[],
+      publishers: const <String>[],
+      keywords: const <String>[],
+      coverAssetPath: '',
+      bannerAssetPath: '',
+      galleryAssetPaths: const <String>[],
+      cardAccent: 0xFF607D8B,
+      score: '—',
+      scoreCountLabel: '',
+      releaseYear: '',
+      categoryLine: '',
+      learningDifficulty: '',
+      perPlayerTime: '',
+      setupTime: '',
+      languageRequirement: '',
+      supportedPlayers: const <int>[],
+      recommendedPlayer: 0,
+      rankBadges: const <String>[],
+      rulebookAssetPath: '',
+      faqAssetPath: '',
+      knowledgeAssetPaths: const <String>[],
+      heroTagline: '',
+      assistantIntro: '',
+      summary: '',
+      mentorPitch: '',
+      playTime: '',
+      playerCount: '',
+      complexity: '',
+      roundFlow: const <String>[],
+      assistantSkills: const <String>[],
+      quickPrompts: const <String>[],
+    );
+  }
+
   GameInfo({
     required this.id,
     required this.slug,
     required this.title,
     required this.subtitle,
     this.editionLabel,
+    List<String>? aliases,
+    List<String>? designers,
+    List<String>? publishers,
+    List<String>? keywords,
     required this.coverAssetPath,
     required this.bannerAssetPath,
     List<String>? galleryAssetPaths,
@@ -36,7 +81,11 @@ class GameInfo {
     required this.roundFlow,
     required this.assistantSkills,
     required this.quickPrompts,
-  }) : galleryAssetPaths = List<String>.unmodifiable(
+  }) : aliases = List<String>.unmodifiable(aliases ?? const <String>[]),
+       designers = List<String>.unmodifiable(designers ?? const <String>[]),
+       publishers = List<String>.unmodifiable(publishers ?? const <String>[]),
+       keywords = List<String>.unmodifiable(keywords ?? const <String>[]),
+       galleryAssetPaths = List<String>.unmodifiable(
          (galleryAssetPaths ?? <String>[coverAssetPath, bannerAssetPath]).where(
            (path) => path.trim().isNotEmpty,
          ),
@@ -54,6 +103,10 @@ class GameInfo {
   final String title;
   final String subtitle;
   final String? editionLabel;
+  final List<String> aliases;
+  final List<String> designers;
+  final List<String> publishers;
+  final List<String> keywords;
   final String coverAssetPath;
   final String bannerAssetPath;
   final List<String> galleryAssetPaths;

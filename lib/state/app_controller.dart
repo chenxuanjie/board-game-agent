@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,15 +17,19 @@ import '../models/answer_source.dart';
 import '../models/assistant_mode.dart';
 import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
+import '../models/app_activity.dart';
 import '../models/board_game_ai_answer.dart';
 import '../models/chat_message.dart';
+import '../models/ai_conversation.dart';
 import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
+import '../models/desktop_library_resource.dart';
 import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
 import '../models/game_resource.dart';
 import '../models/remote_library_update.dart';
+import '../models/remote_asset_file.dart';
 import '../models/resolved_document.dart';
 import '../models/evidence_chunk.dart';
 import '../models/rule_citation.dart';
@@ -40,6 +45,24 @@ import '../theme/palette_registry.dart';
 import '../ui/app_copy.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
+
+enum LibraryLoadState { idle, loading, success, empty, failure }
+
+/// Result of reading the remote library manifests.
+///
+/// [warning] is non-fatal: a partial index can still be shown while the UI
+/// exposes that one or more game manifests were unavailable.
+class _RemoteLibraryIndexResult {
+  const _RemoteLibraryIndexResult({
+    required this.resources,
+    this.warning,
+    this.failedSlugs = const <String>{},
+  });
+
+  final List<DesktopLibraryResource> resources;
+  final String? warning;
+  final Set<String> failedSlugs;
+}
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -91,9 +114,16 @@ class AppController extends ChangeNotifier {
   int _aiModelRefreshGeneration = 0;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
+  List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
+  LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
+  String? _libraryLoadError;
+  Future<void>? _libraryRefreshFuture;
+  Future<void>? _libraryCacheLoadFuture;
+  bool _libraryCacheLoadAttempted = false;
+  int _libraryRefreshGeneration = 0;
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
-    state: ConnectivityState.success,
-    message: '默认可用',
+    state: ConnectivityState.unknown,
+    message: '未检测',
     checkedAt: DateTime.now(),
   );
   ConnectivityStatus _assetConnectivityStatus = ConnectivityStatus.unknown(
@@ -103,6 +133,8 @@ class AppController extends ChangeNotifier {
       <String, ConnectivityStatus>{};
   final Map<String, String> _resolvedAssetPaths = <String, String>{};
   Timer? _assetStatusTimer;
+  Future<void>? _assetStatusRefreshFuture;
+  Future<void>? _serviceStatusRefreshFuture;
   RemoteLibraryUpdate? _pendingLibraryUpdate;
   bool _checkingLibraryUpdate = false;
   bool _applyingLibraryUpdate = false;
@@ -111,8 +143,11 @@ class AppController extends ChangeNotifier {
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
-  final Map<String, List<ChatMessage>> _conversationMessages =
-      <String, List<ChatMessage>>{};
+  Future<void> _selectedConversationSaveQueue = Future<void>.value();
+  Future<void> _activitySaveQueue = Future<void>.value();
+  final Map<String, AiConversation> _conversations = <String, AiConversation>{};
+  List<AppActivity> _activities = <AppActivity>[];
+  String? _selectedConversationId;
   final Map<String, _ChatGenerationState> _generationStates =
       <String, _ChatGenerationState>{};
   late final http.Client _assetTestClient = IOClient(
@@ -160,21 +195,60 @@ class AppController extends ChangeNotifier {
   ConnectivityStatus get assetConnectivityStatus => _assetConnectivityStatus;
   Map<String, ConnectivityStatus> get assetSourceStatuses =>
       Map<String, ConnectivityStatus>.unmodifiable(_assetSourceStatuses);
+  List<DesktopLibraryResource> get libraryResources =>
+      List<DesktopLibraryResource>.unmodifiable(_libraryResources);
+  LibraryLoadState get libraryLoadState => _libraryLoadState;
+  String? get libraryLoadError => _libraryLoadError;
+  bool get isRefreshingLibrary => _libraryRefreshFuture != null;
+  bool get isRefreshingServiceStatuses => _serviceStatusRefreshFuture != null;
+  String? get selectedConversationId => _selectedConversationId;
+  List<AppActivity> get activities =>
+      List<AppActivity>.unmodifiable(_activities);
+  int get unreadActivityCount =>
+      _activities.where((AppActivity activity) => !activity.isRead).length;
+  bool get selectedConversationIsGlobal =>
+      selectedConversation?.scope == AiConversationScope.global;
+  AiConversation? get selectedConversation {
+    final String? id = _selectedConversationId;
+    return id == null ? null : _conversations[id]?.copyWith();
+  }
+
+  List<AiConversation> get conversations {
+    final List<AiConversation> result = _conversations.values
+        .where(_isConversationAvailable)
+        .map((AiConversation conversation) => conversation.copyWith())
+        .toList();
+    result.sort((AiConversation left, AiConversation right) {
+      if (left.isGlobal != right.isGlobal) {
+        return left.isGlobal ? -1 : 1;
+      }
+      return right.updatedAt.compareTo(left.updatedAt);
+    });
+    return List<AiConversation>.unmodifiable(result);
+  }
+
   RemoteLibraryUpdate? get pendingLibraryUpdate => _pendingLibraryUpdate;
   bool get checkingLibraryUpdate => _checkingLibraryUpdate;
   bool get applyingLibraryUpdate => _applyingLibraryUpdate;
   bool get homeAssetsLoading => _homeAssetsLoading;
   int get homeAssetsLoaded => _homeAssetsLoaded;
   int get homeAssetsTotal => _homeAssetsTotal;
+  bool get hasGames => _games.isNotEmpty;
   String? resolvedAssetPath(String remotePath) =>
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
   GameInfo get featuredGame => selectedGame;
-  GameInfo get selectedGame => games.firstWhere(
-    (game) => game.id == _selectedGameId,
-    orElse: () => games.first,
-  );
+  GameInfo get selectedGame {
+    if (_games.isEmpty) {
+      return GameInfo.empty();
+    }
+    return _games.firstWhere(
+      (game) => game.id == _selectedGameId,
+      orElse: () => _games.first,
+    );
+  }
+
   UnmodifiableListView<ChatMessage> get messages =>
       UnmodifiableListView<ChatMessage>(_messagesForCurrentContext());
   UnmodifiableListView<ChatMessage> messagesForContext({
@@ -183,12 +257,82 @@ class AppController extends ChangeNotifier {
     _messagesForContext(useGlobalMode: useGlobalMode),
   );
 
+  /// Returns the number of messages stored for a game's conversation.
+  ///
+  /// The desktop assistant uses this to render a lightweight session list
+  /// without exposing the mutable conversation map to the UI layer.
+  int messageCountForGame(String gameId) {
+    return _conversations[_conversationKeyForGameId(gameId)]?.messageCount ?? 0;
+  }
+
   AiAnswerMode chatAnswerMode({required bool useGlobalMode}) =>
       useGlobalMode ? _globalAnswerMode : _gameAnswerMode;
 
   bool allowSmartSupplement({required bool useGlobalMode}) =>
       chatAnswerMode(useGlobalMode: useGlobalMode) ==
       AiAnswerMode.knowledgeThenDirect;
+
+  static const int _maxActivities = 50;
+
+  void _recordActivity({
+    required AppActivityKind kind,
+    required String title,
+    required String message,
+    DateTime? createdAt,
+  }) {
+    final AppActivity activity = AppActivity(
+      id: 'activity-${DateTime.now().microsecondsSinceEpoch}',
+      kind: kind,
+      title: title,
+      message: message,
+      createdAt: createdAt ?? DateTime.now(),
+    );
+    _activities = <AppActivity>[activity, ..._activities];
+    if (_activities.length > _maxActivities) {
+      _activities = _activities.sublist(0, _maxActivities);
+    }
+    _queueActivitySave();
+    notifyListeners();
+  }
+
+  void _queueActivitySave() {
+    final List<AppActivity> snapshot = List<AppActivity>.from(_activities);
+    _activitySaveQueue = _activitySaveQueue
+        .catchError((Object _) {})
+        .then((_) => _preferencesService.saveActivities(snapshot));
+  }
+
+  Future<void> markActivitiesRead() async {
+    final bool hasUnread = _activities.any(
+      (AppActivity activity) => !activity.isRead,
+    );
+    if (!hasUnread) {
+      return;
+    }
+    _activities = _activities
+        .map((AppActivity activity) => activity.copyWith(isRead: true))
+        .toList(growable: false);
+    _queueActivitySave();
+    notifyListeners();
+  }
+
+  void _setPendingLibraryUpdate(RemoteLibraryUpdate update) {
+    final RemoteLibraryUpdate? previous = _pendingLibraryUpdate;
+    _pendingLibraryUpdate = update;
+    _libraryUpdatePromptSeen = false;
+    final bool isSame =
+        previous != null &&
+        previous.changedPaths.length == update.changedPaths.length &&
+        previous.changedPaths.toSet().containsAll(update.changedPaths) &&
+        update.changedPaths.toSet().containsAll(previous.changedPaths);
+    if (!isSame) {
+      _recordActivity(
+        kind: AppActivityKind.libraryUpdate,
+        title: copy.activityLibraryUpdateTitle,
+        message: copy.activityLibraryUpdateMessage(update.changedCount),
+      );
+    }
+  }
 
   Future<void> initialize() async {
     _language = await _preferencesService.loadLanguage();
@@ -208,21 +352,29 @@ class AppController extends ChangeNotifier {
         .loadGlobalUseCurrentGameKnowledge();
     _customAiPresets = await _preferencesService.loadAiCustomPresets();
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
+    _selectedConversationId = await _preferencesService
+        .loadSelectedConversationId();
+    _activities = await _preferencesService.loadActivities();
     if (_isSaveableCustomPreset(_aiApiConfig)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
     }
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
     _games = await _loadGamesForLanguage(_language);
+    await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
+    _selectedConversationId = _resolveSelectedConversationId(
+      _selectedConversationId,
+    );
+    await _persistSelectedConversationId();
     debugPrint(
       '[updates] initialize loaded games: ${_games.map((g) => '${g.slug}:${g.title}').join(', ')}',
     );
-    _aiConnectivityStatus = ConnectivityStatus(
-      state: ConnectivityState.success,
-      message: copy.aiStatusDefaultReady,
-      checkedAt: DateTime.now(),
+    _aiConnectivityStatus = ConnectivityStatus.unknown(
+      _aiApiConfig.baseUrl.trim().isEmpty || _aiApiConfig.apiKey.trim().isEmpty
+          ? '未配置 AI 服务'
+          : '未检测',
     );
     for (final source in _assetSourceConfigs) {
       _assetSourceStatuses[source.id] = ConnectivityStatus.unknown('未检测');
@@ -238,11 +390,12 @@ class AppController extends ChangeNotifier {
     if (!voiceReplyAvailable) {
       _voiceReplyEnabled = false;
     }
-    _ensureGreeting();
     _queueConversationSave();
-    unawaited(prefetchHomeImages());
-    _startAssetStatusPolling();
-    unawaited(checkForLibraryUpdates());
+    unawaited(_initializeRemoteLibrary());
+    if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
+        _aiApiConfig.apiKey.trim().isNotEmpty) {
+      unawaited(_refreshAiModelsOnInitialize());
+    }
     notifyListeners();
   }
 
@@ -253,9 +406,27 @@ class AppController extends ChangeNotifier {
 
     _language = next;
     _games = await _loadGamesForLanguage(_language);
+    _refreshLibraryGameTitles();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+    _refreshConversationMetadata();
+    _selectedConversationId = _resolveSelectedConversationId(
+      _selectedConversationId,
+    );
+    await _persistSelectedConversationId();
     await _preferencesService.saveLanguage(next);
     await _ttsService.setLanguage(next);
+    notifyListeners();
+  }
+
+  Future<void> reloadGames() async {
+    _games = await _loadGamesForLanguage(_language);
+    _refreshLibraryGameTitles();
+    _selectedGameId = _resolveSelectedGameId(_selectedGameId);
+    _refreshConversationMetadata();
+    _selectedConversationId = _resolveSelectedConversationId(
+      _selectedConversationId,
+    );
+    await _persistSelectedConversationId();
     notifyListeners();
   }
 
@@ -278,6 +449,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> saveAiApiConfig(AiApiConfig next) async {
     _aiApiConfig = next;
+    _aiConnectivityStatus = ConnectivityStatus.unknown(
+      next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
+          ? '未配置 AI 服务'
+          : '等待检查',
+    );
+    invalidateAiModels();
     await _preferencesService.saveAiApiConfig(next);
     if (_isSaveableCustomPreset(next)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, next);
@@ -376,6 +553,14 @@ class AppController extends ChangeNotifier {
     return future;
   }
 
+  Future<void> _refreshAiModelsOnInitialize() async {
+    try {
+      await refreshAiModels(persistSelection: true);
+    } catch (_) {
+      // The settings screen exposes the retryable failure state.
+    }
+  }
+
   void invalidateAiModels() {
     ++_aiModelRefreshGeneration;
     _aiModelRefreshFuture = null;
@@ -427,11 +612,80 @@ class AppController extends ChangeNotifier {
   }
 
   void selectGame(String gameId) {
-    if (_selectedGameId == gameId) {
+    final bool gameChanged = _selectedGameId != gameId;
+    final String previousConversationId = _selectedConversationId ?? '';
+    _selectedGameId = gameId;
+    _selectConversationInternal(_conversationKeyForGameId(gameId));
+    if (gameChanged || previousConversationId != _selectedConversationId) {
+      notifyListeners();
+    }
+  }
+
+  /// Opens the game-scoped assistant for [gameId], creating its session only
+  /// when the user explicitly enters that assistant context.
+  bool openGameAssistant(String gameId, {String? greeting}) {
+    final GameInfo? game = _games
+        .where((GameInfo item) => item.id == gameId)
+        .cast<GameInfo?>()
+        .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+    if (game == null) {
+      return false;
+    }
+
+    _selectedGameId = game.id;
+    final AiConversation conversation = _ensureConversationForContext(
+      useGlobalMode: false,
+      gameId: game.id,
+      greeting: greeting,
+    );
+    _selectConversationInternal(conversation.id);
+    notifyListeners();
+    return true;
+  }
+
+  /// Opens the cross-game assistant, creating its session on first entry.
+  void openGlobalAssistant({String? greeting}) {
+    final AiConversation conversation = _ensureConversationForContext(
+      useGlobalMode: true,
+      greeting: greeting,
+    );
+    _selectConversationInternal(conversation.id);
+    notifyListeners();
+  }
+
+  /// Selects a persisted assistant conversation by its stable ID.
+  ///
+  /// Game sessions use `game:<gameId>` and the all-knowledge session uses
+  /// `global`. Unknown IDs are ignored so stale preference data cannot point
+  /// the UI at a conversation that no longer exists.
+  void selectConversation(String conversationId) {
+    final String normalized = conversationId.trim();
+    if (!_conversations.containsKey(normalized) ||
+        !_isConversationAvailable(_conversations[normalized]!)) {
       return;
     }
-    _selectedGameId = gameId;
+    final AiConversation conversation = _conversations[normalized]!;
+    if (conversation.scope == AiConversationScope.game &&
+        conversation.gameId != null &&
+        _games.any((GameInfo game) => game.id == conversation.gameId)) {
+      _selectedGameId = conversation.gameId!;
+    }
+    if (_selectedConversationId == normalized) {
+      return;
+    }
+    _selectedConversationId = normalized;
+    _queueSelectedConversationSave(normalized);
     notifyListeners();
+  }
+
+  void _selectConversationInternal(String conversationId) {
+    if (!_conversations.containsKey(conversationId) ||
+        !_isConversationAvailable(_conversations[conversationId]!) ||
+        _selectedConversationId == conversationId) {
+      return;
+    }
+    _selectedConversationId = conversationId;
+    _queueSelectedConversationSave(conversationId);
   }
 
   Future<void> setVoiceReplyEnabled(bool enabled) async {
@@ -579,6 +833,9 @@ class AppController extends ChangeNotifier {
     String? greeting,
     bool useGlobalMode = false,
   }) async {
+    final String conversationId = _conversationIdForContext(
+      useGlobalMode: useGlobalMode,
+    );
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
@@ -604,7 +861,7 @@ class AppController extends ChangeNotifier {
       );
     await _ttsService.stop();
     _trimConversationMessages(messages);
-    _queueConversationSave();
+    _queueConversationSave(conversationId: conversationId);
     notifyListeners();
   }
 
@@ -622,10 +879,17 @@ class AppController extends ChangeNotifier {
         message: copy.aiApiModelRequired,
         checkedAt: DateTime.now(),
       );
-      notifyListeners();
+      _recordActivity(
+        kind: AppActivityKind.aiFailed,
+        title: copy.activityAiFailedTitle,
+        message: copy.aiApiModelRequired,
+      );
       return;
     }
     final List<ChatMessage> messages = _messagesForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    final String conversationId = _conversationIdForContext(
       useGlobalMode: useGlobalMode,
     );
 
@@ -638,7 +902,7 @@ class AppController extends ChangeNotifier {
 
     messages.add(userMessage);
     _trimConversationMessages(messages);
-    _queueConversationSave();
+    _queueConversationSave(conversationId: conversationId);
     generation.isSending = true;
     generation.workflowStatus = null;
     generation.wasStopped = false;
@@ -724,7 +988,7 @@ class AppController extends ChangeNotifier {
           messages.removeWhere((ChatMessage item) => item.id == draftId);
         }
         _trimConversationMessages(messages);
-        _queueConversationSave();
+        _queueConversationSave(conversationId: conversationId);
       } else if (finalAnswer != null) {
         final BoardGameAiAnswer answer = finalAnswer;
         final ChatMessage nextMessage = (currentDraft ?? draftMessage).copyWith(
@@ -738,7 +1002,12 @@ class AppController extends ChangeNotifier {
         );
         _replaceMessage(messages, nextMessage);
         _trimConversationMessages(messages);
-        _queueConversationSave();
+        _queueConversationSave(conversationId: conversationId);
+        _recordActivity(
+          kind: AppActivityKind.aiCompleted,
+          title: copy.activityAiCompletedTitle,
+          message: copy.activityAiCompletedMessage(game.title),
+        );
         if (_voiceReplyEnabled) {
           await speakMessage(answer.text);
         }
@@ -769,7 +1038,7 @@ class AppController extends ChangeNotifier {
           ),
         );
         _trimConversationMessages(messages);
-        _queueConversationSave();
+        _queueConversationSave(conversationId: conversationId);
       } else {
         throw StateError('The AI stream ended without an answer.');
       }
@@ -804,9 +1073,14 @@ class AppController extends ChangeNotifier {
             retryPrompt: trimmed,
           ),
         );
+        _recordActivity(
+          kind: AppActivityKind.aiFailed,
+          title: copy.activityAiFailedTitle,
+          message: _safeStatusError(error),
+        );
       }
       _trimConversationMessages(messages);
-      _queueConversationSave();
+      _queueConversationSave(conversationId: conversationId);
     } finally {
       generation.abort = null;
       generation.isSending = false;
@@ -829,6 +1103,9 @@ class AppController extends ChangeNotifier {
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
+    final String conversationId = _conversationIdForContext(
+      useGlobalMode: useGlobalMode,
+    );
     final int failedIndex = messages.indexWhere(
       (ChatMessage item) => item.id == message.id,
     );
@@ -840,7 +1117,7 @@ class AppController extends ChangeNotifier {
       } else {
         messages.removeAt(failedIndex);
       }
-      _queueConversationSave();
+      _queueConversationSave(conversationId: conversationId);
       notifyListeners();
     }
     await sendPrompt(prompt, useGlobalMode: useGlobalMode);
@@ -874,14 +1151,58 @@ class AppController extends ChangeNotifier {
       }
     }
     await _conversationSaveQueue;
+    await _selectedConversationSaveQueue;
+    await _activitySaveQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
     _aiService.dispose();
     _assetTestClient.close();
   }
 
-  Future<void> refreshAssetAccessStatus() async {
-    ConnectivityStatus? bestStatus;
+  Future<void> refreshAssetAccessStatus() {
+    final Future<void>? active = _assetStatusRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> future = _refreshAssetAccessStatus();
+    _assetStatusRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_assetStatusRefreshFuture, future)) {
+            _assetStatusRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _refreshAssetAccessStatus() async {
+    final DateTime startedAt = DateTime.now();
+    if (_games.isEmpty) {
+      _assetSourceStatuses.clear();
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.unknown,
+        message: '暂无游戏资料',
+        checkedAt: startedAt,
+      );
+      notifyListeners();
+      return;
+    }
+
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查规则资料',
+      checkedAt: startedAt,
+    );
+    for (final source in _assetSourceConfigs) {
+      _assetSourceStatuses[source.id] = ConnectivityStatus(
+        state: ConnectivityState.loading,
+        message: '正在检查',
+        checkedAt: startedAt,
+      );
+    }
+    notifyListeners();
+
     final Map<String, ConnectivityStatus> nextStatuses =
         <String, ConnectivityStatus>{};
     for (final source in _assetSourceConfigs) {
@@ -905,11 +1226,6 @@ class AppController extends ChangeNotifier {
               );
         debugPrint('[assets] ${source.id} => ${status.message}');
         nextStatuses[source.id] = status;
-        if (bestStatus == null ||
-            (status.state == ConnectivityState.success &&
-                bestStatus.state != ConnectivityState.success)) {
-          bestStatus = status;
-        }
       } catch (error) {
         final failureStatus = ConnectivityStatus(
           state: ConnectivityState.failure,
@@ -923,11 +1239,166 @@ class AppController extends ChangeNotifier {
     _assetSourceStatuses
       ..clear()
       ..addAll(nextStatuses);
-    _assetConnectivityStatus =
-        bestStatus ??
-        nextStatuses[_assetSourceConfigs.first.id] ??
-        ConnectivityStatus.unknown('未检测');
+    final int successCount = nextStatuses.values
+        .where(
+          (ConnectivityStatus status) =>
+              status.state == ConnectivityState.success,
+        )
+        .length;
+    final int failureCount = nextStatuses.values
+        .where(
+          (ConnectivityStatus status) =>
+              status.state == ConnectivityState.failure,
+        )
+        .length;
+    final ConnectivityState aggregateState;
+    final String aggregateMessage;
+    if (nextStatuses.isEmpty) {
+      aggregateState = ConnectivityState.unknown;
+      aggregateMessage = '未配置资料来源';
+    } else if (successCount == 0) {
+      aggregateState = ConnectivityState.failure;
+      aggregateMessage = '规则资料访问失败';
+    } else if (failureCount > 0) {
+      aggregateState = ConnectivityState.warning;
+      aggregateMessage = '部分资料来源可用';
+    } else {
+      aggregateState = ConnectivityState.success;
+      aggregateMessage = '规则资料访问正常';
+    }
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: aggregateState,
+      message: aggregateMessage,
+      checkedAt: DateTime.now(),
+    );
     notifyListeners();
+  }
+
+  /// Refreshes every user-visible service status from its real endpoint.
+  ///
+  /// Model discovery validates the AI endpoint even before a model is chosen.
+  /// When a model is selected, a small completion request is also issued so
+  /// the status reflects the actual chat path rather than only `/models`.
+  Future<void> refreshServiceStatuses() {
+    final Future<void>? active = _serviceStatusRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> future = _refreshServiceStatuses();
+    _serviceStatusRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_serviceStatusRefreshFuture, future)) {
+            _serviceStatusRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _refreshServiceStatuses() async {
+    final DateTime startedAt = DateTime.now();
+    _aiConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查 AI 服务',
+      checkedAt: startedAt,
+    );
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查规则资料',
+      checkedAt: startedAt,
+    );
+    for (final source in _assetSourceConfigs) {
+      _assetSourceStatuses[source.id] = ConnectivityStatus(
+        state: ConnectivityState.loading,
+        message: '正在检查',
+        checkedAt: startedAt,
+      );
+    }
+    notifyListeners();
+
+    try {
+      await Future.wait<void>(<Future<void>>[
+        _refreshAiServiceStatus(),
+        refreshAssetAccessStatus(),
+      ]);
+      _recordActivity(
+        kind: AppActivityKind.serviceRefresh,
+        title: copy.activityServiceRefreshTitle,
+        message: copy.activityServiceRefreshMessage(
+          _aiConnectivityStatus.message,
+          _assetConnectivityStatus.message,
+        ),
+      );
+    } catch (error) {
+      _recordActivity(
+        kind: AppActivityKind.serviceRefresh,
+        title: copy.activityServiceRefreshFailedTitle,
+        message: _safeStatusError(error),
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> _refreshAiServiceStatus() async {
+    final AiApiConfig config = _aiApiConfig;
+    if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
+      _availableAiModels = <AiModel>[];
+      _aiModelLoadState = AiModelLoadState.idle;
+      _aiModelLoadError = null;
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: '未配置 AI 服务',
+        checkedAt: DateTime.now(),
+      );
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final List<AiModel> models = await refreshAiModels(
+        persistSelection: true,
+      );
+      if (models.isEmpty) {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.failure,
+          message: '模型列表为空',
+          checkedAt: DateTime.now(),
+        );
+      } else if (!hasSelectedAiModel) {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.warning,
+          message: '接口可用，请选择模型',
+          checkedAt: DateTime.now(),
+        );
+      } else {
+        final AiHealthResult health = await _aiService.checkConnection(config);
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: health.success
+              ? ConnectivityState.success
+              : ConnectivityState.failure,
+          message: health.success
+              ? 'AI 服务与聊天接口正常'
+              : '聊天接口失败: ${health.message}',
+          checkedAt: DateTime.now(),
+        );
+      }
+    } catch (error) {
+      _aiConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: 'AI 服务失败: ${_safeStatusError(error)}',
+        checkedAt: DateTime.now(),
+      );
+    }
+    notifyListeners();
+  }
+
+  String _safeStatusError(Object error) {
+    final String message = error.toString().trim();
+    if (message.isEmpty) return '未知错误';
+    final String apiKey = _aiApiConfig.apiKey.trim();
+    if (apiKey.isEmpty) return message;
+    return message.replaceAll(apiKey, '<redacted>');
   }
 
   Future<void> prefetchHomeImages() async {
@@ -944,20 +1415,876 @@ class AppController extends ChangeNotifier {
     _homeAssetsTotal = imagePaths.length;
     notifyListeners();
 
-    bool anySuccess = false;
     for (final String path in imagePaths) {
-      anySuccess = (await _cacheImage(path)) != null || anySuccess;
+      await _cacheImage(path);
       _homeAssetsLoaded += 1;
       notifyListeners();
     }
 
     _homeAssetsLoading = false;
-    _assetConnectivityStatus = ConnectivityStatus(
-      state: anySuccess ? ConnectivityState.success : ConnectivityState.failure,
-      message: anySuccess ? '首页资源已缓存' : '首页资源拉取失败',
-      checkedAt: DateTime.now(),
-    );
     notifyListeners();
+  }
+
+  /// Loads the persisted index first, then checks the authoritative WebDAV
+  /// manifests in the background. A single in-flight request is shared by all
+  /// callers so opening the page and pressing refresh cannot race each other.
+  /// Existing cached rows stay visible while this network request runs.
+  Future<void> refreshLibraryResources({bool force = false}) {
+    final Future<void>? active = _libraryRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+
+    final int generation = ++_libraryRefreshGeneration;
+    // Only a cold start without any local index should occupy the content
+    // area with a spinner. Refresh-button callers can force a network check,
+    // but still keep already-rendered rows in place.
+    if (_libraryResources.isEmpty) {
+      _libraryLoadState = LibraryLoadState.loading;
+      _libraryLoadError = null;
+      notifyListeners();
+    } else if (force) {
+      _libraryLoadError = null;
+      notifyListeners();
+    }
+
+    final Future<void> future = _refreshLibraryResources(generation);
+    _libraryRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_libraryRefreshFuture, future)) {
+            _libraryRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _refreshLibraryResources(int generation) async {
+    await _ensureLibraryCacheLoaded();
+    if (generation != _libraryRefreshGeneration) {
+      return;
+    }
+
+    // Cache loading can provide the first visible rows when this method is
+    // called before AppController.initialize() has completed.
+    if (_libraryResources.isNotEmpty &&
+        _libraryLoadState == LibraryLoadState.loading) {
+      _libraryLoadState = LibraryLoadState.success;
+      notifyListeners();
+    }
+
+    try {
+      final _RemoteLibraryIndexResult index = await _loadRemoteLibraryIndex();
+      if (generation != _libraryRefreshGeneration) {
+        return;
+      }
+
+      final List<DesktopLibraryResource> remoteResources =
+          _localizeLibraryResources(index.resources);
+      final List<DesktopLibraryResource> nextResources =
+          _mergePartialLibraryResources(remoteResources, index.failedSlugs);
+      final bool changed = !_sameLibraryIndex(_libraryResources, nextResources);
+      if (changed || _libraryResources.isEmpty) {
+        _libraryResources = nextResources;
+        try {
+          await _preferencesService.saveDesktopLibraryResources(
+            _libraryResources,
+          );
+        } catch (error) {
+          // A persistence failure must not turn a successful remote request
+          // into a false network failure. The next launch can retry caching.
+          debugPrint(
+            '[assets] desktop library index cache write failed: $error',
+          );
+        }
+      }
+      _libraryLoadState = index.resources.isEmpty
+          ? LibraryLoadState.empty
+          : LibraryLoadState.success;
+      _libraryLoadError = index.warning;
+    } catch (error) {
+      if (generation != _libraryRefreshGeneration) {
+        return;
+      }
+      if (_libraryResources.isEmpty) {
+        _libraryResources = _buildBundledLibraryResources();
+      }
+      _libraryLoadState = LibraryLoadState.failure;
+      _libraryLoadError = _safeStatusError(error);
+      debugPrint('[assets] desktop library index unavailable: $error');
+    }
+    notifyListeners();
+  }
+
+  /// Restores only index metadata. The actual PDF/Markdown/HTML bytes remain
+  /// in [RemoteAssetService]'s document cache and are never read here.
+  Future<void> _ensureLibraryCacheLoaded() {
+    if (_libraryCacheLoadAttempted) {
+      return Future<void>.value();
+    }
+    final Future<void>? active = _libraryCacheLoadFuture;
+    if (active != null) {
+      return active;
+    }
+
+    final Future<void> future = () async {
+      try {
+        final List<DesktopLibraryResource> cached = await _preferencesService
+            .loadDesktopLibraryResources();
+        if (cached.isNotEmpty) {
+          _libraryResources = _localizeLibraryResources(cached);
+          _libraryLoadState = LibraryLoadState.success;
+        }
+      } catch (error) {
+        debugPrint('[assets] desktop library index cache read failed: $error');
+      } finally {
+        _libraryCacheLoadAttempted = true;
+      }
+    }();
+    _libraryCacheLoadFuture = future;
+    return future.whenComplete(() {
+      if (identical(_libraryCacheLoadFuture, future)) {
+        _libraryCacheLoadFuture = null;
+      }
+    });
+  }
+
+  List<DesktopLibraryResource> _localizeLibraryResources(
+    Iterable<DesktopLibraryResource> resources,
+  ) {
+    final Map<String, GameInfo> gamesBySlug = <String, GameInfo>{
+      for (final GameInfo game in _games) game.slug: game,
+    };
+    return resources
+        .map(
+          (DesktopLibraryResource resource) => resource.copyWith(
+            gameTitle:
+                gamesBySlug[resource.gameSlug]?.title ?? resource.gameTitle,
+            type: _normalizeLibraryResourceType(resource.type),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  void _refreshLibraryGameTitles() {
+    if (_libraryResources.isEmpty) {
+      return;
+    }
+    _libraryResources = _localizeLibraryResources(_libraryResources);
+  }
+
+  DesktopLibraryResourceType _normalizeLibraryResourceType(
+    DesktopLibraryResourceType type,
+  ) {
+    switch (type) {
+      case DesktopLibraryResourceType.rulebook:
+        return DesktopLibraryResourceType.rulebook;
+      case DesktopLibraryResourceType.faq:
+        return DesktopLibraryResourceType.faq;
+      case DesktopLibraryResourceType.assetIndex:
+      case DesktopLibraryResourceType.reference:
+      case DesktopLibraryResourceType.playerAid:
+      case DesktopLibraryResourceType.supplement:
+      case DesktopLibraryResourceType.other:
+        return DesktopLibraryResourceType.other;
+    }
+  }
+
+  bool _sameLibraryIndex(
+    List<DesktopLibraryResource> left,
+    List<DesktopLibraryResource> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    final Map<String, DesktopLibraryResource> leftByPath =
+        <String, DesktopLibraryResource>{
+          for (final DesktopLibraryResource resource in left)
+            resource.remotePath: resource,
+        };
+    final Map<String, DesktopLibraryResource> rightByPath =
+        <String, DesktopLibraryResource>{
+          for (final DesktopLibraryResource resource in right)
+            resource.remotePath: resource,
+        };
+    if (leftByPath.length != rightByPath.length) {
+      return false;
+    }
+    for (final String path in leftByPath.keys) {
+      final DesktopLibraryResource? a = leftByPath[path];
+      final DesktopLibraryResource? b = rightByPath[path];
+      if (a == null ||
+          b == null ||
+          a.id != b.id ||
+          a.gameSlug != b.gameSlug ||
+          a.title != b.title ||
+          a.language != b.language ||
+          a.typeCode != b.typeCode ||
+          a.formatCode != b.formatCode ||
+          a.isRemote != b.isRemote ||
+          a.status != b.status ||
+          a.enabled != b.enabled ||
+          a.sourceClass != b.sourceClass) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  List<DesktopLibraryResource> _mergePartialLibraryResources(
+    List<DesktopLibraryResource> remoteResources,
+    Set<String> failedSlugs,
+  ) {
+    if (failedSlugs.isEmpty || _libraryResources.isEmpty) {
+      return remoteResources;
+    }
+    final Set<String> remotePaths = <String>{
+      for (final DesktopLibraryResource resource in remoteResources)
+        resource.remotePath,
+    };
+    final List<DesktopLibraryResource> merged = <DesktopLibraryResource>[
+      ...remoteResources,
+      for (final DesktopLibraryResource resource in _libraryResources)
+        if (failedSlugs.contains(resource.gameSlug) &&
+            remotePaths.add(resource.remotePath))
+          resource,
+    ];
+    merged.sort(_compareLibraryResources);
+    return List<DesktopLibraryResource>.unmodifiable(merged);
+  }
+
+  /// Reads the authoritative per-game `manifest.json` files from WebDAV.
+  ///
+  /// A manifest is small metadata, not a document download. The actual PDF or
+  /// Markdown bytes are fetched only when the user opens or downloads one
+  /// resource. The remote catalog is used only to discover games that are not
+  /// present in the bundled catalog yet.
+  Future<_RemoteLibraryIndexResult> _loadRemoteLibraryIndex() async {
+    final List<String> slugs = await _remoteLibraryGameSlugs();
+    if (slugs.isEmpty) {
+      throw StateError('远端资料库没有可检查的游戏资料');
+    }
+
+    final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
+    final List<String> failedSlugs = <String>[];
+    int loadedManifestCount = 0;
+
+    await Future.wait<void>(
+      slugs.map((String slug) async {
+        final String path = 'assets/games/$slug/manifest.json';
+        try {
+          final String? source = await _remoteAssetService.fetchRemoteText(
+            sources: _assetSourceConfigs,
+            remotePath: path,
+          );
+          if (source == null || source.trim().isEmpty) {
+            failedSlugs.add(slug);
+            return;
+          }
+          final Map<String, dynamic> manifest =
+              jsonDecode(source) as Map<String, dynamic>;
+          resources.addAll(_parseRemoteManifestResources(slug, manifest));
+          loadedManifestCount += 1;
+        } catch (error) {
+          failedSlugs.add(slug);
+          debugPrint('[assets] manifest unavailable for $slug: $error');
+        }
+      }),
+    );
+
+    if (loadedManifestCount == 0) {
+      // If a legacy remote library has no manifests, retain the existing
+      // bounded directory walk as a compatibility fallback.
+      final List<RemoteAssetFile> files = await _remoteAssetService
+          .listFilesRecursively(
+            sources: _assetSourceConfigs,
+            remotePath: 'assets/games',
+          );
+      final List<DesktopLibraryResource> fallback =
+          _buildRemoteLibraryResources(files);
+      if (fallback.isEmpty) {
+        throw StateError('远端资料库为空或格式不可识别');
+      }
+      return _RemoteLibraryIndexResult(
+        resources: fallback,
+        warning: '远端未提供标准 manifest，已使用目录清单。',
+      );
+    }
+
+    final Map<String, DesktopLibraryResource> unique =
+        <String, DesktopLibraryResource>{};
+    for (final DesktopLibraryResource resource in resources) {
+      unique[resource.remotePath] = resource;
+    }
+    final List<DesktopLibraryResource> normalized = unique.values.toList()
+      ..sort(_compareLibraryResources);
+    final String? warning = failedSlugs.isEmpty
+        ? null
+        : '已有 $loadedManifestCount 个游戏资料同步，${failedSlugs.length} 个资料暂不可用。';
+    return _RemoteLibraryIndexResult(
+      resources: List<DesktopLibraryResource>.unmodifiable(normalized),
+      warning: warning,
+      failedSlugs: Set<String>.unmodifiable(failedSlugs),
+    );
+  }
+
+  Future<List<String>> _remoteLibraryGameSlugs() async {
+    final Set<String> slugs = <String>{
+      for (final GameInfo game in _games) game.slug,
+    };
+    try {
+      final String? source = await _remoteAssetService.fetchRemoteText(
+        sources: _assetSourceConfigs,
+        remotePath: 'assets/catalog.json',
+      );
+      if (source != null && source.trim().isNotEmpty) {
+        final Map<String, dynamic> catalog =
+            jsonDecode(source) as Map<String, dynamic>;
+        final List<dynamic> games =
+            catalog['games'] as List<dynamic>? ?? const <dynamic>[];
+        for (final dynamic entry in games) {
+          if (entry is! Map<String, dynamic> || entry['enabled'] == false) {
+            continue;
+          }
+          final String? slug = entry['slug'] as String?;
+          if (slug != null && _isSafeGameSlug(slug)) {
+            slugs.add(slug);
+          }
+        }
+      }
+    } catch (error) {
+      debugPrint(
+        '[assets] remote catalog unavailable for library index: $error',
+      );
+    }
+    final List<String> sorted = slugs.toList();
+    sorted.sort();
+    return sorted;
+  }
+
+  bool _isSafeGameSlug(String slug) {
+    return slug.isNotEmpty && RegExp(r'^[a-z0-9][a-z0-9_-]*$').hasMatch(slug);
+  }
+
+  List<DesktopLibraryResource> _parseRemoteManifestResources(
+    String slug,
+    Map<String, dynamic> manifest,
+  ) {
+    final GameInfo? localGame = _games
+        .where((GameInfo game) => game.slug == slug)
+        .cast<GameInfo?>()
+        .firstWhere((GameInfo? game) => game != null, orElse: () => null);
+    final String gameTitle =
+        localGame?.title ?? _remoteManifestTitle(manifest, slug);
+    final List<dynamic> entries =
+        manifest['resources'] as List<dynamic>? ?? const <dynamic>[];
+    final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
+
+    for (final dynamic raw in entries) {
+      if (raw is! Map<String, dynamic>) {
+        continue;
+      }
+      final String relativePath = (raw['path'] as String? ?? '')
+          .replaceAll('\\', '/')
+          .replaceFirst(RegExp(r'^/+'), '')
+          .trim();
+      final String status = (raw['status'] as String? ?? 'unknown').trim();
+      if (relativePath.isEmpty ||
+          relativePath.split('/').contains('..') ||
+          relativePath.startsWith('/') ||
+          !_isDisplayableManifestStatus(status) ||
+          raw['enabled'] == false) {
+        continue;
+      }
+      // The resource-management skill explicitly excludes unclassified raw
+      // material from runtime reading, caching, and download operations.
+      final String relativeLower = relativePath.toLowerCase();
+      if (relativeLower.startsWith('docs/others/')) {
+        continue;
+      }
+      if (!relativePath.startsWith('docs/')) {
+        continue;
+      }
+
+      final String remotePath = 'assets/games/$slug/$relativePath';
+      final String documentType = raw['documentType'] as String? ?? '';
+      final String languageCode = raw['language'] as String? ?? '';
+      final String sourceClass = raw['sourceClass'] as String? ?? 'unknown';
+      resources.add(
+        DesktopLibraryResource(
+          id: (raw['id'] as String?)?.trim().isNotEmpty == true
+              ? raw['id'] as String
+              : 'remote:$remotePath',
+          gameSlug: slug,
+          gameTitle: gameTitle,
+          remotePath: remotePath,
+          title: _libraryResourceTitle(
+            relativePath,
+            documentType: documentType,
+          ),
+          language: _libraryResourceLanguage(
+            relativePath,
+            explicitCode: languageCode,
+          ),
+          type: _libraryResourceType(relativePath, documentType: documentType),
+          format: _libraryResourceFormat(relativePath),
+          isRemote: true,
+          status: status,
+          enabled: raw['enabled'] as bool? ?? true,
+          sourceClass: sourceClass,
+        ),
+      );
+    }
+    return resources;
+  }
+
+  String _remoteManifestTitle(Map<String, dynamic> manifest, String slug) {
+    final Map<String, dynamic>? game = manifest['game'] is Map<String, dynamic>
+        ? manifest['game'] as Map<String, dynamic>
+        : null;
+    final Map<String, dynamic>? titles = game?['title'] is Map<String, dynamic>
+        ? game!['title'] as Map<String, dynamic>
+        : null;
+    final String? localized =
+        titles?['cn'] as String? ??
+        titles?['zhHans'] as String? ??
+        titles?['en'] as String?;
+    return localized?.trim().isNotEmpty == true ? localized!.trim() : slug;
+  }
+
+  List<DesktopLibraryResource> _buildRemoteLibraryResources(
+    List<RemoteAssetFile> files,
+  ) {
+    final Map<String, GameInfo> gamesBySlug = <String, GameInfo>{
+      for (final GameInfo game in _games) game.slug: game,
+    };
+    final Map<String, DesktopLibraryResource> unique =
+        <String, DesktopLibraryResource>{};
+
+    for (final RemoteAssetFile file in files) {
+      final String normalized = file.remotePath
+          .replaceAll('\\', '/')
+          .replaceFirst(RegExp(r'^/+'), '');
+      final RegExpMatch? match = RegExp(
+        r'^assets/games/([^/]+)/docs/(.+)$',
+      ).firstMatch(normalized);
+      if (match == null) {
+        continue;
+      }
+      final String relative = match.group(2)!;
+      final String lower = normalized.toLowerCase();
+      final String relativeLower = relative.toLowerCase();
+      if (lower.contains('/tmp/') ||
+          relativeLower.startsWith('.') ||
+          relativeLower.startsWith('others/')) {
+        continue;
+      }
+
+      final String slug = match.group(1)!;
+      final GameInfo? game = gamesBySlug[slug];
+      final String gameTitle = game == null ? slug : game.title;
+      final DesktopLibraryResource resource = DesktopLibraryResource(
+        id: 'remote:$normalized',
+        gameSlug: slug,
+        gameTitle: gameTitle,
+        remotePath: normalized,
+        title: _libraryResourceTitle(relative),
+        language: _libraryResourceLanguage(relative),
+        type: _libraryResourceType(relative),
+        format: _libraryResourceFormat(relative),
+        isRemote: true,
+      );
+      unique[normalized] = resource;
+    }
+
+    final List<DesktopLibraryResource> resources = unique.values.toList();
+    resources.sort(_compareLibraryResources);
+    return List<DesktopLibraryResource>.unmodifiable(resources);
+  }
+
+  List<DesktopLibraryResource> _buildBundledLibraryResources() {
+    final List<DesktopLibraryResource> resources = <DesktopLibraryResource>[];
+    final Set<String> paths = <String>{};
+    int fallbackIndex = 0;
+
+    for (final GameInfo game in _games) {
+      final List<String> candidates = <String>[
+        game.rulebookAssetPath,
+        game.faqAssetPath,
+        ...game.knowledgeAssetPaths,
+      ];
+      for (final String path in candidates) {
+        final String normalized = path.replaceAll('\\', '/').trim();
+        if (normalized.isEmpty || !paths.add(normalized)) {
+          continue;
+        }
+        final bool isRulebook = path == game.rulebookAssetPath;
+        final bool isFaq = path == game.faqAssetPath;
+        final String relative = normalized.contains('/docs/')
+            ? normalized.split('/docs/').last
+            : normalized.split('/').last;
+        resources.add(
+          DesktopLibraryResource(
+            // Keep the first two compatibility ids stable for existing
+            // desktop automation while remote entries use their full path.
+            id: '$fallbackIndex',
+            gameSlug: game.slug,
+            gameTitle: game.title,
+            remotePath: normalized,
+            title: _libraryResourceTitle(
+              relative,
+              documentType: isRulebook
+                  ? 'rulebook'
+                  : isFaq
+                  ? 'faq'
+                  : null,
+            ),
+            language: _libraryResourceLanguage(relative),
+            type: _libraryResourceType(
+              relative,
+              documentType: isRulebook
+                  ? 'rulebook'
+                  : isFaq
+                  ? 'faq'
+                  : null,
+            ),
+            format: _libraryResourceFormat(relative),
+            isRemote: false,
+          ),
+        );
+        fallbackIndex += 1;
+      }
+    }
+    return List<DesktopLibraryResource>.unmodifiable(resources);
+  }
+
+  DesktopLibraryResourceType _libraryResourceType(
+    String path, {
+    String? documentType,
+  }) {
+    final String explicit = documentType?.trim().toLowerCase() ?? '';
+    switch (explicit) {
+      case 'rulebook':
+      case 'how_to_play':
+        return DesktopLibraryResourceType.rulebook;
+      case 'faq':
+      case 'ruling':
+      case 'errata':
+        return DesktopLibraryResourceType.faq;
+      case 'asset_index':
+      case 'rules_reference':
+      case 'player_aid':
+      case 'supplement':
+      case 'variant':
+      case 'campaign_guide':
+      case 'scenario_book':
+        return DesktopLibraryResourceType.other;
+    }
+
+    final String lower = path.toLowerCase();
+    if (lower.contains('faq') ||
+        lower.contains('answer') ||
+        lower.contains('ruling') ||
+        lower.contains('errata')) {
+      return DesktopLibraryResourceType.faq;
+    }
+    if (lower.contains('reference')) {
+      return DesktopLibraryResourceType.other;
+    }
+    if (lower.contains('rulebook') ||
+        lower.contains('how_to_play') ||
+        lower.contains('learn_to_play') ||
+        lower.endsWith('rules_official_page.html') ||
+        lower.endsWith('rules_official_page.htm')) {
+      return DesktopLibraryResourceType.rulebook;
+    }
+    return DesktopLibraryResourceType.other;
+  }
+
+  DesktopLibraryResourceFormat _libraryResourceFormat(String path) {
+    final String lower = path.toLowerCase();
+    final int dot = lower.lastIndexOf('.');
+    final String extension = dot < 0 ? '' : lower.substring(dot + 1);
+    switch (extension) {
+      case 'md':
+      case 'markdown':
+        return DesktopLibraryResourceFormat.markdown;
+      case 'pdf':
+        return DesktopLibraryResourceFormat.pdf;
+      case 'html':
+      case 'htm':
+        return DesktopLibraryResourceFormat.html;
+      case 'txt':
+        return DesktopLibraryResourceFormat.text;
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+        return DesktopLibraryResourceFormat.image;
+      default:
+        return DesktopLibraryResourceFormat.other;
+    }
+  }
+
+  String _libraryResourceLanguage(String path, {String? explicitCode}) {
+    final String explicit = explicitCode?.trim().toLowerCase() ?? '';
+    if (explicit == 'cn' ||
+        explicit == 'zh' ||
+        explicit == 'zh-cn' ||
+        explicit == 'zh-hans' ||
+        explicit == 'z_hans') {
+      return '中文';
+    }
+    if (explicit == 'en' || explicit == 'en-us' || explicit == 'en-gb') {
+      return '英文';
+    }
+    if (explicit == 'multi' || explicit == 'mixed') {
+      return '多语言';
+    }
+    if (explicit == 'none' || explicit == 'unknown') {
+      return '未标注';
+    }
+
+    final String lower = path.toLowerCase();
+    if (RegExp(r'(^|[_\-.])(zh|cn|z[_-]?hans)([_\-.]|$)').hasMatch(lower) ||
+        lower.contains('/zh/')) {
+      return '中文';
+    }
+    if (RegExp(r'(^|[_\-.])en([_\-.]|$)').hasMatch(lower) ||
+        lower.contains('/en/')) {
+      return '英文';
+    }
+    return '未标注';
+  }
+
+  String _libraryResourceTitle(String path, {String? documentType}) {
+    final String normalized = path.replaceAll('\\', '/');
+    final String fileName = normalized.split('/').last;
+    final int dot = fileName.lastIndexOf('.');
+    final String stem = dot <= 0 ? fileName : fileName.substring(0, dot);
+    final DesktopLibraryResourceType type = _libraryResourceType(
+      path,
+      documentType: documentType,
+    );
+    switch (type) {
+      case DesktopLibraryResourceType.rulebook:
+        return '规则书';
+      case DesktopLibraryResourceType.faq:
+        return 'FAQ';
+      case DesktopLibraryResourceType.assetIndex:
+        return '资料索引';
+      case DesktopLibraryResourceType.reference:
+        return '规则参考';
+      case DesktopLibraryResourceType.playerAid:
+        return '玩家辅助';
+      case DesktopLibraryResourceType.supplement:
+        return '补充资料';
+      case DesktopLibraryResourceType.other:
+        return stem.replaceAll(RegExp(r'[_-]+'), ' ').trim();
+    }
+  }
+
+  bool _isDisplayableManifestStatus(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'available':
+      case 'unverified':
+      case 'needs_review':
+      case 'unknown':
+        return true;
+      case 'missing':
+      case 'superseded':
+      case 'blocked':
+        return false;
+      default:
+        // Newer manifest versions may add a non-terminal status. Keep it
+        // visible rather than silently hiding a resource the server can list.
+        return true;
+    }
+  }
+
+  int _compareLibraryResources(
+    DesktopLibraryResource left,
+    DesktopLibraryResource right,
+  ) {
+    final int game = left.gameTitle.compareTo(right.gameTitle);
+    if (game != 0) return game;
+    final int type = left.type.index.compareTo(right.type.index);
+    if (type != 0) return type;
+    return left.remotePath.compareTo(right.remotePath);
+  }
+
+  Future<ResolvedDocument?> resolveLibraryResource(
+    DesktopLibraryResource resource,
+  ) async {
+    if (!resource.canOpen) {
+      return null;
+    }
+    if (!resource.isRemote) {
+      final GameInfo? game = _games
+          .where((GameInfo item) => item.slug == resource.gameSlug)
+          .cast<GameInfo?>()
+          .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+      if (game != null &&
+          resource.type == DesktopLibraryResourceType.rulebook) {
+        return resolveRulebookDocument(game);
+      }
+      if (game != null && resource.type == DesktopLibraryResourceType.faq) {
+        return resolveFaqDocument(game);
+      }
+      return ResolvedDocument(
+        remotePath: resource.remotePath,
+        renderType: _documentRenderTypeForFormat(resource.format),
+        label: resource.title,
+      );
+    }
+
+    final String? localPath = await cacheDocument(resource.remotePath);
+    if (localPath == null) {
+      return null;
+    }
+    return ResolvedDocument(
+      remotePath: resource.remotePath,
+      renderType: _documentRenderTypeForFormat(resource.format),
+      label: resource.title,
+    );
+  }
+
+  DocumentRenderType _documentRenderTypeForFormat(
+    DesktopLibraryResourceFormat format,
+  ) {
+    switch (format) {
+      case DesktopLibraryResourceFormat.pdf:
+        return DocumentRenderType.pdf;
+      case DesktopLibraryResourceFormat.html:
+        return DocumentRenderType.html;
+      case DesktopLibraryResourceFormat.text:
+        return DocumentRenderType.text;
+      case DesktopLibraryResourceFormat.image:
+        return DocumentRenderType.image;
+      case DesktopLibraryResourceFormat.markdown:
+        return DocumentRenderType.markdown;
+      case DesktopLibraryResourceFormat.other:
+        return DocumentRenderType.text;
+    }
+  }
+
+  Future<String?> downloadLibraryResource({
+    required DesktopLibraryResource resource,
+    required String directoryPath,
+  }) async {
+    if (kIsWeb || directoryPath.trim().isEmpty) {
+      return null;
+    }
+    final CachedAsset? cached = await _remoteAssetService.ensureCached(
+      sources: _assetSourceConfigs,
+      remotePath: resource.remotePath,
+      forceRefresh: true,
+      allowCachedFallback: false,
+    );
+    if (cached == null || !cached.exists) {
+      return null;
+    }
+    final File source = File(cached.localPath);
+    if (!await source.exists()) {
+      return null;
+    }
+
+    final Directory directory = Directory(directoryPath.trim());
+    await directory.create(recursive: true);
+    final String fileName = _downloadFileName(resource);
+    if (fileName.isEmpty) {
+      return null;
+    }
+    final File destination = File(
+      '${directory.path}${Platform.pathSeparator}$fileName',
+    );
+    if (source.absolute.path.toLowerCase() ==
+        destination.absolute.path.toLowerCase()) {
+      return destination.path;
+    }
+    await source.copy(destination.path);
+    return destination.path;
+  }
+
+  String _safeDownloadFileName(String fileName) {
+    final String sanitized = fileName
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
+        .replaceFirst(RegExp(r'[ .]+$'), '')
+        .trim();
+    return sanitized.isEmpty ? 'library-resource' : sanitized;
+  }
+
+  /// Builds the user-facing download name from the same localized metadata
+  /// shown in the desktop library card instead of exposing the WebDAV stem.
+  ///
+  /// The resource list may have been loaded before the user switched language,
+  /// so the current [GameInfo] is resolved by slug at download time. This
+  /// keeps the file name in sync with the language currently displayed by the
+  /// app without requiring another remote index request.
+  String _downloadFileName(DesktopLibraryResource resource) {
+    final GameInfo? game = _games
+        .where((GameInfo item) => item.slug == resource.gameSlug)
+        .cast<GameInfo?>()
+        .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+    final String gameTitle =
+        (game?.title.trim().isNotEmpty == true
+                ? game!.title
+                : resource.gameTitle)
+            .trim();
+    final String resourceTitle = _localizedLibraryResourceTitle(resource);
+    final String extension = _fileExtension(resource.fileName);
+    final String stem = gameTitle.isEmpty
+        ? resourceTitle
+        : '$gameTitle · $resourceTitle';
+    return _safeDownloadFileName('$stem$extension');
+  }
+
+  String _localizedLibraryResourceTitle(DesktopLibraryResource resource) {
+    final bool isChinese = _language == AppLanguage.zhHans;
+    switch (resource.type) {
+      case DesktopLibraryResourceType.rulebook:
+        return isChinese ? '规则书' : 'Rulebook';
+      case DesktopLibraryResourceType.faq:
+        return 'FAQ';
+      case DesktopLibraryResourceType.assetIndex:
+        return isChinese ? '资料索引' : 'Asset index';
+      case DesktopLibraryResourceType.reference:
+        return isChinese ? '规则参考' : 'Rules reference';
+      case DesktopLibraryResourceType.playerAid:
+        return isChinese ? '玩家辅助' : 'Player aid';
+      case DesktopLibraryResourceType.supplement:
+        return isChinese ? '补充资料' : 'Supplement';
+      case DesktopLibraryResourceType.other:
+        final String fallback = resource.title.trim();
+        return fallback.isEmpty ? (isChinese ? '资料' : 'Resource') : fallback;
+    }
+  }
+
+  String _fileExtension(String fileName) {
+    final String normalized = fileName.trim();
+    final int dot = normalized.lastIndexOf('.');
+    if (dot <= 0 || dot == normalized.length - 1) {
+      return '';
+    }
+    return normalized.substring(dot);
+  }
+
+  Future<void> _initializeRemoteLibrary() async {
+    try {
+      await refreshLibraryResources();
+      // Warm the image cache first so the update probe has a stable baseline
+      // and cannot race with the version manifest writes performed by
+      // ensureCached().
+      await prefetchHomeImages();
+      await refreshAssetAccessStatus();
+      await checkForLibraryUpdates();
+    } catch (error, stackTrace) {
+      debugPrint('[updates] initial remote library warm-up failed: $error');
+      debugPrint('$stackTrace');
+    } finally {
+      _startAssetStatusPolling();
+    }
   }
 
   Future<void> checkForLibraryUpdates({bool forcePromptReset = false}) async {
@@ -997,11 +2324,12 @@ class AppController extends ChangeNotifier {
         );
         debugPrint('[updates] catalog changed');
         final List<String> titles = changedGameTitles.toList()..sort();
-        _pendingLibraryUpdate = RemoteLibraryUpdate(
-          changedPaths: changedPaths,
-          changedGameTitles: titles,
+        _setPendingLibraryUpdate(
+          RemoteLibraryUpdate(
+            changedPaths: changedPaths,
+            changedGameTitles: titles,
+          ),
         );
-        _libraryUpdatePromptSeen = false;
         debugPrint('[updates] pending update titles: ${titles.join(', ')}');
         return;
       } else {
@@ -1029,11 +2357,12 @@ class AppController extends ChangeNotifier {
 
       if (changedPaths.isNotEmpty) {
         final List<String> titles = changedGameTitles.toList()..sort();
-        _pendingLibraryUpdate = RemoteLibraryUpdate(
-          changedPaths: changedPaths,
-          changedGameTitles: titles,
+        _setPendingLibraryUpdate(
+          RemoteLibraryUpdate(
+            changedPaths: changedPaths,
+            changedGameTitles: titles,
+          ),
         );
-        _libraryUpdatePromptSeen = false;
         debugPrint('[updates] pending update titles: ${titles.join(', ')}');
       } else {
         debugPrint('[updates] no remote library updates detected');
@@ -1234,8 +2563,19 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String?> loadMarkdownDocument(String remotePath) async {
+    return loadLibraryResourceText(remotePath);
+  }
+
+  Future<String?> loadLibraryResourceText(String remotePath) async {
     final String? localPath = await cacheDocument(remotePath);
     if (localPath == null) {
+      if (remotePath.startsWith('assets/')) {
+        try {
+          return await rootBundle.loadString(remotePath);
+        } catch (_) {
+          return null;
+        }
+      }
       return null;
     }
     try {
@@ -1249,6 +2589,7 @@ class AppController extends ChangeNotifier {
     return _resolveDocument(
       game: game,
       baseName: 'rulebook',
+      fallbackRemotePath: game.rulebookAssetPath,
       fallbackLabel: copy.rulesBook,
     );
   }
@@ -1257,6 +2598,7 @@ class AppController extends ChangeNotifier {
     return _resolveDocument(
       game: game,
       baseName: 'faq',
+      fallbackRemotePath: game.faqAssetPath,
       fallbackLabel: copy.faq,
     );
   }
@@ -1293,8 +2635,10 @@ class AppController extends ChangeNotifier {
   Future<ResolvedDocument?> _resolveDocument({
     required GameInfo game,
     required String baseName,
+    required String fallbackRemotePath,
     required String fallbackLabel,
   }) async {
+    final String fallback = fallbackRemotePath.trim();
     final List<String> candidates = _documentCandidates(
       game: game,
       baseName: baseName,
@@ -1329,9 +2673,7 @@ class AppController extends ChangeNotifier {
         notifyListeners();
         return ResolvedDocument(
           remotePath: candidate,
-          renderType: candidate.endsWith('.pdf')
-              ? DocumentRenderType.pdf
-              : DocumentRenderType.markdown,
+          renderType: _documentRenderTypeForPath(candidate),
           label: fallbackLabel,
         );
       }
@@ -1343,7 +2685,27 @@ class AppController extends ChangeNotifier {
       checkedAt: DateTime.now(),
     );
     notifyListeners();
+    if (fallback.isNotEmpty && !isOtherStoragePath(fallback)) {
+      return ResolvedDocument(
+        remotePath: fallback,
+        renderType: _documentRenderTypeForPath(fallback),
+        label: fallbackLabel,
+      );
+    }
     return null;
+  }
+
+  DocumentRenderType _documentRenderTypeForPath(String path) {
+    final String normalized = path.toLowerCase();
+    if (normalized.endsWith('.pdf')) return DocumentRenderType.pdf;
+    if (normalized.endsWith('.html') || normalized.endsWith('.htm')) {
+      return DocumentRenderType.html;
+    }
+    if (normalized.endsWith('.txt')) return DocumentRenderType.text;
+    if (RegExp(r'\.(png|jpe?g|webp|gif|bmp)$').hasMatch(normalized)) {
+      return DocumentRenderType.image;
+    }
+    return DocumentRenderType.markdown;
   }
 
   List<String> _documentCandidates({
@@ -1460,10 +2822,10 @@ class AppController extends ChangeNotifier {
     if (successful.isNotEmpty) {
       return successful;
     }
-    if (_assetSourceConfigs.isNotEmpty) {
-      return <AssetSourceConfig>[_assetSourceConfigs.first];
-    }
-    return <AssetSourceConfig>[];
+    // At startup every source may still be unknown, and the first source is
+    // not necessarily reachable. Try the full configured list so a healthy
+    // fallback source can establish the update baseline.
+    return List<AssetSourceConfig>.from(_assetSourceConfigs);
   }
 
   Future<List<GameInfo>> _loadGamesForLanguage(AppLanguage language) async {
@@ -1487,45 +2849,108 @@ class AppController extends ChangeNotifier {
 
   void _startAssetStatusPolling() {
     _assetStatusTimer?.cancel();
-    unawaited(refreshAssetAccessStatus());
     _assetStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       unawaited(refreshAssetAccessStatus());
     });
   }
 
-  void _ensureGreeting() {
-    if (_games.isEmpty) {
-      return;
+  AiConversation _ensureConversationForContext({
+    required bool useGlobalMode,
+    String? gameId,
+    String? greeting,
+  }) {
+    final GameInfo game = gameId == null
+        ? selectedGame
+        : _games.firstWhere(
+            (GameInfo item) => item.id == gameId,
+            orElse: () => selectedGame,
+          );
+    final String id = useGlobalMode
+        ? _globalConversationKey
+        : _conversationKeyForGameId(game.id);
+    final String title = useGlobalMode ? copy.globalAiTitle : '${game.title}助手';
+    final AiConversation? existing = _conversations[id];
+    if (existing != null) {
+      if (existing.title != title ||
+          existing.scope !=
+              (useGlobalMode
+                  ? AiConversationScope.global
+                  : AiConversationScope.game) ||
+          existing.gameId != (useGlobalMode ? null : game.id)) {
+        final AiConversation updated = existing.copyWith(
+          title: title,
+          scope: useGlobalMode
+              ? AiConversationScope.global
+              : AiConversationScope.game,
+          gameId: useGlobalMode ? null : game.id,
+        );
+        _conversations[id] = updated;
+        _queueConversationSave(conversationId: id);
+        return updated;
+      }
+      return existing;
     }
-    for (final GameInfo game in _games) {
-      _conversationMessages.putIfAbsent(
-        _conversationKeyForGameId(game.id),
-        () => <ChatMessage>[
-          ChatMessage(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            role: ChatRole.assistant,
-            text: copy.assistantGreetingFor(
-              game.title,
-              game.assistantIntro.isNotEmpty
-                  ? game.assistantIntro
-                  : game.summary,
-            ),
-            timestamp: DateTime.now(),
-          ),
-        ],
-      );
-    }
-    _conversationMessages.putIfAbsent(
-      _globalConversationKey,
-      () => <ChatMessage>[
+
+    final DateTime now = DateTime.now();
+    final String defaultGreeting = useGlobalMode
+        ? copy.allKnowledgeGreeting
+        : copy.assistantGreetingFor(
+            game.title,
+            game.assistantIntro.isNotEmpty ? game.assistantIntro : game.summary,
+          );
+    final AiConversation created = AiConversation(
+      id: id,
+      title: title,
+      scope: useGlobalMode
+          ? AiConversationScope.global
+          : AiConversationScope.game,
+      gameId: useGlobalMode ? null : game.id,
+      createdAt: now,
+      updatedAt: now,
+      messages: <ChatMessage>[
         ChatMessage(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          id: '${now.microsecondsSinceEpoch}-${useGlobalMode ? 'global' : game.id}',
           role: ChatRole.assistant,
-          text: copy.allKnowledgeGreeting,
-          timestamp: DateTime.now(),
+          text: greeting ?? defaultGreeting,
+          timestamp: now,
         ),
       ],
     );
+    _conversations[id] = created;
+    _queueConversationSave(conversationId: id);
+    return created;
+  }
+
+  void _refreshConversationMetadata() {
+    for (final MapEntry<String, AiConversation> entry
+        in _conversations.entries.toList()) {
+      final AiConversation conversation = entry.value;
+      if (conversation.isGlobal) {
+        if (conversation.title != copy.globalAiTitle) {
+          _conversations[entry.key] = conversation.copyWith(
+            title: copy.globalAiTitle,
+            scope: AiConversationScope.global,
+            gameId: null,
+          );
+        }
+        continue;
+      }
+      final String? gameId = conversation.gameId;
+      if (gameId == null) {
+        continue;
+      }
+      final GameInfo? game = _games
+          .where((GameInfo item) => item.id == gameId)
+          .cast<GameInfo?>()
+          .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+      if (game == null) {
+        continue;
+      }
+      final String title = '${game.title}助手';
+      if (conversation.title != title) {
+        _conversations[entry.key] = conversation.copyWith(title: title);
+      }
+    }
   }
 
   void _handleListeningStopped() {
@@ -1546,7 +2971,7 @@ class AppController extends ChangeNotifier {
   }
 
   static const String _globalConversationKey = 'global';
-  static const int _conversationStoreVersion = 1;
+  static const int _conversationStoreVersion = 3;
   static const int _maxMessagesPerConversation = 100;
 
   String _conversationKeyForContext({required bool useGlobalMode}) {
@@ -1566,12 +2991,28 @@ class AppController extends ChangeNotifier {
     return _messagesForContext(useGlobalMode: false);
   }
 
+  String _conversationIdForContext({required bool useGlobalMode}) {
+    return useGlobalMode
+        ? _globalConversationKey
+        : _conversationKeyForGameId(selectedGame.id);
+  }
+
   List<ChatMessage> _messagesForContext({required bool useGlobalMode}) {
-    final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
-    return _conversationMessages.putIfAbsent(key, () => <ChatMessage>[]);
+    final String key = _conversationIdForContext(useGlobalMode: useGlobalMode);
+    final AiConversation? existing = _conversations[key];
+    if (existing != null) {
+      return existing.messages;
+    }
+    return _ensureConversationForContext(useGlobalMode: useGlobalMode).messages;
   }
 
   String _conversationKeyForGameId(String gameId) => 'game:$gameId';
+
+  bool _isConversationAvailable(AiConversation conversation) {
+    return conversation.isGlobal ||
+        (conversation.gameId != null &&
+            _games.any((GameInfo game) => game.id == conversation.gameId));
+  }
 
   void _trimConversationMessages(List<ChatMessage> messages) {
     if (messages.length <= _maxMessagesPerConversation) {
@@ -1580,7 +3021,10 @@ class AppController extends ChangeNotifier {
     messages.removeRange(0, messages.length - _maxMessagesPerConversation);
   }
 
-  void _queueConversationSave() {
+  void _queueConversationSave({String? conversationId}) {
+    if (conversationId != null) {
+      _touchConversation(conversationId);
+    }
     _conversationSaveQueue = _conversationSaveQueue
         .then((_) async {
           await _persistConversations();
@@ -1589,6 +3033,35 @@ class AppController extends ChangeNotifier {
           debugPrint('[chat] persist conversations failed: $error');
           debugPrint('$stackTrace');
         });
+  }
+
+  void _touchConversation(String conversationId) {
+    final AiConversation? conversation = _conversations[conversationId];
+    if (conversation == null) return;
+    // Keep the live message list intact while updating ordering metadata.
+    // Replacing the model here would detach an in-flight streaming request
+    // from the list that the UI and persistence queue are observing.
+    conversation.updatedAt = DateTime.now();
+  }
+
+  void _queueSelectedConversationSave(String conversationId) {
+    _selectedConversationSaveQueue = _selectedConversationSaveQueue
+        .then(
+          (_) => _preferencesService.saveSelectedConversationId(conversationId),
+        )
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[chat] persist selected conversation failed: $error');
+          debugPrint('$stackTrace');
+        });
+  }
+
+  Future<void> _persistSelectedConversationId() async {
+    final String? id = _selectedConversationId;
+    if (id == null || id.isEmpty) {
+      await _preferencesService.clearSelectedConversationId();
+      return;
+    }
+    await _preferencesService.saveSelectedConversationId(id);
   }
 
   Future<void> _restoreConversations() async {
@@ -1602,21 +3075,30 @@ class AppController extends ChangeNotifier {
       final Map<String, dynamic> conversations =
           json['conversations'] as Map<String, dynamic>? ?? <String, dynamic>{};
 
-      _conversationMessages.clear();
+      _conversations.clear();
       for (final MapEntry<String, dynamic> entry in conversations.entries) {
-        final List<dynamic> rawMessages =
-            entry.value as List<dynamic>? ?? const <dynamic>[];
-        final List<ChatMessage> messages = rawMessages
-            .whereType<Map<String, dynamic>>()
-            .map(ChatMessage.fromMap)
-            .toList();
-        _trimConversationMessages(messages);
-        if (messages.isNotEmpty) {
-          _conversationMessages[entry.key] = messages;
+        final AiConversation? restored = _conversationFromStoredEntry(
+          entry.key,
+          entry.value,
+        );
+        if (restored != null && !restored.isUnstarted) {
+          _conversations[entry.key] = restored;
+        } else if (restored != null) {
+          debugPrint(
+            '[chat] skipped unused session during migration: ${restored.id}',
+          );
         }
       }
+      final String? persistedSelection =
+          (json['selectedConversationId'] as String?)?.trim();
+      if ((_selectedConversationId == null ||
+              _selectedConversationId!.isEmpty) &&
+          persistedSelection != null &&
+          persistedSelection.isNotEmpty) {
+        _selectedConversationId = persistedSelection;
+      }
       debugPrint(
-        '[chat] restored conversations: ${_conversationMessages.keys.join(', ')}',
+        '[chat] restored conversations: ${_conversations.keys.join(', ')}',
       );
     } catch (error, stackTrace) {
       debugPrint('[chat] restore conversations failed: $error');
@@ -1630,10 +3112,11 @@ class AppController extends ChangeNotifier {
       final Map<String, dynamic> payload = <String, dynamic>{
         'version': _conversationStoreVersion,
         'savedAt': DateTime.now().toIso8601String(),
+        'selectedConversationId': _selectedConversationId,
         'conversations': <String, dynamic>{
-          for (final MapEntry<String, List<ChatMessage>> entry
-              in _conversationMessages.entries)
-            entry.key: entry.value.map((ChatMessage m) => m.toMap()).toList(),
+          for (final MapEntry<String, AiConversation> entry
+              in _conversations.entries)
+            entry.key: entry.value.toMap(),
         },
       };
       await file.parent.create(recursive: true);
@@ -1649,6 +3132,79 @@ class AppController extends ChangeNotifier {
     return File(
       '${support.path}${Platform.pathSeparator}chat_conversations.json',
     );
+  }
+
+  AiConversation? _conversationFromStoredEntry(String id, Object? raw) {
+    if (raw is Map<String, dynamic>) {
+      try {
+        final AiConversation parsed = AiConversation.fromMap(raw);
+        return parsed.id == id ? parsed : parsed.copyWith(id: id);
+      } catch (error) {
+        debugPrint('[chat] skipped malformed conversation $id: $error');
+        return null;
+      }
+    }
+    if (raw is! List<dynamic>) {
+      return null;
+    }
+    final List<ChatMessage> messages = <ChatMessage>[];
+    for (final Map<String, dynamic> messageMap
+        in raw.whereType<Map<String, dynamic>>()) {
+      try {
+        messages.add(ChatMessage.fromMap(messageMap));
+      } catch (error) {
+        debugPrint('[chat] skipped malformed message in $id: $error');
+      }
+    }
+    _trimConversationMessages(messages);
+    // The v1 store represented conversations as bare message lists. Entries
+    // that contain a user message are considered explicitly opened; a bare
+    // greeting-only entry is a legacy bootstrap artifact and is discarded by
+    // the restore migration.
+    final DateTime now = DateTime.now();
+    final DateTime updatedAt = messages.isEmpty ? now : messages.last.timestamp;
+    final bool global = id == _globalConversationKey;
+    final GameInfo? game = global
+        ? null
+        : _games
+              .where(
+                (GameInfo item) => _conversationKeyForGameId(item.id) == id,
+              )
+              .cast<GameInfo?>()
+              .firstWhere((GameInfo? item) => item != null, orElse: () => null);
+    return AiConversation(
+      id: id,
+      title: global
+          ? copy.globalAiTitle
+          : game == null
+          ? '规则问答'
+          : '${game.title}助手',
+      scope: global ? AiConversationScope.global : AiConversationScope.game,
+      gameId: game?.id ?? (global ? null : id.replaceFirst('game:', '')),
+      createdAt: messages.isEmpty ? now : messages.first.timestamp,
+      updatedAt: updatedAt,
+      opened: messages.any(
+        (ChatMessage message) => message.role == ChatRole.user,
+      ),
+      messages: messages,
+    );
+  }
+
+  String? _resolveSelectedConversationId(String? preferredId) {
+    final String? preferred = preferredId?.trim();
+    if (preferred != null && _conversations.containsKey(preferred)) {
+      final AiConversation conversation = _conversations[preferred]!;
+      if (conversation.isGlobal ||
+          (conversation.gameId != null &&
+              _games.any((GameInfo game) => game.id == conversation.gameId))) {
+        if (conversation.scope == AiConversationScope.game &&
+            conversation.gameId != null) {
+          _selectedGameId = conversation.gameId!;
+        }
+        return preferred;
+      }
+    }
+    return null;
   }
 }
 

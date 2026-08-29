@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_about/app_about.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
@@ -22,6 +23,7 @@ import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
+import 'ui/screens/desktop_workspace_screen.dart';
 
 Future<void> main() async {
   enableInsecureAndroidCertificateTrust();
@@ -156,6 +158,15 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           }
 
           _scheduleStartupUpdateCheck(context);
+          // The desktop workspace is intentionally Windows-only for this
+          // rollout. Keep Web on the existing mobile-style shell until its
+          // desktop adaptation is explicitly enabled.
+          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+            return DesktopWorkspaceScreen(
+              controller: widget.controller,
+              onOpenAbout: _openAbout,
+            );
+          }
           return HomeScreen(
             controller: widget.controller,
             onOpenAbout: _openAbout,

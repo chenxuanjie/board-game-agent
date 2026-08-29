@@ -1,6 +1,7 @@
 import '../models/app_language.dart';
 import '../models/ai_api_config.dart';
 import '../models/color_scheme_option.dart';
+import '../models/remote_library_update.dart';
 
 class AppCopy {
   AppCopy(this.language);
@@ -171,15 +172,60 @@ class AppCopy {
   String get statusFailedShort => isChinese ? '失败' : 'Failed';
   String get statusPendingShort => isChinese ? '待测' : 'Pending';
   String get statusLimitedShort => isChinese ? '受限' : 'Limited';
+  String get statusLoading => isChinese ? '加载中' : 'Loading';
   String get aiStatusDefaultReady => isChinese ? '默认可用' : 'Ready by default';
+  String get activityTitle => isChinese ? '消息' : 'Notifications';
+  String get activityEmpty => isChinese ? '暂无消息' : 'No notifications';
+  String get activityViewAll => isChinese ? '查看全部' : 'View all';
+  String get activityRefreshServices =>
+      isChinese ? '刷新服务状态' : 'Refresh service status';
+  String get activityServiceRefreshTitle =>
+      isChinese ? '服务状态已刷新' : 'Service status refreshed';
+  String activityServiceRefreshMessage(String ai, String assets) =>
+      isChinese ? 'AI：$ai · 资料：$assets' : 'AI: $ai · Assets: $assets';
+  String get activityServiceRefreshFailedTitle =>
+      isChinese ? '服务状态刷新失败' : 'Service refresh failed';
+  String get activityAiCompletedTitle =>
+      isChinese ? 'AI 已完成回答' : 'AI answer completed';
+  String activityAiCompletedMessage(String gameTitle) => isChinese
+      ? '已完成《$gameTitle》的新回答。'
+      : 'A new answer for $gameTitle is ready.';
+  String get activityAiFailedTitle =>
+      isChinese ? 'AI 回答失败' : 'AI answer failed';
+  String get activityLibraryUpdateTitle =>
+      isChinese ? '发现资料更新' : 'Library update found';
+  String activityLibraryUpdateMessage(int count) => isChinese
+      ? '有 $count 项资料等待更新。'
+      : '$count library items are ready to update.';
+  String get activityJustNow => isChinese ? '刚刚' : 'Just now';
+  String activityMinutesAgo(int count) =>
+      isChinese ? '$count 分钟前' : '$count min ago';
+  String activityHoursAgo(int count) =>
+      isChinese ? '$count 小时前' : '$count hr ago';
+  String activityDaysAgo(int count) =>
+      isChinese ? '$count 天前' : '$count days ago';
   String get assetTestDone =>
       isChinese ? '资源访问测试完成' : 'Asset access test completed';
   String get dialogClose => isChinese ? '关闭' : 'Close';
   String get libraryUpdateTitle =>
       isChinese ? '检测到新的桌游信息内容' : 'New board game content detected';
   String get libraryUpdateMessage => isChinese
-      ? '检测到 catalog、背景图、规则书或相关资料有更新。是否现在下载并更新到本地？'
-      : 'Catalog, images, rulebooks, or related content has been updated. Download and update local data now?';
+      ? '检测到远端资料与本地缓存存在实际差异。是否现在下载并更新？'
+      : 'Remote content differs from the local cache. Download and update it now?';
+  String libraryUpdateChangeSummary(int count) =>
+      isChinese ? '共 $count 项资源发生变化' : '$count resources changed';
+  String libraryUpdateResourceLabel(RemoteLibraryResourceType type) {
+    return switch (type) {
+      RemoteLibraryResourceType.catalog => isChinese ? '目录' : 'Catalog',
+      RemoteLibraryResourceType.gameManifest =>
+        isChinese ? '桌游配置' : 'Game metadata',
+      RemoteLibraryResourceType.image => isChinese ? '图片' : 'Images',
+      RemoteLibraryResourceType.rulebook => isChinese ? '规则书' : 'Rulebooks',
+      RemoteLibraryResourceType.faq => isChinese ? 'FAQ' : 'FAQs',
+      RemoteLibraryResourceType.other => isChinese ? '其他资料' : 'Other',
+    };
+  }
+
   String libraryUpdateGameListLabel(int count) =>
       isChinese ? '涉及 $count 个桌游：' : 'Affected games ($count):';
   String get updateNow => isChinese ? '确定' : 'Update';
@@ -332,6 +378,129 @@ class AppCopy {
 
   String get back => isChinese ? '返回' : 'Back';
 
+  String get desktopHome => isChinese ? '首页' : 'Home';
+  String get desktopGames => isChinese ? '我的游戏' : 'My Games';
+  String get desktopGameDetail => isChinese ? '桌游详情' : 'Game Details';
+  String get desktopLibrary => isChinese ? '资料库' : 'Library';
+  String get desktopSettings => isChinese ? '设置' : 'Settings';
+  String get desktopWorkspace => isChinese ? '工作区' : 'Workspace';
+  String get desktopSystem => isChinese ? '系统' : 'System';
+  String get desktopSearchTitle => isChinese ? '搜索桌游' : 'Search games';
+  String get desktopSearchAction => isChinese ? '搜索' : 'Search';
+  String get desktopSearchHint =>
+      isChinese ? '输入名称、别名或关键词' : 'Name, alias, or keyword';
+  String get desktopNoGames => isChinese ? '暂无可用游戏' : 'No games available';
+  String get desktopNoGamesTitle => isChinese ? '还没有可用的游戏' : 'No games yet';
+  String get desktopNoGamesMessage => isChinese
+      ? '游戏资料还没有加载完成。你可以重试加载，或先到设置检查资料来源。'
+      : 'Game data has not finished loading. Retry, or check the asset source in Settings.';
+  String get desktopNoGamesRetry => isChinese ? '重新加载' : 'Reload';
+  String get desktopNoGamesLoading => isChinese ? '加载中…' : 'Loading…';
+  String get desktopNoGamesMissing => isChinese
+      ? '没有找到可用的游戏资料，请检查本地资源或资料来源配置。'
+      : 'No game data was found. Check local assets or the configured source.';
+  String desktopNoGamesLoadFailed(Object error) =>
+      isChinese ? '加载失败：$error' : 'Load failed: $error';
+  String get desktopCheckSettings => isChinese ? '检查设置' : 'Check settings';
+  String get desktopCheckSettingsHint => isChinese
+      ? '请打开左侧“设置”，检查资料来源配置。'
+      : 'Open Settings in the sidebar to check the asset source.';
+  String get desktopNoSearchResults =>
+      isChinese ? '没有找到匹配的桌游' : 'No matching games';
+  String get desktopSessionTitle => isChinese ? '会话' : 'Sessions';
+  String get desktopContextTitle => isChinese ? '上下文' : 'Context';
+  String get desktopAnswerModeTitle => isChinese ? '回答模式' : 'Answer mode';
+  String get desktopAllResources => isChinese ? '全部资料' : 'All resources';
+  String get desktopOfficialFirst => isChinese ? '官方资料优先' : 'Official sources';
+  String get desktopSmartSupplement =>
+      isChinese ? '允许智能补充' : 'Smart supplement';
+  String get desktopLibraryTitle => isChinese ? '规则资料' : 'Library';
+  String get desktopImport => isChinese ? '导入' : 'Import';
+  String get desktopCreate => isChinese ? '新建' : 'New';
+  String get desktopRefreshLibrary => isChinese ? '刷新资料库' : 'Refresh library';
+  String get desktopLibraryOther => isChinese ? '其他' : 'Other';
+  String get desktopAll => isChinese ? '全部' : 'All';
+  String get desktopRulebook => isChinese ? '规则书' : 'Rulebook';
+  String get desktopFaq => 'FAQ';
+  String get desktopOpen => isChinese ? '打开' : 'Open';
+  String get desktopOpenUnavailable =>
+      isChinese ? '打开（暂不支持）' : 'Open (unavailable)';
+  String get desktopDownload => isChinese ? '下载' : 'Download';
+  String get desktopDelete => isChinese ? '删除' : 'Delete';
+  String get desktopMore => isChinese ? '更多' : 'More';
+  String get desktopRetry => isChinese ? '重试' : 'Retry';
+  String get desktopLibraryUnavailable => isChinese
+      ? '远端资料库暂时不可用，继续显示本地缓存。'
+      : 'The remote library is unavailable. Showing the local cache.';
+  String get desktopLibraryNoResources =>
+      isChinese ? '远端资料库暂无可展示的资料' : 'No library resources available';
+  String get desktopLibraryFilterNoResources =>
+      isChinese ? '当前筛选没有资料' : 'No resources match this filter';
+  String get desktopImportComingSoon =>
+      isChinese ? '该功能正在开发中' : 'This feature is under development';
+  String get desktopOpenUnavailableMessage => isChinese
+      ? '该资源暂不支持在线阅读，请先下载'
+      : 'This resource cannot be opened online yet. Download it first.';
+  String get desktopDownloadFailed => isChinese
+      ? '下载失败，请检查资料库连接后重试'
+      : 'Download failed. Check the library connection and retry.';
+  String desktopDownloadedTo(String path) =>
+      isChinese ? '已下载到 $path' : 'Downloaded to $path';
+  String desktopDownloadError(Object error) =>
+      isChinese ? '下载失败：$error' : 'Download failed: $error';
+  String get desktopDeleteUnavailable => isChinese
+      ? '暂时无法删除远端资源，相关功能正在开发中'
+      : 'Remote deletion is not available yet.';
+  String get desktopLibraryEmptyTitle =>
+      isChinese ? '资料库暂为空' : 'Library is empty';
+  String get desktopLibraryEmptyMessage => isChinese
+      ? '游戏资料加载完成后，规则书、FAQ 和其他资料会显示在这里。'
+      : 'Rulebooks, FAQs, and other resources appear here after game data loads.';
+  String get desktopContinuePlaying => isChinese ? '继续游玩' : 'Continue playing';
+  String get desktopStart => isChinese ? '开始' : 'Start';
+  String get desktopLastGame => isChinese ? '上次对局' : 'Last game';
+  String get desktopContinue => isChinese ? '继续' : 'Continue';
+  String get desktopQuickActions => isChinese ? '快捷操作' : 'Quick actions';
+  String get desktopAskAi => isChinese ? '询问 AI' : 'Ask AI';
+  String get desktopRecentGames => isChinese ? '最近游戏' : 'Recent games';
+  String get desktopAssistantUnavailable =>
+      isChinese ? 'AI 助手暂不可用' : 'AI assistant unavailable';
+  String get desktopAssistantUnavailableMessage => isChinese
+      ? '请先加载至少一个游戏资料，AI 助手才能建立对应的规则上下文。'
+      : 'Load at least one game before opening a rules-aware assistant.';
+  String get desktopNoSession => isChinese ? '还没有会话' : 'No sessions yet';
+  String get desktopNoSessionHint => isChinese
+      ? '进入桌游详情页点击“询问 AI”，或直接打开通用助手。'
+      : 'Open a game and ask AI, or start the global assistant.';
+  String get desktopOpenGlobalAssistant =>
+      isChinese ? '打开通用助手' : 'Open global assistant';
+  String get desktopOfficialLoaded =>
+      isChinese ? '官方资料已加载' : 'Official sources loaded';
+  String get desktopCrossGameQuestions =>
+      isChinese ? '跨桌游知识问答' : 'Cross-game questions';
+  String desktopConversationSummary(bool global, int count) => global
+      ? (isChinese ? '跨桌游问答 · $count 条消息' : 'Cross-game · $count messages')
+      : (isChinese ? '规则问答 · $count 条消息' : 'Rules · $count messages');
+  String get desktopClearConversation => isChinese ? '清空对话' : 'Clear chat';
+  String get desktopVoiceInput => isChinese ? '语音输入' : 'Voice input';
+  String get desktopInputHint => isChinese ? '输入问题…' : 'Ask a question…';
+  String get desktopJumpToBottom => isChinese ? '回到底部' : 'Jump to bottom';
+  String get desktopSend => isChinese ? '发送' : 'Send';
+  String get desktopStopGenerating => isChinese ? '停止生成' : 'Stop generating';
+  String get desktopPreferences => isChinese ? '偏好' : 'Preferences';
+  String get desktopAppearance => isChinese ? '外观' : 'Appearance';
+  String get desktopAiService => isChinese ? 'AI 服务' : 'AI service';
+  String get desktopBehavior => isChinese ? '行为' : 'Behavior';
+  String get desktopProvider => isChinese ? '供应商' : 'Provider';
+  String get desktopModel => isChinese ? '模型' : 'Model';
+  String get desktopDetails => isChinese ? '详细设置' : 'Details';
+  String get desktopAboutApp => isChinese ? '关于桌游导师' : 'About Board Game Agent';
+  String get desktopLibraryIndex => isChinese ? '资料索引' : 'Resource index';
+  String get desktopLibraryReference => isChinese ? '规则参考' : 'Rules reference';
+  String get desktopLibraryPlayerAid => isChinese ? '玩家辅助' : 'Player aid';
+  String get desktopLibrarySupplement => isChinese ? '补充资料' : 'Supplement';
+  String get desktopDownloadDirectory =>
+      isChinese ? '选择下载目录' : 'Choose download folder';
   String get askAiAssistant => isChinese ? '询问AI助手' : 'Ask AI Assistant';
   String get imageGalleryHint =>
       isChinese ? '左右滑动查看图片' : 'Swipe to browse images';

@@ -34,7 +34,6 @@ class AssistantChatScreen extends StatefulWidget {
 class _AssistantChatScreenState extends State<AssistantChatScreen> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
-  bool _didInitializeConversation = false;
   bool _showMessageTimes = false;
   Timer? _messageTimeVisibilityTimer;
 
@@ -44,21 +43,15 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     _textController = TextEditingController(text: widget.initialDraft ?? '');
     _scrollController = ScrollController();
     _textController.addListener(_onDraftChanged);
+    if (widget.useGlobalMode) {
+      widget.controller.openGlobalAssistant(greeting: widget.customGreeting);
+    } else if (widget.controller.hasGames) {
+      widget.controller.openGameAssistant(
+        widget.controller.selectedGame.id,
+        greeting: widget.customGreeting,
+      );
+    }
     widget.controller.addListener(_onControllerChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_didInitializeConversation) {
-        return;
-      }
-      _didInitializeConversation = true;
-      if (widget.controller
-          .messagesForContext(useGlobalMode: widget.useGlobalMode)
-          .isEmpty) {
-        widget.controller.resetConversation(
-          greeting: widget.customGreeting,
-          useGlobalMode: widget.useGlobalMode,
-        );
-      }
-    });
   }
 
   @override

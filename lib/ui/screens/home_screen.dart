@@ -232,44 +232,77 @@ class _HomeScreenState extends State<HomeScreen> {
         final textTheme = Theme.of(context).textTheme;
         return AlertDialog(
           title: Text(copy.libraryUpdateTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                copy.libraryUpdateMessage,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: palette.textPrimary.withValues(alpha: 0.88),
-                  height: 1.55,
-                ),
-              ),
-              if (update != null &&
-                  update.changedGameTitles.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 14),
-                Text(
-                  copy.libraryUpdateGameListLabel(
-                    update.changedGameTitles.length,
-                  ),
-                  style: textTheme.titleSmall?.copyWith(
-                    color: palette.textPrimary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...update.changedGameTitles.map(
-                  (title) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '• $title',
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: palette.textPrimary.withValues(alpha: 0.92),
-                        fontWeight: FontWeight.w700,
-                      ),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.55,
+              maxWidth: 520,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    copy.libraryUpdateMessage,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: palette.textPrimary.withValues(alpha: 0.88),
+                      height: 1.55,
                     ),
                   ),
-                ),
-              ],
-            ],
+                  if (update != null && update.changedCount > 0) ...<Widget>[
+                    const SizedBox(height: 14),
+                    Text(
+                      copy.libraryUpdateChangeSummary(update.changedCount),
+                      style: textTheme.titleSmall?.copyWith(
+                        color: palette.textPrimary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: update.changedResourceCounts.entries
+                          .map(
+                            (entry) => Chip(
+                              label: Text(
+                                '${copy.libraryUpdateResourceLabel(entry.key)} ${entry.value}',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ],
+                  if (update != null &&
+                      update.changedGameTitles.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 14),
+                    Text(
+                      copy.libraryUpdateGameListLabel(
+                        update.changedGameTitles.length,
+                      ),
+                      style: textTheme.titleSmall?.copyWith(
+                        color: palette.textPrimary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...update.changedGameTitles.map(
+                      (title) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '• $title',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: palette.textPrimary.withValues(alpha: 0.92),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
           actions: <Widget>[
             TextButton(
@@ -384,6 +417,7 @@ class _StatusLamp extends StatelessWidget {
       ConnectivityState.success => palette.success,
       ConnectivityState.warning => palette.warning,
       ConnectivityState.failure => palette.error,
+      ConnectivityState.loading => palette.primary,
       ConnectivityState.unknown => palette.disabledForeground,
     };
     return InkWell(
@@ -420,20 +454,29 @@ class _StatusLamp extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: lampColor,
-                shape: BoxShape.circle,
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: lampColor.withValues(alpha: 0.45),
-                    blurRadius: 8,
+            status.state == ConnectivityState.loading
+                ? SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: lampColor,
+                    ),
+                  )
+                : Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: lampColor,
+                      shape: BoxShape.circle,
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color: lampColor.withValues(alpha: 0.45),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -471,6 +514,7 @@ String _statusSummary(AppCopy copy, ConnectivityState? state) {
     ConnectivityState.success => copy.statusReadyShort,
     ConnectivityState.warning => copy.statusLimitedShort,
     ConnectivityState.failure => copy.statusFailedShort,
+    ConnectivityState.loading => copy.statusLoading,
     ConnectivityState.unknown || null => copy.statusPendingShort,
   };
 }
