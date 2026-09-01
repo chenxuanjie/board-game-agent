@@ -140,17 +140,28 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
           // the hero row's cross-axis height explicit so a maximized window
           // cannot pass an unbounded height through the centered copy column.
           return SizedBox(
-            height: 280,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            height: 446,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SizedBox(width: 248, height: 280, child: cover),
-                const SizedBox(width: 22),
-                Expanded(
-                  child: Align(alignment: Alignment.centerLeft, child: copy),
+                SizedBox(
+                  height: 340,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(width: 300, height: 340, child: cover),
+                      const SizedBox(width: 26),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: copy,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 22),
-                SizedBox(width: 220, height: 280, child: score),
+                const SizedBox(height: 16),
+                SizedBox(height: 90, child: score),
               ],
             ),
           );
@@ -162,13 +173,13 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  SizedBox(width: 220, height: 250, child: cover),
+                  SizedBox(width: 260, height: 320, child: cover),
                   const SizedBox(width: 18),
                   Expanded(child: copy),
                 ],
               ),
               const SizedBox(height: 16),
-              SizedBox(height: 150, child: score),
+              SizedBox(height: 90, child: score),
             ],
           );
         }
@@ -179,7 +190,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             const SizedBox(height: 18),
             copy,
             const SizedBox(height: 16),
-            SizedBox(height: 150, child: score),
+            SizedBox(height: 96, child: score),
           ],
         );
       },
@@ -655,52 +666,78 @@ class _DesktopScoreCard extends StatelessWidget {
         border: Border.all(color: palette.outline),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            Text(
-              '评分',
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(color: palette.textSecondary),
-            ),
-            Text(
-              game.score,
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: palette.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            Text(
-              game.scoreCountLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            ClipRRect(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bool compact = constraints.maxWidth < 520;
+            final Widget scoreValue = Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: <Widget>[
+                Text(
+                  game.score,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: palette.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  game.scoreCountLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            );
+            final Widget progressBar = ClipRRect(
               borderRadius: BorderRadius.circular(99),
               child: LinearProgressIndicator(
-                minHeight: 7,
+                minHeight: 5,
                 value: progress,
                 backgroundColor: palette.surfaceVariant,
                 valueColor: AlwaysStoppedAnimation<Color>(palette.primary),
               ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            );
+            final Widget recommended = Row(
+              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text('推荐人数', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(width: 8),
                 Text(
                   '${game.recommendedPlayer}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelLarge?.copyWith(color: palette.textPrimary),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
-            ),
-          ],
+            );
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <Widget>[scoreValue, progressBar, recommended],
+              );
+            }
+            return Row(
+              children: <Widget>[
+                Text(
+                  '评分',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: palette.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 18),
+                scoreValue,
+                const SizedBox(width: 26),
+                Expanded(child: progressBar),
+                const SizedBox(width: 26),
+                recommended,
+              ],
+            );
+          },
         ),
       ),
     );
