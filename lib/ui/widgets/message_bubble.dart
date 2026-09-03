@@ -52,6 +52,13 @@ class MessageBubble extends StatelessWidget {
     );
     final bool hasAssistantAction = _hasAssistantAction;
     final bool hasAssistantReferences = _hasAssistantReferences;
+    // User messages keep the existing compact bubble. Assistant output is a
+    // document-like response area; the activity component beside it carries
+    // the dynamic run presentation, so a second assistant bubble would be
+    // redundant and visually misleading.
+    final EdgeInsets messagePadding = isUser
+        ? const EdgeInsets.fromLTRB(16, 13, 12, 11)
+        : EdgeInsets.zero;
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -82,22 +89,21 @@ class MessageBubble extends StatelessWidget {
                         color: Colors.transparent,
                         borderRadius: borderRadius,
                         child: Ink(
-                          decoration: BoxDecoration(
-                            color: isUser
-                                ? palette.primaryContainer
-                                : palette.surfaceContainer,
-                            borderRadius: borderRadius,
-                            border: isUser
-                                ? null
-                                : Border.all(color: palette.outline),
-                            boxShadow: <BoxShadow>[
-                              BoxShadow(
-                                color: palette.shadow.withValues(alpha: 0.28),
-                                blurRadius: 16,
-                                offset: const Offset(0, 7),
-                              ),
-                            ],
-                          ),
+                          decoration: isUser
+                              ? BoxDecoration(
+                                  color: palette.primaryContainer,
+                                  borderRadius: borderRadius,
+                                  boxShadow: <BoxShadow>[
+                                    BoxShadow(
+                                      color: palette.shadow.withValues(
+                                        alpha: 0.28,
+                                      ),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 7),
+                                    ),
+                                  ],
+                                )
+                              : null,
                           child: InkWell(
                             // _TapToShowTimes handles pointer taps so that
                             // selectable message text also toggles the time
@@ -105,12 +111,7 @@ class MessageBubble extends StatelessWidget {
                             onTap: null,
                             borderRadius: borderRadius,
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                13,
-                                12,
-                                11,
-                              ),
+                              padding: messagePadding,
                               child: Column(
                                 crossAxisAlignment: isUser
                                     ? CrossAxisAlignment.end

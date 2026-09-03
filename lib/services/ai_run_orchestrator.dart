@@ -1,26 +1,30 @@
 import '../models/ai_run.dart';
 import '../models/board_game_ai_answer.dart';
+import '../models/rule_citation.dart';
 
 typedef AiStageExecutor = Future<AiStageResult> Function();
+typedef AiStageStreamExecutor = Stream<AiStageExecutionEvent> Function();
 
 /// A stage declaration owned by the domain workflow.
 class AiStageDefinition {
   const AiStageDefinition({
     required this.stageId,
     required this.scope,
-    required this.execute,
+    this.execute,
+    this.executeStream,
   });
 
   final String stageId;
   final AiKnowledgeScope scope;
-  final AiStageExecutor execute;
+  final AiStageExecutor? execute;
+  final AiStageStreamExecutor? executeStream;
 }
 
 /// Runs independent stages and commits only a validated terminal answer.
 ///
-/// Stage executors are deliberately future-based: they buffer provider output
-/// privately and return an [AiStageResult] only after protocol and provenance
-/// validation. No stage delta is forwarded to the chat bubble by this class.
+/// A run is the boundary between provider events and the product UI. A stage
+/// may still use a future executor, but streaming stages can now forward safe
+/// lifecycle events while keeping answer text private until validation passes.
 class AiRunOrchestrator {
   const AiRunOrchestrator();
 
@@ -44,11 +48,26 @@ class AiRunOrchestrator {
       String? status,
       String? responseId,
       String? terminalEventType,
+      String? rawType,
       AiStageResult? stageResult,
       BoardGameAiAnswer? answer,
+      String delta = '',
+      RuleCitation? citation,
+      String? itemId,
+      String? outputItemType,
+      String? toolName,
+      String? toolArgumentsPreview,
+      String? detail,
+      int? attempt,
       String? errorCode,
       String? errorMessage,
       AiRunResult? runResult,
+      int? maxAttempts,
+      int? sequenceNumber,
+      int? lastSequence,
+      bool? replay,
+      bool duplicateUserMessagePrevented = false,
+      bool partialOutputRetained = false,
     }) {
       return AiRunEvent(
         runId: runId,
@@ -57,7 +76,7 @@ class AiRunOrchestrator {
         timestamp: DateTime.now(),
         stageId: stageId,
         scope: scope,
-        rawType: terminalEventType ?? stageResult?.terminalEventType,
+        rawType: rawType ?? terminalEventType ?? stageResult?.terminalEventType,
         status: status,
         responseId: responseId,
         sessionId: sessionId,
@@ -65,6 +84,20 @@ class AiRunOrchestrator {
         model: stageResult?.model ?? model,
         usage: stageResult?.usage,
         requestCount: stageResult?.requestCount ?? 0,
+        delta: delta,
+        itemId: itemId,
+        outputItemType: outputItemType,
+        toolName: toolName,
+        toolArgumentsPreview: toolArgumentsPreview,
+        detail: detail,
+        attempt: attempt,
+        maxAttempts: maxAttempts,
+        sequenceNumber: sequenceNumber,
+        lastSequence: lastSequence,
+        replay: replay,
+        duplicateUserMessagePrevented: duplicateUserMessagePrevented,
+        partialOutputRetained: partialOutputRetained,
+        citation: citation,
         stageResult: stageResult,
         answer: answer,
         errorCode: errorCode,
@@ -104,9 +137,65 @@ class AiRunOrchestrator {
       );
 
       final DateTime stageStartedAt = DateTime.now();
-      AiStageResult result;
+      AiStageResult? result;
       try {
-        result = await stage.execute();
+        final AiStageStreamExecutor? streamExecutor = stage.executeStream;
+        if (streamExecutor != null) {
+          await for (final AiStageExecutionEvent execution
+              in streamExecutor()) {
+            if (execution.type == AiStageExecutionEventType.stageCompleted) {
+              result = execution.stageResult ?? result;
+              continue;
+            }
+            if (abortRequested) break;
+            final AiRunEventType? eventType = _runEventType(execution.type);
+            if (eventType == null) continue;
+            yield next(
+              type: eventType,
+              stageId: stage.stageId,
+              scope: stage.scope,
+              status: execution.status,
+              rawType: execution.rawType,
+              responseId: execution.responseId,
+              delta: execution.delta,
+              itemId: execution.itemId,
+              outputItemType: execution.outputItemType,
+              toolName: execution.toolName,
+              toolArgumentsPreview: execution.toolArgumentsPreview,
+              detail: execution.detail,
+              attempt: execution.attempt,
+              citation: execution.citation,
+              maxAttempts: execution.maxAttempts,
+              sequenceNumber: execution.sequenceNumber,
+              lastSequence: execution.lastSequence,
+              replay: execution.replay,
+              duplicateUserMessagePrevented:
+                  execution.duplicateUserMessagePrevented,
+              partialOutputRetained: execution.partialOutputRetained,
+              errorCode: null,
+            );
+          }
+          result ??= AiStageResult(
+            stageId: stage.stageId,
+            scope: stage.scope,
+            status: abortRequested
+                ? AiStageStatus.cancelled
+                : AiStageStatus.incomplete,
+            errorMessage: abortRequested
+                ? null
+                : 'Stage stream ended before a validated result.',
+          );
+        } else if (stage.execute != null) {
+          result = await stage.execute!();
+        } else {
+          result = AiStageResult(
+            stageId: stage.stageId,
+            scope: stage.scope,
+            status: AiStageStatus.failed,
+            errorCode: 'missing_executor',
+            errorMessage: 'The stage has no executor.',
+          );
+        }
       } catch (error) {
         result = AiStageResult(
           stageId: stage.stageId,
@@ -350,5 +439,25 @@ class AiRunOrchestrator {
       errorCode: errorCode,
       errorMessage: errorMessage,
     );
+  }
+
+  AiRunEventType? _runEventType(AiStageExecutionEventType type) {
+    return switch (type) {
+      AiStageExecutionEventType.status => AiRunEventType.status,
+      AiStageExecutionEventType.textDelta => AiRunEventType.textDelta,
+      AiStageExecutionEventType.citationAdded => AiRunEventType.citationAdded,
+      AiStageExecutionEventType.toolStarted => AiRunEventType.toolStarted,
+      AiStageExecutionEventType.toolCompleted => AiRunEventType.toolCompleted,
+      AiStageExecutionEventType.outputItem => AiRunEventType.outputItem,
+      AiStageExecutionEventType.retry => AiRunEventType.retry,
+      AiStageExecutionEventType.responseStreamStarted =>
+        AiRunEventType.responseStreamStarted,
+      AiStageExecutionEventType.responseStreamFailed =>
+        AiRunEventType.responseStreamFailed,
+      AiStageExecutionEventType.resumeStarted => AiRunEventType.resumeStarted,
+      AiStageExecutionEventType.resumeCompleted =>
+        AiRunEventType.resumeCompleted,
+      AiStageExecutionEventType.stageCompleted => null,
+    };
   }
 }

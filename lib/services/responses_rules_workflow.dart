@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:app_ai_client/app_ai_client.dart';
@@ -23,6 +24,8 @@ import 'ai_service.dart';
 import 'responses_compaction_store.dart';
 import 'ai_run_orchestrator.dart';
 import 'ai_run_telemetry.dart';
+
+typedef _AiStageResultBuilder = AiStageResult Function(_CollectedStream stream);
 
 /// Stage-based rule workflow for the Responses API.
 ///
@@ -210,8 +213,9 @@ class ResponsesRulesWorkflow {
             AiStageDefinition(
               stageId: 'general',
               scope: const AiKnowledgeScope.general(),
-              execute: () => _executeGeneralStreamingStage(
+              executeStream: () => _streamGeneralStageEvents(
                 context: context,
+                scope: const AiKnowledgeScope.general(),
                 language: language,
                 game: game,
                 abortTrigger: abortTrigger,
@@ -461,7 +465,7 @@ class ResponsesRulesWorkflow {
         AiStageDefinition(
           stageId: 'fallback',
           scope: fallbackScope,
-          execute: () => _streamKnowledgeStageResult(
+          executeStream: () => _streamKnowledgeStageEvents(
             context: context,
             scope: fallbackScope,
             language: language,
@@ -482,7 +486,7 @@ class ResponsesRulesWorkflow {
       AiStageDefinition(
         stageId: 'official',
         scope: officialScope,
-        execute: () => _streamDocumentStageResult(
+        executeStream: () => _streamDocumentStageEvents(
           context: context,
           documents: _documentsForSource(
             context.documents,
@@ -498,7 +502,7 @@ class ResponsesRulesWorkflow {
       AiStageDefinition(
         stageId: 'community',
         scope: communityScope,
-        execute: () => _streamDocumentStageResult(
+        executeStream: () => _streamDocumentStageEvents(
           context: context,
           documents: _documentsForSource(
             context.documents,
@@ -523,7 +527,7 @@ class ResponsesRulesWorkflow {
       AiStageDefinition(
         stageId: 'web',
         scope: webScope,
-        execute: () => _streamWebStageResult(
+        executeStream: () => _streamWebStageEvents(
           context: context,
           scope: webScope,
           language: language,
@@ -534,7 +538,7 @@ class ResponsesRulesWorkflow {
       AiStageDefinition(
         stageId: 'fallback',
         scope: fallbackScope,
-        execute: () => _streamKnowledgeStageResult(
+        executeStream: () => _streamKnowledgeStageEvents(
           context: context,
           scope: fallbackScope,
           language: language,
@@ -587,11 +591,13 @@ class ResponsesRulesWorkflow {
           );
         case AiRunEventType.stageCompleted:
           final AiStageResult? result = event.stageResult;
-          if (result != null && result.status != AiStageStatus.skipped) {
+          if (result != null) {
             yield BoardGameAiStreamEvent(
               status: '${event.stageId}:${result.status.name}',
               runEvent: event,
             );
+          } else {
+            yield BoardGameAiStreamEvent(runEvent: event);
           }
         case AiRunEventType.completed:
           if (event.runResult != null) {
@@ -653,7 +659,18 @@ class ResponsesRulesWorkflow {
         case AiRunEventType.toolStarted:
         case AiRunEventType.toolCompleted:
         case AiRunEventType.outputItem:
-          break;
+        case AiRunEventType.retry:
+        case AiRunEventType.responseStreamStarted:
+        case AiRunEventType.responseStreamFailed:
+        case AiRunEventType.resumeStarted:
+        case AiRunEventType.resumeCompleted:
+          yield BoardGameAiStreamEvent(
+            status: event.status,
+            citations: event.citation == null
+                ? const <RuleCitation>[]
+                : <RuleCitation>[event.citation!],
+            runEvent: event,
+          );
       }
     }
   }
@@ -665,6 +682,790 @@ class ResponsesRulesWorkflow {
     'general' || 'fallback' => 'answering',
     _ => stageId,
   };
+
+  Stream<AiStageExecutionEvent> _streamDocumentStageEvents({
+    required _WorkflowContext context,
+    required List<RuleDocument> documents,
+    required AnswerSource source,
+    required AiKnowledgeScope scope,
+    required AppLanguage language,
+    required GameInfo game,
+    Future<void>? abortTrigger,
+  }) async* {
+    final _PreparedDocuments prepared = await _prepareDocuments(
+      context,
+      documents,
+    );
+    if (prepared.inputs.isEmpty) {
+      yield AiStageExecutionEvent.result(
+        AiStageResult(
+          stageId: scope.code,
+          scope: scope,
+          status: AiStageStatus.skipped,
+        ),
+      );
+      return;
+    }
+    yield* _streamResponseStageEvents(
+      context: context,
+      scope: scope,
+      request: _documentRequest(
+        context,
+        prepared.inputs,
+        documents: prepared.documents,
+        language: language,
+        game: game,
+        source: source,
+      ),
+      abortTrigger: abortTrigger,
+      buildResult: (_CollectedStream stream) {
+        if (stream.terminalType != ResponsesStreamEventType.completed) {
+          return AiStageResult(
+            stageId: scope.code,
+            scope: scope,
+            status: _stageStatusForTerminal(stream.terminalType),
+            bufferedText: stream.text,
+            responseId: stream.response?.id,
+            model: stream.response?.model,
+            usage: stream.response?.usage,
+            terminalEventType: stream.terminalEventType,
+            rawEventCount: stream.rawEventCount,
+            outputItemCount: stream.outputItemCount,
+            requestCount: 1,
+            errorCode: stream.errorCode,
+            errorMessage: stream.errorMessage,
+          );
+        }
+        final _ParsedAnswer parsed = _parseStructured(
+          stream.text,
+          prepared.documents,
+          source,
+        );
+        return AiStageResult(
+          stageId: scope.code,
+          scope: scope,
+          status: parsed.answer == null
+              ? AiStageStatus.insufficient
+              : AiStageStatus.answered,
+          answer: parsed.answer,
+          bufferedText: stream.text,
+          responseId: stream.response?.id,
+          model: stream.response?.model,
+          usage: stream.response?.usage,
+          terminalEventType: stream.terminalEventType,
+          rawEventCount: stream.rawEventCount,
+          outputItemCount: stream.outputItemCount,
+          requestCount: 1,
+        );
+      },
+    );
+  }
+
+  Stream<AiStageExecutionEvent> _streamWebStageEvents({
+    required _WorkflowContext context,
+    required AiKnowledgeScope scope,
+    required AppLanguage language,
+    required GameInfo game,
+    Future<void>? abortTrigger,
+  }) async* {
+    yield* _streamResponseStageEvents(
+      context: context,
+      scope: scope,
+      request: _webRequest(context, language: language, game: game),
+      abortTrigger: abortTrigger,
+      buildResult: (_CollectedStream stream) {
+        if (stream.terminalType != ResponsesStreamEventType.completed) {
+          return _stageResultFromStream(
+            scope: scope,
+            stream: stream,
+            status: _stageStatusForTerminal(stream.terminalType),
+          );
+        }
+        final List<ResponsesWebSearchCitation> citations = _validWebCitations(
+          <ResponsesWebSearchCitation>[
+            ...stream.webCitations,
+            ...?stream.response?.webSearchCitations,
+          ],
+        );
+        final String answerText = stream.text.trim();
+        if (answerText.isEmpty || citations.isEmpty) {
+          return _stageResultFromStream(
+            scope: scope,
+            stream: stream,
+            status: AiStageStatus.insufficient,
+          );
+        }
+        return _stageResultFromStream(
+          scope: scope,
+          stream: stream,
+          status: AiStageStatus.answered,
+          answer: BoardGameAiAnswer(
+            text: answerText,
+            source: AnswerSource.web,
+            citations: citations.map(_webCitation).toList(growable: false),
+          ),
+        );
+      },
+    );
+  }
+
+  Stream<AiStageExecutionEvent> _streamKnowledgeStageEvents({
+    required _WorkflowContext context,
+    required AiKnowledgeScope scope,
+    required AppLanguage language,
+    required GameInfo game,
+    required bool useGlobalMode,
+    Future<void>? abortTrigger,
+  }) async* {
+    yield* _streamResponseStageEvents(
+      context: context,
+      scope: scope,
+      request: _knowledgeRequest(
+        context,
+        language: language,
+        game: game,
+        useGlobalMode: useGlobalMode,
+      ),
+      abortTrigger: abortTrigger,
+      buildResult: (_CollectedStream stream) {
+        final String text = stream.text.trim();
+        return _stageResultFromStream(
+          scope: scope,
+          stream: stream,
+          status: stream.terminalType == ResponsesStreamEventType.completed
+              ? (text.isEmpty
+                    ? AiStageStatus.insufficient
+                    : AiStageStatus.answered)
+              : _stageStatusForTerminal(stream.terminalType),
+          answer:
+              stream.terminalType == ResponsesStreamEventType.completed &&
+                  text.isNotEmpty
+              ? BoardGameAiAnswer(
+                  text: text,
+                  source: AnswerSource.modelKnowledge,
+                )
+              : null,
+        );
+      },
+    );
+  }
+
+  Stream<AiStageExecutionEvent> _streamGeneralStageEvents({
+    required _WorkflowContext context,
+    required AiKnowledgeScope scope,
+    required AppLanguage language,
+    required GameInfo game,
+    Future<void>? abortTrigger,
+  }) async* {
+    yield* _streamResponseStageEvents(
+      context: context,
+      scope: scope,
+      request: _generalConversationRequest(
+        context,
+        language: language,
+        game: game,
+      ),
+      abortTrigger: abortTrigger,
+      buildResult: (_CollectedStream stream) {
+        final String text = stream.text.trim();
+        return _stageResultFromStream(
+          scope: scope,
+          stream: stream,
+          status: stream.terminalType == ResponsesStreamEventType.completed
+              ? (text.isEmpty
+                    ? AiStageStatus.insufficient
+                    : AiStageStatus.answered)
+              : _stageStatusForTerminal(stream.terminalType),
+          answer:
+              stream.terminalType == ResponsesStreamEventType.completed &&
+                  text.isNotEmpty
+              ? BoardGameAiAnswer(
+                  text: text,
+                  source: AnswerSource.generalAdvice,
+                )
+              : null,
+        );
+      },
+    );
+  }
+
+  AiStageResult _stageResultFromStream({
+    required AiKnowledgeScope scope,
+    required _CollectedStream stream,
+    required AiStageStatus status,
+    BoardGameAiAnswer? answer,
+  }) {
+    return AiStageResult(
+      stageId: scope.code,
+      scope: scope,
+      status: status,
+      answer: answer,
+      bufferedText: stream.text,
+      citations: answer?.citations ?? const <RuleCitation>[],
+      responseId: stream.response?.id,
+      model: stream.response?.model,
+      usage: stream.response?.usage,
+      terminalEventType: stream.terminalEventType,
+      rawEventCount: stream.rawEventCount,
+      outputItemCount: stream.outputItemCount,
+      requestCount: 1,
+      errorCode: stream.errorCode,
+      errorMessage: stream.errorMessage,
+    );
+  }
+
+  Stream<AiStageExecutionEvent> _streamResponseStageEvents({
+    required _WorkflowContext context,
+    required AiKnowledgeScope scope,
+    required ResponsesRequest request,
+    required _AiStageResultBuilder buildResult,
+    Future<void>? abortTrigger,
+  }) async* {
+    String text = '';
+    ResponsesResponse? response;
+    ResponsesStreamEventType? terminalType;
+    String? terminalEventType;
+    String? errorCode;
+    String? errorMessage;
+    final List<ResponsesWebSearchCitation> webCitations =
+        <ResponsesWebSearchCitation>[];
+    final List<ResponsesInputItem> outputItems = <ResponsesInputItem>[];
+    final Set<String> outputItemKeys = <String>{};
+    int rawEventCount = 0;
+    int attempts = 0;
+    bool emittedProviderEvent = false;
+    int? lastSequence;
+    bool resumePending = false;
+
+    while (true) {
+      attempts += 1;
+      bool attemptHadProviderEvent = false;
+      bool retryAttempt = false;
+      if (attempts == 1) {
+        yield AiStageExecutionEvent(
+          type: AiStageExecutionEventType.responseStreamStarted,
+          status: 'streaming',
+          detail: '正在监听 Responses 事件流',
+          attempt: attempts,
+          maxAttempts: 3,
+          lastSequence: lastSequence,
+        );
+      }
+      try {
+        await for (final ResponsesStreamEvent event in _responsesClient.stream(
+          request,
+          abortTrigger: abortTrigger,
+        )) {
+          rawEventCount += 1;
+          if (event.sequenceNumber != null) {
+            lastSequence = event.sequenceNumber;
+          }
+          if (resumePending) {
+            resumePending = false;
+            yield AiStageExecutionEvent(
+              type: AiStageExecutionEventType.resumeCompleted,
+              status: 'resumed',
+              detail: lastSequence == null
+                  ? '已重新建立事件流，继续监听'
+                  : '已重新建立事件流，继续监听 sequence $lastSequence',
+              attempt: attempts,
+              maxAttempts: 3,
+              sequenceNumber: event.sequenceNumber,
+              lastSequence: lastSequence,
+              replay: false,
+              duplicateUserMessagePrevented: true,
+            );
+          }
+          // The adapter emits a synthetic `stream.end` event when the
+          // provider closes without a terminal Responses event. It is useful
+          // for diagnostics, but it must not suppress the single safe retry
+          // reserved for a completely empty transport attempt.
+          if (event.rawType != 'stream.end') {
+            attemptHadProviderEvent = true;
+            emittedProviderEvent = true;
+          }
+          if (event.response != null) {
+            response = event.response;
+            await _rememberCompaction(context, event.response!);
+          }
+          if (event.outputItem != null) {
+            final Map<String, dynamic> value = event.outputItem!.value;
+            final String key =
+                value['id'] is String &&
+                    (value['id'] as String).trim().isNotEmpty
+                ? 'id:${(value['id'] as String).trim()}'
+                : 'json:${jsonEncode(value)}';
+            if (outputItemKeys.add(key)) outputItems.add(event.outputItem!);
+          }
+          final AiStageExecutionEvent? execution = _stageExecutionEventFor(
+            scope,
+            event,
+          );
+          if (execution != null) yield execution;
+
+          switch (event.type) {
+            case ResponsesStreamEventType.textDelta:
+              text += event.delta;
+            case ResponsesStreamEventType.textDone:
+              text = _preferCompleteText(text, event.text ?? '');
+            case ResponsesStreamEventType.webSearchCitation:
+              final ResponsesWebSearchCitation? citation =
+                  event.webSearchCitation;
+              if (citation != null &&
+                  !webCitations.any(
+                    (ResponsesWebSearchCitation item) =>
+                        item.url == citation.url,
+                  )) {
+                webCitations.add(citation);
+              }
+            case ResponsesStreamEventType.completed:
+              if (terminalType == null) {
+                terminalType = ResponsesStreamEventType.completed;
+                terminalEventType = event.rawType ?? 'response.completed';
+                if (event.response != null) {
+                  response = event.response;
+                  text = _preferCompleteText(text, event.response!.text);
+                }
+              }
+            case ResponsesStreamEventType.incomplete:
+              terminalType ??= ResponsesStreamEventType.incomplete;
+              terminalEventType ??= event.rawType ?? 'response.incomplete';
+              errorCode ??= event.errorCode;
+              errorMessage ??= event.errorMessage;
+              retryAttempt = _isRetryableStreamFailure(
+                event.errorCode,
+                event.errorMessage,
+              );
+            case ResponsesStreamEventType.failed:
+              terminalType ??= ResponsesStreamEventType.failed;
+              terminalEventType ??= event.rawType ?? 'response.failed';
+              errorCode ??= event.errorCode;
+              errorMessage ??= event.errorMessage;
+              retryAttempt = _isRetryableStreamFailure(
+                event.errorCode,
+                event.errorMessage,
+              );
+            case ResponsesStreamEventType.error:
+              terminalType ??= ResponsesStreamEventType.error;
+              terminalEventType ??= event.rawType ?? 'error';
+              errorCode ??= event.errorCode;
+              errorMessage ??= event.errorMessage;
+              retryAttempt = _isRetryableStreamFailure(
+                event.errorCode,
+                event.errorMessage,
+              );
+            case ResponsesStreamEventType.status:
+            case ResponsesStreamEventType.outputItemAdded:
+            case ResponsesStreamEventType.outputItemDone:
+            case ResponsesStreamEventType.contentPartAdded:
+            case ResponsesStreamEventType.contentPartDone:
+            case ResponsesStreamEventType.fileCitation:
+            case ResponsesStreamEventType.toolCallDelta:
+            case ResponsesStreamEventType.toolCallDone:
+            case ResponsesStreamEventType.unknown:
+              break;
+          }
+        }
+        if (retryAttempt && attempts < 3) {
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.responseStreamFailed,
+            status: 'timeout',
+            detail: errorMessage?.trim().isNotEmpty == true
+                ? errorMessage
+                : 'response.completed 尚未到达',
+            attempt: attempts,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+            partialOutputRetained: text.trim().isNotEmpty,
+          );
+          text = '';
+          response = null;
+          terminalType = null;
+          terminalEventType = null;
+          errorCode = null;
+          errorMessage = null;
+          webCitations.clear();
+          outputItems.clear();
+          outputItemKeys.clear();
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.retry,
+            status: 'reconnecting',
+            detail: '服务暂时不可用，重新连接中（第 ${attempts + 1} 次尝试）',
+            attempt: attempts + 1,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+          );
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.resumeStarted,
+            status: 'reconnecting',
+            detail: lastSequence == null
+                ? '重新连接事件流（第 ${attempts + 1} / 3 次）'
+                : '从 sequence $lastSequence 继续监听（第 ${attempts + 1} / 3 次）',
+            attempt: attempts + 1,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+            replay: false,
+            duplicateUserMessagePrevented: true,
+          );
+          resumePending = true;
+          continue;
+        }
+        if (!attemptHadProviderEvent && attempts < 2 && !emittedProviderEvent) {
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.responseStreamFailed,
+            status: 'timeout',
+            detail: '响应流没有返回有效事件，response.completed 尚未到达',
+            attempt: attempts,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+            partialOutputRetained: text.trim().isNotEmpty,
+          );
+          terminalType = null;
+          terminalEventType = null;
+          errorCode = null;
+          errorMessage = null;
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.retry,
+            status: 'reconnecting',
+            detail: '响应流没有返回有效事件，重新连接中（第 ${attempts + 1} 次尝试）',
+            attempt: attempts + 1,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+          );
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.resumeStarted,
+            status: 'reconnecting',
+            detail: '重新连接事件流（第 ${attempts + 1} / 3 次）',
+            attempt: attempts + 1,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+            replay: false,
+            duplicateUserMessagePrevented: true,
+          );
+          resumePending = true;
+          continue;
+        }
+        terminalType ??= ResponsesStreamEventType.incomplete;
+        terminalEventType ??= 'stream.end';
+        errorMessage ??= terminalType == ResponsesStreamEventType.incomplete
+            ? 'Responses stream ended before response.completed.'
+            : null;
+        break;
+      } catch (error) {
+        if (attempts < 3 && _isRetryableStageError(error)) {
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.responseStreamFailed,
+            status: 'timeout',
+            detail: _describeStageError(error),
+            attempt: attempts,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+            partialOutputRetained: text.trim().isNotEmpty,
+          );
+          text = '';
+          response = null;
+          terminalType = null;
+          terminalEventType = null;
+          errorCode = null;
+          errorMessage = null;
+          webCitations.clear();
+          outputItems.clear();
+          outputItemKeys.clear();
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.retry,
+            status: 'reconnecting',
+            detail: '连接暂时中断，重新连接中（第 ${attempts + 1} 次尝试）',
+            attempt: attempts + 1,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+          );
+          yield AiStageExecutionEvent(
+            type: AiStageExecutionEventType.resumeStarted,
+            status: 'reconnecting',
+            detail: lastSequence == null
+                ? '重新连接事件流（第 ${attempts + 1} / 3 次）'
+                : '从 sequence $lastSequence 继续监听（第 ${attempts + 1} / 3 次）',
+            attempt: attempts + 1,
+            maxAttempts: 3,
+            lastSequence: lastSequence,
+            replay: false,
+            duplicateUserMessagePrevented: true,
+          );
+          resumePending = true;
+          continue;
+        }
+        yield AiStageExecutionEvent(
+          type: AiStageExecutionEventType.responseStreamFailed,
+          status: 'failed',
+          detail: _describeStageError(error),
+          attempt: attempts,
+          maxAttempts: 3,
+          lastSequence: lastSequence,
+          partialOutputRetained: text.trim().isNotEmpty,
+        );
+        terminalType ??= ResponsesStreamEventType.error;
+        terminalEventType ??= 'transport.error';
+        errorCode ??= _stageErrorCode(error);
+        errorMessage ??= _describeStageError(error);
+        break;
+      }
+    }
+
+    final ResponsesStreamEventType finalTerminalType = terminalType;
+    final ResponsesResponse? collectedResponse = response;
+    if (collectedResponse != null) {
+      for (final ResponsesInputItem item in collectedResponse.outputItems) {
+        final Map<String, dynamic> value = item is ResponsesRawInput
+            ? item.value
+            : item.toJson();
+        final String key =
+            value['id'] is String && (value['id'] as String).trim().isNotEmpty
+            ? 'id:${(value['id'] as String).trim()}'
+            : 'json:${jsonEncode(value)}';
+        if (outputItemKeys.add(key)) outputItems.add(item);
+      }
+    }
+    if (collectedResponse != null &&
+        collectedResponse.outputItems.isEmpty &&
+        outputItems.isNotEmpty) {
+      response = _copyResponseWithOutputItems(collectedResponse, outputItems);
+      await _rememberCompaction(context, response);
+    }
+    final ResponsesResponse? finalResponse = response;
+    if (finalResponse != null) {
+      webCitations.addAll(
+        finalResponse.webSearchCitations.where(
+          (ResponsesWebSearchCitation citation) => !webCitations.any(
+            (ResponsesWebSearchCitation item) => item.url == citation.url,
+          ),
+        ),
+      );
+    }
+    final AiStageResult result = buildResult(
+      _CollectedStream(
+        terminalType: finalTerminalType,
+        text: text,
+        response: response,
+        webCitations: List<ResponsesWebSearchCitation>.unmodifiable(
+          webCitations,
+        ),
+        terminalEventType: terminalEventType,
+        rawEventCount: rawEventCount,
+        outputItemCount: outputItems.length,
+        errorCode: errorCode,
+        errorMessage: errorMessage,
+      ),
+    );
+    yield AiStageExecutionEvent.result(result.copyWith(requestCount: attempts));
+  }
+
+  AiStageExecutionEvent? _stageExecutionEventFor(
+    AiKnowledgeScope scope,
+    ResponsesStreamEvent event,
+  ) {
+    String? preview(String? value) {
+      final String trimmed = value?.trim() ?? '';
+      if (trimmed.isEmpty) return null;
+      return trimmed.length <= 160 ? trimmed : '${trimmed.substring(0, 157)}…';
+    }
+
+    String? outputId(ResponsesRawInput? item) {
+      final dynamic value = item?.value['id'];
+      return value is String && value.trim().isNotEmpty ? value.trim() : null;
+    }
+
+    String? outputType(ResponsesRawInput? item) {
+      final dynamic value = item?.value['type'];
+      return value is String && value.trim().isNotEmpty ? value.trim() : null;
+    }
+
+    String? outputName(ResponsesRawInput? item) {
+      final dynamic value = item?.value['name'];
+      return value is String && value.trim().isNotEmpty ? value.trim() : null;
+    }
+
+    switch (event.type) {
+      case ResponsesStreamEventType.status:
+        if (event.status == 'web_search') {
+          return AiStageExecutionEvent(
+            type: AiStageExecutionEventType.toolStarted,
+            rawType: event.rawType,
+            status: event.status,
+            toolName: 'web_search',
+            detail: '联网搜索已开始。',
+          );
+        }
+        if (event.status == 'web_search_completed') {
+          return AiStageExecutionEvent(
+            type: AiStageExecutionEventType.toolCompleted,
+            rawType: event.rawType,
+            status: event.status,
+            toolName: 'web_search',
+            detail: '联网搜索已完成，等待模型整理引用。',
+          );
+        }
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: event.status,
+          detail: event.status == null ? null : 'Responses 状态：${event.status}',
+        );
+      case ResponsesStreamEventType.textDelta:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.textDelta,
+          rawType: event.rawType,
+          delta: event.delta,
+          itemId: event.itemId,
+        );
+      case ResponsesStreamEventType.textDone:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: 'text_done',
+          detail: '文本段已接收，等待 response.completed。',
+        );
+      case ResponsesStreamEventType.outputItemAdded:
+        final String? type = outputType(event.outputItem);
+        final String? name = outputName(event.outputItem);
+        final bool isTool =
+            type?.contains('function_call') == true ||
+            type?.contains('web_search') == true;
+        return AiStageExecutionEvent(
+          type: isTool
+              ? AiStageExecutionEventType.toolStarted
+              : AiStageExecutionEventType.outputItem,
+          rawType: event.rawType,
+          itemId: event.itemId ?? outputId(event.outputItem),
+          outputItemType: type,
+          toolName:
+              name ??
+              (type?.contains('web_search') == true ? 'web_search' : null),
+          detail: isTool ? '工具调用已开始。' : '收到输出项：${type ?? 'unknown'}。',
+        );
+      case ResponsesStreamEventType.outputItemDone:
+        final String? type = outputType(event.outputItem);
+        final String? name = outputName(event.outputItem);
+        final bool isTool =
+            type?.contains('function_call') == true ||
+            type?.contains('web_search') == true;
+        return AiStageExecutionEvent(
+          type: isTool
+              ? AiStageExecutionEventType.toolCompleted
+              : AiStageExecutionEventType.outputItem,
+          rawType: event.rawType,
+          itemId: event.itemId ?? outputId(event.outputItem),
+          outputItemType: type,
+          toolName:
+              name ??
+              (type?.contains('web_search') == true ? 'web_search' : null),
+          toolArgumentsPreview: preview(
+            event.outputItem?.value['arguments'] as String?,
+          ),
+          detail: isTool ? '工具调用已完成。' : '输出项已完成。',
+        );
+      case ResponsesStreamEventType.contentPartAdded:
+      case ResponsesStreamEventType.contentPartDone:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: event.type == ResponsesStreamEventType.contentPartAdded
+              ? 'content_started'
+              : 'content_completed',
+          detail: '内容片段生命周期已更新。',
+        );
+      case ResponsesStreamEventType.fileCitation:
+        final ResponsesFileCitation? citation = event.fileCitation;
+        return citation == null
+            ? null
+            : AiStageExecutionEvent(
+                type: AiStageExecutionEventType.citationAdded,
+                rawType: event.rawType,
+                citation: RuleCitation(
+                  sourceType: 'file',
+                  sourceId: citation.fileId,
+                  title: citation.filename,
+                ),
+                detail: '已确认文件引用。',
+              );
+      case ResponsesStreamEventType.webSearchCitation:
+        final ResponsesWebSearchCitation? citation = event.webSearchCitation;
+        return citation == null
+            ? null
+            : AiStageExecutionEvent(
+                type: AiStageExecutionEventType.citationAdded,
+                rawType: event.rawType,
+                citation: _webCitation(citation),
+                detail: '已确认网页引用。',
+              );
+      case ResponsesStreamEventType.toolCallDelta:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: 'tool_arguments',
+          itemId: event.itemId,
+          toolName: event.toolName,
+          toolArgumentsPreview: preview(event.delta),
+          detail: '正在准备工具参数。',
+        );
+      case ResponsesStreamEventType.toolCallDone:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.toolCompleted,
+          rawType: event.rawType,
+          itemId: event.itemId,
+          toolName: event.toolName,
+          toolArgumentsPreview: preview(event.toolArguments),
+          detail: '工具参数已确认。',
+        );
+      case ResponsesStreamEventType.completed:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: 'response_completed',
+          responseId: event.response?.id,
+          usage: event.response?.usage,
+          detail: '已收到 response.completed。',
+        );
+      case ResponsesStreamEventType.incomplete:
+      case ResponsesStreamEventType.failed:
+      case ResponsesStreamEventType.error:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: event.type.name,
+          responseId: event.response?.id,
+          detail: event.errorMessage,
+        );
+      case ResponsesStreamEventType.unknown:
+        return AiStageExecutionEvent(
+          type: AiStageExecutionEventType.status,
+          rawType: event.rawType,
+          status: 'provider_event',
+          detail: event.rawType == null ? null : '收到 ${event.rawType}。',
+        );
+    }
+  }
+
+  bool _isRetryableStageError(Object error) {
+    return error is AiTransportException || error is TimeoutException;
+  }
+
+  bool _isRetryableStreamFailure(String? code, String? message) {
+    final String value = <String?>[
+      code,
+      message,
+    ].whereType<String>().join(' ').toLowerCase();
+    if (value.isEmpty) return false;
+    return RegExp(
+          r'(^|[^0-9])(?:408|425|429|500|502|503|504)([^0-9]|$)',
+        ).hasMatch(value) ||
+        value.contains('timeout') ||
+        value.contains('timed out') ||
+        value.contains('temporarily unavailable') ||
+        value.contains('service unavailable') ||
+        value.contains('overloaded') ||
+        value.contains('rate limit') ||
+        value.contains('try again later');
+  }
 
   AiStageResult _asAiStageResult({
     required String stageId,
@@ -706,21 +1507,6 @@ class ResponsesRulesWorkflow {
       stageId: 'general',
       scope: const AiKnowledgeScope.general(),
       result: result,
-    );
-  }
-
-  Future<AiStageResult> _executeGeneralStreamingStage({
-    required _WorkflowContext context,
-    required AppLanguage language,
-    required GameInfo game,
-    Future<void>? abortTrigger,
-  }) {
-    return _streamGeneralStageResult(
-      context: context,
-      scope: const AiKnowledgeScope.general(),
-      language: language,
-      game: game,
-      abortTrigger: abortTrigger,
     );
   }
 
@@ -793,78 +1579,6 @@ class ResponsesRulesWorkflow {
         errorMessage: _describeStageError(error),
       );
     }
-  }
-
-  Future<AiStageResult> _streamDocumentStageResult({
-    required _WorkflowContext context,
-    required List<RuleDocument> documents,
-    required AnswerSource source,
-    required AiKnowledgeScope scope,
-    required AppLanguage language,
-    required GameInfo game,
-    Future<void>? abortTrigger,
-  }) async {
-    final _PreparedDocuments prepared = await _prepareDocuments(
-      context,
-      documents,
-    );
-    if (prepared.inputs.isEmpty) {
-      return AiStageResult(
-        stageId: scope.code,
-        scope: scope,
-        status: AiStageStatus.skipped,
-      );
-    }
-    final _CollectedStream collected = await _collectResponseStream(
-      context: context,
-      request: _documentRequest(
-        context,
-        prepared.inputs,
-        documents: prepared.documents,
-        language: language,
-        game: game,
-        source: source,
-      ),
-      abortTrigger: abortTrigger,
-    );
-    if (collected.terminalType != ResponsesStreamEventType.completed) {
-      return AiStageResult(
-        stageId: scope.code,
-        scope: scope,
-        status: _stageStatusForTerminal(collected.terminalType),
-        bufferedText: collected.text,
-        responseId: collected.response?.id,
-        model: collected.response?.model,
-        usage: collected.response?.usage,
-        terminalEventType: collected.terminalEventType,
-        rawEventCount: collected.rawEventCount,
-        outputItemCount: collected.outputItemCount,
-        requestCount: 1,
-        errorCode: collected.errorCode,
-        errorMessage: collected.errorMessage,
-      );
-    }
-    final _ParsedAnswer parsed = _parseStructured(
-      collected.text,
-      prepared.documents,
-      source,
-    );
-    return AiStageResult(
-      stageId: scope.code,
-      scope: scope,
-      status: parsed.answer == null
-          ? AiStageStatus.insufficient
-          : AiStageStatus.answered,
-      answer: parsed.answer,
-      bufferedText: collected.text,
-      responseId: collected.response?.id,
-      model: collected.response?.model,
-      usage: collected.response?.usage,
-      terminalEventType: collected.terminalEventType,
-      rawEventCount: collected.rawEventCount,
-      outputItemCount: collected.outputItemCount,
-      requestCount: 1,
-    );
   }
 
   Future<_StageResult> _runWebStage({
@@ -980,193 +1694,6 @@ class ResponsesRulesWorkflow {
     }
   }
 
-  Future<AiStageResult> _streamGeneralStageResult({
-    required _WorkflowContext context,
-    required AiKnowledgeScope scope,
-    required AppLanguage language,
-    required GameInfo game,
-    Future<void>? abortTrigger,
-  }) async {
-    final _CollectedStream collected = await _collectResponseStream(
-      context: context,
-      request: _generalConversationRequest(
-        context,
-        language: language,
-        game: game,
-      ),
-      abortTrigger: abortTrigger,
-    );
-    if (collected.terminalType != ResponsesStreamEventType.completed) {
-      return AiStageResult(
-        stageId: scope.code,
-        scope: scope,
-        status: _stageStatusForTerminal(collected.terminalType),
-        bufferedText: collected.text,
-        responseId: collected.response?.id,
-        model: collected.response?.model,
-        usage: collected.response?.usage,
-        terminalEventType: collected.terminalEventType,
-        rawEventCount: collected.rawEventCount,
-        outputItemCount: collected.outputItemCount,
-        requestCount: 1,
-        errorCode: collected.errorCode,
-        errorMessage: collected.errorMessage,
-      );
-    }
-    final String text = collected.text.trim();
-    return AiStageResult(
-      stageId: scope.code,
-      scope: scope,
-      status: text.isEmpty
-          ? AiStageStatus.insufficient
-          : AiStageStatus.answered,
-      answer: text.isEmpty
-          ? null
-          : BoardGameAiAnswer(text: text, source: AnswerSource.generalAdvice),
-      bufferedText: collected.text,
-      responseId: collected.response?.id,
-      model: collected.response?.model,
-      usage: collected.response?.usage,
-      terminalEventType: collected.terminalEventType,
-      rawEventCount: collected.rawEventCount,
-      outputItemCount: collected.outputItemCount,
-      requestCount: 1,
-    );
-  }
-
-  Future<AiStageResult> _streamWebStageResult({
-    required _WorkflowContext context,
-    required AiKnowledgeScope scope,
-    required AppLanguage language,
-    required GameInfo game,
-    Future<void>? abortTrigger,
-  }) async {
-    final _CollectedStream collected = await _collectResponseStream(
-      context: context,
-      request: _webRequest(context, language: language, game: game),
-      abortTrigger: abortTrigger,
-    );
-    if (collected.terminalType != ResponsesStreamEventType.completed) {
-      return AiStageResult(
-        stageId: scope.code,
-        scope: scope,
-        status: _stageStatusForTerminal(collected.terminalType),
-        bufferedText: collected.text,
-        responseId: collected.response?.id,
-        model: collected.response?.model,
-        usage: collected.response?.usage,
-        terminalEventType: collected.terminalEventType,
-        rawEventCount: collected.rawEventCount,
-        outputItemCount: collected.outputItemCount,
-        requestCount: 1,
-        errorCode: collected.errorCode,
-        errorMessage: collected.errorMessage,
-      );
-    }
-    final List<ResponsesWebSearchCitation> responseCitations =
-        _validWebCitations(<ResponsesWebSearchCitation>[
-          ...collected.webCitations,
-          ...?collected.response?.webSearchCitations,
-        ]);
-    final Map<String, ResponsesWebSearchCitation> uniqueCitations =
-        <String, ResponsesWebSearchCitation>{
-          for (final ResponsesWebSearchCitation citation in responseCitations)
-            citation.url: citation,
-        };
-    final String answerText = collected.text.trim();
-    if (answerText.isEmpty || uniqueCitations.isEmpty) {
-      return AiStageResult(
-        stageId: scope.code,
-        scope: scope,
-        status: AiStageStatus.insufficient,
-        bufferedText: collected.text,
-        responseId: collected.response?.id,
-        model: collected.response?.model,
-        usage: collected.response?.usage,
-        terminalEventType: collected.terminalEventType,
-        rawEventCount: collected.rawEventCount,
-        outputItemCount: collected.outputItemCount,
-        requestCount: 1,
-      );
-    }
-    return AiStageResult(
-      stageId: scope.code,
-      scope: scope,
-      status: AiStageStatus.answered,
-      answer: BoardGameAiAnswer(
-        text: answerText,
-        source: AnswerSource.web,
-        citations: uniqueCitations.values
-            .map(_webCitation)
-            .toList(growable: false),
-      ),
-      bufferedText: collected.text,
-      responseId: collected.response?.id,
-      model: collected.response?.model,
-      usage: collected.response?.usage,
-      terminalEventType: collected.terminalEventType,
-      rawEventCount: collected.rawEventCount,
-      outputItemCount: collected.outputItemCount,
-      requestCount: 1,
-    );
-  }
-
-  Future<AiStageResult> _streamKnowledgeStageResult({
-    required _WorkflowContext context,
-    required AiKnowledgeScope scope,
-    required AppLanguage language,
-    required GameInfo game,
-    required bool useGlobalMode,
-    Future<void>? abortTrigger,
-  }) async {
-    final _CollectedStream collected = await _collectResponseStream(
-      context: context,
-      request: _knowledgeRequest(
-        context,
-        language: language,
-        game: game,
-        useGlobalMode: useGlobalMode,
-      ),
-      abortTrigger: abortTrigger,
-    );
-    if (collected.terminalType != ResponsesStreamEventType.completed) {
-      return AiStageResult(
-        stageId: scope.code,
-        scope: scope,
-        status: _stageStatusForTerminal(collected.terminalType),
-        bufferedText: collected.text,
-        responseId: collected.response?.id,
-        model: collected.response?.model,
-        usage: collected.response?.usage,
-        terminalEventType: collected.terminalEventType,
-        rawEventCount: collected.rawEventCount,
-        outputItemCount: collected.outputItemCount,
-        requestCount: 1,
-        errorCode: collected.errorCode,
-        errorMessage: collected.errorMessage,
-      );
-    }
-    final String text = collected.text.trim();
-    return AiStageResult(
-      stageId: scope.code,
-      scope: scope,
-      status: text.isEmpty
-          ? AiStageStatus.insufficient
-          : AiStageStatus.answered,
-      answer: text.isEmpty
-          ? null
-          : BoardGameAiAnswer(text: text, source: AnswerSource.modelKnowledge),
-      bufferedText: collected.text,
-      responseId: collected.response?.id,
-      model: collected.response?.model,
-      usage: collected.response?.usage,
-      terminalEventType: collected.terminalEventType,
-      rawEventCount: collected.rawEventCount,
-      outputItemCount: collected.outputItemCount,
-      requestCount: 1,
-    );
-  }
-
   Future<_StageResult> _runKnowledgeStage({
     required _WorkflowContext context,
     required AppLanguage language,
@@ -1224,149 +1751,6 @@ class ResponsesRulesWorkflow {
         errorMessage: _describeStageError(error),
       );
     }
-  }
-
-  Future<_CollectedStream> _collectResponseStream({
-    required _WorkflowContext context,
-    required ResponsesRequest request,
-    Future<void>? abortTrigger,
-  }) async {
-    String text = '';
-    ResponsesResponse? response;
-    ResponsesStreamEventType? terminalType;
-    String? terminalEventType;
-    String? errorCode;
-    String? errorMessage;
-    final List<ResponsesWebSearchCitation> webCitations =
-        <ResponsesWebSearchCitation>[];
-    final List<ResponsesInputItem> outputItems = <ResponsesInputItem>[];
-    final Set<String> outputItemKeys = <String>{};
-    int rawEventCount = 0;
-    try {
-      await for (final ResponsesStreamEvent event in _responsesClient.stream(
-        request,
-        abortTrigger: abortTrigger,
-      )) {
-        rawEventCount += 1;
-        if (event.response != null) {
-          response = event.response;
-          await _rememberCompaction(context, event.response!);
-        }
-        if (event.outputItem != null) {
-          final Map<String, dynamic> value = event.outputItem!.value;
-          final String key =
-              value['id'] is String && (value['id'] as String).trim().isNotEmpty
-              ? 'id:${(value['id'] as String).trim()}'
-              : 'json:${jsonEncode(value)}';
-          if (outputItemKeys.add(key)) outputItems.add(event.outputItem!);
-        }
-        switch (event.type) {
-          case ResponsesStreamEventType.textDelta:
-            text += event.delta;
-          case ResponsesStreamEventType.textDone:
-            text = _preferCompleteText(text, event.text ?? '');
-          case ResponsesStreamEventType.webSearchCitation:
-            final ResponsesWebSearchCitation? citation =
-                event.webSearchCitation;
-            if (citation != null &&
-                !webCitations.any(
-                  (ResponsesWebSearchCitation item) => item.url == citation.url,
-                )) {
-              webCitations.add(citation);
-            }
-          case ResponsesStreamEventType.completed:
-            if (terminalType == null) {
-              terminalType = ResponsesStreamEventType.completed;
-              terminalEventType = event.rawType ?? 'response.completed';
-              if (event.response != null) {
-                response = event.response;
-                text = _preferCompleteText(text, event.response!.text);
-              }
-            }
-          case ResponsesStreamEventType.incomplete:
-            terminalType ??= ResponsesStreamEventType.incomplete;
-            terminalEventType ??= event.rawType ?? 'response.incomplete';
-            errorCode ??= event.errorCode;
-            errorMessage ??= event.errorMessage;
-          case ResponsesStreamEventType.failed:
-            terminalType ??= ResponsesStreamEventType.failed;
-            terminalEventType ??= event.rawType ?? 'response.failed';
-            errorCode ??= event.errorCode;
-            errorMessage ??= event.errorMessage;
-          case ResponsesStreamEventType.error:
-            terminalType ??= ResponsesStreamEventType.error;
-            terminalEventType ??= event.rawType ?? 'error';
-            errorCode ??= event.errorCode;
-            errorMessage ??= event.errorMessage;
-          case ResponsesStreamEventType.status:
-          case ResponsesStreamEventType.outputItemAdded:
-          case ResponsesStreamEventType.outputItemDone:
-          case ResponsesStreamEventType.contentPartAdded:
-          case ResponsesStreamEventType.contentPartDone:
-          case ResponsesStreamEventType.fileCitation:
-          case ResponsesStreamEventType.toolCallDelta:
-          case ResponsesStreamEventType.toolCallDone:
-          case ResponsesStreamEventType.unknown:
-            break;
-        }
-        // Keep consuming the provider stream after the terminal response
-        // event. Responses API completion is the commit boundary, but
-        // draining the stream preserves any trailing output-item metadata and
-        // lets the transport close cleanly instead of cancelling it early.
-      }
-      terminalType ??= ResponsesStreamEventType.incomplete;
-      terminalEventType ??= 'stream.end';
-      errorMessage ??= terminalType == ResponsesStreamEventType.incomplete
-          ? 'Responses stream ended before response.completed.'
-          : null;
-    } catch (error) {
-      terminalType ??= ResponsesStreamEventType.error;
-      terminalEventType ??= 'transport.error';
-      errorCode ??= _stageErrorCode(error);
-      errorMessage ??= _describeStageError(error);
-    }
-
-    final ResponsesStreamEventType finalTerminalType = terminalType;
-    final ResponsesResponse? collectedResponse = response;
-    if (collectedResponse != null) {
-      for (final ResponsesInputItem item in collectedResponse.outputItems) {
-        final Map<String, dynamic> value = item is ResponsesRawInput
-            ? item.value
-            : item.toJson();
-        final String key =
-            value['id'] is String && (value['id'] as String).trim().isNotEmpty
-            ? 'id:${(value['id'] as String).trim()}'
-            : 'json:${jsonEncode(value)}';
-        if (outputItemKeys.add(key)) outputItems.add(item);
-      }
-    }
-    if (collectedResponse != null &&
-        collectedResponse.outputItems.isEmpty &&
-        outputItems.isNotEmpty) {
-      response = _copyResponseWithOutputItems(collectedResponse, outputItems);
-      await _rememberCompaction(context, response);
-    }
-    final ResponsesResponse? finalResponse = response;
-    if (finalResponse != null) {
-      webCitations.addAll(
-        finalResponse.webSearchCitations.where(
-          (ResponsesWebSearchCitation citation) => !webCitations.any(
-            (ResponsesWebSearchCitation item) => item.url == citation.url,
-          ),
-        ),
-      );
-    }
-    return _CollectedStream(
-      terminalType: finalTerminalType,
-      text: text,
-      response: response,
-      webCitations: List<ResponsesWebSearchCitation>.unmodifiable(webCitations),
-      terminalEventType: terminalEventType,
-      rawEventCount: rawEventCount,
-      outputItemCount: outputItems.length,
-      errorCode: errorCode,
-      errorMessage: errorMessage,
-    );
   }
 
   ResponsesResponse _copyResponseWithOutputItems(

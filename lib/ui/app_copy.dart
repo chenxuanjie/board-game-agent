@@ -136,26 +136,6 @@ class AppCopy {
   String get answerSourceGeneral => isChinese ? '智能补充' : 'AI supplement';
   String get answerSourceInsufficient => isChinese ? '信息不足' : 'Insufficient';
   String get evidenceTitle => isChinese ? '参考来源' : 'Sources';
-  String get aiWorkflowFindingOfficial =>
-      isChinese ? '正在查找官方规则…' : 'Checking official rules…';
-  String get aiWorkflowFindingCommunity =>
-      isChinese ? '正在查找社区资料…' : 'Checking community sources…';
-  String get aiWorkflowSearchingWeb =>
-      isChinese ? '正在联网搜索…' : 'Searching the web…';
-  String get aiWorkflowRouting =>
-      isChinese ? '正在判断问题范围…' : 'Classifying the question…';
-  String get aiWorkflowPreparingAnswer =>
-      isChinese ? '正在整理答案…' : 'Preparing the answer…';
-  String get aiWorkflowWorking => isChinese ? '正在处理…' : 'Working…';
-
-  String aiWorkflowStatus(String? status) => switch (status) {
-    'official' => aiWorkflowFindingOfficial,
-    'community' => aiWorkflowFindingCommunity,
-    'web_search' => aiWorkflowSearchingWeb,
-    'routing' => aiWorkflowRouting,
-    'answering' => aiWorkflowPreparingAnswer,
-    _ => aiWorkflowWorking,
-  };
   String get streaming => isChinese ? '正在回答…' : 'Answering…';
   String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
   String get assetPriorityTitle =>

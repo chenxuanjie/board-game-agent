@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../../models/app_activity.dart';
 import '../../models/app_language.dart';
 import '../../models/ai_conversation.dart';
+import '../../models/ai_run.dart';
 import '../../models/chat_message.dart';
 import '../../models/color_scheme_option.dart';
 import '../../models/desktop_library_resource.dart';
@@ -17,6 +18,7 @@ import '../../models/resolved_document.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
+import '../widgets/ai_run_activity.dart';
 import '../widgets/language_sheet.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/desktop_resolved_image.dart';
@@ -2151,6 +2153,15 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     final List<ChatMessage> messages = controller.messagesForContext(
       useGlobalMode: useGlobalMode,
     );
+    final List<AiRunEvent> runEvents = controller.aiRunEventsForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    final bool showRun =
+        runEvents.isNotEmpty ||
+        controller.isSendingForContext(useGlobalMode: useGlobalMode);
+    final int lastAssistantIndex = messages.lastIndexWhere(
+      (ChatMessage message) => message.role == ChatRole.assistant,
+    );
     final GameInfo game = selectedConversation.gameId == null
         ? controller.featuredGame
         : controller.games.firstWhere(
@@ -2257,26 +2268,56 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                                 14,
                               ),
                               children: <Widget>[
-                                for (final ChatMessage message in messages)
-                                  MessageBubble(
-                                    message: message,
+                                for (
+                                  int index = 0;
+                                  index < messages.length;
+                                  index++
+                                ) ...<Widget>[
+                                  if (showRun && index == lastAssistantIndex)
+                                    AiRunActivity(
+                                      events: runEvents,
+                                      isRunning: controller.isSendingForContext(
+                                        useGlobalMode: useGlobalMode,
+                                      ),
+                                      palette: palette,
+                                      copy: controller.copy,
+                                    ),
+                                  if (!(messages[index].role ==
+                                          ChatRole.assistant &&
+                                      messages[index].isStreaming &&
+                                      messages[index].text.trim().isEmpty &&
+                                      showRun))
+                                    MessageBubble(
+                                      message: messages[index],
+                                      palette: palette,
+                                      copy: controller.copy,
+                                      onSpeak:
+                                          messages[index].role ==
+                                              ChatRole.assistant
+                                          ? () => controller.speakMessage(
+                                              messages[index].text,
+                                            )
+                                          : () {},
+                                      speakTooltip: controller.copy.speakAgain,
+                                      onRetry: messages[index].canRetry
+                                          ? () => controller.retryMessage(
+                                              messages[index],
+                                              useGlobalMode: useGlobalMode,
+                                            )
+                                          : null,
+                                      retryTooltip: controller.copy.retry,
+                                      showTimestamp: _showMessageTimes,
+                                      onTap: _toggleMessageTimes,
+                                    ),
+                                ],
+                                if (showRun && lastAssistantIndex < 0)
+                                  AiRunActivity(
+                                    events: runEvents,
+                                    isRunning: controller.isSendingForContext(
+                                      useGlobalMode: useGlobalMode,
+                                    ),
                                     palette: palette,
                                     copy: controller.copy,
-                                    onSpeak: message.role == ChatRole.assistant
-                                        ? () => controller.speakMessage(
-                                            message.text,
-                                          )
-                                        : () {},
-                                    speakTooltip: controller.copy.speakAgain,
-                                    onRetry: message.canRetry
-                                        ? () => controller.retryMessage(
-                                            message,
-                                            useGlobalMode: useGlobalMode,
-                                          )
-                                        : null,
-                                    retryTooltip: controller.copy.retry,
-                                    showTimestamp: _showMessageTimes,
-                                    onTap: _toggleMessageTimes,
                                   ),
                               ],
                             ),

@@ -88,11 +88,85 @@ enum AiRunEventType {
   toolStarted,
   toolCompleted,
   outputItem,
+  retry,
+  responseStreamStarted,
+  responseStreamFailed,
+  resumeStarted,
+  resumeCompleted,
   stageCompleted,
   completed,
   failed,
   incomplete,
   cancelled,
+}
+
+/// A safe, provider-neutral event emitted by one running stage.
+///
+/// This is intentionally smaller than the raw Responses event. It carries
+/// enough information for the Run timeline to explain what happened without
+/// leaking raw tool payloads, API keys, or hidden model reasoning.
+enum AiStageExecutionEventType {
+  status,
+  textDelta,
+  citationAdded,
+  toolStarted,
+  toolCompleted,
+  outputItem,
+  retry,
+  responseStreamStarted,
+  responseStreamFailed,
+  resumeStarted,
+  resumeCompleted,
+  stageCompleted,
+}
+
+class AiStageExecutionEvent {
+  const AiStageExecutionEvent({
+    required this.type,
+    this.rawType,
+    this.status,
+    this.delta = '',
+    this.itemId,
+    this.outputItemType,
+    this.toolName,
+    this.toolArgumentsPreview,
+    this.detail,
+    this.citation,
+    this.responseId,
+    this.usage,
+    this.attempt,
+    this.maxAttempts,
+    this.sequenceNumber,
+    this.lastSequence,
+    this.replay,
+    this.duplicateUserMessagePrevented = false,
+    this.partialOutputRetained = false,
+    this.stageResult,
+  });
+
+  const AiStageExecutionEvent.result(AiStageResult result)
+    : this(type: AiStageExecutionEventType.stageCompleted, stageResult: result);
+
+  final AiStageExecutionEventType type;
+  final String? rawType;
+  final String? status;
+  final String delta;
+  final String? itemId;
+  final String? outputItemType;
+  final String? toolName;
+  final String? toolArgumentsPreview;
+  final String? detail;
+  final RuleCitation? citation;
+  final String? responseId;
+  final AiUsage? usage;
+  final int? attempt;
+  final int? maxAttempts;
+  final int? sequenceNumber;
+  final int? lastSequence;
+  final bool? replay;
+  final bool duplicateUserMessagePrevented;
+  final bool partialOutputRetained;
+  final AiStageResult? stageResult;
 }
 
 enum AiRunStatus { completed, failed, incomplete, cancelled }
@@ -165,6 +239,7 @@ class AiStageResult {
     DateTime? startedAt,
     DateTime? completedAt,
     String? contextKey,
+    int? requestCount,
   }) {
     return AiStageResult(
       stageId: stageId,
@@ -181,7 +256,7 @@ class AiStageResult {
       terminalEventType: terminalEventType,
       rawEventCount: rawEventCount,
       outputItemCount: outputItemCount,
-      requestCount: requestCount,
+      requestCount: requestCount ?? this.requestCount,
       contextKey: contextKey ?? this.contextKey,
       errorCode: errorCode,
       errorMessage: errorMessage,
@@ -230,6 +305,17 @@ class AiRunEvent {
     this.requestCount = 0,
     this.delta = '',
     this.status,
+    this.itemId,
+    this.outputItemType,
+    this.toolArgumentsPreview,
+    this.detail,
+    this.attempt,
+    this.maxAttempts,
+    this.sequenceNumber,
+    this.lastSequence,
+    this.replay,
+    this.duplicateUserMessagePrevented = false,
+    this.partialOutputRetained = false,
     this.citation,
     this.toolName,
     this.errorCode,
@@ -254,6 +340,17 @@ class AiRunEvent {
   final int requestCount;
   final String delta;
   final String? status;
+  final String? itemId;
+  final String? outputItemType;
+  final String? toolArgumentsPreview;
+  final String? detail;
+  final int? attempt;
+  final int? maxAttempts;
+  final int? sequenceNumber;
+  final int? lastSequence;
+  final bool? replay;
+  final bool duplicateUserMessagePrevented;
+  final bool partialOutputRetained;
   final RuleCitation? citation;
   final String? toolName;
   final String? errorCode;

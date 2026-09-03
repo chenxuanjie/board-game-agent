@@ -314,6 +314,105 @@ void main() {
     expect(events.last.isDone, isTrue);
   });
 
+  test('retries once when a stream closes without any provider event', () async {
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        _response(
+          '{"status":"answered","answer":"重连后答案","sourceIds":["puerto_rico-knowledge-0"]}',
+        ),
+      ],
+      streams: <List<ResponsesStreamEvent>>[
+        <ResponsesStreamEvent>[],
+        <ResponsesStreamEvent>[
+          ResponsesStreamEvent.completed(
+            _response(
+              '{"status":"answered","answer":"重连后答案","sourceIds":["puerto_rico-knowledge-0"]}',
+            ),
+          ),
+        ],
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+
+    final List<BoardGameAiStreamEvent> events = await workflow
+        .streamReply(
+          prompt: '重连问题',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeOnly,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const <AssetSourceConfig>[],
+          remoteAssetService: _FakeRemoteAssetService(),
+          conversationHistory: const <ChatMessage>[],
+        )
+        .toList();
+
+    expect(
+      events.any(
+        (BoardGameAiStreamEvent event) =>
+            event.runEvent?.type == AiRunEventType.retry,
+      ),
+      isTrue,
+    );
+    expect(client.requests, hasLength(2));
+    expect(events.last.answer?.text, '重连后答案');
+  });
+
+  test('reconnects after a retryable terminal stream error', () async {
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: <ResponsesResponse>[
+        _response(
+          '{"status":"answered","answer":"503 后恢复","sourceIds":["puerto_rico-knowledge-0"]}',
+        ),
+      ],
+      streams: <List<ResponsesStreamEvent>>[
+        <ResponsesStreamEvent>[
+          const ResponsesStreamEvent.failed(
+            'HTTP 503: Service Unavailable',
+            errorCode: '503',
+          ),
+        ],
+        <ResponsesStreamEvent>[
+          ResponsesStreamEvent.completed(
+            _response(
+              '{"status":"answered","answer":"503 后恢复","sourceIds":["puerto_rico-knowledge-0"]}',
+            ),
+          ),
+        ],
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+
+    final List<BoardGameAiStreamEvent> events = await workflow
+        .streamReply(
+          prompt: '临时不可用后重连',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeOnly,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const <AssetSourceConfig>[],
+          remoteAssetService: _FakeRemoteAssetService(),
+          conversationHistory: const <ChatMessage>[],
+        )
+        .toList();
+
+    expect(client.requests, hasLength(2));
+    expect(
+      events.any(
+        (BoardGameAiStreamEvent event) =>
+            event.runEvent?.type == AiRunEventType.retry,
+      ),
+      isTrue,
+    );
+    expect(events.last.answer?.text, '503 后恢复');
+  });
+
   test(
     'commits an explicit insufficient answer when knowledge stages find nothing',
     () async {

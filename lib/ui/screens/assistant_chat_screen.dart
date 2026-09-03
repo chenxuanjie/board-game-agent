@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../models/ai_run.dart';
 import '../../models/assistant_mode.dart';
 import '../../models/chat_message.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
+import '../widgets/ai_run_activity.dart';
 import '../widgets/message_bubble.dart';
 
 class AssistantChatScreen extends StatefulWidget {
@@ -126,32 +128,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     controller: controller,
                     onSelect: _selectAssistantMode,
                   ),
-                ),
-                AnimatedBuilder(
-                  animation: controller,
-                  builder: (context, _) {
-                    final bool isSending = controller.isSendingForContext(
-                      useGlobalMode: widget.useGlobalMode,
-                    );
-                    final String? status = controller
-                        .aiWorkflowStatusForContext(
-                          useGlobalMode: widget.useGlobalMode,
-                        );
-                    if (!isSending || status == null) {
-                      return const SizedBox.shrink();
-                    }
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        screenWidth >= 720 ? 28 : 16,
-                        0,
-                        screenWidth >= 720 ? 28 : 16,
-                        8,
-                      ),
-                      child: _WorkflowStatusBanner(
-                        label: copy.aiWorkflowStatus(status),
-                      ),
-                    );
-                  },
                 ),
                 Expanded(
                   child: AnimatedBuilder(
@@ -472,47 +448,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   }
 }
 
-class _WorkflowStatusBanner extends StatelessWidget {
-  const _WorkflowStatusBanner({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppPalette palette = AppPalette.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-      decoration: BoxDecoration(
-        color: palette.primaryContainer.withValues(alpha: 0.34),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.outline),
-      ),
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 15,
-            height: 15,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: palette.primary,
-            ),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(color: palette.textPrimary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AssistantAppBarTitle extends StatelessWidget {
   const _AssistantAppBarTitle({
     required this.controller,
@@ -769,6 +704,15 @@ class _MessageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
+    final List<AiRunEvent> runEvents = controller.aiRunEventsForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    final bool showRun =
+        runEvents.isNotEmpty ||
+        controller.isSendingForContext(useGlobalMode: useGlobalMode);
+    final int lastAssistantIndex = messages.lastIndexWhere(
+      (ChatMessage message) => message.role == ChatRole.assistant,
+    );
     final showQuickPrompts =
         messages.length <= 1 &&
         !controller.isSendingForContext(useGlobalMode: useGlobalMode);
@@ -777,31 +721,54 @@ class _MessageList extends StatelessWidget {
       controller: scrollController,
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
       children: <Widget>[
-        for (final ChatMessage message in messages)
-          MessageBubble(
-            message: message,
+        for (int index = 0; index < messages.length; index++) ...<Widget>[
+          if (showRun && index == lastAssistantIndex)
+            AiRunActivity(
+              events: runEvents,
+              isRunning: controller.isSendingForContext(
+                useGlobalMode: useGlobalMode,
+              ),
+              palette: AppPalette.of(context),
+              copy: copy,
+            ),
+          if (!(messages[index].role == ChatRole.assistant &&
+              messages[index].isStreaming &&
+              messages[index].text.trim().isEmpty &&
+              showRun))
+            MessageBubble(
+              message: messages[index],
+              palette: AppPalette.of(context),
+              copy: copy,
+              onSpeak: messages[index].role == ChatRole.assistant
+                  ? () => controller.speakMessage(messages[index].text)
+                  : () {},
+              speakTooltip: copy.speakAgain,
+              onCopy:
+                  messages[index].role == ChatRole.assistant &&
+                      !messages[index].isStreaming &&
+                      !messages[index].isFailed
+                  ? () => onCopy(messages[index].text)
+                  : null,
+              copyTooltip: copy.copyAnswer,
+              onRetry: messages[index].canRetry
+                  ? () => controller.retryMessage(
+                      messages[index],
+                      useGlobalMode: useGlobalMode,
+                    )
+                  : null,
+              retryTooltip: copy.retry,
+              showTimestamp: showMessageTimes,
+              onTap: onMessageTap,
+            ),
+        ],
+        if (showRun && lastAssistantIndex < 0)
+          AiRunActivity(
+            events: runEvents,
+            isRunning: controller.isSendingForContext(
+              useGlobalMode: useGlobalMode,
+            ),
             palette: AppPalette.of(context),
             copy: copy,
-            onSpeak: message.role == ChatRole.assistant
-                ? () => controller.speakMessage(message.text)
-                : () {},
-            speakTooltip: copy.speakAgain,
-            onCopy:
-                message.role == ChatRole.assistant &&
-                    !message.isStreaming &&
-                    !message.isFailed
-                ? () => onCopy(message.text)
-                : null,
-            copyTooltip: copy.copyAnswer,
-            onRetry: message.canRetry
-                ? () => controller.retryMessage(
-                    message,
-                    useGlobalMode: useGlobalMode,
-                  )
-                : null,
-            retryTooltip: copy.retry,
-            showTimestamp: showMessageTimes,
-            onTap: onMessageTap,
           ),
         if (showQuickPrompts)
           _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),
