@@ -11,6 +11,8 @@ void main() {
       message: '已完成《波多黎各》的新回答。',
       createdAt: createdAt,
       isRead: true,
+      conversationId: 'game:puerto-rico',
+      messageId: 'answer-1',
     );
 
     final AppActivity restored = AppActivity.fromMap(original.toMap());
@@ -21,6 +23,8 @@ void main() {
     expect(restored.message, original.message);
     expect(restored.createdAt, createdAt);
     expect(restored.isRead, isTrue);
+    expect(restored.conversationId, 'game:puerto-rico');
+    expect(restored.messageId, 'answer-1');
   });
 
   test('malformed kind falls back to informational activity', () {
@@ -33,5 +37,7 @@ void main() {
 
     expect(restored.kind, AppActivityKind.info);
     expect(restored.isRead, isFalse);
+    expect(restored.conversationId, isNull);
+    expect(restored.messageId, isNull);
   });
 }

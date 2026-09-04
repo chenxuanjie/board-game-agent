@@ -287,6 +287,8 @@ class AppController extends ChangeNotifier {
     required String title,
     required String message,
     DateTime? createdAt,
+    String? conversationId,
+    String? messageId,
   }) {
     final AppActivity activity = AppActivity(
       id: 'activity-${DateTime.now().microsecondsSinceEpoch}',
@@ -294,6 +296,8 @@ class AppController extends ChangeNotifier {
       title: title,
       message: message,
       createdAt: createdAt ?? DateTime.now(),
+      conversationId: conversationId,
+      messageId: messageId,
     );
     _activities = <AppActivity>[activity, ..._activities];
     if (_activities.length > _maxActivities) {
@@ -322,6 +326,136 @@ class AppController extends ChangeNotifier {
         .toList(growable: false);
     _queueActivitySave();
     notifyListeners();
+  }
+
+  /// Marks one notification as read without changing the rest of the center.
+  /// This is used when a user follows a notification into its target session.
+  Future<void> markActivityRead(String activityId) async {
+    final AppActivity? target = _activities
+        .where((AppActivity activity) => activity.id == activityId)
+        .cast<AppActivity?>()
+        .firstWhere(
+          (AppActivity? activity) => activity != null,
+          orElse: () => null,
+        );
+    if (target == null || target.isRead) return;
+    _activities = _activities
+        .map(
+          (AppActivity activity) => activity.id == activityId
+              ? activity.copyWith(isRead: true)
+              : activity,
+        )
+        .toList(growable: false);
+    _queueActivitySave();
+    notifyListeners();
+  }
+
+  /// Resolves legacy AI notifications that were persisted before activities
+  /// carried a conversation target. New notifications already contain these
+  /// fields; migration keeps the existing notification center useful after an
+  /// app update without guessing targets for unrelated activity kinds.
+  AppActivity resolveActivityTarget(AppActivity activity) {
+    if (!_isAiActivity(activity) ||
+        (activity.conversationId?.trim().isNotEmpty ?? false)) {
+      return activity;
+    }
+    final String? conversationId = _inferActivityConversationId(activity);
+    if (conversationId == null) return activity;
+    return activity.copyWith(
+      conversationId: conversationId,
+      messageId: _inferActivityMessageId(conversationId, activity.createdAt),
+    );
+  }
+
+  bool _isAiActivity(AppActivity activity) {
+    return activity.kind == AppActivityKind.aiCompleted ||
+        activity.kind == AppActivityKind.aiFailed;
+  }
+
+  void _migrateActivityTargets() {
+    bool changed = false;
+    final List<AppActivity> migrated = _activities
+        .map((AppActivity item) {
+          final AppActivity resolved = resolveActivityTarget(item);
+          if (resolved.conversationId != item.conversationId ||
+              resolved.messageId != item.messageId) {
+            changed = true;
+          }
+          return resolved;
+        })
+        .toList(growable: false);
+    if (!changed) return;
+    _activities = migrated;
+    _queueActivitySave();
+  }
+
+  String? _inferActivityConversationId(AppActivity activity) {
+    // Completed and failed notifications are timestamped next to the answer
+    // commit. Prefer that temporal link so a global answer mentioning the
+    // featured game's title is not mistaken for a game-scoped session.
+    String? nearestId;
+    Duration? nearestDistance;
+    for (final AiConversation conversation in _conversations.values) {
+      final bool hasAssistantMessage = conversation.messages.any(
+        (ChatMessage message) => message.role == ChatRole.assistant,
+      );
+      if (!hasAssistantMessage) continue;
+      final Duration distance = _conversationActivityDistance(
+        conversation,
+        activity.createdAt,
+      );
+      if (nearestDistance == null || distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestId = conversation.id;
+      }
+    }
+    if (nearestId != null) return nearestId;
+
+    final RegExpMatch? titleMatch = RegExp(
+      r'《([^》]+)》',
+    ).firstMatch(activity.message);
+    final String? gameTitle = titleMatch?.group(1)?.trim();
+    if (gameTitle != null && gameTitle.isNotEmpty) {
+      for (final GameInfo game in _games) {
+        if (game.title.trim() == gameTitle ||
+            game.title.toLowerCase().contains(gameTitle.toLowerCase()) ||
+            gameTitle.toLowerCase().contains(game.title.toLowerCase())) {
+          final String id = _conversationKeyForGameId(game.id);
+          if (_conversations.containsKey(id)) return id;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String? _inferActivityMessageId(String conversationId, DateTime createdAt) {
+    final AiConversation? conversation = _conversations[conversationId];
+    if (conversation == null) return null;
+    ChatMessage? nearest;
+    Duration? nearestDistance;
+    for (final ChatMessage message in conversation.messages) {
+      if (message.role != ChatRole.assistant) continue;
+      final Duration distance = message.timestamp.difference(createdAt).abs();
+      if (nearestDistance == null || distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = message;
+      }
+    }
+    return nearest?.id;
+  }
+
+  Duration _conversationActivityDistance(
+    AiConversation conversation,
+    DateTime createdAt,
+  ) {
+    Duration? nearest;
+    for (final ChatMessage message in conversation.messages) {
+      if (message.role != ChatRole.assistant) continue;
+      final Duration distance = message.timestamp.difference(createdAt).abs();
+      if (nearest == null || distance < nearest) nearest = distance;
+    }
+    return nearest ?? conversation.updatedAt.difference(createdAt).abs();
   }
 
   void _setPendingLibraryUpdate(RemoteLibraryUpdate update) {
@@ -372,6 +506,7 @@ class AppController extends ChangeNotifier {
     await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
+    _migrateActivityTargets();
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
     );
@@ -891,6 +1026,7 @@ class AppController extends ChangeNotifier {
         kind: AppActivityKind.aiFailed,
         title: copy.activityAiFailedTitle,
         message: copy.aiApiModelRequired,
+        conversationId: _conversationIdForContext(useGlobalMode: useGlobalMode),
       );
       return;
     }
@@ -1033,6 +1169,8 @@ class AppController extends ChangeNotifier {
           kind: AppActivityKind.aiCompleted,
           title: copy.activityAiCompletedTitle,
           message: copy.activityAiCompletedMessage(game.title),
+          conversationId: conversationId,
+          messageId: draftId,
         );
         if (_voiceReplyEnabled) {
           await speakMessage(answer.text);
@@ -1075,6 +1213,13 @@ class AppController extends ChangeNotifier {
             canRetry: true,
             retryPrompt: trimmed,
           ),
+        );
+        _recordActivity(
+          kind: AppActivityKind.aiFailed,
+          title: copy.activityAiFailedTitle,
+          message: reason,
+          conversationId: conversationId,
+          messageId: draftId,
         );
         _trimConversationMessages(messages);
         _queueConversationSave(conversationId: conversationId);
@@ -1125,6 +1270,8 @@ class AppController extends ChangeNotifier {
           kind: AppActivityKind.aiFailed,
           title: copy.activityAiFailedTitle,
           message: _safeStatusError(error),
+          conversationId: conversationId,
+          messageId: draftId,
         );
       }
       _trimConversationMessages(messages);

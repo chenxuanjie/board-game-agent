@@ -20,6 +20,8 @@ class AppActivity {
     required this.message,
     required this.createdAt,
     this.isRead = false,
+    this.conversationId,
+    this.messageId,
   });
 
   final String id;
@@ -29,6 +31,15 @@ class AppActivity {
   final DateTime createdAt;
   final bool isRead;
 
+  /// Stable assistant session to open when this activity is selected.
+  ///
+  /// Non-assistant activities leave this null. Older persisted activities also
+  /// remain valid because these fields are optional during migration.
+  final String? conversationId;
+
+  /// Optional stable answer message to reveal after opening [conversationId].
+  final String? messageId;
+
   AppActivity copyWith({
     String? id,
     AppActivityKind? kind,
@@ -36,6 +47,8 @@ class AppActivity {
     String? message,
     DateTime? createdAt,
     bool? isRead,
+    String? conversationId,
+    String? messageId,
   }) {
     return AppActivity(
       id: id ?? this.id,
@@ -44,6 +57,8 @@ class AppActivity {
       message: message ?? this.message,
       createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
+      conversationId: conversationId ?? this.conversationId,
+      messageId: messageId ?? this.messageId,
     );
   }
 
@@ -55,6 +70,10 @@ class AppActivity {
       'message': message,
       'createdAt': createdAt.toIso8601String(),
       'isRead': isRead,
+      if (conversationId != null && conversationId!.trim().isNotEmpty)
+        'conversationId': conversationId,
+      if (messageId != null && messageId!.trim().isNotEmpty)
+        'messageId': messageId,
     };
   }
 
@@ -78,7 +97,15 @@ class AppActivity {
           : '',
       createdAt: createdAt,
       isRead: map['isRead'] is bool ? map['isRead'] as bool : false,
+      conversationId: _optionalString(map['conversationId']),
+      messageId: _optionalString(map['messageId']),
     );
+  }
+
+  static String? _optionalString(Object? value) {
+    if (value is! String) return null;
+    final String normalized = value.trim();
+    return normalized.isEmpty ? null : normalized;
   }
 
   static AppActivityKind _parseKind(String? value) {

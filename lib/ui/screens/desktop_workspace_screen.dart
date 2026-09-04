@@ -78,6 +78,8 @@ class DesktopWorkspaceScreen extends StatefulWidget {
 class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   _DesktopDestination _destination = _DesktopDestination.home;
   _DesktopDestination _detailReturnDestination = _DesktopDestination.games;
+  final GlobalKey<_DesktopAssistantPaneState> _assistantPaneKey =
+      GlobalKey<_DesktopAssistantPaneState>();
   final GlobalKey _activityButtonKey = GlobalKey();
   final LayerLink _activityLayerLink = LayerLink();
   RemoteLibraryUpdate? _lastSeenUpdate;
@@ -167,6 +169,7 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
           onOpenLibrary: () => _selectDestination(_DesktopDestination.library),
           onOpenGame: _openGame,
           onOpenActivities: _openActivityCenter,
+          onActivityTap: _handleActivityTap,
         );
       case _DesktopDestination.games:
         return _DesktopGamesPane(controller: controller, onOpenGame: _openGame);
@@ -178,7 +181,10 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
           onAskAi: () => _openAssistantForGame(controller.selectedGame.id),
         );
       case _DesktopDestination.assistant:
-        return _DesktopAssistantPane(controller: controller);
+        return _DesktopAssistantPane(
+          key: _assistantPaneKey,
+          controller: controller,
+        );
       case _DesktopDestination.library:
         return _DesktopLibraryPane(controller: controller);
       case _DesktopDestination.settings:
@@ -311,6 +317,12 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
                       controller: controller,
                       maxHeight: panelMaxHeight,
                       onClose: () => Navigator.of(dialogContext).pop(),
+                      onActivityTap: (AppActivity activity) {
+                        _handleActivityTap(
+                          activity,
+                          closePanel: () => Navigator.of(dialogContext).pop(),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -318,6 +330,51 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
             );
           },
     );
+  }
+
+  void _handleActivityTap(AppActivity activity, {VoidCallback? closePanel}) {
+    closePanel?.call();
+    unawaited(widget.controller.markActivityRead(activity.id));
+
+    activity = widget.controller.resolveActivityTarget(activity);
+
+    final String? conversationId = activity.conversationId;
+    if (conversationId == null || conversationId.isEmpty) {
+      if (activity.kind == AppActivityKind.aiCompleted ||
+          activity.kind == AppActivityKind.aiFailed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                widget.controller.copy.activityConversationUnavailable,
+              ),
+            ),
+          );
+        }
+      }
+      return;
+    }
+    final bool exists = widget.controller.conversations.any(
+      (AiConversation conversation) => conversation.id == conversationId,
+    );
+    if (!exists) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.activityConversationUnavailable,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    widget.controller.selectConversation(conversationId);
+    if (!mounted) return;
+    setState(() => _destination = _DesktopDestination.assistant);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _assistantPaneKey.currentState?.revealMessage(activity.messageId);
+    });
   }
 
   String _destinationTitle(AppCopy copy) {
@@ -1086,6 +1143,7 @@ class _DesktopHomePane extends StatelessWidget {
     required this.onOpenLibrary,
     required this.onOpenGame,
     required this.onOpenActivities,
+    required this.onActivityTap,
   });
 
   final AppController controller;
@@ -1095,6 +1153,7 @@ class _DesktopHomePane extends StatelessWidget {
   final VoidCallback onOpenLibrary;
   final ValueChanged<GameInfo> onOpenGame;
   final VoidCallback onOpenActivities;
+  final ValueChanged<AppActivity> onActivityTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1185,6 +1244,7 @@ class _DesktopHomePane extends StatelessWidget {
                   _DesktopActivityCard(
                     controller: controller,
                     onOpenActivities: onOpenActivities,
+                    onActivityTap: onActivityTap,
                   ),
                 ],
               );
@@ -1208,6 +1268,7 @@ class _DesktopHomePane extends StatelessWidget {
                     child: _DesktopActivityCard(
                       controller: controller,
                       onOpenActivities: onOpenActivities,
+                      onActivityTap: onActivityTap,
                     ),
                   ),
                 ],
@@ -1491,14 +1552,19 @@ class _DesktopActivityCard extends StatelessWidget {
   const _DesktopActivityCard({
     required this.controller,
     required this.onOpenActivities,
+    required this.onActivityTap,
   });
 
   final AppController controller;
   final VoidCallback onOpenActivities;
+  final ValueChanged<AppActivity> onActivityTap;
 
   @override
   Widget build(BuildContext context) {
-    final List<AppActivity> activities = controller.activities.take(3).toList();
+    final List<AppActivity> activities = controller.activities
+        .take(3)
+        .map(controller.resolveActivityTarget)
+        .toList(growable: false);
     final AppCopy copy = controller.copy;
     return _DesktopSurface(
       title: copy.activityTitle,
@@ -1532,6 +1598,7 @@ class _DesktopActivityCard extends StatelessWidget {
                       controller: controller,
                       activity: activities[index],
                       compact: true,
+                      onTap: () => onActivityTap(activities[index]),
                     ),
                   ),
               ],
@@ -1545,11 +1612,13 @@ class _DesktopActivityPopup extends StatefulWidget {
     required this.controller,
     required this.maxHeight,
     required this.onClose,
+    required this.onActivityTap,
   });
 
   final AppController controller;
   final double maxHeight;
   final VoidCallback onClose;
+  final ValueChanged<AppActivity> onActivityTap;
 
   @override
   State<_DesktopActivityPopup> createState() => _DesktopActivityPopupState();
@@ -1563,7 +1632,9 @@ class _DesktopActivityPopupState extends State<_DesktopActivityPopup> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, Widget? child) {
-        final List<AppActivity> activities = widget.controller.activities;
+        final List<AppActivity> activities = widget.controller.activities
+            .map(widget.controller.resolveActivityTarget)
+            .toList(growable: false);
         return LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool compact = constraints.maxWidth < 320;
@@ -1684,6 +1755,8 @@ class _DesktopActivityPopupState extends State<_DesktopActivityPopup> {
                                     activity: activities[index],
                                     compact: false,
                                     controller: widget.controller,
+                                    onTap: () =>
+                                        widget.onActivityTap(activities[index]),
                                   ),
                             ),
                           ),
@@ -1705,18 +1778,20 @@ class _DesktopActivityTile extends StatelessWidget {
     required this.controller,
     required this.activity,
     required this.compact,
+    this.onTap,
   });
 
   final AppController controller;
   final AppActivity activity;
   final bool compact;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     final AppCopy copy = controller.copy;
     final Color accent = _activityColor(palette, activity.kind);
-    return Container(
+    final Widget content = Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 12 : 4,
         vertical: compact ? 10 : 8,
@@ -1777,6 +1852,16 @@ class _DesktopActivityTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(compact ? 11 : 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(compact ? 11 : 4),
+        onTap: onTap,
+        child: content,
       ),
     );
   }
@@ -2097,7 +2182,7 @@ class _DesktopGamesPane extends StatelessWidget {
 }
 
 class _DesktopAssistantPane extends StatefulWidget {
-  const _DesktopAssistantPane({required this.controller});
+  const _DesktopAssistantPane({super.key, required this.controller});
 
   final AppController controller;
 
@@ -2114,6 +2199,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
   String? _lastConversationId;
   bool _followNewMessages = true;
   final Map<String, double> _scrollOffsets = <String, double>{};
+  final Map<String, GlobalKey> _messageKeys = <String, GlobalKey>{};
   Timer? _messageTimesTimer;
 
   AppController get controller => widget.controller;
@@ -2292,6 +2378,10 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                                       messages[index].text.trim().isEmpty &&
                                       showRun))
                                     MessageBubble(
+                                      key: _messageKeys.putIfAbsent(
+                                        messages[index].id,
+                                        GlobalKey.new,
+                                      ),
                                       message: messages[index],
                                       palette: palette,
                                       copy: controller.copy,
@@ -2383,6 +2473,24 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
         ),
       ),
     );
+  }
+
+  /// Reveals a specific answer after navigation from the notification center.
+  /// Missing or expired message IDs are intentionally ignored because the
+  /// conversation itself is still a valid destination.
+  void revealMessage(String? messageId) {
+    final String? normalized = messageId?.trim();
+    if (normalized == null || normalized.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? target = _messageKeys[normalized]?.currentContext;
+      if (target == null || !mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        alignment: 0.2,
+      );
+    });
   }
 
   void _handleControllerChanged() {

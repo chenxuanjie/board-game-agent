@@ -172,6 +172,9 @@ class AppCopy {
       : 'A new answer for $gameTitle is ready.';
   String get activityAiFailedTitle =>
       isChinese ? 'AI 回答失败' : 'AI answer failed';
+  String get activityConversationUnavailable => isChinese
+      ? '对应的 AI 会话已不存在，无法打开。'
+      : 'The associated AI session no longer exists.';
   String get activityLibraryUpdateTitle =>
       isChinese ? '发现资料更新' : 'Library update found';
   String activityLibraryUpdateMessage(int count) => isChinese
