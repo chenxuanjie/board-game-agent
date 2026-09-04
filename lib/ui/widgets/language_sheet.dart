@@ -579,7 +579,12 @@ class _LanguageSheetState extends State<LanguageSheet> {
     final AiApiConfig config = preset.config;
     setState(() {
       _selectedPreset = preset;
-      _nameController.text = preset.isCustom ? config.name : '';
+      // A new custom preset must start with an empty user-editable name. The
+      // internal template label is reserved for display only and would be
+      // rejected by the save validation as a built-in provider name.
+      _nameController.text = preset.isNewCustom
+          ? ''
+          : (preset.isCustom ? config.name : '');
       _urlController.text = preset.isNewCustom ? '' : config.baseUrl;
       _keyController.text = preset.isNewCustom ? '' : config.apiKey;
       _selectedModel = preset.isNewCustom || config.model.trim().isEmpty
