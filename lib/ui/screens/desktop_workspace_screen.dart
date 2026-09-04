@@ -2523,7 +2523,11 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
           );
         }
       } else if (_forceScrollToBottom || _followNewMessages) {
-        _scrollToBottom();
+        _scrollToBottom(
+          animated: !controller.isSendingForContext(
+            useGlobalMode: controller.selectedConversation?.isGlobal ?? false,
+          ),
+        );
       }
       _forceScrollToBottom = false;
     });

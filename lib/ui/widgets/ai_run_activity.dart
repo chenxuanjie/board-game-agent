@@ -32,15 +32,14 @@ class AiRunActivity extends StatelessWidget {
     }
 
     final List<_ActivityStep> steps = _steps;
-    final List<_ProtocolCard> protocolCards = _protocolCards;
-    final bool hasTimeline = steps.isNotEmpty || protocolCards.isNotEmpty;
+    final bool hasTimeline = steps.isNotEmpty;
     final bool isRunCompleted =
         !isRunning &&
         events.any(
           (AiRunEvent event) => event.type == AiRunEventType.completed,
         );
     Widget buildTimeline(bool expandDetails) {
-      return steps.isEmpty && protocolCards.isEmpty
+      return steps.isEmpty
           ? _EmptyActivityStep(palette: palette, copy: copy)
           : DecoratedBox(
               decoration: BoxDecoration(
@@ -68,24 +67,6 @@ class AiRunActivity extends StatelessWidget {
                         child: _ActivityStepTile(
                           key: ValueKey<String>(steps[index].key),
                           step: steps[index],
-                          palette: palette,
-                          isChinese: copy.isChinese,
-                          isRunning: isRunning,
-                          isRunCompleted: isRunCompleted,
-                          forceExpanded: expandDetails,
-                        ),
-                      ),
-                    for (int index = 0; index < protocolCards.length; index++)
-                      Padding(
-                        padding: EdgeInsets.only(
-                          top: steps.isEmpty && index == 0 ? 0 : 7,
-                          bottom: index == protocolCards.length - 1 ? 0 : 7,
-                        ),
-                        child: _ProtocolCardTile(
-                          key: ValueKey<_ProtocolCardKind>(
-                            protocolCards[index].kind,
-                          ),
-                          card: protocolCards[index],
                           palette: palette,
                           isChinese: copy.isChinese,
                           isRunning: isRunning,
@@ -123,119 +104,14 @@ class AiRunActivity extends StatelessWidget {
     return duration.isNegative ? Duration.zero : duration;
   }
 
-  List<_ProtocolCard> get _protocolCards {
-    final String? currentRunId = events.isEmpty ? null : events.first.runId;
-    final List<AiRunEvent> orderedEvents =
-        events
-            .where(
-              (AiRunEvent event) =>
-                  currentRunId == null || event.runId == currentRunId,
-            )
-            .toList(growable: false)
-          ..sort((AiRunEvent a, AiRunEvent b) {
-            final int sequence = a.sequence.compareTo(b.sequence);
-            return sequence != 0
-                ? sequence
-                : a.timestamp.compareTo(b.timestamp);
-          });
-    final List<AiRunEvent> connectionEvents = <AiRunEvent>[];
-    _ProtocolCardStatus? status;
-    String? subtitle;
-    bool hadInterruption = false;
-
-    String detailFor(AiRunEvent event, String fallback) {
-      final String detail = event.detail?.trim() ?? '';
-      if (detail.isNotEmpty) return detail;
-      final String error = event.errorMessage?.trim() ?? '';
-      return error.isNotEmpty ? error : fallback;
-    }
-
-    for (final AiRunEvent event in orderedEvents) {
-      switch (event.type) {
-        case AiRunEventType.responseStreamStarted:
-          // A healthy stream is an implementation detail. Only expose the
-          // connection timeline after an interruption actually occurs.
-          break;
-        case AiRunEventType.responseStreamFailed:
-          hadInterruption = true;
-          connectionEvents.add(event);
-          final int? attempt = event.attempt;
-          final int? maxAttempts = event.maxAttempts;
-          status =
-              attempt != null && maxAttempts != null && attempt < maxAttempts
-              ? _ProtocolCardStatus.running
-              : _ProtocolCardStatus.failed;
-          subtitle = detailFor(
-            event,
-            _text('响应流中断，准备重连', 'Response stream interrupted; reconnecting'),
-          );
-          break;
-        case AiRunEventType.retry:
-          hadInterruption = true;
-          connectionEvents.add(event);
-          status = _ProtocolCardStatus.running;
-          subtitle = detailFor(event, _text('正在重连', 'Reconnecting'));
-          break;
-        case AiRunEventType.resumeStarted:
-          hadInterruption = true;
-          connectionEvents.add(event);
-          status = _ProtocolCardStatus.running;
-          subtitle = detailFor(event, _text('正在重连', 'Reconnecting'));
-          break;
-        case AiRunEventType.resumeCompleted:
-          if (!hadInterruption) break;
-          connectionEvents.add(event);
-          status = _ProtocolCardStatus.completed;
-          subtitle = detailFor(
-            event,
-            _text('连接已恢复，继续监听', 'Connection restored; listening continues'),
-          );
-          break;
-        case AiRunEventType.status:
-          // response.completed is the run's terminal protocol event. It does
-          // not create a visible card or a second success row.
-          break;
-        case AiRunEventType.failed:
-        case AiRunEventType.incomplete:
-        case AiRunEventType.cancelled:
-          if (!hadInterruption) break;
-          connectionEvents.add(event);
-          status = _ProtocolCardStatus.failed;
-          subtitle = detailFor(
-            event,
-            event.type == AiRunEventType.cancelled
-                ? _text('连接已取消', 'Connection cancelled')
-                : _text('无法重新连接', 'Unable to reconnect'),
-          );
-          break;
-        default:
-          break;
-      }
-    }
-    if (!hadInterruption || connectionEvents.isEmpty) {
-      return const <_ProtocolCard>[];
-    }
-    final _ProtocolCardStatus finalStatus =
-        status ?? _ProtocolCardStatus.failed;
-    return <_ProtocolCard>[
-      _ProtocolCard(
-        kind: _ProtocolCardKind.resume,
-        status: finalStatus,
-        // Keep the same concise protocol label as the reference interaction.
-        // The state and reason are carried by the subtitle and attempt badge.
-        title: 'resume',
-        subtitle: subtitle ?? _text('无法重新连接', 'Unable to reconnect'),
-        events: connectionEvents,
-      ),
-    ];
-  }
-
   List<_ActivityStep> get _steps {
     final Map<String, _ActivityStep> byKey = <String, _ActivityStep>{};
     final List<_ActivityStep> ordered = <_ActivityStep>[];
     final List<String> pendingStageIds = <String>[];
     String? lastStageKey;
     _ActivityStep? active;
+    _ActivityStep? connectionStep;
+    final List<String> connectionDetails = <String>[];
 
     _ActivityStep createStage(String id) {
       final _StageMeta meta = _stageMeta(id);
@@ -256,6 +132,53 @@ class AiRunActivity extends StatelessWidget {
       if (id.trim().isEmpty) return null;
       final String key = 'stage:$id';
       return byKey[key] ?? createStage(id);
+    }
+
+    _ActivityStep ensureConnectionStep() {
+      return connectionStep ??= (() {
+        final _ActivityStep step = _ActivityStep(
+          key: 'connection',
+          runningTitle: 'resume',
+          completedTitle: 'resume',
+          detail: _text('正在恢复连接', 'Restoring the connection'),
+          icon: Icons.refresh_rounded,
+        );
+        ordered.add(step);
+        return step;
+      })();
+    }
+
+    void updateConnection(AiRunEvent event, _ActivityStepStatus status) {
+      final _ActivityStep step = ensureConnectionStep();
+      step.status = status;
+      final String detail =
+          event.detail?.trim() ?? event.errorMessage?.trim() ?? '';
+      if (event.attempt != null) {
+        final String attempt = _text(
+          '第 ${event.attempt} 次尝试（共 ${event.maxAttempts ?? 3} 次）',
+          'Attempt ${event.attempt} of ${event.maxAttempts ?? 3}',
+        );
+        if (!connectionDetails.contains(attempt)) {
+          connectionDetails.add(attempt);
+        }
+      }
+      if (detail.isNotEmpty && !connectionDetails.contains(detail)) {
+        connectionDetails.add(detail);
+      }
+      if (connectionDetails.isNotEmpty) {
+        step.expandedDetail = connectionDetails.join('\n');
+        step.detail = switch (status) {
+          _ActivityStepStatus.failed => _text(
+            '无法恢复连接',
+            'Unable to restore connection',
+          ),
+          _ActivityStepStatus.completed => _text(
+            '连接已恢复',
+            'Connection restored',
+          ),
+          _ => _text('正在重连', 'Reconnecting'),
+        };
+      }
     }
 
     void startStageNow(String id, {String? detail}) {
@@ -405,16 +328,20 @@ class AiRunActivity extends StatelessWidget {
           }
           break;
         case AiRunEventType.retry:
-          updateActive(
-            event.detail?.trim().isNotEmpty == true
-                ? event.detail!.trim()
-                : _text('连接暂时中断，正在重试', 'The connection paused; retrying'),
-          );
+          updateConnection(event, _ActivityStepStatus.running);
           break;
         case AiRunEventType.responseStreamStarted:
+          // Healthy streams stay invisible. A connection row is created only
+          // after the first interruption event.
+          break;
         case AiRunEventType.responseStreamFailed:
+          updateConnection(event, _ActivityStepStatus.running);
+          break;
         case AiRunEventType.resumeStarted:
+          updateConnection(event, _ActivityStepStatus.running);
+          break;
         case AiRunEventType.resumeCompleted:
+          updateConnection(event, _ActivityStepStatus.completed);
           break;
         case AiRunEventType.failed:
         case AiRunEventType.incomplete:
@@ -423,10 +350,44 @@ class AiRunActivity extends StatelessWidget {
             active!.status = event.type == AiRunEventType.cancelled
                 ? _ActivityStepStatus.warning
                 : _ActivityStepStatus.failed;
-            active!.detail = event.errorMessage?.trim() ?? '';
+            final String detail = event.errorMessage?.trim() ?? '';
+            if (detail.isNotEmpty) active!.detail = detail;
             active = null;
             pendingStageIds.clear();
           } else {
+            if (connectionStep != null &&
+                connectionStep!.status == _ActivityStepStatus.running) {
+              updateConnection(
+                event,
+                event.type == AiRunEventType.cancelled
+                    ? _ActivityStepStatus.warning
+                    : _ActivityStepStatus.failed,
+              );
+              break;
+            }
+            final _ActivityStep? lastStep = lastStageKey == null
+                ? null
+                : byKey[lastStageKey];
+            if (lastStep != null) {
+              // A terminal event closes the current stage. Do not append a
+              // second "answer incomplete" card for the same failure.
+              if (lastStep.status != _ActivityStepStatus.warning) {
+                lastStep.status = event.type == AiRunEventType.cancelled
+                    ? _ActivityStepStatus.warning
+                    : _ActivityStepStatus.failed;
+              }
+              final String detail = event.errorMessage?.trim() ?? '';
+              if (detail.isNotEmpty) lastStep.detail = detail;
+              break;
+            }
+            if (connectionStep != null) {
+              connectionStep!.status = event.type == AiRunEventType.cancelled
+                  ? _ActivityStepStatus.warning
+                  : _ActivityStepStatus.failed;
+              final String detail = event.errorMessage?.trim() ?? '';
+              if (detail.isNotEmpty) connectionStep!.detail = detail;
+              break;
+            }
             final _ActivityStep step = byKey.putIfAbsent('terminal', () {
               final _ActivityStep value = _ActivityStep(
                 key: 'terminal',
@@ -707,6 +668,7 @@ class _ActivityStep {
   final String completedTitle;
   final IconData icon;
   String detail;
+  String? expandedDetail;
   int citationCount = 0;
   _ActivityStepStatus status = _ActivityStepStatus.running;
 
@@ -821,7 +783,8 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
   Widget build(BuildContext context) {
     final _ActivityStep step = widget.step;
     final AppPalette palette = widget.palette;
-    final bool running = step.status == _ActivityStepStatus.running;
+    final bool running =
+        widget.isRunning && step.status == _ActivityStepStatus.running;
     final bool failed = step.status == _ActivityStepStatus.failed;
     final ThemeData theme = Theme.of(context);
     final Color accent = failed
@@ -861,14 +824,15 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
           leading: SizedBox(
             width: 22,
             child: running
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: Padding(
-                      padding: const EdgeInsets.all(1),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: accent,
+                ? Center(
+                    child: SizedBox.square(
+                      dimension: 18,
+                      child: Padding(
+                        padding: const EdgeInsets.all(1),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: accent,
+                        ),
                       ),
                     ),
                   )
@@ -920,7 +884,7 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
           children: <Widget>[
             if (step.detail.trim().isNotEmpty)
               _ActivityDetailBox(
-                text: 'detail: ${step.detail}',
+                text: 'detail: ${step.expandedDetail ?? step.detail}',
                 palette: palette,
               ),
           ],
@@ -930,239 +894,11 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
   }
 }
 
-enum _ProtocolCardKind { resume }
-
-enum _ProtocolCardStatus { running, completed, failed }
-
-class _ProtocolCard {
-  const _ProtocolCard({
-    required this.kind,
-    required this.status,
-    required this.title,
-    required this.subtitle,
-    required this.events,
-  });
-
-  final _ProtocolCardKind kind;
-  final _ProtocolCardStatus status;
-  final String title;
-  final String subtitle;
-  final List<AiRunEvent> events;
-}
-
-class _ProtocolCardTile extends StatefulWidget {
-  const _ProtocolCardTile({
-    super.key,
-    required this.card,
-    required this.palette,
-    required this.isChinese,
-    required this.isRunning,
-    required this.isRunCompleted,
-    required this.forceExpanded,
-  });
-
-  final _ProtocolCard card;
-  final AppPalette palette;
-  final bool isChinese;
-  final bool isRunning;
-  final bool isRunCompleted;
-  final bool forceExpanded;
-
-  @override
-  State<_ProtocolCardTile> createState() => _ProtocolCardTileState();
-}
-
-class _ProtocolCardTileState extends State<_ProtocolCardTile> {
-  late final ExpansibleController _controller;
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = ExpansibleController();
-    _expanded =
-        widget.forceExpanded ||
-        widget.card.status == _ProtocolCardStatus.failed ||
-        (widget.isRunning && widget.card.status == _ProtocolCardStatus.running);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ProtocolCardTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final _ProtocolCardStatus oldStatus = oldWidget.card.status;
-    final _ProtocolCardStatus status = widget.card.status;
-    final bool statusChanged = oldStatus != status;
-    final bool runResumed = !oldWidget.isRunning && widget.isRunning;
-    final bool runEnded = oldWidget.isRunning && !widget.isRunning;
-    final bool completed = !oldWidget.isRunCompleted && widget.isRunCompleted;
-    final bool expandedNow = !oldWidget.forceExpanded && widget.forceExpanded;
-    final bool collapsedNow = oldWidget.forceExpanded && !widget.forceExpanded;
-    final bool failed = status == _ProtocolCardStatus.failed;
-
-    if (completed || collapsedNow || (runEnded && !failed)) {
-      _controller.collapse();
-    } else if (runEnded && failed) {
-      _controller.expand();
-    } else if (expandedNow) {
-      _controller.expand();
-    } else if (widget.isRunning &&
-        (runResumed || statusChanged) &&
-        (status == _ProtocolCardStatus.running || failed)) {
-      _controller.expand();
-    } else if (widget.isRunning &&
-        statusChanged &&
-        status == _ProtocolCardStatus.completed) {
-      _controller.collapse();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final _ProtocolCard card = widget.card;
-    final AppPalette palette = widget.palette;
-    final ThemeData theme = Theme.of(context);
-    final bool failed = card.status == _ProtocolCardStatus.failed;
-    final bool running = card.status == _ProtocolCardStatus.running;
-    final Color accent = failed
-        ? palette.error
-        : card.kind == _ProtocolCardKind.resume
-        ? palette.primary
-        : palette.textSecondary;
-    final AiRunEvent event = card.events.last;
-    final List<String> logLines = <String>[];
-    final List<String> attemptLines = <String>[];
-    for (final AiRunEvent item in card.events) {
-      if (item.attempt != null) {
-        final String line = _text(
-          '第 ${item.attempt} 次尝试（共 ${item.maxAttempts ?? 3} 次）',
-          'Attempt ${item.attempt} of ${item.maxAttempts ?? 3}',
-        );
-        if (!attemptLines.contains(line)) attemptLines.add(line);
-      }
-      if (item.duplicateUserMessagePrevented) {
-        final String line = _text(
-          '重复用户消息：已阻止',
-          'duplicate user message: prevented',
-        );
-        if (!logLines.contains(line)) logLines.add(line);
-      }
-      if (item.partialOutputRetained) {
-        final String line = _text('部分输出：已保留', 'partial output: retained');
-        if (!logLines.contains(line)) logLines.add(line);
-      }
-      final String detail = item.detail?.trim() ?? '';
-      if (detail.isNotEmpty && !logLines.contains(detail)) {
-        logLines.add(detail);
-      }
-    }
-    logLines.insertAll(0, attemptLines);
-    final String? attemptLabel = event.attempt == null
-        ? null
-        : _text(
-            '第 ${event.attempt} / ${event.maxAttempts ?? 3} 次',
-            'Attempt ${event.attempt} / ${event.maxAttempts ?? 3}',
-          );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.surfaceContainer.withValues(
-          alpha: running ? 0.56 : 0.38,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: failed
-              ? palette.error.withValues(alpha: 0.62)
-              : palette.outline.withValues(alpha: 0.52),
-        ),
-      ),
-      child: ExpansionTile(
-        controller: _controller,
-        onExpansionChanged: (bool expanded) {
-          if (_expanded == expanded || !mounted) return;
-          setState(() => _expanded = expanded);
-        },
-        initiallyExpanded:
-            widget.forceExpanded ||
-            (widget.isRunning &&
-                (card.status == _ProtocolCardStatus.running ||
-                    card.status == _ProtocolCardStatus.failed)),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 1),
-        childrenPadding: const EdgeInsets.fromLTRB(44, 0, 12, 10),
-        leading: _ProtocolIcon(
-          status: card.status,
-          kind: card.kind,
-          color: accent,
-        ),
-        title: Text(
-          card.title,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: palette.textPrimary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-            card.subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: failed ? palette.error : palette.textSecondary,
-              height: 1.3,
-            ),
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (attemptLabel != null)
-              Text(
-                attemptLabel,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: failed ? palette.error : palette.primary,
-                ),
-              ),
-            const SizedBox(width: 4),
-            Icon(
-              _expanded
-                  ? Icons.keyboard_arrow_up_rounded
-                  : Icons.keyboard_arrow_down_rounded,
-              size: 20,
-              color: failed ? palette.error : palette.textSecondary,
-            ),
-          ],
-        ),
-        children: logLines.isEmpty
-            ? const <Widget>[]
-            : <Widget>[
-                _ActivityDetailBox(
-                  palette: palette,
-                  text: logLines.join('\n'),
-                  monospace: true,
-                ),
-              ],
-      ),
-    );
-  }
-
-  String _text(String zh, String en) => widget.isChinese ? zh : en;
-}
-
 class _ActivityDetailBox extends StatelessWidget {
-  const _ActivityDetailBox({
-    required this.text,
-    required this.palette,
-    this.monospace = false,
-  });
+  const _ActivityDetailBox({required this.text, required this.palette});
 
   final String text;
   final AppPalette palette;
-  final bool monospace;
 
   @override
   Widget build(BuildContext context) {
@@ -1184,39 +920,8 @@ class _ActivityDetailBox extends StatelessWidget {
         style: theme.textTheme.labelSmall?.copyWith(
           color: palette.textSecondary,
           height: 1.45,
-          fontFamily: monospace ? 'monospace' : null,
         ),
       ),
     );
-  }
-}
-
-class _ProtocolIcon extends StatelessWidget {
-  const _ProtocolIcon({
-    required this.status,
-    required this.kind,
-    required this.color,
-  });
-
-  final _ProtocolCardStatus status;
-  final _ProtocolCardKind kind;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    if (status == _ProtocolCardStatus.failed) {
-      return Icon(Icons.link_off_rounded, color: color, size: 20);
-    }
-    if (kind == _ProtocolCardKind.resume) {
-      return Icon(Icons.refresh_rounded, color: color, size: 20);
-    }
-    if (status == _ProtocolCardStatus.running) {
-      return SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2, color: color),
-      );
-    }
-    return Icon(Icons.link_rounded, color: color, size: 20);
   }
 }

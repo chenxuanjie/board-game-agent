@@ -24,6 +24,7 @@ import 'ai_service.dart';
 import 'responses_compaction_store.dart';
 import 'ai_run_orchestrator.dart';
 import 'ai_run_telemetry.dart';
+import 'ai_error_presenter.dart';
 
 typedef _AiStageResultBuilder = AiStageResult Function(_CollectedStream stream);
 
@@ -664,7 +665,17 @@ class ResponsesRulesWorkflow {
         case AiRunEventType.responseStreamFailed:
         case AiRunEventType.resumeStarted:
         case AiRunEventType.resumeCompleted:
+          final bool isAnswerStage =
+              event.stageId == 'answering' ||
+              event.stageId == 'general' ||
+              event.stageId == 'fallback';
           yield BoardGameAiStreamEvent(
+            // Stage text is a private candidate until that stage is validated.
+            // Do not leak rule-search or web-search prose into the final chat
+            // message; only the completed event below commits answer.text.
+            delta: isAnswerStage && event.type == AiRunEventType.textDelta
+                ? event.delta
+                : '',
             status: event.status,
             citations: event.citation == null
                 ? const <RuleCitation>[]
@@ -922,6 +933,7 @@ class ResponsesRulesWorkflow {
     Future<void>? abortTrigger,
   }) async* {
     String text = '';
+    String retainedText = '';
     ResponsesResponse? response;
     ResponsesStreamEventType? terminalType;
     String? terminalEventType;
@@ -1006,6 +1018,7 @@ class ResponsesRulesWorkflow {
           switch (event.type) {
             case ResponsesStreamEventType.textDelta:
               text += event.delta;
+              retainedText = _preferCompleteText(retainedText, text);
             case ResponsesStreamEventType.textDone:
               text = _preferCompleteText(text, event.text ?? '');
             case ResponsesStreamEventType.webSearchCitation:
@@ -1078,6 +1091,7 @@ class ResponsesRulesWorkflow {
             lastSequence: lastSequence,
             partialOutputRetained: text.trim().isNotEmpty,
           );
+          retainedText = _preferCompleteText(retainedText, text);
           text = '';
           response = null;
           terminalType = null;
@@ -1095,6 +1109,12 @@ class ResponsesRulesWorkflow {
             maxAttempts: 3,
             lastSequence: lastSequence,
           );
+          if (await _waitForRetry(attempts, abortTrigger)) {
+            terminalType = ResponsesStreamEventType.incomplete;
+            terminalEventType = 'response.cancelled';
+            errorMessage = 'Request cancelled.';
+            break;
+          }
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.resumeStarted,
             status: 'reconnecting',
@@ -1132,6 +1152,12 @@ class ResponsesRulesWorkflow {
             maxAttempts: 3,
             lastSequence: lastSequence,
           );
+          if (await _waitForRetry(attempts, abortTrigger)) {
+            terminalType = ResponsesStreamEventType.incomplete;
+            terminalEventType = 'response.cancelled';
+            errorMessage = 'Request cancelled.';
+            break;
+          }
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.resumeStarted,
             status: 'reconnecting',
@@ -1162,6 +1188,7 @@ class ResponsesRulesWorkflow {
             lastSequence: lastSequence,
             partialOutputRetained: text.trim().isNotEmpty,
           );
+          retainedText = _preferCompleteText(retainedText, text);
           text = '';
           response = null;
           terminalType = null;
@@ -1179,6 +1206,12 @@ class ResponsesRulesWorkflow {
             maxAttempts: 3,
             lastSequence: lastSequence,
           );
+          if (await _waitForRetry(attempts, abortTrigger)) {
+            terminalType = ResponsesStreamEventType.incomplete;
+            terminalEventType = 'response.cancelled';
+            errorMessage = 'Request cancelled.';
+            break;
+          }
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.resumeStarted,
             status: 'reconnecting',
@@ -1212,6 +1245,7 @@ class ResponsesRulesWorkflow {
     }
 
     final ResponsesStreamEventType finalTerminalType = terminalType;
+    text = _preferCompleteText(retainedText, text);
     final ResponsesResponse? collectedResponse = response;
     if (collectedResponse != null) {
       for (final ResponsesInputItem item in collectedResponse.outputItems) {
@@ -1805,17 +1839,26 @@ class ResponsesRulesWorkflow {
   }
 
   String _describeStageError(Object error) {
-    final String value = '$error'.trim();
-    if (value.isEmpty) return 'AI stage failed.';
-    return value;
+    return AiErrorPresentation.from(error).message;
   }
 
-  String? _stageErrorCode(Object error) => switch (error) {
-    AiConfigurationException() => 'configuration_error',
-    AiTransportException() => 'transport_error',
-    AiProtocolException() => 'protocol_error',
-    _ => null,
-  };
+  String? _stageErrorCode(Object error) => AiErrorPresentation.from(error).code;
+
+  Future<bool> _waitForRetry(int attempt, Future<void>? abortTrigger) async {
+    final Duration delay = Duration(
+      milliseconds: (250 * (1 << (attempt - 1))).clamp(250, 2000).toInt(),
+    );
+    if (abortTrigger == null) {
+      await Future<void>.delayed(delay);
+      return false;
+    }
+    bool cancelled = false;
+    await Future.any<void>(<Future<void>>[
+      Future<void>.delayed(delay),
+      abortTrigger.then((_) => cancelled = true),
+    ]);
+    return cancelled;
+  }
 
   ResponsesRequest _documentRequest(
     _WorkflowContext context,

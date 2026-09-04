@@ -40,6 +40,7 @@ import '../services/remote_asset_service.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
 import '../services/realtime_voice_service.dart';
+import '../services/ai_error_presenter.dart';
 import '../theme/app_palette.dart';
 import '../theme/palette_registry.dart';
 import '../ui/app_copy.dart';
@@ -1589,11 +1590,7 @@ class AppController extends ChangeNotifier {
   }
 
   String _safeStatusError(Object error) {
-    final String message = error.toString().trim();
-    if (message.isEmpty) return '未知错误';
-    final String apiKey = _aiApiConfig.apiKey.trim();
-    if (apiKey.isEmpty) return message;
-    return message.replaceAll(apiKey, '<redacted>');
+    return AiErrorPresentation.from(error, language: _language).message;
   }
 
   String _streamFailureReason(
@@ -1601,7 +1598,20 @@ class AppController extends ChangeNotifier {
     String? fallback,
   }) {
     final String value = (event.errorMessage ?? fallback ?? '').trim();
-    return value.isEmpty ? '未提供详细错误' : _safeStatusError(value);
+    if (value.isEmpty) {
+      return _language == AppLanguage.zhHans
+          ? '服务暂时不可用'
+          : 'The service is temporarily unavailable';
+    }
+    if (value.startsWith('模型不可用') ||
+        value.startsWith('服务商暂时不可用') ||
+        value.startsWith('网络请求超时') ||
+        value.startsWith('网络连接不可用') ||
+        value.startsWith('鉴权失败') ||
+        value.startsWith('服务返回格式无法解析')) {
+      return value;
+    }
+    return AiErrorPresentation.from(value, language: _language).message;
   }
 
   int _runAttemptCount(_ChatGenerationState generation) {

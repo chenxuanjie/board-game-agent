@@ -366,7 +366,7 @@ void main() {
     await tester.tap(find.text('resume'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.textContaining('第 1 次尝试'), findsOneWidget);
-    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNWidgets(2));
+    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsOneWidget);
   });
 
   testWidgets('collapses completed details but keeps them user-expandable', (

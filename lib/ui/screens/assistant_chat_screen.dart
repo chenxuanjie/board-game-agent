@@ -234,7 +234,13 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
           );
         }
       } else if (_followNewMessages) {
-        _scrollToBottom();
+        // During streaming, keeping the viewport pinned is more important
+        // than animating every 16 ms batch; animation can lag behind deltas.
+        _scrollToBottom(
+          animated: !widget.controller.isSendingForContext(
+            useGlobalMode: widget.useGlobalMode,
+          ),
+        );
       }
     });
   }
