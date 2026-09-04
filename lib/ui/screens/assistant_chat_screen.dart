@@ -157,6 +157,15 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                             useGlobalMode: widget.useGlobalMode,
                             showMessageTimes: _showMessageTimes,
                             onMessageTap: _showMessageTimesTemporarily,
+                            runContextKey: _conversationContextKey,
+                            runExpanded: controller.aiRunExpandedForContext(
+                              useGlobalMode: widget.useGlobalMode,
+                            ),
+                            onRunExpandedChanged: (bool expanded) =>
+                                controller.setAiRunExpandedForContext(
+                                  useGlobalMode: widget.useGlobalMode,
+                                  expanded: expanded,
+                                ),
                           );
                         },
                       ),
@@ -812,6 +821,9 @@ class _MessageList extends StatelessWidget {
     required this.useGlobalMode,
     required this.showMessageTimes,
     required this.onMessageTap,
+    required this.runContextKey,
+    required this.runExpanded,
+    required this.onRunExpandedChanged,
   });
 
   final AppController controller;
@@ -822,6 +834,9 @@ class _MessageList extends StatelessWidget {
   final bool useGlobalMode;
   final bool showMessageTimes;
   final VoidCallback onMessageTap;
+  final String runContextKey;
+  final bool? runExpanded;
+  final ValueChanged<bool> onRunExpandedChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -852,6 +867,9 @@ class _MessageList extends StatelessWidget {
               ),
               palette: AppPalette.of(context),
               copy: copy,
+              contextKey: runContextKey,
+              initialExpanded: runExpanded,
+              onExpandedChanged: onRunExpandedChanged,
             ),
           if (!(messages[index].role == ChatRole.assistant &&
               messages[index].isStreaming &&
@@ -891,6 +909,9 @@ class _MessageList extends StatelessWidget {
             ),
             palette: AppPalette.of(context),
             copy: copy,
+            contextKey: runContextKey,
+            initialExpanded: runExpanded,
+            onExpandedChanged: onRunExpandedChanged,
           ),
         if (showQuickPrompts)
           _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),

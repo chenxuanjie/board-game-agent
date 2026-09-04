@@ -18,6 +18,20 @@ class AiErrorPresentation {
   }) {
     final bool chinese = language == AppLanguage.zhHans;
     final String value = _flatten(error).toLowerCase();
+    final bool authenticationCode =
+        value.contains('invalid_api_key') ||
+        value.contains('invalid api key') ||
+        value.contains('authentication_error') ||
+        value.contains('unauthorized');
+    final bool modelCode =
+        value.contains('model_not_found') ||
+        value.contains('model_unavailable');
+    final bool rateLimitCode =
+        value.contains('rate_limit') || value.contains('rate limited');
+    final bool timeoutCode =
+        value.contains('timeout') || value.contains('timed_out');
+    final bool serverCode =
+        value.contains('server_error') || value.contains('internal_error');
     if (error is AiConfigurationException) {
       return AiErrorPresentation(
         code: 'configuration',
@@ -35,7 +49,8 @@ class AiErrorPresentation {
             : 'The provider returned an unreadable response',
       );
     }
-    if (_hasStatus(value, 401) ||
+    if (authenticationCode ||
+        _hasStatus(value, 401) ||
         _hasStatus(value, 403) ||
         value.contains('unauthorized') ||
         value.contains('forbidden') ||
@@ -48,7 +63,8 @@ class AiErrorPresentation {
             : 'Authentication failed; check the API key',
       );
     }
-    if (_hasStatus(value, 404) ||
+    if (modelCode ||
+        _hasStatus(value, 404) ||
         value.contains('model not found') ||
         value.contains('unknown model') ||
         value.contains('does not exist')) {
@@ -59,7 +75,8 @@ class AiErrorPresentation {
             : 'The selected model is unavailable',
       );
     }
-    if (_hasStatus(value, 429) ||
+    if (rateLimitCode ||
+        _hasStatus(value, 429) ||
         value.contains('rate limit') ||
         value.contains('too many requests') ||
         value.contains('quota')) {
@@ -70,7 +87,8 @@ class AiErrorPresentation {
             : 'Too many requests; try again shortly',
       );
     }
-    if (_hasStatus(value, 500) ||
+    if (serverCode ||
+        _hasStatus(value, 500) ||
         _hasStatus(value, 502) ||
         _hasStatus(value, 503) ||
         _hasStatus(value, 504) ||
@@ -84,7 +102,10 @@ class AiErrorPresentation {
             : 'The provider is temporarily unavailable',
       );
     }
-    if (error is TimeoutException ||
+    if (timeoutCode ||
+        _hasStatus(value, 408) ||
+        _hasStatus(value, 425) ||
+        error is TimeoutException ||
         value.contains('timeout') ||
         value.contains('timed out') ||
         value.contains('deadline exceeded')) {

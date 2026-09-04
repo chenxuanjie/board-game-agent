@@ -948,11 +948,22 @@ class ResponsesRulesWorkflow {
     bool emittedProviderEvent = false;
     int? lastSequence;
     bool resumePending = false;
+    String? replayPrefix;
+    bool sawTextDelta = false;
+    bool sawTextDone = false;
+    ResponsesStreamEvent? pendingCompleted;
 
     while (true) {
       attempts += 1;
       bool attemptHadProviderEvent = false;
       bool retryAttempt = false;
+      String attemptText = '';
+      replayPrefix = attempts > 1 && retainedText.isNotEmpty
+          ? retainedText
+          : null;
+      sawTextDelta = false;
+      sawTextDone = false;
+      pendingCompleted = null;
       if (attempts == 1) {
         yield AiStageExecutionEvent(
           type: AiStageExecutionEventType.responseStreamStarted,
@@ -1009,18 +1020,55 @@ class ResponsesRulesWorkflow {
                 : 'json:${jsonEncode(value)}';
             if (outputItemKeys.add(key)) outputItems.add(event.outputItem!);
           }
+          final String? safeDelta =
+              event.type == ResponsesStreamEventType.textDelta
+              ? _replaySafeDelta(
+                  delta: event.delta,
+                  candidateText: '$attemptText${event.delta}',
+                  replayPrefix: replayPrefix,
+                  onReplayPrefixConsumed: () => replayPrefix = null,
+                )
+              : null;
           final AiStageExecutionEvent? execution = _stageExecutionEventFor(
             scope,
             event,
+            deltaOverride: safeDelta,
           );
           if (execution != null) yield execution;
 
           switch (event.type) {
             case ResponsesStreamEventType.textDelta:
-              text += event.delta;
+              sawTextDelta = true;
+              final String candidate = '$attemptText${event.delta}';
+              final String? prefix = replayPrefix;
+              if (prefix != null &&
+                  !prefix.startsWith(candidate) &&
+                  !candidate.startsWith(prefix)) {
+                // Some providers resume after the last acknowledged token
+                // instead of replaying it. Reconstruct the complete
+                // candidate so the final answer remains contiguous.
+                replayPrefix = null;
+                text = '$retainedText$candidate';
+              } else if (prefix != null && candidate.startsWith(prefix)) {
+                text = candidate;
+              } else {
+                text += event.delta;
+              }
+              attemptText += event.delta;
               retainedText = _preferCompleteText(retainedText, text);
             case ResponsesStreamEventType.textDone:
+              sawTextDone = true;
               text = _preferCompleteText(text, event.text ?? '');
+              if (pendingCompleted != null && terminalType == null) {
+                terminalType = ResponsesStreamEventType.completed;
+                terminalEventType =
+                    pendingCompleted.rawType ?? 'response.completed';
+                if (pendingCompleted.response != null) {
+                  response = pendingCompleted.response;
+                  text = _preferCompleteText(text, response!.text);
+                }
+                pendingCompleted = null;
+              }
             case ResponsesStreamEventType.webSearchCitation:
               final ResponsesWebSearchCitation? citation =
                   event.webSearchCitation;
@@ -1032,7 +1080,12 @@ class ResponsesRulesWorkflow {
                 webCitations.add(citation);
               }
             case ResponsesStreamEventType.completed:
-              if (terminalType == null) {
+              if (terminalType == null && sawTextDelta && !sawTextDone) {
+                // Responses guarantees output_text.done before the response
+                // is considered complete. Keep this event pending so a
+                // provider that batches the two events cannot commit early.
+                pendingCompleted = event;
+              } else if (terminalType == null) {
                 terminalType = ResponsesStreamEventType.completed;
                 terminalEventType = event.rawType ?? 'response.completed';
                 if (event.response != null) {
@@ -1043,8 +1096,12 @@ class ResponsesRulesWorkflow {
             case ResponsesStreamEventType.incomplete:
               terminalType ??= ResponsesStreamEventType.incomplete;
               terminalEventType ??= event.rawType ?? 'response.incomplete';
-              errorCode ??= event.errorCode;
-              errorMessage ??= event.errorMessage;
+              final AiErrorPresentation presentation = _streamErrorPresentation(
+                event.errorCode,
+                event.errorMessage,
+              );
+              errorCode ??= event.errorCode ?? presentation.code;
+              errorMessage ??= presentation.message;
               retryAttempt = _isRetryableStreamFailure(
                 event.errorCode,
                 event.errorMessage,
@@ -1052,8 +1109,12 @@ class ResponsesRulesWorkflow {
             case ResponsesStreamEventType.failed:
               terminalType ??= ResponsesStreamEventType.failed;
               terminalEventType ??= event.rawType ?? 'response.failed';
-              errorCode ??= event.errorCode;
-              errorMessage ??= event.errorMessage;
+              final AiErrorPresentation presentation = _streamErrorPresentation(
+                event.errorCode,
+                event.errorMessage,
+              );
+              errorCode ??= event.errorCode ?? presentation.code;
+              errorMessage ??= presentation.message;
               retryAttempt = _isRetryableStreamFailure(
                 event.errorCode,
                 event.errorMessage,
@@ -1061,8 +1122,12 @@ class ResponsesRulesWorkflow {
             case ResponsesStreamEventType.error:
               terminalType ??= ResponsesStreamEventType.error;
               terminalEventType ??= event.rawType ?? 'error';
-              errorCode ??= event.errorCode;
-              errorMessage ??= event.errorMessage;
+              final AiErrorPresentation presentation = _streamErrorPresentation(
+                event.errorCode,
+                event.errorMessage,
+              );
+              errorCode ??= event.errorCode ?? presentation.code;
+              errorMessage ??= presentation.message;
               retryAttempt = _isRetryableStreamFailure(
                 event.errorCode,
                 event.errorMessage,
@@ -1079,6 +1144,12 @@ class ResponsesRulesWorkflow {
               break;
           }
         }
+        if (pendingCompleted != null && terminalType == null) {
+          terminalType = ResponsesStreamEventType.incomplete;
+          terminalEventType = 'response.completed';
+          errorCode = 'missing_output_text_done';
+          errorMessage = '响应流在 output_text.done 到达前结束';
+        }
         if (retryAttempt && attempts < 3) {
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.responseStreamFailed,
@@ -1092,6 +1163,7 @@ class ResponsesRulesWorkflow {
             partialOutputRetained: text.trim().isNotEmpty,
           );
           retainedText = _preferCompleteText(retainedText, text);
+          replayPrefix = retainedText.isEmpty ? null : retainedText;
           text = '';
           response = null;
           terminalType = null;
@@ -1099,8 +1171,6 @@ class ResponsesRulesWorkflow {
           errorCode = null;
           errorMessage = null;
           webCitations.clear();
-          outputItems.clear();
-          outputItemKeys.clear();
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.retry,
             status: 'reconnecting',
@@ -1189,6 +1259,7 @@ class ResponsesRulesWorkflow {
             partialOutputRetained: text.trim().isNotEmpty,
           );
           retainedText = _preferCompleteText(retainedText, text);
+          replayPrefix = retainedText.isEmpty ? null : retainedText;
           text = '';
           response = null;
           terminalType = null;
@@ -1196,8 +1267,6 @@ class ResponsesRulesWorkflow {
           errorCode = null;
           errorMessage = null;
           webCitations.clear();
-          outputItems.clear();
-          outputItemKeys.clear();
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.retry,
             status: 'reconnecting',
@@ -1295,8 +1364,9 @@ class ResponsesRulesWorkflow {
 
   AiStageExecutionEvent? _stageExecutionEventFor(
     AiKnowledgeScope scope,
-    ResponsesStreamEvent event,
-  ) {
+    ResponsesStreamEvent event, {
+    String? deltaOverride,
+  }) {
     String? preview(String? value) {
       final String trimmed = value?.trim() ?? '';
       if (trimmed.isEmpty) return null;
@@ -1348,7 +1418,7 @@ class ResponsesRulesWorkflow {
         return AiStageExecutionEvent(
           type: AiStageExecutionEventType.textDelta,
           rawType: event.rawType,
-          delta: event.delta,
+          delta: deltaOverride ?? event.delta,
           itemId: event.itemId,
         );
       case ResponsesStreamEventType.textDone:
@@ -1467,7 +1537,12 @@ class ResponsesRulesWorkflow {
           rawType: event.rawType,
           status: event.type.name,
           responseId: event.response?.id,
-          detail: event.errorMessage,
+          detail: event.errorMessage == null
+              ? null
+              : _streamErrorPresentation(
+                  event.errorCode,
+                  event.errorMessage,
+                ).message,
         );
       case ResponsesStreamEventType.unknown:
         return AiStageExecutionEvent(
@@ -1477,6 +1552,25 @@ class ResponsesRulesWorkflow {
           detail: event.rawType == null ? null : '收到 ${event.rawType}。',
         );
     }
+  }
+
+  String _replaySafeDelta({
+    required String delta,
+    required String candidateText,
+    required String? replayPrefix,
+    required void Function() onReplayPrefixConsumed,
+  }) {
+    final String prefix = replayPrefix ?? '';
+    if (prefix.isEmpty || delta.isEmpty) return delta;
+    if (prefix.startsWith(candidateText)) {
+      return '';
+    }
+    if (candidateText.startsWith(prefix)) {
+      onReplayPrefixConsumed();
+      return candidateText.substring(prefix.length);
+    }
+    onReplayPrefixConsumed();
+    return delta;
   }
 
   bool _isRetryableStageError(Object error) {
@@ -1840,6 +1934,14 @@ class ResponsesRulesWorkflow {
 
   String _describeStageError(Object error) {
     return AiErrorPresentation.from(error).message;
+  }
+
+  AiErrorPresentation _streamErrorPresentation(String? code, String? message) {
+    final String value = <String?>[
+      code,
+      message,
+    ].whereType<String>().join(' ').trim();
+    return AiErrorPresentation.from(value.isEmpty ? 'provider error' : value);
   }
 
   String? _stageErrorCode(Object error) => AiErrorPresentation.from(error).code;

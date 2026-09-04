@@ -342,7 +342,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('resume'), findsOneWidget);
-    expect(find.textContaining('response.completed 尚未到达'), findsOneWidget);
+    expect(find.textContaining('响应尚未完成，连接已中断'), findsOneWidget);
     expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNothing);
     expect(find.textContaining('第 1 次尝试'), findsOneWidget);
 

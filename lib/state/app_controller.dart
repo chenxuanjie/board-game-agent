@@ -151,6 +151,7 @@ class AppController extends ChangeNotifier {
   String? _selectedConversationId;
   final Map<String, _ChatGenerationState> _generationStates =
       <String, _ChatGenerationState>{};
+  final Map<String, bool> _runExpandedByContext = <String, bool>{};
   late final http.Client _assetTestClient = IOClient(
     HttpClient()
       ..badCertificateCallback =
@@ -187,6 +188,21 @@ class AppController extends ChangeNotifier {
       _generationStateForContext(useGlobalMode: useGlobalMode).runCompletedAt;
   AiRunStatus? aiRunStatusForContext({required bool useGlobalMode}) =>
       _generationStateForContext(useGlobalMode: useGlobalMode).runStatus;
+  bool? aiRunExpandedForContext({required bool useGlobalMode}) =>
+      _runExpandedByContext[_conversationKeyForContext(
+        useGlobalMode: useGlobalMode,
+      )];
+
+  void setAiRunExpandedForContext({
+    required bool useGlobalMode,
+    required bool expanded,
+  }) {
+    final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
+    if (_runExpandedByContext[key] == expanded) return;
+    _runExpandedByContext[key] = expanded;
+    notifyListeners();
+  }
+
   bool get hasSelectedAiModel => _aiApiConfig.model.trim().isNotEmpty;
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
@@ -592,6 +608,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> saveAiApiConfig(AiApiConfig next) async {
+    _invalidateActiveRuns();
     _aiApiConfig = next;
     _aiConnectivityStatus = ConnectivityStatus.unknown(
       next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
@@ -680,7 +697,7 @@ class AppController extends ChangeNotifier {
           _aiModelLoadState = empty
               ? AiModelLoadState.empty
               : AiModelLoadState.failure;
-          _aiModelLoadError = error.toString();
+          _aiModelLoadError = _safeStatusError(error);
           _availableAiModels = <AiModel>[];
           notifyListeners();
           return Future<List<AiModel>>.error(error, stackTrace);
@@ -744,7 +761,7 @@ class AppController extends ChangeNotifier {
       return copy.aiApiTestSuccess;
     }
 
-    final String message = '连接失败: ${result.message}';
+    final String message = '连接失败: ${_safeStatusError(result.message)}';
     _aiConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.failure,
       message: message,
@@ -758,6 +775,7 @@ class AppController extends ChangeNotifier {
   void selectGame(String gameId) {
     final bool gameChanged = _selectedGameId != gameId;
     final String previousConversationId = _selectedConversationId ?? '';
+    if (gameChanged) _invalidateGenerationForKey(previousConversationId);
     _selectedGameId = gameId;
     _selectConversationInternal(_conversationKeyForGameId(gameId));
     if (gameChanged || previousConversationId != _selectedConversationId) {
@@ -776,6 +794,11 @@ class AppController extends ChangeNotifier {
       return false;
     }
 
+    final String previousConversationId = _selectedConversationId ?? '';
+    final String nextConversationId = _conversationKeyForGameId(game.id);
+    if (previousConversationId != nextConversationId) {
+      _invalidateGenerationForKey(previousConversationId);
+    }
     _selectedGameId = game.id;
     final AiConversation conversation = _ensureConversationForContext(
       useGlobalMode: false,
@@ -789,6 +812,10 @@ class AppController extends ChangeNotifier {
 
   /// Opens the cross-game assistant, creating its session on first entry.
   void openGlobalAssistant({String? greeting}) {
+    final String previousConversationId = _selectedConversationId ?? '';
+    if (previousConversationId != _globalConversationKey) {
+      _invalidateGenerationForKey(previousConversationId);
+    }
     final AiConversation conversation = _ensureConversationForContext(
       useGlobalMode: true,
       greeting: greeting,
@@ -809,6 +836,9 @@ class AppController extends ChangeNotifier {
       return;
     }
     final AiConversation conversation = _conversations[normalized]!;
+    if (_selectedConversationId != normalized) {
+      _invalidateGenerationForKey(_selectedConversationId ?? '');
+    }
     if (conversation.scope == AiConversationScope.game &&
         conversation.gameId != null &&
         _games.any((GameInfo game) => game.id == conversation.gameId)) {
@@ -977,6 +1007,11 @@ class AppController extends ChangeNotifier {
     String? greeting,
     bool useGlobalMode = false,
   }) async {
+    final _ChatGenerationState generation = _generationStateForContext(
+      useGlobalMode: useGlobalMode,
+    );
+    generation.contextEpoch += 1;
+    await stopGenerating(useGlobalMode: useGlobalMode);
     final String conversationId = _conversationIdForContext(
       useGlobalMode: useGlobalMode,
     );
@@ -1050,6 +1085,8 @@ class AppController extends ChangeNotifier {
     _queueConversationSave(conversationId: conversationId);
     generation.isSending = true;
     generation.wasStopped = false;
+    final int operationToken = ++generation.operationToken;
+    final int contextEpoch = generation.contextEpoch;
     generation
       ..useGlobalMode = useGlobalMode
       ..contextKey = conversationId;
@@ -1104,7 +1141,9 @@ class AppController extends ChangeNotifier {
             : true,
         abortTrigger: generationAbort.future,
       )) {
-        if (generation.wasStopped) {
+        if (generation.wasStopped ||
+            generation.operationToken != operationToken ||
+            generation.contextEpoch != contextEpoch) {
           break;
         }
         if (event.runEvent != null) {
@@ -1130,6 +1169,11 @@ class AppController extends ChangeNotifier {
           finalAnswer = event.answer;
           _completeSyntheticAnswerStage(generation);
         }
+      }
+
+      if (generation.operationToken != operationToken ||
+          generation.contextEpoch != contextEpoch) {
+        return;
       }
 
       deltaBatcher.flush();
@@ -1232,6 +1276,10 @@ class AppController extends ChangeNotifier {
       deltaBatcher.flush();
       debugPrint('[chat] sendPrompt failed: $error');
       debugPrint('$stackTrace');
+      if (generation.operationToken != operationToken ||
+          generation.contextEpoch != contextEpoch) {
+        return;
+      }
       if (generation.wasStopped) {
         _finishRunPresentation(generation, AiRunStatus.cancelled);
         final ChatMessage? currentDraft = _messageById(messages, draftId);
@@ -1279,9 +1327,11 @@ class AppController extends ChangeNotifier {
       _queueConversationSave(conversationId: conversationId);
     } finally {
       deltaBatcher.dispose();
-      generation.abort = null;
-      generation.isSending = false;
-      notifyListeners();
+      if (generation.operationToken == operationToken) {
+        generation.abort = null;
+        generation.isSending = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1575,7 +1625,7 @@ class AppController extends ChangeNotifier {
               : ConnectivityState.failure,
           message: health.success
               ? 'AI 服务与聊天接口正常'
-              : '聊天接口失败: ${health.message}',
+              : '聊天接口失败: ${_safeStatusError(health.message)}',
           checkedAt: DateTime.now(),
         );
       }
@@ -2841,6 +2891,7 @@ class AppController extends ChangeNotifier {
       ..runStatus = null
       ..runSequence = 0
       ..syntheticRun = true;
+    _runExpandedByContext[generation.contextKey ?? ''] = true;
     _appendRunEvent(
       generation,
       AiRunEvent(
@@ -2961,6 +3012,10 @@ class AppController extends ChangeNotifier {
     generation
       ..runStatus = status
       ..runCompletedAt = completedAt;
+    if (generation.contextKey != null) {
+      _runExpandedByContext[generation.contextKey!] =
+          status != AiRunStatus.completed;
+    }
     if (!_hasTerminalRunEvent(generation)) {
       final AiRunEventType type = switch (status) {
         AiRunStatus.completed => AiRunEventType.completed,
@@ -3397,6 +3452,27 @@ class AppController extends ChangeNotifier {
     return _generationStates.putIfAbsent(key, _ChatGenerationState.new);
   }
 
+  void _invalidateActiveRuns() {
+    for (final _ChatGenerationState generation in _generationStates.values) {
+      generation.contextEpoch += 1;
+      if (!generation.isSending) continue;
+      generation.wasStopped = true;
+      final Completer<void>? abort = generation.abort;
+      if (abort != null && !abort.isCompleted) abort.complete();
+    }
+  }
+
+  void _invalidateGenerationForKey(String key) {
+    if (key.isEmpty) return;
+    final _ChatGenerationState? generation = _generationStates[key];
+    if (generation == null) return;
+    generation.contextEpoch += 1;
+    if (!generation.isSending) return;
+    generation.wasStopped = true;
+    final Completer<void>? abort = generation.abort;
+    if (abort != null && !abort.isCompleted) abort.complete();
+  }
+
   List<ChatMessage> _messagesForCurrentContext() {
     return _messagesForContext(useGlobalMode: false);
   }
@@ -3656,6 +3732,8 @@ class _ChatGenerationState {
   DateTime? runStartedAt;
   DateTime? runCompletedAt;
   AiRunStatus? runStatus;
+  int operationToken = 0;
+  int contextEpoch = 0;
   final List<AiRunEvent> runEvents = <AiRunEvent>[];
   bool useGlobalMode = false;
 }

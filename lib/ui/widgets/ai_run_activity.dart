@@ -18,12 +18,18 @@ class AiRunActivity extends StatelessWidget {
     required this.isRunning,
     required this.palette,
     required this.copy,
+    this.contextKey,
+    this.initialExpanded,
+    this.onExpandedChanged,
   });
 
   final List<AiRunEvent> events;
   final bool isRunning;
   final AppPalette palette;
   final AppCopy copy;
+  final String? contextKey;
+  final bool? initialExpanded;
+  final ValueChanged<bool>? onExpandedChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +93,8 @@ class AiRunActivity extends StatelessWidget {
       duration: _runDuration,
       palette: palette,
       copy: copy,
+      initialExpanded: initialExpanded,
+      onExpandedChanged: onExpandedChanged,
       timelineBuilder: buildTimeline,
     );
   }
@@ -120,6 +128,7 @@ class AiRunActivity extends StatelessWidget {
         key: key,
         runningTitle: meta.runningTitle,
         completedTitle: meta.completedTitle,
+        failedTitle: meta.failedTitle,
         detail: meta.runningDetail,
         icon: meta.icon,
       );
@@ -140,6 +149,7 @@ class AiRunActivity extends StatelessWidget {
           key: 'connection',
           runningTitle: 'resume',
           completedTitle: 'resume',
+          failedTitle: _text('resume 失败', 'resume failed'),
           detail: _text('正在恢复连接', 'Restoring the connection'),
           icon: Icons.refresh_rounded,
         );
@@ -151,8 +161,9 @@ class AiRunActivity extends StatelessWidget {
     void updateConnection(AiRunEvent event, _ActivityStepStatus status) {
       final _ActivityStep step = ensureConnectionStep();
       step.status = status;
-      final String detail =
-          event.detail?.trim() ?? event.errorMessage?.trim() ?? '';
+      final String detail = _readableConnectionDetail(
+        event.detail?.trim() ?? event.errorMessage?.trim() ?? '',
+      );
       if (event.attempt != null) {
         final String attempt = _text(
           '第 ${event.attempt} 次尝试（共 ${event.maxAttempts ?? 3} 次）',
@@ -393,6 +404,7 @@ class AiRunActivity extends StatelessWidget {
                 key: 'terminal',
                 runningTitle: _text('回答未完成', 'Answer incomplete'),
                 completedTitle: _text('回答未完成', 'Answer incomplete'),
+                failedTitle: _text('回答未完成', 'Answer incomplete'),
                 detail: '',
                 icon: Icons.error_outline_rounded,
               );
@@ -424,6 +436,7 @@ class AiRunActivity extends StatelessWidget {
       'routing' => _StageMeta(
         runningTitle: _text('正在判断问题范围', 'Classifying the request'),
         completedTitle: _text('已判断问题范围', 'Request classified'),
+        failedTitle: _text('问题范围判断未完成', 'Request classification incomplete'),
         runningDetail: _text(
           '确定是否需要查阅桌游资料',
           'Deciding whether game sources are needed',
@@ -433,6 +446,7 @@ class AiRunActivity extends StatelessWidget {
       'official' => _StageMeta(
         runningTitle: _text('正在查阅官方规则', 'Checking official rules'),
         completedTitle: _text('已查阅官方规则', 'Official rules checked'),
+        failedTitle: _text('官方规则查阅未完成', 'Official rules lookup incomplete'),
         runningDetail: _text(
           '从当前桌游资料中查找依据',
           'Looking for evidence in the game sources',
@@ -442,6 +456,7 @@ class AiRunActivity extends StatelessWidget {
       'community' => _StageMeta(
         runningTitle: _text('正在查阅社区资料', 'Checking community sources'),
         completedTitle: _text('已查阅社区资料', 'Community sources checked'),
+        failedTitle: _text('社区资料查阅未完成', 'Community lookup incomplete'),
         runningDetail: _text(
           '查找补充说明和实际案例',
           'Looking for clarifications and examples',
@@ -451,6 +466,7 @@ class AiRunActivity extends StatelessWidget {
       'web' => _StageMeta(
         runningTitle: _text('正在搜索相关资料', 'Searching relevant sources'),
         completedTitle: _text('已完成资料搜索', 'Source search completed'),
+        failedTitle: _text('资料搜索未完成', 'Source search incomplete'),
         runningDetail: _text(
           '仅在本地资料不足时联网查找',
           'Searching online only when local sources are insufficient',
@@ -460,6 +476,7 @@ class AiRunActivity extends StatelessWidget {
       'answering' || 'general' || 'fallback' => _StageMeta(
         runningTitle: _text('正在整理回答', 'Preparing the answer'),
         completedTitle: _text('已整理回答', 'Answer prepared'),
+        failedTitle: _text('回答未完成', 'Answer incomplete'),
         runningDetail: _text('整合已确认的信息', 'Combining confirmed information'),
         icon: Icons.edit_note_rounded,
       ),
@@ -472,6 +489,7 @@ class AiRunActivity extends StatelessWidget {
       _StageMeta(
         runningTitle: _text('正在处理', 'Working'),
         completedTitle: _text('已处理', 'Processed'),
+        failedTitle: _text('处理未完成', 'Processing incomplete'),
         runningDetail: _text('正在处理当前请求', 'Processing the request'),
         icon: Icons.auto_awesome_rounded,
       );
@@ -497,6 +515,19 @@ class AiRunActivity extends StatelessWidget {
           '$count sources found; organizing results',
         );
 
+  String _readableConnectionDetail(String value) {
+    if (value == 'response.completed 尚未到达') {
+      return _text(
+        '响应尚未完成，连接已中断',
+        'The response was interrupted before completion',
+      );
+    }
+    if (value == 'Responses stream ended before response.completed.') {
+      return _text('响应流在完成前结束', 'The response stream ended before completion');
+    }
+    return value;
+  }
+
   String _text(String zh, String en) => copy.isChinese ? zh : en;
 }
 
@@ -508,6 +539,8 @@ class _AiRunActivityView extends StatefulWidget {
     required this.duration,
     required this.palette,
     required this.copy,
+    this.initialExpanded,
+    this.onExpandedChanged,
     required this.timelineBuilder,
   });
 
@@ -517,6 +550,8 @@ class _AiRunActivityView extends StatefulWidget {
   final Duration duration;
   final AppPalette palette;
   final AppCopy copy;
+  final bool? initialExpanded;
+  final ValueChanged<bool>? onExpandedChanged;
   final Widget Function(bool expandDetails) timelineBuilder;
 
   @override
@@ -529,7 +564,7 @@ class _AiRunActivityViewState extends State<_AiRunActivityView> {
   @override
   void initState() {
     super.initState();
-    _expanded = !widget.isCompleted;
+    _expanded = widget.initialExpanded ?? !widget.isCompleted;
   }
 
   @override
@@ -538,8 +573,11 @@ class _AiRunActivityViewState extends State<_AiRunActivityView> {
     final bool runChanged =
         widget.runId != null && widget.runId != oldWidget.runId;
     final bool completedNow = !oldWidget.isCompleted && widget.isCompleted;
-    if (runChanged || completedNow) {
-      _expanded = !widget.isCompleted;
+    if (completedNow) {
+      _expanded = false;
+      widget.onExpandedChanged?.call(false);
+    } else if (runChanged) {
+      _expanded = widget.initialExpanded ?? !widget.isCompleted;
     }
   }
 
@@ -555,7 +593,11 @@ class _AiRunActivityViewState extends State<_AiRunActivityView> {
                 palette: widget.palette,
                 copy: widget.copy,
                 expanded: _expanded,
-                onTap: () => setState(() => _expanded = !_expanded),
+                onTap: () {
+                  final bool next = !_expanded;
+                  setState(() => _expanded = next);
+                  widget.onExpandedChanged?.call(next);
+                },
               ),
               if (_expanded) widget.timelineBuilder(true),
             ],
@@ -644,12 +686,14 @@ class _StageMeta {
   const _StageMeta({
     required this.runningTitle,
     required this.completedTitle,
+    required this.failedTitle,
     required this.runningDetail,
     required this.icon,
   });
 
   final String runningTitle;
   final String completedTitle;
+  final String failedTitle;
   final String runningDetail;
   final IconData icon;
 }
@@ -659,6 +703,7 @@ class _ActivityStep {
     required this.key,
     required this.runningTitle,
     required this.completedTitle,
+    required this.failedTitle,
     required this.detail,
     required this.icon,
   });
@@ -666,14 +711,18 @@ class _ActivityStep {
   final String key;
   final String runningTitle;
   final String completedTitle;
+  final String failedTitle;
   final IconData icon;
   String detail;
   String? expandedDetail;
   int citationCount = 0;
   _ActivityStepStatus status = _ActivityStepStatus.running;
 
-  String get title =>
-      status == _ActivityStepStatus.running ? runningTitle : completedTitle;
+  String get title => switch (status) {
+    _ActivityStepStatus.running => runningTitle,
+    _ActivityStepStatus.failed => failedTitle,
+    _ => completedTitle,
+  };
 }
 
 class _EmptyActivityStep extends StatelessWidget {
@@ -794,101 +843,88 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
         : running
         ? palette.primary
         : palette.success;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.surfaceContainer.withValues(
-          alpha: running ? 0.60 : 0.30,
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: running
-              ? palette.primary.withValues(alpha: 0.48)
-              : palette.outline.withValues(alpha: 0.38),
-        ),
-      ),
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          controller: _controller,
-          onExpansionChanged: (bool expanded) {
-            if (_expanded == expanded || !mounted) return;
-            setState(() => _expanded = expanded);
-          },
-          initiallyExpanded:
-              widget.forceExpanded ||
-              (widget.isRunning &&
-                  (step.status == _ActivityStepStatus.running ||
-                      step.status == _ActivityStepStatus.failed)),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
-          childrenPadding: const EdgeInsets.fromLTRB(43, 0, 12, 10),
-          leading: SizedBox(
-            width: 22,
-            child: running
-                ? Center(
-                    child: SizedBox.square(
-                      dimension: 18,
-                      child: Padding(
-                        padding: const EdgeInsets.all(1),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: accent,
-                        ),
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        controller: _controller,
+        onExpansionChanged: (bool expanded) {
+          if (_expanded == expanded || !mounted) return;
+          setState(() => _expanded = expanded);
+        },
+        initiallyExpanded:
+            widget.forceExpanded ||
+            (widget.isRunning &&
+                (step.status == _ActivityStepStatus.running ||
+                    step.status == _ActivityStepStatus.failed)),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+        childrenPadding: const EdgeInsets.fromLTRB(43, 0, 12, 10),
+        leading: SizedBox(
+          width: 22,
+          child: running
+              ? Center(
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: Padding(
+                      padding: const EdgeInsets.all(1),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: accent,
                       ),
                     ),
-                  )
-                : Icon(
-                    failed
-                        ? Icons.error_outline_rounded
-                        : step.status == _ActivityStepStatus.warning
-                        ? Icons.info_outline_rounded
-                        : Icons.check_circle_outline_rounded,
-                    size: 17,
-                    color: accent,
-                  ),
-          ),
-          title: Text(
-            step.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: palette.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          subtitle: step.detail.trim().isEmpty
-              ? null
-              : Text(
-                  step.detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: palette.textSecondary,
-                    height: 1.3,
-                  ),
-                ),
-          trailing: running
-              ? Padding(
-                  padding: const EdgeInsets.only(left: 8, top: 1),
-                  child: Text(
-                    widget.isChinese ? '进行中' : 'Running',
-                    style: theme.textTheme.labelSmall?.copyWith(color: accent),
                   ),
                 )
               : Icon(
-                  _expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 20,
-                  color: palette.textSecondary,
+                  failed
+                      ? Icons.error_outline_rounded
+                      : step.status == _ActivityStepStatus.warning
+                      ? Icons.info_outline_rounded
+                      : Icons.check_circle_outline_rounded,
+                  size: 17,
+                  color: accent,
                 ),
-          children: <Widget>[
-            if (step.detail.trim().isNotEmpty)
-              _ActivityDetailBox(
-                text: 'detail: ${step.expandedDetail ?? step.detail}',
-                palette: palette,
-              ),
-          ],
         ),
+        title: Text(
+          step.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: palette.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: step.detail.trim().isEmpty
+            ? null
+            : Text(
+                step.detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: palette.textSecondary,
+                  height: 1.3,
+                ),
+              ),
+        trailing: running
+            ? Padding(
+                padding: const EdgeInsets.only(left: 8, top: 1),
+                child: Text(
+                  widget.isChinese ? '进行中' : 'Running',
+                  style: theme.textTheme.labelSmall?.copyWith(color: accent),
+                ),
+              )
+            : Icon(
+                _expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: palette.textSecondary,
+              ),
+        children: <Widget>[
+          if (step.detail.trim().isNotEmpty)
+            _ActivityDetailBox(
+              text: 'detail: ${step.expandedDetail ?? step.detail}',
+              palette: palette,
+            ),
+        ],
       ),
     );
   }

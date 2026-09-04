@@ -271,6 +271,9 @@ void main() {
         <ResponsesStreamEvent>[
           const ResponsesStreamEvent.text('{"status":"answered","answer":"中间"'),
           const ResponsesStreamEvent.text('间文本"}'),
+          const ResponsesStreamEvent.textDone(
+            '{"status":"answered","answer":"最终规则答案","sourceIds":["puerto_rico-knowledge-0"]}',
+          ),
           ResponsesStreamEvent.completed(
             ResponsesResponse(
               text:
@@ -412,6 +415,108 @@ void main() {
     );
     expect(events.last.answer?.text, '503 后恢复');
   });
+
+  test('does not duplicate replayed deltas after reconnect', () async {
+    const String payload =
+        '{"status":"answered","answer":"重连后的完整答案","sourceIds":["puerto_rico-knowledge-0"]}';
+    final _FakeResponsesClient client = _FakeResponsesClient(
+      responses: const <ResponsesResponse>[],
+      streams: <List<ResponsesStreamEvent>>[
+        <ResponsesStreamEvent>[
+          const ResponsesStreamEvent.text('{"status":"answered","answer":"重连后'),
+          const ResponsesStreamEvent.failed(
+            'HTTP 503: Service Unavailable',
+            errorCode: '503',
+          ),
+        ],
+        <ResponsesStreamEvent>[
+          const ResponsesStreamEvent.text('{"status":"answered","answer":"重连后'),
+          const ResponsesStreamEvent.text(
+            '的完整答案","sourceIds":["puerto_rico-knowledge-0"]}',
+          ),
+          const ResponsesStreamEvent.textDone(payload),
+          ResponsesStreamEvent.completed(
+            ResponsesResponse(
+              text: payload,
+              model: 'test-model',
+              id: 'resp-replayed',
+            ),
+          ),
+        ],
+      ],
+    );
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+
+    final List<BoardGameAiStreamEvent> events = await workflow
+        .streamReply(
+          prompt: '重连去重',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeOnly,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const <AssetSourceConfig>[],
+          remoteAssetService: _FakeRemoteAssetService(),
+          conversationHistory: const <ChatMessage>[],
+        )
+        .toList();
+
+    expect(events.last.answer?.text, '重连后的完整答案');
+    expect(
+      events
+          .where(
+            (BoardGameAiStreamEvent event) =>
+                event.runEvent?.type == AiRunEventType.textDelta,
+          )
+          .map((BoardGameAiStreamEvent event) => event.runEvent!.delta)
+          .join(),
+      payload,
+    );
+  });
+
+  test(
+    'waits for output_text.done before committing response.completed',
+    () async {
+      final _FakeResponsesClient client = _FakeResponsesClient(
+        responses: const <ResponsesResponse>[],
+        streams: <List<ResponsesStreamEvent>>[
+          <ResponsesStreamEvent>[
+            const ResponsesStreamEvent.text(
+              '{"status":"answered","answer":"未完成',
+            ),
+            ResponsesStreamEvent.completed(
+              ResponsesResponse(
+                text: '{"status":"answered","answer":"不应提交","sourceIds":[]}',
+                model: 'test-model',
+              ),
+            ),
+          ],
+        ],
+      );
+      final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+        responsesClient: client,
+      );
+
+      final List<BoardGameAiStreamEvent> events = await workflow
+          .streamReply(
+            prompt: '缺少 done',
+            language: AppLanguage.zhHans,
+            game: _game(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: _config(),
+            assetSourceConfigs: const <AssetSourceConfig>[],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: const <ChatMessage>[],
+          )
+          .toList();
+
+      expect(events.last.isFailure, isTrue);
+      expect(events.last.runEvent?.errorCode, 'missing_output_text_done');
+    },
+  );
 
   test(
     'commits an explicit insufficient answer when knowledge stages find nothing',

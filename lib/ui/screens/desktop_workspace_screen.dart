@@ -2371,6 +2371,16 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                                       ),
                                       palette: palette,
                                       copy: controller.copy,
+                                      contextKey: selectedConversation.id,
+                                      initialExpanded: controller
+                                          .aiRunExpandedForContext(
+                                            useGlobalMode: useGlobalMode,
+                                          ),
+                                      onExpandedChanged: (bool expanded) =>
+                                          controller.setAiRunExpandedForContext(
+                                            useGlobalMode: useGlobalMode,
+                                            expanded: expanded,
+                                          ),
                                     ),
                                   if (!(messages[index].role ==
                                           ChatRole.assistant &&
@@ -2412,6 +2422,16 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                                     ),
                                     palette: palette,
                                     copy: controller.copy,
+                                    contextKey: selectedConversation.id,
+                                    initialExpanded: controller
+                                        .aiRunExpandedForContext(
+                                          useGlobalMode: useGlobalMode,
+                                        ),
+                                    onExpandedChanged: (bool expanded) =>
+                                        controller.setAiRunExpandedForContext(
+                                          useGlobalMode: useGlobalMode,
+                                          expanded: expanded,
+                                        ),
                                   ),
                               ],
                             ),
