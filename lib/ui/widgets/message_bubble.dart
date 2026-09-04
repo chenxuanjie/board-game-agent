@@ -23,6 +23,9 @@ class MessageBubble extends StatelessWidget {
     required this.copy,
     this.showTimestamp = false,
     this.onTap,
+    this.showAssistantAvatar = true,
+    this.showAssistantActionLabels = false,
+    this.maxWidth = 720,
   });
 
   final ChatMessage message;
@@ -36,6 +39,9 @@ class MessageBubble extends StatelessWidget {
   final AppCopy copy;
   final bool showTimestamp;
   final VoidCallback? onTap;
+  final bool showAssistantAvatar;
+  final bool showAssistantActionLabels;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -63,14 +69,14 @@ class MessageBubble extends StatelessWidget {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
+        constraints: BoxConstraints(maxWidth: maxWidth),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (!isUser) ...<Widget>[
+              if (!isUser && showAssistantAvatar) ...<Widget>[
                 const Padding(
                   padding: EdgeInsets.only(top: 6, right: 8),
                   child: _MessageAssistantAvatar(),
@@ -177,6 +183,7 @@ class MessageBubble extends StatelessWidget {
                     if (hasAssistantAction)
                       _AssistantActions(
                         palette: palette,
+                        showLabels: showAssistantActionLabels,
                         onCopy: _canCopy ? onCopy : null,
                         copyTooltip: copyTooltip,
                         onSpeak: _canSpeak ? onSpeak : null,
@@ -252,6 +259,7 @@ class MessageBubble extends StatelessWidget {
 class _AssistantActions extends StatelessWidget {
   const _AssistantActions({
     required this.palette,
+    required this.showLabels,
     required this.onCopy,
     required this.copyTooltip,
     required this.onSpeak,
@@ -261,6 +269,7 @@ class _AssistantActions extends StatelessWidget {
   });
 
   final AppPalette palette;
+  final bool showLabels;
   final VoidCallback? onCopy;
   final String copyTooltip;
   final VoidCallback? onSpeak;
@@ -276,31 +285,63 @@ class _AssistantActions extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (onCopy != null)
-            IconButton(
-              tooltip: copyTooltip,
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              onPressed: onCopy,
-              icon: Icon(
-                Icons.copy_all_rounded,
-                size: 18,
-                color: palette.textSecondary,
+            if (showLabels)
+              TextButton.icon(
+                onPressed: onCopy,
+                icon: Icon(
+                  Icons.copy_all_rounded,
+                  size: 16,
+                  color: palette.textSecondary,
+                ),
+                label: Text(copyTooltip),
+                style: TextButton.styleFrom(
+                  foregroundColor: palette.textSecondary,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              )
+            else
+              IconButton(
+                tooltip: copyTooltip,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                onPressed: onCopy,
+                icon: Icon(
+                  Icons.copy_all_rounded,
+                  size: 18,
+                  color: palette.textSecondary,
+                ),
               ),
-            ),
           if (onSpeak != null)
-            IconButton(
-              tooltip: speakTooltip,
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              onPressed: onSpeak,
-              icon: Icon(
-                Icons.volume_up_rounded,
-                size: 18,
-                color: palette.textSecondary,
+            if (showLabels)
+              TextButton.icon(
+                onPressed: onSpeak,
+                icon: Icon(
+                  Icons.volume_up_rounded,
+                  size: 16,
+                  color: palette.textSecondary,
+                ),
+                label: Text(speakTooltip),
+                style: TextButton.styleFrom(
+                  foregroundColor: palette.textSecondary,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              )
+            else
+              IconButton(
+                tooltip: speakTooltip,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                onPressed: onSpeak,
+                icon: Icon(
+                  Icons.volume_up_rounded,
+                  size: 18,
+                  color: palette.textSecondary,
+                ),
               ),
-            ),
           if (onRetry != null)
             TextButton.icon(
               onPressed: onRetry,

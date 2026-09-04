@@ -457,8 +457,11 @@ class AppCopy {
       : 'Open a game and ask AI, or start the global assistant.';
   String get desktopOpenGlobalAssistant =>
       isChinese ? '打开通用助手' : 'Open global assistant';
+  String desktopAssistantMessages(int count) =>
+      isChinese ? '$count 条消息' : '$count messages';
   String get desktopOfficialLoaded =>
       isChinese ? '官方资料已加载' : 'Official sources loaded';
+  String get desktopRulebookCached => isChinese ? '规则书已缓存' : 'Rulebook cached';
   String get desktopCrossGameQuestions =>
       isChinese ? '跨桌游知识问答' : 'Cross-game questions';
   String desktopConversationSummary(bool global, int count) => global
@@ -471,6 +474,8 @@ class AppCopy {
   String get aiNewMessages => isChinese ? '有新内容' : 'New content';
   String get desktopSend => isChinese ? '发送' : 'Send';
   String get desktopStopGenerating => isChinese ? '停止生成' : 'Stop generating';
+  String get desktopRefreshModels =>
+      isChinese ? '刷新模型列表' : 'Refresh model list';
   String get desktopPreferences => isChinese ? '偏好' : 'Preferences';
   String get desktopAppearance => isChinese ? '外观' : 'Appearance';
   String get desktopAiService => isChinese ? 'AI 服务' : 'AI service';

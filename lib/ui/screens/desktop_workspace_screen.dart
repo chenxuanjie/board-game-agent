@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/app_activity.dart';
 import '../../models/app_language.dart';
+import '../../models/ai_api_config.dart';
 import '../../models/ai_conversation.dart';
 import '../../models/ai_run.dart';
 import '../../models/chat_message.dart';
@@ -107,51 +108,70 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
     return Scaffold(
       backgroundColor: palette.pageBackground,
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final bool compact = constraints.maxWidth < 980;
-            return Row(
-              children: <Widget>[
-                _DesktopSidebar(
-                  destination: _destination,
-                  compact: compact,
-                  onSelected: _selectDestination,
-                  onOpenAbout: widget.onOpenAbout,
-                  controller: widget.controller,
-                ),
-                Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      _DesktopTopBar(
-                        title: _destinationTitle(copy),
-                        compact: compact,
-                        copy: copy,
-                        activityButtonKey: _activityButtonKey,
-                        activityLayerLink: _activityLayerLink,
-                        onNew: () =>
-                            _selectDestination(_DesktopDestination.games),
-                        onSearch: _openSearch,
-                        onOpenActivities: _openActivityCenter,
-                        unreadActivityCount:
-                            widget.controller.unreadActivityCount,
-                        primaryAction:
-                            _destination == _DesktopDestination.gameDetail
-                            ? () => _openAssistantForGame(
-                                widget.controller.selectedGame.id,
-                              )
-                            : null,
-                        primaryLabel:
-                            _destination == _DesktopDestination.gameDetail
-                            ? copy.askAiAssistant
-                            : null,
-                      ),
-                      Expanded(child: _buildPage(compact)),
-                    ],
-                  ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: palette.pageBackground,
+              border: Border.all(color: palette.outline),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: palette.shadow.withValues(alpha: 0.28),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
                 ),
               ],
-            );
-          },
+            ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final bool compact = constraints.maxWidth < 980;
+                return Row(
+                  children: <Widget>[
+                    _DesktopSidebar(
+                      destination: _destination,
+                      compact: compact,
+                      onSelected: _selectDestination,
+                      onOpenAbout: widget.onOpenAbout,
+                      controller: widget.controller,
+                    ),
+                    Expanded(
+                      child: Column(
+                        children: <Widget>[
+                          if (_destination != _DesktopDestination.assistant)
+                            _DesktopTopBar(
+                              title: _destinationTitle(copy),
+                              compact: compact,
+                              copy: copy,
+                              activityButtonKey: _activityButtonKey,
+                              activityLayerLink: _activityLayerLink,
+                              onNew: () =>
+                                  _selectDestination(_DesktopDestination.games),
+                              onSearch: _openSearch,
+                              onOpenActivities: _openActivityCenter,
+                              unreadActivityCount:
+                                  widget.controller.unreadActivityCount,
+                              primaryAction:
+                                  _destination == _DesktopDestination.gameDetail
+                                  ? () => _openAssistantForGame(
+                                      widget.controller.selectedGame.id,
+                                    )
+                                  : null,
+                              primaryLabel:
+                                  _destination == _DesktopDestination.gameDetail
+                                  ? copy.askAiAssistant
+                                  : null,
+                            ),
+                          Expanded(child: _buildPage(compact)),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -519,7 +539,7 @@ class _DesktopSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     final AppCopy copy = controller.copy;
-    final double width = compact ? 76 : 214;
+    final double width = compact ? 76 : 244;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       width: width,
@@ -542,36 +562,42 @@ class _DesktopSidebar extends StatelessWidget {
             _DesktopNavLabel(label: copy.desktopWorkspace),
             const SizedBox(height: 8),
           ],
-          ...<Widget>[
-            _DesktopNavItem(
-              compact: compact,
-              icon: Icons.home_outlined,
-              label: copy.desktopHome,
-              selected: destination == _DesktopDestination.home,
-              onTap: () => onSelected(_DesktopDestination.home),
+          _DesktopNavItem(
+            compact: compact,
+            icon: Icons.home_outlined,
+            label: copy.desktopHome,
+            selected: destination == _DesktopDestination.home,
+            onTap: () => onSelected(_DesktopDestination.home),
+          ),
+          _DesktopNavItem(
+            compact: compact,
+            icon: Icons.layers_outlined,
+            label: copy.desktopGames,
+            selected: destination == _DesktopDestination.games,
+            onTap: () => onSelected(_DesktopDestination.games),
+          ),
+          _DesktopNavItem(
+            compact: compact,
+            icon: Icons.chat_bubble_outline_rounded,
+            label: copy.globalAiTitle,
+            selected: destination == _DesktopDestination.assistant,
+            onTap: () => onSelected(_DesktopDestination.assistant),
+          ),
+          if (!compact && destination == _DesktopDestination.assistant)
+            Flexible(
+              fit: FlexFit.loose,
+              child: _DesktopAssistantSessions(
+                controller: controller,
+                embedded: true,
+              ),
             ),
-            _DesktopNavItem(
-              compact: compact,
-              icon: Icons.layers_outlined,
-              label: copy.desktopGames,
-              selected: destination == _DesktopDestination.games,
-              onTap: () => onSelected(_DesktopDestination.games),
-            ),
-            _DesktopNavItem(
-              compact: compact,
-              icon: Icons.chat_bubble_outline_rounded,
-              label: copy.globalAiTitle,
-              selected: destination == _DesktopDestination.assistant,
-              onTap: () => onSelected(_DesktopDestination.assistant),
-            ),
-            _DesktopNavItem(
-              compact: compact,
-              icon: Icons.menu_book_outlined,
-              label: copy.desktopLibrary,
-              selected: destination == _DesktopDestination.library,
-              onTap: () => onSelected(_DesktopDestination.library),
-            ),
-          ],
+          _DesktopNavItem(
+            compact: compact,
+            icon: Icons.menu_book_outlined,
+            label: copy.desktopLibrary,
+            selected: destination == _DesktopDestination.library,
+            onTap: () => onSelected(_DesktopDestination.library),
+          ),
           const SizedBox(height: 18),
           if (!compact) _DesktopNavLabel(label: copy.desktopSystem),
           if (!compact) const SizedBox(height: 8),
@@ -691,41 +717,44 @@ class _DesktopNavItem extends StatelessWidget {
       child: Tooltip(
         message: compact ? label : '',
         child: Material(
-          color: selected
-              ? palette.primary.withValues(alpha: 0.14)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(11),
-            onTap: onTap,
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: compact ? 0 : 11,
-                vertical: 11,
-              ),
-              child: Row(
-                mainAxisAlignment: compact
-                    ? MainAxisAlignment.center
-                    : MainAxisAlignment.start,
-                children: <Widget>[
-                  Icon(icon, color: foreground, size: 21),
-                  if (!compact) ...[
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: selected
-                              ? palette.textPrimary
-                              : palette.textSecondary,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            decoration: _desktopOptionDecoration(palette, selected: selected),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onTap,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 0 : 11,
+                  vertical: 9,
+                ),
+                child: Row(
+                  mainAxisAlignment: compact
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(icon, color: foreground, size: 21),
+                    if (!compact) ...[
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: selected
+                                    ? palette.textPrimary
+                                    : palette.textSecondary,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -733,6 +762,23 @@ class _DesktopNavItem extends StatelessWidget {
       ),
     );
   }
+}
+
+BoxDecoration _desktopOptionDecoration(
+  AppPalette palette, {
+  required bool selected,
+  double radius = 8,
+}) {
+  return BoxDecoration(
+    color: selected ? palette.surfaceContainer : Colors.transparent,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border(
+      left: BorderSide(
+        color: selected ? palette.primary : Colors.transparent,
+        width: 3,
+      ),
+    ),
+  );
 }
 
 class _DesktopWorkspaceIdentity extends StatelessWidget {
@@ -2261,238 +2307,259 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     final String assistantTitle = useGlobalMode
         ? controller.copy.globalAiTitle
         : '${game.title}助手';
-    final String assistantSubtitle = useGlobalMode
-        ? controller.copy.desktopCrossGameQuestions
-        : controller.copy.desktopOfficialLoaded;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.pageBackground,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: palette.outline),
-        ),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final bool narrow = constraints.maxWidth < 900;
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (!narrow)
-                  SizedBox(
-                    width: 205,
-                    child: _DesktopAssistantSessions(controller: controller),
-                  ),
-                Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 14, 14),
-                        child: Row(
+    final String messageSummary = controller.copy.desktopAssistantMessages(
+      messages.length,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool narrow = constraints.maxWidth < 760;
+        final double contentInset = math.max(
+          17,
+          (constraints.maxWidth - 780) / 2,
+        );
+        return Column(
+          children: <Widget>[
+            Container(
+              constraints: const BoxConstraints(minHeight: 79),
+              padding: EdgeInsets.fromLTRB(
+                narrow ? 17 : 28,
+                16,
+                narrow ? 17 : 28,
+                16,
+              ),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: palette.outline)),
+              ),
+              child: Row(
+                children: <Widget>[
+                  const _AssistantAppMark(),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          assistantTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
                           children: <Widget>[
-                            const _AssistantAppMark(),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Text(
-                                    assistantTitle,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                  Text(
-                                    assistantSubtitle,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
+                            _AssistantStatusDot(color: palette.success),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                messageSummary,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: palette.textSecondary),
                               ),
-                            ),
-                            if (narrow)
-                              IconButton(
-                                tooltip: controller.copy.desktopSessionTitle,
-                                onPressed: () => _showAssistantSheet(
-                                  title: controller.copy.desktopSessionTitle,
-                                  child: _DesktopAssistantSessions(
-                                    controller: controller,
-                                  ),
-                                ),
-                                icon: const Icon(Icons.forum_outlined),
-                              ),
-                            if (narrow)
-                              IconButton(
-                                tooltip: controller.copy.desktopContextTitle,
-                                onPressed: () => _showAssistantSheet(
-                                  title: controller.copy.desktopContextTitle,
-                                  child: _DesktopContextPanel(
-                                    controller: controller,
-                                    useGlobalMode: useGlobalMode,
-                                  ),
-                                ),
-                                icon: const Icon(Icons.tune_rounded),
-                              ),
-                            IconButton(
-                              tooltip: controller.copy.desktopClearConversation,
-                              onPressed: () =>
-                                  controller.clearConversationForContext(
-                                    useGlobalMode: useGlobalMode,
-                                  ),
-                              icon: const Icon(Icons.delete_sweep_outlined),
                             ),
                           ],
                         ),
-                      ),
-                      Divider(height: 1, color: palette.outline),
-                      Expanded(
-                        child: Stack(
-                          children: <Widget>[
-                            ListView(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(
-                                18,
-                                14,
-                                18,
-                                14,
-                              ),
-                              children: <Widget>[
-                                for (
-                                  int index = 0;
-                                  index < messages.length;
-                                  index++
-                                ) ...<Widget>[
-                                  if (showRun && index == lastAssistantIndex)
-                                    AiRunActivity(
-                                      events: runEvents,
-                                      isRunning: controller.isSendingForContext(
-                                        useGlobalMode: useGlobalMode,
-                                      ),
-                                      palette: palette,
-                                      copy: controller.copy,
-                                      contextKey: selectedConversation.id,
-                                      initialExpanded: controller
-                                          .aiRunExpandedForContext(
-                                            useGlobalMode: useGlobalMode,
-                                          ),
-                                      onExpandedChanged: (bool expanded) =>
-                                          controller.setAiRunExpandedForContext(
-                                            useGlobalMode: useGlobalMode,
-                                            expanded: expanded,
-                                          ),
-                                    ),
-                                  if (!(messages[index].role ==
-                                          ChatRole.assistant &&
-                                      messages[index].isStreaming &&
-                                      messages[index].text.trim().isEmpty &&
-                                      showRun))
-                                    MessageBubble(
-                                      key: _messageKeys.putIfAbsent(
-                                        messages[index].id,
-                                        GlobalKey.new,
-                                      ),
-                                      message: messages[index],
-                                      palette: palette,
-                                      copy: controller.copy,
-                                      onSpeak:
-                                          messages[index].role ==
-                                              ChatRole.assistant
-                                          ? () => controller.speakMessage(
-                                              messages[index].text,
-                                            )
-                                          : () {},
-                                      speakTooltip: controller.copy.speakAgain,
-                                      onRetry: messages[index].canRetry
-                                          ? () => controller.retryMessage(
-                                              messages[index],
-                                              useGlobalMode: useGlobalMode,
-                                            )
-                                          : null,
-                                      retryTooltip: controller.copy.retry,
-                                      showTimestamp: _showMessageTimes,
-                                      onTap: _toggleMessageTimes,
-                                    ),
-                                ],
-                                if (showRun && lastAssistantIndex < 0)
-                                  AiRunActivity(
-                                    events: runEvents,
-                                    isRunning: controller.isSendingForContext(
-                                      useGlobalMode: useGlobalMode,
-                                    ),
-                                    palette: palette,
-                                    copy: controller.copy,
-                                    contextKey: selectedConversation.id,
-                                    initialExpanded: controller
-                                        .aiRunExpandedForContext(
-                                          useGlobalMode: useGlobalMode,
-                                        ),
-                                    onExpandedChanged: (bool expanded) =>
-                                        controller.setAiRunExpandedForContext(
-                                          useGlobalMode: useGlobalMode,
-                                          expanded: expanded,
-                                        ),
-                                  ),
-                              ],
-                            ),
-                            if (_showJumpToBottom)
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                bottom: 14,
-                                child: Center(
-                                  child: FilledButton.tonalIcon(
-                                    onPressed: _jumpToBottom,
-                                    icon: const Icon(
-                                      Icons.south_rounded,
-                                      size: 17,
-                                    ),
-                                    label: Text(
-                                      _hasNewContent
-                                          ? controller.copy.aiNewMessages
-                                          : controller.copy.desktopJumpToBottom,
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: palette.surfaceContainer,
-                                      foregroundColor: palette.textPrimary,
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 9,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                        child: _DesktopComposer(
-                          controller: controller,
-                          draftController: _draftController,
-                          useGlobalMode: useGlobalMode,
-                          onSend: _send,
-                          onMic: _toggleListening,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!narrow)
-                  SizedBox(
-                    width: 220,
-                    child: _DesktopContextPanel(
-                      controller: controller,
-                      useGlobalMode: useGlobalMode,
+                      ],
                     ),
                   ),
-              ],
-            );
-          },
-        ),
-      ),
+                  if (!narrow) ...[
+                    _AssistantStatusLabel(
+                      label: useGlobalMode
+                          ? controller.copy.desktopAllResources
+                          : game.title,
+                      palette: palette,
+                    ),
+                    const SizedBox(width: 14),
+                    _AssistantStatusLabel(
+                      label: controller.copy.desktopRulebookCached,
+                      palette: palette,
+                    ),
+                    const SizedBox(width: 7),
+                  ],
+                  if (narrow)
+                    IconButton(
+                      tooltip: controller.copy.desktopSessionTitle,
+                      onPressed: () => _showAssistantSheet(
+                        title: controller.copy.desktopSessionTitle,
+                        child: _DesktopAssistantSessions(
+                          controller: controller,
+                        ),
+                      ),
+                      icon: const Icon(Icons.forum_outlined),
+                    ),
+                  if (narrow)
+                    IconButton(
+                      tooltip: controller.copy.desktopContextTitle,
+                      onPressed: () => _showAssistantSheet(
+                        title: controller.copy.desktopContextTitle,
+                        child: _DesktopContextPanel(
+                          controller: controller,
+                          useGlobalMode: useGlobalMode,
+                        ),
+                      ),
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
+                  IconButton(
+                    tooltip: controller.copy.desktopClearConversation,
+                    onPressed: () => controller.clearConversationForContext(
+                      useGlobalMode: useGlobalMode,
+                    ),
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: controller.copy.desktopMore,
+                    onSelected: (String value) {
+                      if (value == 'context') {
+                        _showAssistantSheet(
+                          title: controller.copy.desktopContextTitle,
+                          child: _DesktopContextPanel(
+                            controller: controller,
+                            useGlobalMode: useGlobalMode,
+                          ),
+                        );
+                      }
+                    },
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                          PopupMenuItem<String>(
+                            value: 'context',
+                            child: Text(controller.copy.desktopContextTitle),
+                          ),
+                        ],
+                    icon: const Icon(Icons.more_horiz_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Stack(
+                children: <Widget>[
+                  ListView(
+                    controller: _scrollController,
+                    padding: EdgeInsets.fromLTRB(
+                      contentInset,
+                      30,
+                      contentInset,
+                      16,
+                    ),
+                    children: <Widget>[
+                      for (
+                        int index = 0;
+                        index < messages.length;
+                        index++
+                      ) ...<Widget>[
+                        if (showRun && index == lastAssistantIndex)
+                          AiRunActivity(
+                            events: runEvents,
+                            isRunning: controller.isSendingForContext(
+                              useGlobalMode: useGlobalMode,
+                            ),
+                            palette: palette,
+                            copy: controller.copy,
+                            contextKey: selectedConversation.id,
+                            initialExpanded: controller.aiRunExpandedForContext(
+                              useGlobalMode: useGlobalMode,
+                            ),
+                            onExpandedChanged: (bool expanded) =>
+                                controller.setAiRunExpandedForContext(
+                                  useGlobalMode: useGlobalMode,
+                                  expanded: expanded,
+                                ),
+                          ),
+                        if (!(messages[index].role == ChatRole.assistant &&
+                            messages[index].isStreaming &&
+                            messages[index].text.trim().isEmpty &&
+                            showRun))
+                          MessageBubble(
+                            key: _messageKeys.putIfAbsent(
+                              messages[index].id,
+                              GlobalKey.new,
+                            ),
+                            message: messages[index],
+                            palette: palette,
+                            copy: controller.copy,
+                            showAssistantAvatar: false,
+                            showAssistantActionLabels: true,
+                            maxWidth: 780,
+                            onSpeak: messages[index].role == ChatRole.assistant
+                                ? () => controller.speakMessage(
+                                    messages[index].text,
+                                  )
+                                : () {},
+                            speakTooltip: controller.copy.speakAgain,
+                            onRetry: messages[index].canRetry
+                                ? () => controller.retryMessage(
+                                    messages[index],
+                                    useGlobalMode: useGlobalMode,
+                                  )
+                                : null,
+                            retryTooltip: controller.copy.retry,
+                            showTimestamp: _showMessageTimes,
+                            onTap: _toggleMessageTimes,
+                          ),
+                      ],
+                      if (showRun && lastAssistantIndex < 0)
+                        AiRunActivity(
+                          events: runEvents,
+                          isRunning: controller.isSendingForContext(
+                            useGlobalMode: useGlobalMode,
+                          ),
+                          palette: palette,
+                          copy: controller.copy,
+                          contextKey: selectedConversation.id,
+                          initialExpanded: controller.aiRunExpandedForContext(
+                            useGlobalMode: useGlobalMode,
+                          ),
+                          onExpandedChanged: (bool expanded) =>
+                              controller.setAiRunExpandedForContext(
+                                useGlobalMode: useGlobalMode,
+                                expanded: expanded,
+                              ),
+                        ),
+                    ],
+                  ),
+                  if (_showJumpToBottom)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 14,
+                      child: Center(
+                        child: FilledButton.tonalIcon(
+                          onPressed: _jumpToBottom,
+                          icon: const Icon(Icons.south_rounded, size: 17),
+                          label: Text(
+                            _hasNewContent
+                                ? controller.copy.aiNewMessages
+                                : controller.copy.desktopJumpToBottom,
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: palette.surfaceContainer,
+                            foregroundColor: palette.textPrimary,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 9,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(contentInset, 9, contentInset, 18),
+              child: _DesktopComposer(
+                controller: controller,
+                draftController: _draftController,
+                useGlobalMode: useGlobalMode,
+                onSend: _send,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2680,27 +2747,6 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     _draftController.clear();
     await controller.sendPrompt(text, useGlobalMode: useGlobalMode);
   }
-
-  Future<void> _toggleListening() async {
-    if (!controller.speechAvailable) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(controller.copy.micUnavailable)));
-      return;
-    }
-    if (controller.isListening) {
-      await controller.stopListening();
-      return;
-    }
-    await controller.startListening(
-      onRecognizedText: (String value) {
-        _draftController.value = TextEditingValue(
-          text: value,
-          selection: TextSelection.collapsed(offset: value.length),
-        );
-      },
-    );
-  }
 }
 
 class _DesktopAssistantEmptyPane extends StatelessWidget {
@@ -2712,43 +2758,33 @@ class _DesktopAssistantEmptyPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     final AppCopy copy = controller.copy;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.pageBackground,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: palette.outline),
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.forum_outlined, size: 42, color: palette.primary),
-                const SizedBox(height: 14),
-                Text(
-                  copy.desktopNoSession,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  copy.desktopNoSessionHint,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: palette.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: () => controller.openGlobalAssistant(),
-                  icon: const Icon(Icons.auto_awesome_rounded),
-                  label: Text(copy.desktopOpenGlobalAssistant),
-                ),
-              ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.forum_outlined, size: 42, color: palette.primary),
+            const SizedBox(height: 14),
+            Text(
+              copy.desktopNoSession,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              copy.desktopNoSessionHint,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: palette.textSecondary),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: () => controller.openGlobalAssistant(),
+              icon: const Icon(Icons.auto_awesome_rounded),
+              label: Text(copy.desktopOpenGlobalAssistant),
+            ),
+          ],
         ),
       ),
     );
@@ -2756,56 +2792,88 @@ class _DesktopAssistantEmptyPane extends StatelessWidget {
 }
 
 class _DesktopAssistantSessions extends StatelessWidget {
-  const _DesktopAssistantSessions({required this.controller});
+  const _DesktopAssistantSessions({
+    required this.controller,
+    this.embedded = false,
+  });
 
   final AppController controller;
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
-    final List<AiConversation> conversations = controller.conversations;
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.6),
-        border: Border(right: BorderSide(color: palette.outline)),
-      ),
+      padding: embedded
+          ? const EdgeInsets.fromLTRB(28, 12, 4, 4)
+          : const EdgeInsets.all(14),
+      decoration: embedded
+          ? const BoxDecoration()
+          : BoxDecoration(
+              color: palette.surface.withValues(alpha: 0.6),
+              border: Border(right: BorderSide(color: palette.outline)),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            controller.copy.desktopSessionTitle,
-            style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  controller.copy.desktopSessionTitle,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              IconButton(
+                tooltip: controller.copy.desktopOpenGlobalAssistant,
+                visualDensity: VisualDensity.compact,
+                onPressed: controller.openGlobalAssistant,
+                icon: const Icon(Icons.add_rounded, size: 20),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: <Widget>[
-                for (final AiConversation conversation in conversations)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: _DesktopSessionRow(
-                      icon: conversation.id == controller.selectedConversationId
-                          ? Icons.chat_rounded
-                          : Icons.chat_bubble_outline_rounded,
-                      title: conversation.title,
-                      subtitle: controller.copy.desktopConversationSummary(
-                        conversation.isGlobal,
-                        conversation.messageCount,
-                      ),
-                      selected:
-                          conversation.id == controller.selectedConversationId,
-                      onTap: () =>
-                          controller.selectConversation(conversation.id),
-                    ),
-                  ),
-              ],
+          const SizedBox(height: 8),
+          if (embedded)
+            Flexible(
+              fit: FlexFit.loose,
+              child: ListView(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                children: _sessionRows(),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: _sessionRows(),
+              ),
             ),
-          ),
         ],
       ),
     );
+  }
+
+  List<Widget> _sessionRows() {
+    return <Widget>[
+      for (final AiConversation conversation in controller.conversations)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: _DesktopSessionRow(
+            icon: conversation.id == controller.selectedConversationId
+                ? Icons.chat_rounded
+                : Icons.chat_bubble_outline_rounded,
+            title: conversation.title,
+            subtitle: controller.copy.desktopConversationSummary(
+              conversation.isGlobal,
+              conversation.messageCount,
+            ),
+            selected: conversation.id == controller.selectedConversationId,
+            onTap: () => controller.selectConversation(conversation.id),
+          ),
+        ),
+    ];
   }
 }
 
@@ -2828,51 +2896,58 @@ class _DesktopSessionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     return Material(
-      color: selected
-          ? palette.primary.withValues(alpha: 0.14)
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(11),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(11),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                icon,
-                size: 18,
-                color: selected ? palette.primary : palette.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: selected
-                            ? palette.textPrimary
-                            : palette.textSecondary,
-                        fontWeight: selected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        decoration: _desktopOptionDecoration(
+          palette,
+          selected: selected,
+          radius: 7,
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(7),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  icon,
+                  size: 18,
+                  color: selected ? palette.primary : palette.textSecondary,
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: selected
+                                  ? palette.textPrimary
+                                  : palette.textSecondary,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2889,17 +2964,60 @@ class _AssistantAppMark extends StatelessWidget {
       borderRadius: BorderRadius.circular(11),
       child: Image.asset(
         'branding/app_icon.png',
-        width: 38,
-        height: 38,
+        width: 34,
+        height: 34,
         fit: BoxFit.cover,
         errorBuilder:
             (BuildContext context, Object error, StackTrace? stackTrace) =>
                 const SizedBox(
-                  width: 38,
-                  height: 38,
+                  width: 34,
+                  height: 34,
                   child: Icon(Icons.casino_rounded),
                 ),
       ),
+    );
+  }
+}
+
+class _AssistantStatusDot extends StatelessWidget {
+  const _AssistantStatusDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: const SizedBox(width: 8, height: 8),
+    );
+  }
+}
+
+class _AssistantStatusLabel extends StatelessWidget {
+  const _AssistantStatusLabel({required this.label, required this.palette});
+
+  final String label;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _AssistantStatusDot(color: palette.success),
+        const SizedBox(width: 6),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 150),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3021,27 +3139,33 @@ class _DesktopContextToggle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: selected
-            ? palette.primary.withValues(alpha: 0.14)
-            : Colors.transparent,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_off_rounded,
-                  size: 17,
-                  color: selected ? palette.primary : palette.textSecondary,
-                ),
-                const SizedBox(width: 7),
-                Expanded(child: Text(label)),
-              ],
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          decoration: _desktopOptionDecoration(
+            palette,
+            selected: selected,
+            radius: 9,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(9),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_off_rounded,
+                    size: 17,
+                    color: selected ? palette.primary : palette.textSecondary,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(child: Text(label)),
+                ],
+              ),
             ),
           ),
         ),
@@ -3056,14 +3180,12 @@ class _DesktopComposer extends StatelessWidget {
     required this.draftController,
     required this.useGlobalMode,
     required this.onSend,
-    required this.onMic,
   });
 
   final AppController controller;
   final TextEditingController draftController;
   final bool useGlobalMode;
   final Future<void> Function() onSend;
-  final Future<void> Function() onMic;
 
   @override
   Widget build(BuildContext context) {
@@ -3072,13 +3194,15 @@ class _DesktopComposer extends StatelessWidget {
     return AnimatedBuilder(
       animation: draftController,
       builder: (BuildContext context, Widget? child) {
+        final bool isSending = controller.isSendingForContext(
+          useGlobalMode: useGlobalMode,
+        );
         final bool canSend =
-            draftController.text.trim().isNotEmpty &&
-            !controller.isSendingForContext(useGlobalMode: useGlobalMode);
+            draftController.text.trim().isNotEmpty && !isSending;
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: palette.inputSurface,
-            borderRadius: BorderRadius.circular(16),
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: palette.outline),
           ),
           child: Padding(
@@ -3086,19 +3210,10 @@ class _DesktopComposer extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
-                IconButton(
-                  tooltip: copy.desktopVoiceInput,
-                  onPressed:
-                      controller.isSendingForContext(
-                        useGlobalMode: useGlobalMode,
-                      )
-                      ? null
-                      : onMic,
-                  icon: Icon(
-                    controller.isListening
-                        ? Icons.stop_rounded
-                        : Icons.mic_none_rounded,
-                  ),
+                _DesktopAnswerModeSelector(
+                  controller: controller,
+                  useGlobalMode: useGlobalMode,
+                  enabled: !isSending,
                 ),
                 Expanded(
                   child: TextField(
@@ -3116,17 +3231,19 @@ class _DesktopComposer extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 4),
+                Flexible(
+                  flex: 2,
+                  child: _DesktopModelAndReasoningSelector(
+                    controller: controller,
+                    enabled: !isSending,
+                  ),
+                ),
                 IconButton(
-                  tooltip:
-                      controller.isSendingForContext(
-                        useGlobalMode: useGlobalMode,
-                      )
+                  tooltip: isSending
                       ? copy.desktopStopGenerating
                       : copy.desktopSend,
-                  onPressed:
-                      controller.isSendingForContext(
-                        useGlobalMode: useGlobalMode,
-                      )
+                  onPressed: isSending
                       ? () => controller.stopGenerating(
                           useGlobalMode: useGlobalMode,
                         )
@@ -3142,9 +3259,7 @@ class _DesktopComposer extends StatelessWidget {
                         : palette.disabledForeground,
                   ),
                   icon: Icon(
-                    controller.isSendingForContext(useGlobalMode: useGlobalMode)
-                        ? Icons.stop_rounded
-                        : Icons.arrow_upward_rounded,
+                    isSending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
                   ),
                 ),
               ],
@@ -3152,6 +3267,319 @@ class _DesktopComposer extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _DesktopAnswerModeSelector extends StatelessWidget {
+  const _DesktopAnswerModeSelector({
+    required this.controller,
+    required this.useGlobalMode,
+    required this.enabled,
+  });
+
+  final AppController controller;
+  final bool useGlobalMode;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = controller.copy;
+    final bool smartSupplement = controller.allowSmartSupplement(
+      useGlobalMode: useGlobalMode,
+    );
+    return PopupMenuButton<bool>(
+      key: const ValueKey<String>('desktop-answer-mode-selector'),
+      enabled: enabled,
+      tooltip: copy.desktopAnswerModeTitle,
+      onSelected: (bool value) {
+        if (value == smartSupplement) return;
+        unawaited(
+          controller.setAllowSmartSupplement(
+            value,
+            useGlobalMode: useGlobalMode,
+          ),
+        );
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<bool>>[
+        PopupMenuItem<bool>(
+          value: false,
+          child: _AnswerModeMenuItem(
+            icon: Icons.menu_book_outlined,
+            label: copy.desktopOfficialFirst,
+            selected: !smartSupplement,
+          ),
+        ),
+        PopupMenuItem<bool>(
+          value: true,
+          child: _AnswerModeMenuItem(
+            icon: Icons.auto_awesome_outlined,
+            label: copy.desktopSmartSupplement,
+            selected: smartSupplement,
+          ),
+        ),
+      ],
+      child: _DesktopComposerIcon(
+        icon: Icons.add_rounded,
+        palette: palette,
+        tooltip: copy.desktopAnswerModeTitle,
+      ),
+    );
+  }
+}
+
+class _AnswerModeMenuItem extends StatelessWidget {
+  const _AnswerModeMenuItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return Row(
+      children: <Widget>[
+        Icon(icon, size: 18, color: selected ? palette.primary : null),
+        const SizedBox(width: 9),
+        Expanded(child: Text(label)),
+        if (selected)
+          Icon(Icons.check_rounded, size: 17, color: palette.primary),
+      ],
+    );
+  }
+}
+
+class _DesktopComposerIcon extends StatelessWidget {
+  const _DesktopComposerIcon({
+    required this.icon,
+    required this.palette,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final AppPalette palette;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 37,
+        height: 37,
+        child: Icon(icon, color: palette.textSecondary),
+      ),
+    );
+  }
+}
+
+const String _desktopRefreshModelsAction = '__refresh_models__';
+
+class _DesktopModelAndReasoningSelector extends StatelessWidget {
+  const _DesktopModelAndReasoningSelector({
+    required this.controller,
+    required this.enabled,
+  });
+
+  final AppController controller;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = controller.copy;
+    final String selectedModel = controller.aiApiConfig.model.trim();
+    final AiReasoningEffort selectedReasoning =
+        controller.aiApiConfig.reasoningEffort;
+    final List<String> modelIds = <String>[];
+    if (selectedModel.isNotEmpty) modelIds.add(selectedModel);
+    for (final model in controller.availableAiModels) {
+      if (model.id.trim().isNotEmpty && !modelIds.contains(model.id)) {
+        modelIds.add(model.id);
+      }
+    }
+    return PopupMenuButton<String>(
+      key: const ValueKey<String>('desktop-model-selector'),
+      enabled: enabled,
+      tooltip: copy.desktopModel,
+      onSelected: (String value) {
+        if (value == _desktopRefreshModelsAction) {
+          unawaited(controller.refreshAiModels());
+          return;
+        }
+        if (value.startsWith('model:')) {
+          final String model = value.substring('model:'.length).trim();
+          if (model.isNotEmpty && model != selectedModel) {
+            unawaited(controller.setAiModel(model));
+          }
+          return;
+        }
+        if (value.startsWith('reasoning:')) {
+          final AiReasoningEffort effort = AiReasoningEffortX.fromStored(
+            value.substring('reasoning:'.length),
+          );
+          if (effort != selectedReasoning) {
+            unawaited(controller.setAiReasoningEffort(effort));
+          }
+        }
+      },
+      itemBuilder: (BuildContext context) {
+        final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
+          PopupMenuItem<String>(
+            enabled: false,
+            value: 'model-header',
+            child: Text(copy.desktopModel),
+          ),
+          if (modelIds.isEmpty)
+            PopupMenuItem<String>(
+              enabled: false,
+              value: 'model-empty',
+              child: Text(_modelStatusLabel(controller, copy)),
+            )
+          else
+            for (final modelId in modelIds)
+              PopupMenuItem<String>(
+                value: 'model:$modelId',
+                child: _DesktopSelectorMenuItem(
+                  label: _modelLabel(controller, modelId),
+                  selected: modelId == selectedModel,
+                ),
+              ),
+          const PopupMenuDivider(),
+          PopupMenuItem<String>(
+            enabled: false,
+            value: 'reasoning-header',
+            child: Text(copy.aiApiReasoningEffortLabel),
+          ),
+          for (final AiReasoningEffort effort in AiReasoningEffort.values)
+            PopupMenuItem<String>(
+              value: 'reasoning:${effort.storageValue}',
+              child: _DesktopSelectorMenuItem(
+                label: copy.aiApiReasoningEffortName(effort),
+                selected: effort == selectedReasoning,
+              ),
+            ),
+          const PopupMenuDivider(),
+          PopupMenuItem<String>(
+            value: _desktopRefreshModelsAction,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.refresh_rounded, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  controller.aiModelLoadState == AiModelLoadState.loading
+                      ? copy.aiApiModelsLoading
+                      : copy.desktopRefreshModels,
+                ),
+              ],
+            ),
+          ),
+        ];
+        return items;
+      },
+      child: _DesktopModelReasoningChoice(
+        model: selectedModel.isEmpty
+            ? copy.desktopModel
+            : _modelLabel(controller, selectedModel),
+        reasoning: copy.aiApiReasoningEffortName(selectedReasoning),
+        palette: palette,
+      ),
+    );
+  }
+
+  String _modelLabel(AppController controller, String id) {
+    for (final model in controller.availableAiModels) {
+      if (model.id == id) return model.label;
+    }
+    return id;
+  }
+
+  String _modelStatusLabel(AppController controller, AppCopy copy) {
+    return switch (controller.aiModelLoadState) {
+      AiModelLoadState.loading => copy.aiApiModelsLoading,
+      AiModelLoadState.failure => copy.aiApiModelsFailed,
+      AiModelLoadState.empty => copy.aiApiModelsEmpty,
+      _ => copy.aiApiModelsNotLoaded,
+    };
+  }
+}
+
+class _DesktopSelectorMenuItem extends StatelessWidget {
+  const _DesktopSelectorMenuItem({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        if (selected)
+          Icon(Icons.check_rounded, size: 17, color: palette.primary),
+      ],
+    );
+  }
+}
+
+class _DesktopModelReasoningChoice extends StatelessWidget {
+  const _DesktopModelReasoningChoice({
+    required this.model,
+    required this.reasoning,
+    required this.palette,
+  });
+
+  final String model;
+  final String reasoning;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 0, maxWidth: 210),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 11),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                model,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: palette.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              reasoning,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 18,
+              color: palette.textSecondary,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3600,6 +4028,10 @@ class _LibraryFilterChip extends StatelessWidget {
         foregroundColor: selected ? palette.textPrimary : palette.textSecondary,
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        side: BorderSide(
+          color: selected ? palette.primary : Colors.transparent,
+          width: 1.5,
+        ),
       ),
       child: Text(label),
     );

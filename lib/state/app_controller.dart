@@ -635,6 +635,28 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Selects the model used by subsequent assistant runs.
+  ///
+  /// Keeping this operation at the controller boundary ensures the desktop
+  /// composer, settings and any future platform UI share the same persistence,
+  /// model-cache invalidation and active-run isolation behavior.
+  Future<void> setAiModel(String model) async {
+    final String normalized = model.trim();
+    if (normalized.isEmpty || normalized == _aiApiConfig.model.trim()) {
+      return;
+    }
+    await saveAiApiConfig(_aiApiConfig.copyWith(model: normalized));
+  }
+
+  /// Selects the reasoning effort sent to providers that support it.
+  ///
+  /// Automatic deliberately omits the optional request field, preserving
+  /// compatibility with OpenAI-compatible providers that do not implement it.
+  Future<void> setAiReasoningEffort(AiReasoningEffort effort) async {
+    if (_aiApiConfig.reasoningEffort == effort) return;
+    await saveAiApiConfig(_aiApiConfig.copyWith(reasoningEffort: effort));
+  }
+
   bool _aiRunContextChanged(AiApiConfig previous, AiApiConfig next) {
     return previous.name.trim() != next.name.trim() ||
         previous.baseUrl.trim() != next.baseUrl.trim() ||
