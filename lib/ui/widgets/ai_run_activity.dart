@@ -124,62 +124,107 @@ class AiRunActivity extends StatelessWidget {
   }
 
   List<_ProtocolCard> get _protocolCards {
-    final List<AiRunEvent> orderedEvents = events.toList(growable: false)
-      ..sort((AiRunEvent a, AiRunEvent b) => a.sequence.compareTo(b.sequence));
+    final String? currentRunId = events.isEmpty ? null : events.first.runId;
+    final List<AiRunEvent> orderedEvents =
+        events
+            .where(
+              (AiRunEvent event) =>
+                  currentRunId == null || event.runId == currentRunId,
+            )
+            .toList(growable: false)
+          ..sort((AiRunEvent a, AiRunEvent b) {
+            final int sequence = a.sequence.compareTo(b.sequence);
+            return sequence != 0
+                ? sequence
+                : a.timestamp.compareTo(b.timestamp);
+          });
     final List<AiRunEvent> connectionEvents = <AiRunEvent>[];
     _ProtocolCardStatus? status;
     String? subtitle;
+    bool hadInterruption = false;
+
+    String detailFor(AiRunEvent event, String fallback) {
+      final String detail = event.detail?.trim() ?? '';
+      if (detail.isNotEmpty) return detail;
+      final String error = event.errorMessage?.trim() ?? '';
+      return error.isNotEmpty ? error : fallback;
+    }
+
     for (final AiRunEvent event in orderedEvents) {
       switch (event.type) {
         case AiRunEventType.responseStreamStarted:
-          connectionEvents.add(event);
-          status = _ProtocolCardStatus.running;
-          subtitle = _text('正在监听事件流', 'Listening to the event stream');
+          // A healthy stream is an implementation detail. Only expose the
+          // connection timeline after an interruption actually occurs.
+          break;
         case AiRunEventType.responseStreamFailed:
+          hadInterruption = true;
           connectionEvents.add(event);
-          status = _ProtocolCardStatus.failed;
-          subtitle = event.detail?.trim().isNotEmpty == true
-              ? event.detail!.trim()
-              : _text('响应流中断', 'Response stream interrupted');
-        case AiRunEventType.resumeStarted:
-          connectionEvents.add(event);
-          status = _ProtocolCardStatus.running;
-          subtitle = event.detail?.trim().isNotEmpty == true
-              ? event.detail!.trim()
-              : _text('正在恢复连接', 'Resuming the connection');
-        case AiRunEventType.resumeCompleted:
-          connectionEvents.add(event);
-          // A resumed stream is still active until the provider emits its
-          // terminal response completion event.
-          status = _ProtocolCardStatus.running;
-          subtitle = event.detail?.trim().isNotEmpty == true
-              ? event.detail!.trim()
-              : _text('已恢复连接，继续监听', 'Connection restored; listening continues');
-        case AiRunEventType.status:
-          if (event.status == 'response_completed') {
-            connectionEvents.add(event);
-            status = _ProtocolCardStatus.completed;
-            subtitle = _text('事件流已完成', 'Event stream completed');
-          }
+          final int? attempt = event.attempt;
+          final int? maxAttempts = event.maxAttempts;
+          status =
+              attempt != null && maxAttempts != null && attempt < maxAttempts
+              ? _ProtocolCardStatus.running
+              : _ProtocolCardStatus.failed;
+          subtitle = detailFor(
+            event,
+            _text('响应流中断，准备重连', 'Response stream interrupted; reconnecting'),
+          );
           break;
         case AiRunEventType.retry:
+          hadInterruption = true;
           connectionEvents.add(event);
           status = _ProtocolCardStatus.running;
-          subtitle = event.detail?.trim().isNotEmpty == true
-              ? event.detail!.trim()
-              : _text('正在重试连接', 'Retrying the connection');
+          subtitle = detailFor(event, _text('正在重连', 'Reconnecting'));
+          break;
+        case AiRunEventType.resumeStarted:
+          hadInterruption = true;
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.running;
+          subtitle = detailFor(event, _text('正在重连', 'Reconnecting'));
+          break;
+        case AiRunEventType.resumeCompleted:
+          if (!hadInterruption) break;
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.completed;
+          subtitle = detailFor(
+            event,
+            _text('连接已恢复，继续监听', 'Connection restored; listening continues'),
+          );
+          break;
+        case AiRunEventType.status:
+          // response.completed is the run's terminal protocol event. It does
+          // not create a visible card or a second success row.
+          break;
+        case AiRunEventType.failed:
+        case AiRunEventType.incomplete:
+        case AiRunEventType.cancelled:
+          if (!hadInterruption) break;
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.failed;
+          subtitle = detailFor(
+            event,
+            event.type == AiRunEventType.cancelled
+                ? _text('连接已取消', 'Connection cancelled')
+                : _text('无法重新连接', 'Unable to reconnect'),
+          );
           break;
         default:
           break;
       }
     }
-    if (connectionEvents.isEmpty) return const <_ProtocolCard>[];
+    if (!hadInterruption || connectionEvents.isEmpty) {
+      return const <_ProtocolCard>[];
+    }
+    final _ProtocolCardStatus finalStatus =
+        status ?? _ProtocolCardStatus.failed;
     return <_ProtocolCard>[
       _ProtocolCard(
-        kind: _ProtocolCardKind.stream,
-        status: status ?? _ProtocolCardStatus.running,
-        title: _text('连接过程', 'Connection activity'),
-        subtitle: subtitle ?? _text('正在监听事件流', 'Listening to the event stream'),
+        kind: _ProtocolCardKind.resume,
+        status: finalStatus,
+        // Keep the same concise protocol label as the reference interaction.
+        // The state and reason are carried by the subtitle and attempt badge.
+        title: 'resume',
+        subtitle: subtitle ?? _text('无法重新连接', 'Unable to reconnect'),
         events: connectionEvents,
       ),
     ];
@@ -885,7 +930,7 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
   }
 }
 
-enum _ProtocolCardKind { stream, resume }
+enum _ProtocolCardKind { resume }
 
 enum _ProtocolCardStatus { running, completed, failed }
 
@@ -937,9 +982,8 @@ class _ProtocolCardTileState extends State<_ProtocolCardTile> {
     _controller = ExpansibleController();
     _expanded =
         widget.forceExpanded ||
-        (widget.isRunning &&
-            (widget.card.status == _ProtocolCardStatus.running ||
-                widget.card.status == _ProtocolCardStatus.failed));
+        widget.card.status == _ProtocolCardStatus.failed ||
+        (widget.isRunning && widget.card.status == _ProtocolCardStatus.running);
   }
 
   @override
@@ -953,15 +997,17 @@ class _ProtocolCardTileState extends State<_ProtocolCardTile> {
     final bool completed = !oldWidget.isRunCompleted && widget.isRunCompleted;
     final bool expandedNow = !oldWidget.forceExpanded && widget.forceExpanded;
     final bool collapsedNow = oldWidget.forceExpanded && !widget.forceExpanded;
+    final bool failed = status == _ProtocolCardStatus.failed;
 
-    if (runEnded || completed || collapsedNow) {
+    if (completed || collapsedNow || (runEnded && !failed)) {
       _controller.collapse();
+    } else if (runEnded && failed) {
+      _controller.expand();
     } else if (expandedNow) {
       _controller.expand();
     } else if (widget.isRunning &&
         (runResumed || statusChanged) &&
-        (status == _ProtocolCardStatus.running ||
-            status == _ProtocolCardStatus.failed)) {
+        (status == _ProtocolCardStatus.running || failed)) {
       _controller.expand();
     } else if (widget.isRunning &&
         statusChanged &&
@@ -989,29 +1035,39 @@ class _ProtocolCardTileState extends State<_ProtocolCardTile> {
         ? palette.primary
         : palette.textSecondary;
     final AiRunEvent event = card.events.last;
-    final List<String> logLines = <String>[
-      if (event.attempt != null)
-        _text(
-          '第 ${event.attempt} 次尝试（共 ${event.maxAttempts ?? 3} 次）',
-          'Attempt ${event.attempt} of ${event.maxAttempts ?? 3}',
-        ),
-      if (event.duplicateUserMessagePrevented)
-        _text('重复用户消息：已阻止', 'duplicate user message: prevented'),
-      if (event.partialOutputRetained)
-        _text('部分输出：已保留', 'partial output: retained'),
-      for (final AiRunEvent item in card.events)
-        if (item.detail?.trim().isNotEmpty == true) item.detail!.trim(),
-    ];
+    final List<String> logLines = <String>[];
     final List<String> attemptLines = <String>[];
     for (final AiRunEvent item in card.events) {
-      if (item.attempt == null) continue;
-      final String line = _text(
-        '第 ${item.attempt} 次尝试（共 ${item.maxAttempts ?? 3} 次）',
-        'Attempt ${item.attempt} of ${item.maxAttempts ?? 3}',
-      );
-      if (!attemptLines.contains(line)) attemptLines.add(line);
+      if (item.attempt != null) {
+        final String line = _text(
+          '第 ${item.attempt} 次尝试（共 ${item.maxAttempts ?? 3} 次）',
+          'Attempt ${item.attempt} of ${item.maxAttempts ?? 3}',
+        );
+        if (!attemptLines.contains(line)) attemptLines.add(line);
+      }
+      if (item.duplicateUserMessagePrevented) {
+        final String line = _text(
+          '重复用户消息：已阻止',
+          'duplicate user message: prevented',
+        );
+        if (!logLines.contains(line)) logLines.add(line);
+      }
+      if (item.partialOutputRetained) {
+        final String line = _text('部分输出：已保留', 'partial output: retained');
+        if (!logLines.contains(line)) logLines.add(line);
+      }
+      final String detail = item.detail?.trim() ?? '';
+      if (detail.isNotEmpty && !logLines.contains(detail)) {
+        logLines.add(detail);
+      }
     }
-    logLines.insertAll(logLines.isEmpty ? 0 : 1, attemptLines);
+    logLines.insertAll(0, attemptLines);
+    final String? attemptLabel = event.attempt == null
+        ? null
+        : _text(
+            '第 ${event.attempt} / ${event.maxAttempts ?? 3} 次',
+            'Attempt ${event.attempt} / ${event.maxAttempts ?? 3}',
+          );
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.surfaceContainer.withValues(
@@ -1061,19 +1117,26 @@ class _ProtocolCardTileState extends State<_ProtocolCardTile> {
             ),
           ),
         ),
-        trailing: running
-            ? SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: accent),
-              )
-            : Icon(
-                failed
-                    ? Icons.error_outline_rounded
-                    : Icons.check_circle_outline_rounded,
-                size: 18,
-                color: accent,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (attemptLabel != null)
+              Text(
+                attemptLabel,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: failed ? palette.error : palette.primary,
+                ),
               ),
+            const SizedBox(width: 4),
+            Icon(
+              _expanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: failed ? palette.error : palette.textSecondary,
+            ),
+          ],
+        ),
         children: logLines.isEmpty
             ? const <Widget>[]
             : <Widget>[
@@ -1141,6 +1204,12 @@ class _ProtocolIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (status == _ProtocolCardStatus.failed) {
+      return Icon(Icons.link_off_rounded, color: color, size: 20);
+    }
+    if (kind == _ProtocolCardKind.resume) {
+      return Icon(Icons.refresh_rounded, color: color, size: 20);
+    }
     if (status == _ProtocolCardStatus.running) {
       return SizedBox(
         width: 20,
@@ -1148,14 +1217,6 @@ class _ProtocolIcon extends StatelessWidget {
         child: CircularProgressIndicator(strokeWidth: 2, color: color),
       );
     }
-    return Icon(
-      status == _ProtocolCardStatus.failed
-          ? Icons.link_off_rounded
-          : kind == _ProtocolCardKind.resume
-          ? Icons.refresh_rounded
-          : Icons.link_rounded,
-      color: color,
-      size: 20,
-    );
+    return Icon(Icons.link_rounded, color: color, size: 20);
   }
 }

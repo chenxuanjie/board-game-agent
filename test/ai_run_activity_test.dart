@@ -14,6 +14,9 @@ void main() {
     required AiRunEventType type,
     String? stageId,
     AiStageResult? stageResult,
+    String? detail,
+    int? attempt,
+    int? maxAttempts,
   }) {
     return AiRunEvent(
       runId: 'run-1',
@@ -22,6 +25,9 @@ void main() {
       timestamp: DateTime(2026, 9, 1, 12, 0, sequence),
       stageId: stageId,
       stageResult: stageResult,
+      detail: detail,
+      attempt: attempt,
+      maxAttempts: maxAttempts,
     );
   }
 
@@ -34,6 +40,12 @@ void main() {
         sequence: 1,
         type: AiRunEventType.stageStarted,
         stageId: 'official',
+      ),
+      event(
+        sequence: 2,
+        type: AiRunEventType.responseStreamStarted,
+        attempt: 1,
+        maxAttempts: 3,
       ),
     ];
 
@@ -59,6 +71,38 @@ void main() {
     expect(find.text('Agent Run'), findsNothing);
     expect(find.text('执行摘要'), findsNothing);
     expect(find.text('实时运行'), findsNothing);
+    expect(find.text('连接过程'), findsNothing);
+    expect(find.text('正在重连'), findsNothing);
+  });
+
+  testWidgets('does not show a reconnect card for a healthy response stream', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: <AiRunEvent>[
+              event(sequence: 0, type: AiRunEventType.runStarted),
+              event(
+                sequence: 1,
+                type: AiRunEventType.responseStreamStarted,
+                attempt: 1,
+                maxAttempts: 3,
+              ),
+            ],
+            isRunning: true,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('连接过程'), findsNothing);
+    expect(find.text('正在重连'), findsNothing);
+    expect(find.text('resume'), findsNothing);
   });
 
   testWidgets('keeps the completed activity as a flat stage list', (
@@ -222,10 +266,10 @@ void main() {
     expect(find.text('正在查阅社区资料'), findsOneWidget);
   });
 
-  testWidgets('renders reconnects as one continuous response stream card', (
+  testWidgets('expands during reconnect and collapses after it succeeds', (
     WidgetTester tester,
   ) async {
-    final List<AiRunEvent> events = <AiRunEvent>[
+    final List<AiRunEvent> reconnectingEvents = <AiRunEvent>[
       event(sequence: 0, type: AiRunEventType.runStarted),
       event(
         sequence: 1,
@@ -264,6 +308,9 @@ void main() {
         duplicateUserMessagePrevented: true,
         detail: '从 sequence 18 继续监听（第 2 / 3 次）',
       ),
+    ];
+    final List<AiRunEvent> recoveredEvents = <AiRunEvent>[
+      ...reconnectingEvents,
       AiRunEvent(
         runId: 'run-1',
         sequence: 5,
@@ -284,7 +331,7 @@ void main() {
         theme: ThemeData.dark(),
         home: Scaffold(
           body: AiRunActivity(
-            events: events,
+            events: reconnectingEvents,
             isRunning: true,
             palette: PaletteRegistry.classic,
             copy: copy,
@@ -294,11 +341,32 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('连接过程'), findsOneWidget);
-    expect(find.text('resume'), findsNothing);
+    expect(find.text('resume'), findsOneWidget);
     expect(find.textContaining('response.completed 尚未到达'), findsOneWidget);
-    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNWidgets(2));
+    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNothing);
     expect(find.textContaining('第 1 次尝试'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: recoveredEvents,
+            isRunning: true,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('resume'), findsOneWidget);
+    expect(find.textContaining('第 1 次尝试'), findsNothing);
+    await tester.tap(find.text('resume'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('第 1 次尝试'), findsOneWidget);
+    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNWidgets(2));
   });
 
   testWidgets('collapses completed details but keeps them user-expandable', (
@@ -405,8 +473,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text('resume'), findsOneWidget);
     expect(find.textContaining('第 1 次尝试'), findsNothing);
-    await tester.tap(find.text('连接过程'));
+    await tester.tap(find.text('resume'));
     await tester.pumpAndSettle();
     expect(find.textContaining('第 1 次尝试'), findsOneWidget);
   });
@@ -426,9 +495,19 @@ void main() {
         AiRunEvent(
           runId: 'run-terminal',
           sequence: 1,
-          type: AiRunEventType.responseStreamStarted,
+          type: AiRunEventType.responseStreamFailed,
           timestamp: startedAt.add(const Duration(milliseconds: 1)),
+          detail: '响应流中断，准备重连',
           attempt: 1,
+          maxAttempts: 3,
+        ),
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 2,
+          type: AiRunEventType.resumeStarted,
+          timestamp: startedAt.add(const Duration(milliseconds: 2)),
+          detail: '从 sequence 3 继续监听（第 2 / 3 次）',
+          attempt: 2,
           maxAttempts: 3,
         ),
       ];
@@ -436,9 +515,18 @@ void main() {
         ...runningEvents,
         AiRunEvent(
           runId: 'run-terminal',
-          sequence: 2,
+          sequence: 3,
+          type: AiRunEventType.resumeCompleted,
+          timestamp: startedAt.add(const Duration(milliseconds: 3)),
+          attempt: 2,
+          maxAttempts: 3,
+          detail: '已重新建立事件流，继续监听 sequence 4',
+        ),
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 4,
           type: AiRunEventType.stageCompleted,
-          timestamp: startedAt.add(const Duration(milliseconds: 2)),
+          timestamp: startedAt.add(const Duration(milliseconds: 4)),
           stageId: 'official',
           stageResult: AiStageResult(
             stageId: 'official',
@@ -448,16 +536,16 @@ void main() {
         ),
         AiRunEvent(
           runId: 'run-terminal',
-          sequence: 3,
+          sequence: 5,
           type: AiRunEventType.status,
-          timestamp: startedAt.add(const Duration(milliseconds: 3)),
+          timestamp: startedAt.add(const Duration(milliseconds: 5)),
           status: 'response_completed',
         ),
         AiRunEvent(
           runId: 'run-terminal',
-          sequence: 4,
+          sequence: 6,
           type: AiRunEventType.completed,
-          timestamp: startedAt.add(const Duration(milliseconds: 4)),
+          timestamp: startedAt.add(const Duration(milliseconds: 6)),
         ),
       ];
 
@@ -481,10 +569,10 @@ void main() {
       await tester.pumpWidget(buildActivity(completedEvents, false));
       await tester.pumpAndSettle();
       expect(find.textContaining('用时'), findsOneWidget);
-      expect(find.text('连接过程'), findsNothing);
+      expect(find.text('resume'), findsNothing);
       await tester.tap(find.textContaining('用时'));
       await tester.pumpAndSettle();
-      expect(find.text('连接过程'), findsOneWidget);
+      expect(find.text('resume'), findsOneWidget);
       expect(find.textContaining('第 1 次尝试'), findsOneWidget);
     },
   );
