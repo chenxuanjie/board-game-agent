@@ -1,4 +1,5 @@
 import 'chat_message.dart';
+import 'ai_run.dart';
 
 /// The context used by an assistant conversation.
 enum AiConversationScope { global, game }
@@ -17,6 +18,7 @@ class AiConversation {
     required this.updatedAt,
     this.gameId,
     this.opened = true,
+    this.lastRun,
     List<ChatMessage> messages = const <ChatMessage>[],
   }) : messages = List<ChatMessage>.from(messages);
 
@@ -31,6 +33,9 @@ class AiConversation {
   /// the automatic greeting. Older stores without this field derive the value
   /// from the presence of a user message during migration.
   final bool opened;
+
+  /// Latest local Run checkpoint, restored for activity continuity.
+  AiRunCheckpoint? lastRun;
   final DateTime createdAt;
   DateTime updatedAt;
   final List<ChatMessage> messages;
@@ -50,6 +55,8 @@ class AiConversation {
     AiConversationScope? scope,
     String? gameId,
     bool? opened,
+    AiRunCheckpoint? lastRun,
+    bool clearLastRun = false,
     DateTime? createdAt,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
@@ -60,6 +67,7 @@ class AiConversation {
       scope: scope ?? this.scope,
       gameId: gameId ?? this.gameId,
       opened: opened ?? this.opened,
+      lastRun: clearLastRun ? null : (lastRun ?? this.lastRun),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       messages: messages ?? this.messages,
@@ -73,6 +81,7 @@ class AiConversation {
       'scope': scope.name,
       if (gameId != null) 'gameId': gameId,
       'opened': opened,
+      if (lastRun != null) 'lastRun': lastRun!.toMap(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'messages': messages
@@ -102,6 +111,11 @@ class AiConversation {
       scope: scope,
       gameId: gameId?.isEmpty == true ? null : gameId,
       opened: opened,
+      lastRun: map['lastRun'] is Map
+          ? AiRunCheckpoint.fromMap(
+              Map<String, dynamic>.from(map['lastRun'] as Map),
+            )
+          : null,
       createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? now,
       updatedAt: DateTime.tryParse(map['updatedAt'] as String? ?? '') ?? now,
       messages: messages,

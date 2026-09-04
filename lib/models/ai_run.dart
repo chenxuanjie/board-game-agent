@@ -54,6 +54,16 @@ class AiKnowledgeScope {
   final bool allowsGeneralKnowledge;
   final String? gameId;
 
+  factory AiKnowledgeScope.fromCode(String? value, {String? gameId}) {
+    return switch (value?.trim()) {
+      'official' => AiKnowledgeScope.official(gameId: gameId),
+      'community' => AiKnowledgeScope.community(gameId: gameId),
+      'web' => AiKnowledgeScope.web(gameId: gameId),
+      'fallback' => AiKnowledgeScope.fallback(gameId: gameId),
+      _ => AiKnowledgeScope.general(),
+    };
+  }
+
   @override
   bool operator ==(Object other) =>
       other is AiKnowledgeScope && other.code == code && other.gameId == gameId;
@@ -190,6 +200,7 @@ class AiStageResult {
     this.answer,
     this.bufferedText = '',
     this.citations = const <RuleCitation>[],
+    this.inspectedSources = const <RuleCitation>[],
     this.responseId,
     this.model,
     this.usage,
@@ -209,6 +220,11 @@ class AiStageResult {
   final AiStageStatus status;
   final BoardGameAiAnswer? answer;
   final String bufferedText;
+
+  /// Sources that the stage actually inspected. This is intentionally kept
+  /// separate from [citations]: a document may be checked and still not
+  /// provide enough evidence to cite in the final answer.
+  final List<RuleCitation> inspectedSources;
   final List<RuleCitation> citations;
   final String? responseId;
   final String? model;
@@ -247,6 +263,7 @@ class AiStageResult {
       status: status,
       answer: answer,
       bufferedText: bufferedText,
+      inspectedSources: inspectedSources,
       citations: citations,
       responseId: responseId,
       model: model,
@@ -263,9 +280,13 @@ class AiStageResult {
     );
   }
 
-  Map<String, dynamic> toMap() => <String, dynamic>{
+  Map<String, dynamic> toMap({
+    bool includeDetails = false,
+    bool includeCitationQuotes = true,
+  }) => <String, dynamic>{
     'stageId': stageId,
     'scope': scope.code,
+    if (scope.gameId != null) 'gameId': scope.gameId,
     'status': status.name,
     if (responseId != null) 'responseId': responseId,
     if (model != null) 'model': model,
@@ -281,10 +302,80 @@ class AiStageResult {
     'rawEventCount': rawEventCount,
     'outputItemCount': outputItemCount,
     'requestCount': requestCount,
+    if (inspectedSources.isNotEmpty)
+      'inspectedSourceIds': inspectedSources
+          .map((RuleCitation citation) => citation.sourceId)
+          .where((String id) => id.trim().isNotEmpty)
+          .toList(growable: false),
     'citationCount': citations.length,
+    if (includeDetails && inspectedSources.isNotEmpty)
+      'inspectedSources': inspectedSources
+          .map(
+            (RuleCitation citation) =>
+                citation.toMap(includeQuote: includeCitationQuotes),
+          )
+          .toList(growable: false),
+    if (includeDetails && citations.isNotEmpty)
+      'citations': citations
+          .map(
+            (RuleCitation citation) =>
+                citation.toMap(includeQuote: includeCitationQuotes),
+          )
+          .toList(growable: false),
     if (errorCode != null) 'errorCode': errorCode,
     if (errorMessage != null) 'errorMessage': errorMessage,
   };
+
+  factory AiStageResult.fromMap(Map<String, dynamic> map) {
+    final String stageId = (map['stageId'] as String? ?? '').trim();
+    final String? gameId = (map['gameId'] as String?)?.trim();
+    List<RuleCitation> readCitations(String key) {
+      final dynamic raw = map[key];
+      if (raw is! List) return const <RuleCitation>[];
+      return raw
+          .whereType<Map>()
+          .map(
+            (Map value) =>
+                RuleCitation.fromMap(Map<String, dynamic>.from(value)),
+          )
+          .toList(growable: false);
+    }
+
+    final int inputTokens = _asInt(map['inputTokens']);
+    final int outputTokens = _asInt(map['outputTokens']);
+    final int reasoningTokens = _asInt(map['reasoningTokens']);
+    final bool hasUsage =
+        inputTokens > 0 || outputTokens > 0 || reasoningTokens > 0;
+    return AiStageResult(
+      stageId: stageId,
+      scope: AiKnowledgeScope.fromCode(map['scope'] as String?, gameId: gameId),
+      status: AiStageStatus.values.firstWhere(
+        (AiStageStatus value) => value.name == map['status'],
+        orElse: () => AiStageStatus.incomplete,
+      ),
+      inspectedSources: readCitations('inspectedSources'),
+      citations: readCitations('citations'),
+      responseId: map['responseId'] as String?,
+      model: map['model'] as String?,
+      usage: hasUsage
+          ? AiUsage(
+              promptTokens: inputTokens,
+              totalTokens: inputTokens + outputTokens,
+              completionTokens: outputTokens,
+              reasoningTokens: reasoningTokens,
+            )
+          : null,
+      startedAt: DateTime.tryParse(map['startedAt'] as String? ?? ''),
+      completedAt: DateTime.tryParse(map['completedAt'] as String? ?? ''),
+      terminalEventType: map['terminalEventType'] as String?,
+      rawEventCount: _asInt(map['rawEventCount']),
+      outputItemCount: _asInt(map['outputItemCount']),
+      requestCount: _asInt(map['requestCount']),
+      contextKey: map['contextKey'] as String?,
+      errorCode: map['errorCode'] as String?,
+      errorMessage: map['errorMessage'] as String?,
+    );
+  }
 }
 
 /// A normalized business event consumed by the UI or an observability sink.
@@ -358,6 +449,100 @@ class AiRunEvent {
   final AiStageResult? stageResult;
   final BoardGameAiAnswer? answer;
   final AiRunResult? runResult;
+
+  Map<String, dynamic> toMap({bool includeDelta = false}) => <String, dynamic>{
+    'runId': runId,
+    'sequence': sequence,
+    'type': type.name,
+    'timestamp': timestamp.toIso8601String(),
+    if (stageId != null) 'stageId': stageId,
+    if (scope != null) ...<String, dynamic>{
+      'scope': scope!.code,
+      if (scope!.gameId != null) 'scopeGameId': scope!.gameId,
+    },
+    if (rawType != null) 'rawType': rawType,
+    if (responseId != null) 'responseId': responseId,
+    if (sessionId != null) 'sessionId': sessionId,
+    if (contextKey != null) 'contextKey': contextKey,
+    if (model != null) 'model': model,
+    'requestCount': requestCount,
+    if (status != null) 'status': status,
+    if (itemId != null) 'itemId': itemId,
+    if (outputItemType != null) 'outputItemType': outputItemType,
+    if (detail != null) 'detail': detail,
+    if (attempt != null) 'attempt': attempt,
+    if (maxAttempts != null) 'maxAttempts': maxAttempts,
+    if (sequenceNumber != null) 'sequenceNumber': sequenceNumber,
+    if (lastSequence != null) 'lastSequence': lastSequence,
+    if (replay != null) 'replay': replay,
+    if (duplicateUserMessagePrevented) 'duplicateUserMessagePrevented': true,
+    if (partialOutputRetained) 'partialOutputRetained': true,
+    if (includeDelta && delta.isNotEmpty) 'delta': delta,
+    if (toolName != null) 'toolName': toolName,
+    if (errorCode != null) 'errorCode': errorCode,
+    if (errorMessage != null) 'errorMessage': errorMessage,
+    if (citation != null) 'citation': citation!.toMap(includeQuote: false),
+    if (stageResult != null)
+      'stageResult': stageResult!.toMap(
+        includeDetails: true,
+        includeCitationQuotes: false,
+      ),
+  };
+
+  factory AiRunEvent.fromMap(Map<String, dynamic> map) {
+    final RuleCitation? citation = map['citation'] is Map
+        ? RuleCitation.fromMap(
+            Map<String, dynamic>.from(map['citation'] as Map),
+          )
+        : null;
+    final AiStageResult? stageResult = map['stageResult'] is Map
+        ? AiStageResult.fromMap(
+            Map<String, dynamic>.from(map['stageResult'] as Map),
+          )
+        : null;
+    return AiRunEvent(
+      runId: map['runId'] as String? ?? '',
+      sequence: _asInt(map['sequence']),
+      type: AiRunEventType.values.firstWhere(
+        (AiRunEventType value) => value.name == map['type'],
+        orElse: () => AiRunEventType.status,
+      ),
+      timestamp:
+          DateTime.tryParse(map['timestamp'] as String? ?? '') ??
+          DateTime.now(),
+      stageId: map['stageId'] as String?,
+      scope: map['scope'] is String
+          ? AiKnowledgeScope.fromCode(
+              map['scope'] as String,
+              gameId: map['scopeGameId'] as String?,
+            )
+          : null,
+      rawType: map['rawType'] as String?,
+      responseId: map['responseId'] as String?,
+      sessionId: map['sessionId'] as String?,
+      contextKey: map['contextKey'] as String?,
+      model: map['model'] as String?,
+      requestCount: _asInt(map['requestCount']),
+      delta: map['delta'] as String? ?? '',
+      status: map['status'] as String?,
+      itemId: map['itemId'] as String?,
+      outputItemType: map['outputItemType'] as String?,
+      detail: map['detail'] as String?,
+      attempt: _asNullableInt(map['attempt']),
+      maxAttempts: _asNullableInt(map['maxAttempts']),
+      sequenceNumber: _asNullableInt(map['sequenceNumber']),
+      lastSequence: _asNullableInt(map['lastSequence']),
+      replay: map['replay'] as bool?,
+      duplicateUserMessagePrevented:
+          map['duplicateUserMessagePrevented'] as bool? ?? false,
+      partialOutputRetained: map['partialOutputRetained'] as bool? ?? false,
+      citation: citation,
+      toolName: map['toolName'] as String?,
+      errorCode: map['errorCode'] as String?,
+      errorMessage: map['errorMessage'] as String?,
+      stageResult: stageResult,
+    );
+  }
 }
 
 /// The complete outcome of a single orchestrated answer run.
@@ -437,3 +622,85 @@ class AiRunResult {
     'stages': stages.map((AiStageResult stage) => stage.toMap()).toList(),
   };
 }
+
+/// Safe, durable checkpoint for the most recent Run in a conversation.
+///
+/// This restores the local activity timeline after an app restart. It is not
+/// a provider conversation/session and intentionally excludes answer text,
+/// prompts, raw payloads, API keys, and tool argument bodies.
+class AiRunCheckpoint {
+  const AiRunCheckpoint({
+    required this.runId,
+    required this.status,
+    required this.events,
+    this.responseId,
+    this.sessionId,
+    this.contextKey,
+    this.model,
+    this.startedAt,
+    this.completedAt,
+    this.errorCode,
+    this.errorMessage,
+  });
+
+  final String runId;
+  final AiRunStatus status;
+  final List<AiRunEvent> events;
+  final String? responseId;
+  final String? sessionId;
+  final String? contextKey;
+  final String? model;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final String? errorCode;
+  final String? errorMessage;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+    'runId': runId,
+    'status': status.name,
+    if (responseId != null) 'responseId': responseId,
+    if (sessionId != null) 'sessionId': sessionId,
+    if (contextKey != null) 'contextKey': contextKey,
+    if (model != null) 'model': model,
+    if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
+    if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
+    if (errorCode != null) 'errorCode': errorCode,
+    if (errorMessage != null) 'errorMessage': errorMessage,
+    'events': events
+        .map((AiRunEvent event) => event.toMap())
+        .toList(growable: false),
+  };
+
+  factory AiRunCheckpoint.fromMap(Map<String, dynamic> map) {
+    final List<AiRunEvent> events =
+        (map['events'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(
+              (Map value) =>
+                  AiRunEvent.fromMap(Map<String, dynamic>.from(value)),
+            )
+            .where((AiRunEvent event) => event.runId.trim().isNotEmpty)
+            .toList(growable: false);
+    return AiRunCheckpoint(
+      runId:
+          map['runId'] as String? ?? (events.isEmpty ? '' : events.first.runId),
+      status: AiRunStatus.values.firstWhere(
+        (AiRunStatus value) => value.name == map['status'],
+        orElse: () => AiRunStatus.incomplete,
+      ),
+      events: List<AiRunEvent>.unmodifiable(events),
+      responseId: map['responseId'] as String?,
+      sessionId: map['sessionId'] as String?,
+      contextKey: map['contextKey'] as String?,
+      model: map['model'] as String?,
+      startedAt: DateTime.tryParse(map['startedAt'] as String? ?? ''),
+      completedAt: DateTime.tryParse(map['completedAt'] as String? ?? ''),
+      errorCode: map['errorCode'] as String?,
+      errorMessage: map['errorMessage'] as String?,
+    );
+  }
+}
+
+int _asInt(Object? value) => value is num ? value.toInt() : 0;
+
+int? _asNullableInt(Object? value) => value is num ? value.toInt() : null;

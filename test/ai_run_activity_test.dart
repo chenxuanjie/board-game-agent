@@ -1,5 +1,6 @@
 import 'package:board_game_agent/models/ai_run.dart';
 import 'package:board_game_agent/models/app_language.dart';
+import 'package:board_game_agent/models/rule_citation.dart';
 import 'package:board_game_agent/ui/app_copy.dart';
 import 'package:board_game_agent/ui/widgets/ai_run_activity.dart';
 import 'package:board_game_agent/theme/palette_registry.dart';
@@ -105,6 +106,266 @@ void main() {
     expect(find.text('resume'), findsNothing);
   });
 
+  testWidgets('ignores a late run failure after response.completed', (
+    WidgetTester tester,
+  ) async {
+    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+    final List<AiRunEvent> events = <AiRunEvent>[
+      AiRunEvent(
+        runId: 'run-late-error',
+        sequence: 0,
+        type: AiRunEventType.runStarted,
+        timestamp: startedAt,
+      ),
+      AiRunEvent(
+        runId: 'run-late-error',
+        sequence: 1,
+        type: AiRunEventType.stageStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 1)),
+        stageId: 'answering',
+      ),
+      AiRunEvent(
+        runId: 'run-late-error',
+        sequence: 2,
+        type: AiRunEventType.stageCompleted,
+        timestamp: startedAt.add(const Duration(milliseconds: 2)),
+        stageId: 'answering',
+        stageResult: AiStageResult(
+          stageId: 'answering',
+          scope: const AiKnowledgeScope.general(),
+          status: AiStageStatus.answered,
+        ),
+      ),
+      AiRunEvent(
+        runId: 'run-late-error',
+        sequence: 3,
+        type: AiRunEventType.completed,
+        timestamp: startedAt.add(const Duration(milliseconds: 3)),
+      ),
+      // A transport close error delivered after the terminal event must not
+      // turn this completed run into a second failure card.
+      AiRunEvent(
+        runId: 'run-late-error',
+        sequence: 4,
+        type: AiRunEventType.failed,
+        timestamp: startedAt.add(const Duration(milliseconds: 4)),
+        errorMessage: 'connection reset after completion',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: false,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('回答未完成'), findsNothing);
+    expect(find.text('resume 失败'), findsNothing);
+  });
+
+  testWidgets('merges a failed reconnect into the streamed stage', (
+    WidgetTester tester,
+  ) async {
+    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+    final List<AiRunEvent> events = <AiRunEvent>[
+      AiRunEvent(
+        runId: 'run-merged-failure',
+        sequence: 0,
+        type: AiRunEventType.runStarted,
+        timestamp: startedAt,
+      ),
+      AiRunEvent(
+        runId: 'run-merged-failure',
+        sequence: 1,
+        type: AiRunEventType.stageStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 1)),
+        stageId: 'answering',
+      ),
+      AiRunEvent(
+        runId: 'run-merged-failure',
+        sequence: 2,
+        type: AiRunEventType.responseStreamFailed,
+        timestamp: startedAt.add(const Duration(milliseconds: 2)),
+        detail: '响应尚未完成，连接已中断',
+        attempt: 1,
+        maxAttempts: 3,
+      ),
+      AiRunEvent(
+        runId: 'run-merged-failure',
+        sequence: 3,
+        type: AiRunEventType.resumeStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 3)),
+        detail: '重新连接事件流（第 2 / 3 次）',
+        attempt: 2,
+        maxAttempts: 3,
+      ),
+      AiRunEvent(
+        runId: 'run-merged-failure',
+        sequence: 4,
+        type: AiRunEventType.stageCompleted,
+        timestamp: startedAt.add(const Duration(milliseconds: 4)),
+        stageId: 'answering',
+        stageResult: const AiStageResult(
+          stageId: 'answering',
+          scope: AiKnowledgeScope.general(),
+          status: AiStageStatus.incomplete,
+          errorMessage: 'network disconnected',
+        ),
+      ),
+      AiRunEvent(
+        runId: 'run-merged-failure',
+        sequence: 5,
+        type: AiRunEventType.failed,
+        timestamp: startedAt.add(const Duration(milliseconds: 5)),
+        errorMessage: 'network disconnected',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: false,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('回答未完成'), findsOneWidget);
+    expect(find.text('resume 失败'), findsNothing);
+    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('第 1 次尝试'), findsOneWidget);
+    expect(find.textContaining('第 2 次尝试'), findsOneWidget);
+  });
+
+  testWidgets('keeps reconnect details in the latest stage when active is gone', (
+    WidgetTester tester,
+  ) async {
+    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+    final List<AiRunEvent> events = <AiRunEvent>[
+      AiRunEvent(
+        runId: 'run-lost-active',
+        sequence: 0,
+        type: AiRunEventType.runStarted,
+        timestamp: startedAt,
+      ),
+      AiRunEvent(
+        runId: 'run-lost-active',
+        sequence: 1,
+        type: AiRunEventType.stageStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 1)),
+        stageId: 'answering',
+      ),
+      // This terminal stage snapshot models a rebuild that has lost the
+      // renderer's active pointer while the same Run is still reconnecting.
+      AiRunEvent(
+        runId: 'run-lost-active',
+        sequence: 2,
+        type: AiRunEventType.stageCompleted,
+        timestamp: startedAt.add(const Duration(milliseconds: 2)),
+        stageId: 'answering',
+        stageResult: const AiStageResult(
+          stageId: 'answering',
+          scope: AiKnowledgeScope.general(),
+          status: AiStageStatus.incomplete,
+        ),
+      ),
+      AiRunEvent(
+        runId: 'run-lost-active',
+        sequence: 3,
+        type: AiRunEventType.resumeStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 3)),
+        detail: '重新连接事件流（第 2 / 3 次）',
+        attempt: 2,
+        maxAttempts: 3,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: true,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('resume'), findsNothing);
+    expect(find.text('回答未完成'), findsOneWidget);
+    expect(find.textContaining('第 2 次尝试'), findsOneWidget);
+  });
+
+  testWidgets('folds a temporary connection row into a later stage', (
+    WidgetTester tester,
+  ) async {
+    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+    final List<AiRunEvent> events = <AiRunEvent>[
+      AiRunEvent(
+        runId: 'run-late-stage',
+        sequence: 0,
+        type: AiRunEventType.responseStreamFailed,
+        timestamp: startedAt,
+        detail: '网络连接不可用',
+        attempt: 1,
+        maxAttempts: 3,
+      ),
+      AiRunEvent(
+        runId: 'run-late-stage',
+        sequence: 1,
+        type: AiRunEventType.stageStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 1)),
+        stageId: 'answering',
+      ),
+      AiRunEvent(
+        runId: 'run-late-stage',
+        sequence: 2,
+        type: AiRunEventType.resumeStarted,
+        timestamp: startedAt.add(const Duration(milliseconds: 2)),
+        detail: '重新连接事件流（第 2 / 3 次）',
+        attempt: 2,
+        maxAttempts: 3,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: true,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('resume'), findsNothing);
+    expect(find.text('正在生成回答'), findsOneWidget);
+    expect(find.textContaining('第 1 次尝试'), findsOneWidget);
+    expect(find.textContaining('第 2 次尝试'), findsOneWidget);
+  });
+
   testWidgets('keeps the completed activity as a flat stage list', (
     WidgetTester tester,
   ) async {
@@ -136,6 +397,23 @@ void main() {
           stageId: 'official',
           scope: const AiKnowledgeScope.official(gameId: 'game-1'),
           status: AiStageStatus.answered,
+          inspectedSources: const <RuleCitation>[
+            RuleCitation(
+              sourceType: 'official',
+              sourceId: 'rules-book',
+              title: '波多黎各规则书',
+            ),
+          ],
+          citations: const <RuleCitation>[
+            RuleCitation(
+              sourceType: 'official',
+              sourceId: 'rules-book',
+              title: '波多黎各规则书',
+              page: 5,
+              section: '贸易阶段',
+              quote: '船长阶段开始时，船长选择一种商品。',
+            ),
+          ],
         ),
       ),
       AiRunEvent(
@@ -174,19 +452,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('用时'), findsOneWidget);
     expect(find.text('已查阅官方规则'), findsNothing);
-    expect(find.text('detail: 已查阅官方规则'), findsNothing);
+    expect(find.textContaining('资料：波多黎各规则书'), findsNothing);
     expect(find.text('回答已完成'), findsNothing);
     expect(find.text('已完成 · 3s'), findsNothing);
     expect(find.text('查看过程'), findsNothing);
 
     await tester.tap(find.textContaining('用时'));
     await tester.pumpAndSettle();
-    expect(find.text('已查阅官方规则'), findsNWidgets(2));
-    expect(find.text('detail: 已查阅官方规则'), findsOneWidget);
+    expect(find.text('已查阅官方规则'), findsOneWidget);
+    expect(find.textContaining('资料：波多黎各规则书'), findsOneWidget);
+    expect(find.text('章节：贸易阶段'), findsOneWidget);
+    expect(find.text('页码：第 5 页'), findsOneWidget);
+    expect(find.textContaining('引用：船长阶段开始时'), findsOneWidget);
 
     await tester.tap(find.textContaining('用时'));
     await tester.pumpAndSettle();
-    expect(find.text('detail: 已查阅官方规则'), findsNothing);
+    expect(find.textContaining('资料：波多黎各规则书'), findsNothing);
   });
 
   testWidgets('does not show a later stage before the active stage completes', (
@@ -341,7 +622,8 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('resume'), findsOneWidget);
+    expect(find.text('正在查阅官方规则'), findsOneWidget);
+    expect(find.text('resume'), findsNothing);
     expect(find.textContaining('响应尚未完成，连接已中断'), findsOneWidget);
     expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNothing);
     expect(find.textContaining('第 1 次尝试'), findsOneWidget);
@@ -361,12 +643,12 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('resume'), findsOneWidget);
-    expect(find.textContaining('第 1 次尝试'), findsNothing);
-    await tester.tap(find.text('resume'));
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('正在查阅官方规则'), findsOneWidget);
+    expect(find.text('resume'), findsNothing);
     expect(find.textContaining('第 1 次尝试'), findsOneWidget);
-    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsOneWidget);
+    // Reconnect details remain inside the same stage while the run is active.
+    expect(find.textContaining('已重新建立事件流'), findsOneWidget);
+    expect(find.textContaining('已重新建立事件流'), findsOneWidget);
   });
 
   testWidgets('collapses completed details but keeps them user-expandable', (
@@ -413,17 +695,17 @@ void main() {
     await tester.pumpWidget(
       buildActivity(events: <AiRunEvent>[started], isRunning: true),
     );
-    expect(find.text('detail: 从当前桌游资料中查找依据'), findsOneWidget);
+    expect(find.text('从当前桌游资料中查找依据'), findsOneWidget);
 
     await tester.pumpWidget(
       buildActivity(events: <AiRunEvent>[started, completed], isRunning: true),
     );
     await tester.pumpAndSettle();
-    expect(find.text('detail: 已查阅官方规则'), findsNothing);
+    expect(find.text('资料：波多黎各规则书'), findsNothing);
 
     await tester.tap(find.byType(ExpansionTile).first);
     await tester.pumpAndSettle();
-    expect(find.text('detail: 已查阅官方规则'), findsOneWidget);
+    expect(find.text('资料：波多黎各规则书'), findsNothing);
   });
 
   testWidgets('failed protocol details stay visible while the run retries', (
@@ -572,8 +854,72 @@ void main() {
       expect(find.text('resume'), findsNothing);
       await tester.tap(find.textContaining('用时'));
       await tester.pumpAndSettle();
-      expect(find.text('resume'), findsOneWidget);
+      expect(find.text('已查阅官方规则'), findsAtLeastNWidgets(1));
+      expect(find.text('resume'), findsNothing);
       expect(find.textContaining('第 1 次尝试'), findsOneWidget);
     },
   );
+
+  testWidgets('shows only citation facts that are present', (
+    WidgetTester tester,
+  ) async {
+    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+    final List<AiRunEvent> events = <AiRunEvent>[
+      AiRunEvent(
+        runId: 'run-facts',
+        sequence: 0,
+        type: AiRunEventType.stageStarted,
+        timestamp: startedAt,
+        stageId: 'official',
+      ),
+      AiRunEvent(
+        runId: 'run-facts',
+        sequence: 1,
+        type: AiRunEventType.stageCompleted,
+        timestamp: startedAt.add(const Duration(seconds: 1)),
+        stageId: 'official',
+        stageResult: const AiStageResult(
+          stageId: 'official',
+          scope: AiKnowledgeScope.official(gameId: 'game-1'),
+          status: AiStageStatus.insufficient,
+          inspectedSources: <RuleCitation>[
+            RuleCitation(
+              sourceType: 'official',
+              sourceId: 'rules-book',
+              title: '规则书',
+            ),
+          ],
+        ),
+      ),
+      AiRunEvent(
+        runId: 'run-facts',
+        sequence: 2,
+        type: AiRunEventType.completed,
+        timestamp: startedAt.add(const Duration(seconds: 2)),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: false,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('用时'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('资料：规则书'), findsOneWidget);
+    expect(find.textContaining('页码：'), findsNothing);
+    expect(find.textContaining('章节：'), findsNothing);
+    expect(find.textContaining('引用：'), findsNothing);
+    expect(find.textContaining('detail:'), findsNothing);
+  });
 }

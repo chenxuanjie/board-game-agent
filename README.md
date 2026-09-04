@@ -97,6 +97,9 @@
 - **直接遵循**：Responses API 的请求/响应字段、流式事件语义、Structured Outputs 和 Compaction 字段由共享客户端统一映射。
 - **应用层自有设计**：桌游问题路由、官方/社区/联网阶段顺序、知识库来源校验、失败回退和 Flutter 页面状态。
 - **仅作参考**：Agents SDK、LibreChat、Open WebUI、Vercel AI SDK、LobeHub 的产品结构和工作方式；它们没有被当作 Dart 依赖直接打包。
+- `openai_dart` 是社区维护的 Dart 包，本项目通过它完成 HTTP/SSE 和 Responses 协议适配；它不是 OpenAI 官方 Flutter/Dart SDK，也不提供本项目的 UI、重试、会话和桌游领域逻辑。OpenAI 的事件语义以官方文档为准。
+- 当前依赖、仓库和本机可检查的包索引中没有找到名为 `hostpand` 的可用包，因此没有假设它提供会话、重连或 Agent 能力；如果名称有误，需要先确认准确项目地址和许可证。
+- `openai_dart` 底层虽有 Conversation 和 `previous_response_id` 的模型/资源，但本项目的 `ResponsesRequest` 目前没有把它们暴露到业务层；当前请求明确使用 `store=false`，因此本轮只恢复本地检查点和加密 Compaction，不把本地 Run 误称为服务端 Session。接入服务端会话前还需要能力协商、隐私开关和自定义供应商降级测试。
 - **许可证边界**：借鉴开源项目时只参考公开的架构与交互，不复制其受许可证约束的实现；如未来直接复用代码，必须在引入前单独核对许可证和归属声明。
 
 这意味着 `ResponsesRulesWorkflow` 当前是项目自己的过渡编排层，而不是某个官方框架类。后续继续扩展工具调用、重试、取消、评测和多 Agent 能力时，应优先把路由、阶段执行、流式归并、上下文存储拆成独立组件，避免所有能力继续堆叠在同一个类中。
@@ -118,6 +121,14 @@ Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段
 `test/responses_rules_workflow_test.dart`、`test/ai_run_orchestrator_test.dart`、`test/ai_run_telemetry_test.dart` 和共享包的 `test/responses_client_test.dart` 覆盖以下行为：普通问题不加载桌游文件、官方/社区/Web 顺序、Web 中间文本不进入气泡、真实引用校验、尾部失败不覆盖已收集诊断、等待 `response.completed`、最近 12 条输入、Compaction 跨实例恢复和替换旧窗口、模型/知识范围隔离、自定义 Responses 能力降级、遥测有界持久化，以及事件状态一致性。
 
 当前没有把 LibreChat、Open WebUI、Vercel AI SDK 或 Agents SDK 当作 Flutter 运行时依赖；它们只提供架构和交互参考。Responses API 的字段与事件语义由 `shared_packages/app_ai_client` 统一映射，应用层只提交经过阶段校验的最终答案。
+
+### 本轮可靠性补强
+
+- 终态事件现在携带完整的 `AiRunResult`。失败时，控制器会从已经完成或已确认部分结果的阶段生成“已确认进度”，并同时保留可安全显示的部分答案、可读失败原因、尝试次数和重试入口；进度会逐阶段展示真实资料标题、章节、页码、引用内容和来源，缺失字段不会编造。
+- `AiConversation` 会保存最近一次 Run 的本地检查点。应用重启后可恢复阶段时间线、引用元数据、响应 ID、错误分类和耗时；每个 token 的 `delta`、提示词、工具参数、文件原文和 API 密钥不会写入检查点。
+- 检查点事件有数量上限，并过滤高频文本增量；它是本地 UI/诊断恢复，不等同于 OpenAI 的服务端 Conversation，也不会伪造服务端会话关系。
+- `openai_dart` 是 `app_ai_client` 使用的传输/协议依赖，提供请求、SSE 事件和响应解析；它不负责本项目的桌游问题路由、阶段编排、失败文案、滚动跟随、会话文件或跨平台 UI。这些属于应用产品层，因此仍需要在本项目中实现。
+- 当前测试新增了检查点往返和终态 `AiRunResult` 传播验证；真实 OpenAI、自定义服务商、断网、Windows/Web/Android smoke test 仍需在目标环境提供可用配置后执行，不能由离线单元测试代替。
 
 ## 相关文档
 

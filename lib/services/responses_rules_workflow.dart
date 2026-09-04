@@ -612,6 +612,7 @@ class ResponsesRulesWorkflow {
               isFailure: true,
               errorMessage: 'Run completed without a validated answer.',
               runEvent: event,
+              runResult: event.runResult,
             );
             continue;
           }
@@ -621,6 +622,7 @@ class ResponsesRulesWorkflow {
             citations: answer.citations,
             isDone: true,
             runEvent: event,
+            runResult: event.runResult,
           );
         case AiRunEventType.failed:
         case AiRunEventType.incomplete:
@@ -653,6 +655,7 @@ class ResponsesRulesWorkflow {
             isFailure: event.type != AiRunEventType.cancelled,
             errorMessage: event.errorMessage,
             runEvent: event,
+            runResult: event.runResult,
           );
         case AiRunEventType.status:
         case AiRunEventType.textDelta:
@@ -713,6 +716,9 @@ class ResponsesRulesWorkflow {
           stageId: scope.code,
           scope: scope,
           status: AiStageStatus.skipped,
+          inspectedSources: prepared.documents
+              .map((RuleDocument document) => document.toCitation())
+              .toList(growable: false),
         ),
       );
       return;
@@ -736,6 +742,9 @@ class ResponsesRulesWorkflow {
             scope: scope,
             status: _stageStatusForTerminal(stream.terminalType),
             bufferedText: stream.text,
+            inspectedSources: prepared.documents
+                .map((RuleDocument document) => document.toCitation())
+                .toList(growable: false),
             responseId: stream.response?.id,
             model: stream.response?.model,
             usage: stream.response?.usage,
@@ -760,6 +769,9 @@ class ResponsesRulesWorkflow {
               : AiStageStatus.answered,
           answer: parsed.answer,
           bufferedText: stream.text,
+          inspectedSources: prepared.documents
+              .map((RuleDocument document) => document.toCitation())
+              .toList(growable: false),
           responseId: stream.response?.id,
           model: stream.response?.model,
           usage: stream.response?.usage,
@@ -1248,6 +1260,12 @@ class ResponsesRulesWorkflow {
             : null;
         break;
       } catch (error) {
+        // The provider may report response.completed and then fail while the
+        // HTTP stream is being closed. The completed event is authoritative;
+        // never turn that close-time error into a retry of the same answer.
+        if (terminalType == ResponsesStreamEventType.completed) {
+          break;
+        }
         if (attempts < 3 && _isRetryableStageError(error)) {
           yield AiStageExecutionEvent(
             type: AiStageExecutionEventType.responseStreamFailed,
@@ -1313,7 +1331,10 @@ class ResponsesRulesWorkflow {
       }
     }
 
-    final ResponsesStreamEventType finalTerminalType = terminalType;
+    // A stream that exits through any error path is incomplete unless an
+    // explicit terminal event has already set the value above.
+    final ResponsesStreamEventType finalTerminalType =
+        terminalType ?? ResponsesStreamEventType.incomplete;
     text = _preferCompleteText(retainedText, text);
     final ResponsesResponse? collectedResponse = response;
     if (collectedResponse != null) {
@@ -1606,6 +1627,7 @@ class ResponsesRulesWorkflow {
       status: result.status,
       answer: result.answer,
       bufferedText: result.bufferedText,
+      inspectedSources: result.inspectedSources,
       citations: result.answer?.citations ?? const <RuleCitation>[],
       responseId: result.responseId,
       model: result.model,
@@ -1672,6 +1694,9 @@ class ResponsesRulesWorkflow {
         return _StageResult(
           status: terminalStatus,
           bufferedText: response.text,
+          inspectedSources: prepared.documents
+              .map((RuleDocument document) => document.toCitation())
+              .toList(growable: false),
           responseId: response.id,
           model: response.model,
           usage: response.usage,
@@ -1693,6 +1718,9 @@ class ResponsesRulesWorkflow {
             : AiStageStatus.answered,
         answer: parsed.answer,
         bufferedText: response.text,
+        inspectedSources: prepared.documents
+            .map((RuleDocument document) => document.toCitation())
+            .toList(growable: false),
         responseId: response.id,
         model: response.model,
         usage: response.usage,
@@ -1702,6 +1730,9 @@ class ResponsesRulesWorkflow {
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
+        inspectedSources: prepared.documents
+            .map((RuleDocument document) => document.toCitation())
+            .toList(growable: false),
         requestCount: 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
@@ -2580,6 +2611,7 @@ class _StageResult {
     this.status = AiStageStatus.insufficient,
     this.answer,
     this.bufferedText = '',
+    this.inspectedSources = const <RuleCitation>[],
     this.responseId,
     this.model,
     this.usage,
@@ -2592,6 +2624,7 @@ class _StageResult {
   final AiStageStatus status;
   final BoardGameAiAnswer? answer;
   final String bufferedText;
+  final List<RuleCitation> inspectedSources;
   final String? responseId;
   final String? model;
   final AiUsage? usage;

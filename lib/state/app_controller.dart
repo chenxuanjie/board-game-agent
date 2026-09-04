@@ -608,8 +608,16 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> saveAiApiConfig(AiApiConfig next) async {
+    final AiApiConfig previous = _aiApiConfig;
+    final bool runContextChanged = _aiRunContextChanged(previous, next);
     _invalidateActiveRuns();
     _aiApiConfig = next;
+    if (runContextChanged) {
+      // A response id, compaction snapshot, and activity timeline belong to
+      // one provider/model context. Keep the conversation messages, but do
+      // not show or reuse a Run produced by an incompatible endpoint.
+      _clearIncompatibleRunState();
+    }
     _aiConnectivityStatus = ConnectivityStatus.unknown(
       next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
           ? '未配置 AI 服务'
@@ -621,7 +629,41 @@ class AppController extends ChangeNotifier {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, next);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
     }
+    if (runContextChanged) {
+      _queueConversationSave();
+    }
     notifyListeners();
+  }
+
+  bool _aiRunContextChanged(AiApiConfig previous, AiApiConfig next) {
+    return previous.name.trim() != next.name.trim() ||
+        previous.baseUrl.trim() != next.baseUrl.trim() ||
+        previous.apiKey.trim() != next.apiKey.trim() ||
+        previous.model.trim() != next.model.trim() ||
+        previous.apiKeyHeader.trim() != next.apiKeyHeader.trim() ||
+        previous.chatPath.trim() != next.chatPath.trim() ||
+        previous.reasoningEffort != next.reasoningEffort ||
+        previous.responseSpeed != next.responseSpeed;
+  }
+
+  void _clearIncompatibleRunState() {
+    for (final AiConversation conversation in _conversations.values) {
+      conversation.lastRun = null;
+    }
+    for (final _ChatGenerationState generation in _generationStates.values) {
+      generation
+        ..runEvents.clear()
+        ..runId = null
+        ..contextKey = null
+        ..runStartedAt = null
+        ..runCompletedAt = null
+        ..runStatus = null
+        ..runResult = null
+        ..runSequence = 0
+        ..syntheticRun = false
+        ..checkpointRestored = true;
+    }
+    _runExpandedByContext.clear();
   }
 
   bool _isSaveableCustomPreset(AiApiConfig config) {
@@ -1038,6 +1080,10 @@ class AppController extends ChangeNotifier {
           timestamp: DateTime.now(),
         ),
       );
+    final AiConversation? existingConversation = _conversations[conversationId];
+    if (existingConversation != null && existingConversation.lastRun != null) {
+      existingConversation.lastRun = null;
+    }
     await _ttsService.stop();
     _trimConversationMessages(messages);
     _queueConversationSave(conversationId: conversationId);
@@ -1124,6 +1170,7 @@ class AppController extends ChangeNotifier {
     try {
       BoardGameAiAnswer? finalAnswer;
       BoardGameAiStreamEvent? terminalEvent;
+      AiRunResult? terminalRunResult;
       await for (final BoardGameAiStreamEvent event in _aiService.streamReply(
         prompt: trimmed,
         language: _language,
@@ -1153,6 +1200,9 @@ class AppController extends ChangeNotifier {
         }
         if (event.isDone || event.isFailure) {
           terminalEvent = event;
+        }
+        if (event.runResult != null) {
+          terminalRunResult = event.runResult;
         }
         if (event.delta.isNotEmpty) {
           // Coalesce deltas into one UI update per frame-sized window. The
@@ -1246,6 +1296,11 @@ class AppController extends ChangeNotifier {
           terminalNotice,
           reason: reason,
           attempts: _runAttemptCount(generation),
+          progressLines: _confirmedProgressLines(
+            generation,
+            runResult: terminalRunResult,
+          ),
+          partialOutputRetained: partialText.isNotEmpty,
         );
         final String text = partialText.isEmpty
             ? failureNotice
@@ -1302,6 +1357,8 @@ class AppController extends ChangeNotifier {
           copy.aiReplyFailed,
           reason: _safeStatusError(error),
           attempts: _runAttemptCount(generation),
+          progressLines: _confirmedProgressLines(generation),
+          partialOutputRetained: partialText.isNotEmpty,
         );
         final String text = partialText.isEmpty
             ? failureNotice
@@ -1677,6 +1734,8 @@ class AppController extends ChangeNotifier {
     String base, {
     required String reason,
     required int attempts,
+    List<String> progressLines = const <String>[],
+    bool partialOutputRetained = false,
   }) {
     final String attemptText = _language == AppLanguage.zhHans
         ? '尝试 $attempts 次'
@@ -1684,8 +1743,217 @@ class AppController extends ChangeNotifier {
     final String reasonText = _language == AppLanguage.zhHans
         ? '失败原因：$reason'
         : 'Reason: $reason';
-    return '$base\n$reasonText · $attemptText';
+    final List<String> lines = <String>['$base\n$reasonText · $attemptText'];
+    if (partialOutputRetained) {
+      lines.add(
+        _language == AppLanguage.zhHans
+            ? '已保留已生成的部分答案，可点击重试继续。'
+            : 'The generated partial answer was kept. Retry to continue.',
+      );
+    }
+    if (progressLines.isNotEmpty) {
+      lines.add(
+        '${_language == AppLanguage.zhHans ? '已确认进度：' : 'Confirmed progress:'}\n'
+        '${progressLines.join('\n')}',
+      );
+    }
+    return lines.join('\n');
   }
+
+  /// Builds user-readable progress from validated stage results only.
+  ///
+  /// Raw JSON, tool arguments and partial structured output are intentionally
+  /// excluded. This preserves useful work after a failed run without making
+  /// an unvalidated intermediate response look like an answer. The summary
+  /// line is followed by every validated source and citation detail so a
+  /// failed run does not hide work that was already confirmed.
+  List<String> _confirmedProgressLines(
+    _ChatGenerationState generation, {
+    AiRunResult? runResult,
+  }) {
+    final List<AiStageResult> stageResults = <AiStageResult>[];
+    if (runResult != null) {
+      stageResults.addAll(runResult.stages);
+    }
+    if (stageResults.isEmpty) {
+      for (final AiRunEvent event in generation.runEvents) {
+        final AiStageResult? result = event.stageResult;
+        if (event.type != AiRunEventType.stageCompleted || result == null) {
+          continue;
+        }
+        stageResults.add(result);
+      }
+    }
+
+    final Map<String, AiStageResult> latestByStage = <String, AiStageResult>{
+      for (final AiStageResult result in stageResults) result.stageId: result,
+    };
+    final List<String> lines = <String>[];
+    void addLine(String value) {
+      final String normalized = value.trimRight();
+      if (normalized.isNotEmpty && !lines.contains(normalized)) {
+        lines.add(normalized);
+      }
+    }
+
+    for (final AiStageResult result in latestByStage.values) {
+      final String label = _progressStageLabel(result.stageId);
+      final int inspected = result.inspectedSources.length;
+      final int citations = result.citations.length;
+      switch (result.status) {
+        case AiStageStatus.answered:
+          addLine(
+            citations > 0
+                ? _language == AppLanguage.zhHans
+                      ? '$label：已确认 $citations 条依据'
+                      : '$label: $citations verified references'
+                : _language == AppLanguage.zhHans
+                ? '$label：已得到阶段结果'
+                : '$label: stage result confirmed',
+          );
+        case AiStageStatus.insufficient:
+          addLine(
+            _language == AppLanguage.zhHans
+                ? '$label：已检查 $inspected 份资料，未找到可直接引用的内容'
+                : '$label: checked $inspected source(s), no directly citable result',
+          );
+        case AiStageStatus.unavailable:
+          addLine(
+            _language == AppLanguage.zhHans
+                ? '$label：资料暂时不可用'
+                : '$label: sources were temporarily unavailable',
+          );
+        case AiStageStatus.skipped:
+          addLine(
+            _language == AppLanguage.zhHans
+                ? '$label：按当前知识范围跳过'
+                : '$label: skipped by the active knowledge scope',
+          );
+        case AiStageStatus.failed:
+        case AiStageStatus.incomplete:
+        case AiStageStatus.cancelled:
+          if (inspected == 0 && citations == 0) continue;
+          addLine(
+            citations > 0
+                ? _language == AppLanguage.zhHans
+                      ? '$label：阶段未完成，但已确认 $citations 条依据'
+                      : '$label: incomplete, but $citations references were verified'
+                : _language == AppLanguage.zhHans
+                ? '$label：阶段未完成，但已保留 $inspected 份已检查资料'
+                : '$label: incomplete, but $inspected inspected source(s) were kept',
+          );
+      }
+
+      // Keep the compact stage summary, then expose every confirmed item.
+      // These are already validated RuleCitation values, never raw provider
+      // payloads or unparsed structured output.
+      final bool canDescribeInspectedSources =
+          result.status != AiStageStatus.unavailable &&
+          result.status != AiStageStatus.skipped;
+      if (canDescribeInspectedSources && result.inspectedSources.isNotEmpty) {
+        addLine(
+          _language == AppLanguage.zhHans
+              ? '$label：已检查 ${result.inspectedSources.length} 份资料'
+              : '$label: checked ${result.inspectedSources.length} source(s)',
+        );
+        for (final RuleCitation citation in result.inspectedSources) {
+          for (final String detail in _confirmedCitationLines(
+            citation,
+            confirmed: false,
+          )) {
+            addLine('  $detail');
+          }
+        }
+      }
+      if (result.citations.isNotEmpty) {
+        for (int index = 0; index < result.citations.length; index++) {
+          final RuleCitation citation = result.citations[index];
+          final List<String> citationLines = _confirmedCitationLines(
+            citation,
+            confirmed: true,
+            index: index + 1,
+          );
+          for (final String detail in citationLines) {
+            addLine('  $detail');
+          }
+        }
+      }
+    }
+    return List<String>.unmodifiable(lines);
+  }
+
+  /// Formats only fields that were supplied by a validated [RuleCitation].
+  ///
+  /// A source can be inspected without becoming a citation, so both kinds of
+  /// detail are retained. Missing title/page/section/quote fields are omitted
+  /// rather than replaced with guessed values.
+  List<String> _confirmedCitationLines(
+    RuleCitation citation, {
+    required bool confirmed,
+    int? index,
+  }) {
+    final List<String> lines = <String>[];
+    final String title = citation.title?.trim() ?? '';
+    final String path = citation.path?.trim() ?? '';
+    final String? label = title.isNotEmpty
+        ? title
+        : path.isNotEmpty
+        ? path.substring(path.lastIndexOf(RegExp(r'[\\/]')) + 1)
+        : null;
+    final String prefix = confirmed
+        ? _language == AppLanguage.zhHans
+              ? '已确认依据${index == null ? '' : ' $index'}'
+              : 'Verified basis${index == null ? '' : ' $index'}'
+        : _language == AppLanguage.zhHans
+        ? '已检查资料'
+        : 'Inspected source';
+    if (label != null && label.isNotEmpty) {
+      lines.add('$prefix：$label');
+    } else {
+      // A source ID is an internal join key, not a user-facing citation.
+      // Keep the confirmed item visible without leaking that identifier.
+      lines.add(prefix);
+    }
+    final String section = citation.section?.trim() ?? '';
+    if (section.isNotEmpty) {
+      lines.add(
+        _language == AppLanguage.zhHans ? '章节：$section' : 'Section: $section',
+      );
+    }
+    if (citation.page != null) {
+      lines.add(
+        _language == AppLanguage.zhHans
+            ? '页码：第 ${citation.page} 页'
+            : 'Page: ${citation.page}',
+      );
+    }
+    final String quote = citation.quote?.trim() ?? '';
+    if (quote.isNotEmpty) {
+      lines.add(
+        _language == AppLanguage.zhHans ? '引用：$quote' : 'Quote: $quote',
+      );
+    }
+    final Uri? uri = Uri.tryParse(citation.url?.trim() ?? '');
+    if (uri != null && uri.host.isNotEmpty) {
+      lines.add(
+        _language == AppLanguage.zhHans
+            ? '来源：${uri.host}'
+            : 'Domain: ${uri.host}',
+      );
+    }
+    return lines;
+  }
+
+  String _progressStageLabel(String stageId) => switch (stageId) {
+    'official' => _language == AppLanguage.zhHans ? '官方资料' : 'Official sources',
+    'community' =>
+      _language == AppLanguage.zhHans ? '社区资料' : 'Community sources',
+    'web' => _language == AppLanguage.zhHans ? '联网搜索' : 'Web search',
+    'general' ||
+    'fallback' ||
+    'answering' => _language == AppLanguage.zhHans ? '回答整理' : 'Answer drafting',
+    _ => _language == AppLanguage.zhHans ? '阶段 $stageId' : 'Stage $stageId',
+  };
 
   Future<void> prefetchHomeImages() async {
     final imagePaths = <String>{
@@ -2890,6 +3158,7 @@ class AppController extends ChangeNotifier {
       ..runCompletedAt = null
       ..runStatus = null
       ..runSequence = 0
+      ..runResult = null
       ..syntheticRun = true;
     _runExpandedByContext[generation.contextKey ?? ''] = true;
     _appendRunEvent(
@@ -2914,6 +3183,9 @@ class AppController extends ChangeNotifier {
         ..syntheticRun = false;
     }
     _appendRunEvent(generation, event);
+    if (event.runResult != null) {
+      generation.runResult = event.runResult;
+    }
   }
 
   void _appendRunEvent(_ChatGenerationState generation, AiRunEvent event) {
@@ -3003,6 +3275,7 @@ class AppController extends ChangeNotifier {
     AiRunStatus status,
   ) {
     if (generation.runStatus != null && generation.runCompletedAt != null) {
+      _persistRunCheckpoint(generation, generation.runStatus!);
       return;
     }
     if (generation.syntheticRun && status == AiRunStatus.completed) {
@@ -3037,6 +3310,47 @@ class AppController extends ChangeNotifier {
         ),
       );
     }
+    _persistRunCheckpoint(generation, status);
+  }
+
+  void _persistRunCheckpoint(
+    _ChatGenerationState generation,
+    AiRunStatus status,
+  ) {
+    final String? conversationId = generation.contextKey;
+    if (conversationId == null || conversationId.isEmpty) return;
+    final AiConversation? conversation = _conversations[conversationId];
+    if (conversation == null || generation.runEvents.isEmpty) return;
+    final AiRunEvent terminal = generation.runEvents.lastWhere(
+      (AiRunEvent event) =>
+          event.type == AiRunEventType.completed ||
+          event.type == AiRunEventType.failed ||
+          event.type == AiRunEventType.incomplete ||
+          event.type == AiRunEventType.cancelled,
+      orElse: () => generation.runEvents.last,
+    );
+    final AiRunEvent first = generation.runEvents.first;
+    final List<AiRunEvent> checkpointEvents = generation.runEvents
+        .where((AiRunEvent event) => event.type != AiRunEventType.textDelta)
+        .toList(growable: false);
+    final List<AiRunEvent> boundedEvents = checkpointEvents.length <= 240
+        ? checkpointEvents
+        : checkpointEvents.sublist(checkpointEvents.length - 240);
+    final AiRunCheckpoint checkpoint = AiRunCheckpoint(
+      runId: generation.runId ?? first.runId,
+      status: status,
+      events: List<AiRunEvent>.unmodifiable(boundedEvents),
+      responseId: terminal.responseId,
+      sessionId: terminal.sessionId,
+      contextKey: terminal.contextKey ?? conversationId,
+      model: terminal.model ?? _aiApiConfig.model,
+      startedAt: generation.runStartedAt ?? first.timestamp,
+      completedAt: generation.runCompletedAt ?? terminal.timestamp,
+      errorCode: terminal.errorCode,
+      errorMessage: terminal.errorMessage,
+    );
+    conversation.lastRun = checkpoint;
+    _queueConversationSave(conversationId: conversationId);
   }
 
   bool _hasTerminalRunEvent(_ChatGenerationState generation) {
@@ -3449,7 +3763,24 @@ class AppController extends ChangeNotifier {
     required bool useGlobalMode,
   }) {
     final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
-    return _generationStates.putIfAbsent(key, _ChatGenerationState.new);
+    final _ChatGenerationState generation = _generationStates.putIfAbsent(
+      key,
+      _ChatGenerationState.new,
+    );
+    if (!generation.checkpointRestored) {
+      final AiRunCheckpoint? checkpoint = _conversations[key]?.lastRun;
+      if (checkpoint != null && checkpoint.events.isNotEmpty) {
+        generation
+          ..runId = checkpoint.runId
+          ..runEvents.addAll(checkpoint.events)
+          ..runStartedAt = checkpoint.startedAt
+          ..runCompletedAt = checkpoint.completedAt
+          ..runStatus = checkpoint.status
+          ..syntheticRun = false;
+      }
+      generation.checkpointRestored = true;
+    }
+    return generation;
   }
 
   void _invalidateActiveRuns() {
@@ -3586,6 +3917,9 @@ class AppController extends ChangeNotifier {
       debugPrint(
         '[chat] restored conversations: ${_conversations.keys.join(', ')}',
       );
+      for (final _ChatGenerationState generation in _generationStates.values) {
+        generation.checkpointRestored = false;
+      }
     } catch (error, stackTrace) {
       debugPrint('[chat] restore conversations failed: $error');
       debugPrint('$stackTrace');
@@ -3726,6 +4060,8 @@ class _ChatGenerationState {
   Completer<void>? abort;
   bool wasStopped = false;
   bool syntheticRun = false;
+  bool checkpointRestored = false;
+  AiRunResult? runResult;
   int runSequence = 0;
   String? runId;
   String? contextKey;

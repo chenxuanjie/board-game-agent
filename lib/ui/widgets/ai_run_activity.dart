@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_run.dart';
+import '../../models/rule_citation.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
 
@@ -158,9 +159,49 @@ class AiRunActivity extends StatelessWidget {
       })();
     }
 
+    void addCitation(_ActivityStep step, RuleCitation citation) {
+      final String key = _citationKey(citation);
+      final bool alreadyAdded = step.citations.any(
+        (RuleCitation existing) => _citationKey(existing) == key,
+      );
+      if (!alreadyAdded) step.citations.add(citation);
+    }
+
+    void addInspectedSource(_ActivityStep step, RuleCitation citation) {
+      final String key = _citationKey(citation);
+      final bool alreadyAdded = step.inspectedSources.any(
+        (RuleCitation existing) => _citationKey(existing) == key,
+      );
+      if (!alreadyAdded) step.inspectedSources.add(citation);
+    }
+
     void updateConnection(AiRunEvent event, _ActivityStepStatus status) {
-      final _ActivityStep step = ensureConnectionStep();
-      step.status = status;
+      // A reconnect belongs to the stage whose response stream was active.
+      // Keep it in that stage's detail area instead of presenting a second
+      // top-level `resume` row that looks like another answer.
+      _ActivityStep? activeStage = active;
+      if (activeStage == null) {
+        // Some transports batch lifecycle events and can clear the logical
+        // pointer before the reconnect event is observed. Recover the latest
+        // visibly running stage first, then fall back to the latest stage that
+        // was rendered for this run. A run that already has stage context must
+        // never grow a second top-level `resume` row just because one event
+        // arrived without a stage pointer.
+        for (final _ActivityStep candidate in ordered.reversed) {
+          if (candidate.status == _ActivityStepStatus.running) {
+            activeStage = candidate;
+            break;
+          }
+        }
+      }
+      activeStage ??= ordered.isEmpty ? null : ordered.last;
+      final bool mergedIntoStage = activeStage != null;
+      final _ActivityStep step = activeStage ?? ensureConnectionStep();
+      if (!mergedIntoStage) {
+        step.status = status;
+      }
+      step.connectionActivity = true;
+      step.connectionStatus = status;
       final String detail = _readableConnectionDetail(
         event.detail?.trim() ?? event.errorMessage?.trim() ?? '',
       );
@@ -178,7 +219,7 @@ class AiRunActivity extends StatelessWidget {
       }
       if (connectionDetails.isNotEmpty) {
         step.expandedDetail = connectionDetails.join('\n');
-        step.detail = switch (status) {
+        final String connectionLabel = switch (status) {
           _ActivityStepStatus.failed => _text(
             '无法恢复连接',
             'Unable to restore connection',
@@ -189,6 +230,7 @@ class AiRunActivity extends StatelessWidget {
           ),
           _ => _text('正在重连', 'Reconnecting'),
         };
+        step.detail = connectionLabel;
       }
     }
 
@@ -225,10 +267,21 @@ class AiRunActivity extends StatelessWidget {
       if (active != null && value.isNotEmpty) active!.detail = value;
     }
 
-    void completeStage(String id, AiStageStatus? status) {
-      final _ActivityStep? step = byKey['stage:$id'];
+    void completeStage(String id, AiStageResult? result) {
+      final _ActivityStep? step =
+          byKey['stage:$id'] ?? (id.trim().isEmpty ? null : stageFor(id));
       if (step == null) return;
+      final AiStageStatus? status = result?.status;
       final _StageMeta meta = _stageMeta(id);
+      step.stageResult = result;
+      if (result != null) {
+        for (final RuleCitation citation in result.inspectedSources) {
+          addInspectedSource(step, citation);
+        }
+        for (final RuleCitation citation in result.citations) {
+          addCitation(step, citation);
+        }
+      }
       step.status = switch (status) {
         AiStageStatus.failed ||
         AiStageStatus.incomplete => _ActivityStepStatus.failed,
@@ -237,7 +290,8 @@ class AiRunActivity extends StatelessWidget {
         AiStageStatus.skipped => _ActivityStepStatus.warning,
         _ => _ActivityStepStatus.completed,
       };
-      step.detail = _stageCompletedDetail(status, meta);
+      step.detail = _stageSummary(id, status, step, meta);
+      step.detailLines = _stageDetailLines(id, status, step, result);
       lastStageKey = step.key;
       if (active?.key == step.key) {
         active = null;
@@ -268,6 +322,14 @@ class AiRunActivity extends StatelessWidget {
                 : a.timestamp.compareTo(b.timestamp);
           });
 
+    // A provider or transport may deliver a stale terminal error while the
+    // same run has already committed response.completed. The completed event
+    // is authoritative; suppress only the duplicate run-level failure while
+    // retaining genuine failed stage results rendered above.
+    final bool hasCompletedEvent = orderedEvents.any(
+      (AiRunEvent event) => event.type == AiRunEventType.completed,
+    );
+
     for (final AiRunEvent event in orderedEvents) {
       final String stageId = event.stageId?.trim() ?? '';
       switch (event.type) {
@@ -275,7 +337,7 @@ class AiRunActivity extends StatelessWidget {
           startStage(stageId);
           break;
         case AiRunEventType.stageCompleted:
-          completeStage(stageId, event.stageResult?.status);
+          completeStage(stageId, event.stageResult);
           break;
         case AiRunEventType.status:
           final String status = event.status?.trim() ?? '';
@@ -305,7 +367,7 @@ class AiRunActivity extends StatelessWidget {
             }
           } else if (status == 'web_search_completed') {
             if (active?.key == 'stage:web') {
-              updateActive(_citationDetail(active!.citationCount));
+              updateActive(_citationSummary(active!.citationCount, 'web'));
             }
           } else if (status == 'reconnecting') {
             updateActive(
@@ -327,15 +389,18 @@ class AiRunActivity extends StatelessWidget {
         case AiRunEventType.toolCompleted:
           final String tool = event.toolName?.trim() ?? '';
           if (tool == 'web_search' && active?.key == 'stage:web') {
-            updateActive(_citationDetail(active!.citationCount));
+            updateActive(_citationSummary(active!.citationCount, 'web'));
           }
           break;
         case AiRunEventType.citationAdded:
-          final _ActivityStep? step =
-              active ?? (lastStageKey == null ? null : byKey[lastStageKey]);
+          final _ActivityStep? step = stageId.isNotEmpty
+              ? byKey['stage:$stageId']
+              : active ?? (lastStageKey == null ? null : byKey[lastStageKey]);
           if (step != null) {
-            step.citationCount += 1;
-            step.detail = _citationDetail(step.citationCount);
+            final RuleCitation? citation = event.citation;
+            if (citation != null) addCitation(step, citation);
+            step.citationCount = step.citations.length;
+            step.detail = _citationSummary(step.citations.length, stageId);
           }
           break;
         case AiRunEventType.retry:
@@ -357,12 +422,21 @@ class AiRunActivity extends StatelessWidget {
         case AiRunEventType.failed:
         case AiRunEventType.incomplete:
         case AiRunEventType.cancelled:
+          if (hasCompletedEvent) break;
           if (active != null) {
             active!.status = event.type == AiRunEventType.cancelled
                 ? _ActivityStepStatus.warning
                 : _ActivityStepStatus.failed;
-            final String detail = event.errorMessage?.trim() ?? '';
+            final String detail = _readableError(
+              event.errorCode,
+              event.errorMessage,
+            );
             if (detail.isNotEmpty) active!.detail = detail;
+            if (detail.isNotEmpty) {
+              active!.detailLines = <String>[
+                _text('原因：$detail', 'Reason: $detail'),
+              ];
+            }
             active = null;
             pendingStageIds.clear();
           } else {
@@ -387,15 +461,26 @@ class AiRunActivity extends StatelessWidget {
                     ? _ActivityStepStatus.warning
                     : _ActivityStepStatus.failed;
               }
-              final String detail = event.errorMessage?.trim() ?? '';
+              final String detail = _readableError(
+                event.errorCode,
+                event.errorMessage,
+              );
               if (detail.isNotEmpty) lastStep.detail = detail;
+              if (detail.isNotEmpty) {
+                lastStep.detailLines = <String>[
+                  _text('原因：$detail', 'Reason: $detail'),
+                ];
+              }
               break;
             }
             if (connectionStep != null) {
               connectionStep!.status = event.type == AiRunEventType.cancelled
                   ? _ActivityStepStatus.warning
                   : _ActivityStepStatus.failed;
-              final String detail = event.errorMessage?.trim() ?? '';
+              final String detail = _readableError(
+                event.errorCode,
+                event.errorMessage,
+              );
               if (detail.isNotEmpty) connectionStep!.detail = detail;
               break;
             }
@@ -414,7 +499,12 @@ class AiRunActivity extends StatelessWidget {
             step.status = event.type == AiRunEventType.cancelled
                 ? _ActivityStepStatus.warning
                 : _ActivityStepStatus.failed;
-            step.detail = event.errorMessage?.trim() ?? '';
+            step.detail = _readableError(event.errorCode, event.errorMessage);
+            if (step.detail.isNotEmpty) {
+              step.detailLines = <String>[
+                _text('原因：${step.detail}', 'Reason: ${step.detail}'),
+              ];
+            }
           }
           break;
         case AiRunEventType.runStarted:
@@ -425,6 +515,70 @@ class AiRunActivity extends StatelessWidget {
           // details. The visible answer remains committed by the controller
           // only after the terminal response event.
           break;
+      }
+    }
+    // A provider may deliver an annotation just after the stage terminal
+    // event. Rebuild completed-stage details once more so late citations are
+    // still reflected in the same card instead of creating a second one.
+    for (final _ActivityStep step in ordered) {
+      final AiStageResult? result = step.stageResult;
+      if (result == null) continue;
+      step.citationCount = step.citations.length;
+      step.detail = _stageSummary(
+        result.stageId,
+        result.status,
+        step,
+        _stageMeta(result.stageId),
+      );
+      step.detailLines = _stageDetailLines(
+        result.stageId,
+        result.status,
+        step,
+        result,
+      );
+    }
+    // A reconnect must stay inside the same Run timeline. A transport can
+    // emit its first interruption without a stageId and create a temporary
+    // connection row before the stage event arrives. Once any stage context
+    // exists, fold that temporary row into the latest stage and remove it so
+    // the UI cannot show both an answer row and a second `resume` row.
+    if (connectionStep != null) {
+      final _ActivityStep pendingConnection = connectionStep!;
+      _ActivityStep? connectionStage;
+      for (final _ActivityStep step in ordered.reversed) {
+        if (step.key != pendingConnection.key &&
+            step.status == _ActivityStepStatus.running) {
+          connectionStage = step;
+          break;
+        }
+      }
+      if (connectionStage == null) {
+        for (final _ActivityStep step in ordered.reversed) {
+          if (step.key != pendingConnection.key) {
+            connectionStage = step;
+            break;
+          }
+        }
+      }
+      if (connectionStage != null) {
+        final String connectionDetail =
+            pendingConnection.expandedDetail?.trim() ?? '';
+        if (connectionDetail.isNotEmpty) {
+          final List<String> mergedLines = <String>[
+            if (connectionStage.expandedDetail?.trim().isNotEmpty ?? false)
+              ...connectionStage.expandedDetail!.split('\n'),
+            ...connectionDetail.split('\n'),
+          ];
+          connectionStage.expandedDetail = mergedLines.toSet().join('\n');
+        }
+        if (pendingConnection.status == _ActivityStepStatus.failed) {
+          connectionStage.status = _ActivityStepStatus.failed;
+          connectionStage.detail = _text('无法恢复连接', 'Unable to restore connection');
+        } else if (pendingConnection.connectionStatus ==
+            _ActivityStepStatus.completed) {
+          connectionStage.detail = _text('连接已恢复', 'Connection restored');
+        }
+        ordered.remove(pendingConnection);
       }
     }
     return ordered;
@@ -474,8 +628,8 @@ class AiRunActivity extends StatelessWidget {
         icon: Icons.public_rounded,
       ),
       'answering' || 'general' || 'fallback' => _StageMeta(
-        runningTitle: _text('正在整理回答', 'Preparing the answer'),
-        completedTitle: _text('已整理回答', 'Answer prepared'),
+        runningTitle: _text('正在生成回答', 'Generating the answer'),
+        completedTitle: _text('回答已生成', 'Answer generated'),
         failedTitle: _text('回答未完成', 'Answer incomplete'),
         runningDetail: _text('整合已确认的信息', 'Combining confirmed information'),
         icon: Icons.edit_note_rounded,
@@ -494,29 +648,149 @@ class AiRunActivity extends StatelessWidget {
         icon: Icons.auto_awesome_rounded,
       );
 
-  String _stageCompletedDetail(AiStageStatus? status, _StageMeta meta) {
+  String _stageSummary(
+    String id,
+    AiStageStatus? status,
+    _ActivityStep step,
+    _StageMeta meta,
+  ) {
     return switch (status) {
-      AiStageStatus.insufficient => _text(
-        '当前资料不足，继续查找其他来源',
-        'Not enough evidence here; continuing',
-      ),
+      AiStageStatus.insufficient =>
+        step.inspectedSources.isEmpty
+            ? id == 'community'
+                  ? _text('未找到有效补充', 'No useful community supplement found')
+                  : _text('未找到可直接引用的内容', 'No directly citable content found')
+            : id == 'community'
+            ? _text(
+                '已检查 ${step.inspectedSources.length} 份资料，未找到有效补充',
+                'Checked ${step.inspectedSources.length} sources; no useful supplement found',
+              )
+            : _text(
+                '已检查 ${step.inspectedSources.length} 份资料，未找到可直接引用的内容',
+                'Checked ${step.inspectedSources.length} sources; no directly citable content found',
+              ),
       AiStageStatus.unavailable ||
       AiStageStatus.skipped => _text('当前范围未启用', 'Not enabled for this scope'),
       AiStageStatus.failed ||
-      AiStageStatus.incomplete => _text('这一阶段没有完成', 'This step did not finish'),
+      AiStageStatus.incomplete => _text('这一阶段未完成', 'This stage did not finish'),
+      AiStageStatus.answered when step.citations.isNotEmpty => _citationSummary(
+        step.citations.length,
+        id,
+      ),
+      AiStageStatus.answered when step.inspectedSources.isNotEmpty => _text(
+        '已检查 ${step.inspectedSources.length} 份资料',
+        'Checked ${step.inspectedSources.length} sources',
+      ),
+      AiStageStatus.answered when id == 'general' || id == 'fallback' => _text(
+        '普通回答已生成',
+        'General answer generated',
+      ),
       _ => meta.completedTitle,
     };
   }
 
-  String _citationDetail(int count) => count <= 0
-      ? _text('已完成搜索，正在整理结果', 'Search complete; organizing results')
-      : _text(
-          '已找到 $count 个来源，正在整理结果',
-          '$count sources found; organizing results',
-        );
+  List<String> _stageDetailLines(
+    String id,
+    AiStageStatus? status,
+    _ActivityStep step,
+    AiStageResult? result,
+  ) {
+    final List<String> lines = <String>[];
+    if (step.inspectedSources.isNotEmpty) {
+      lines.add(
+        _text(
+          '已检查资料：${step.inspectedSources.length} 份',
+          'Inspected sources: ${step.inspectedSources.length}',
+        ),
+      );
+      for (final RuleCitation citation in step.inspectedSources) {
+        final String? label = _citationLabel(citation);
+        if (label != null) {
+          lines.add(_text('资料：$label', 'Source: $label'));
+        }
+      }
+    }
+    final List<String> citationLines = <String>[];
+    for (final RuleCitation citation in step.citations) {
+      citationLines.addAll(_citationLines(citation));
+    }
+    if (citationLines.isNotEmpty) {
+      lines.add(_text('已确认引用', 'Confirmed citations'));
+      lines.addAll(citationLines);
+    }
+    final String error = _readableError(
+      result?.errorCode,
+      result?.errorMessage,
+    );
+    if (error.isNotEmpty &&
+        (status == AiStageStatus.failed ||
+            status == AiStageStatus.incomplete)) {
+      lines.add(_text('原因：$error', 'Reason: $error'));
+    }
+    return lines.toSet().toList(growable: false);
+  }
+
+  String _citationSummary(int count, String stageId) {
+    if (count <= 0) {
+      return stageId == 'web'
+          ? _text('搜索已完成，未发现可引用来源', 'Search complete; no citable sources found')
+          : _text('尚未确认引用', 'No citation confirmed');
+    }
+    return stageId == 'web'
+        ? _text('找到 $count 个可引用来源', '$count citable sources found')
+        : _text('确认引用：$count 个来源', 'Confirmed citations: $count sources');
+  }
+
+  String _citationKey(RuleCitation citation) => <String>[
+    citation.sourceId,
+    citation.page?.toString() ?? '',
+    citation.section?.trim() ?? '',
+    citation.url?.trim() ?? '',
+  ].join('|');
+
+  String? _citationLabel(RuleCitation citation) {
+    final String title = citation.title?.trim() ?? '';
+    if (title.isNotEmpty) return title;
+    final String path = citation.path?.trim() ?? '';
+    if (path.isNotEmpty) {
+      final int slash = path.lastIndexOf(RegExp(r'[\\/]'));
+      return slash >= 0 && slash + 1 < path.length
+          ? path.substring(slash + 1)
+          : path;
+    }
+    final Uri? uri = Uri.tryParse(citation.url?.trim() ?? '');
+    if (uri != null && uri.host.isNotEmpty) return uri.host;
+    return null;
+  }
+
+  List<String> _citationLines(RuleCitation citation) {
+    final List<String> lines = <String>[];
+    final String? label = _citationLabel(citation);
+    if (label != null) lines.add(_text('资料：$label', 'Source: $label'));
+    final String section = citation.section?.trim() ?? '';
+    if (section.isNotEmpty) {
+      lines.add(_text('章节：$section', 'Section: $section'));
+    }
+    if (citation.page != null) {
+      lines.add(_text('页码：第 ${citation.page} 页', 'Page: ${citation.page}'));
+    }
+    final String quote = citation.quote?.trim() ?? '';
+    if (quote.isNotEmpty) {
+      final String shortened = quote.length <= 220
+          ? quote
+          : '${quote.substring(0, 217)}…';
+      lines.add(_text('引用：$shortened', 'Quote: $shortened'));
+    }
+    final Uri? uri = Uri.tryParse(citation.url?.trim() ?? '');
+    if (uri != null && uri.host.isNotEmpty && label != uri.host) {
+      lines.add(_text('来源：${uri.host}', 'Domain: ${uri.host}'));
+    }
+    return lines;
+  }
 
   String _readableConnectionDetail(String value) {
-    if (value == 'response.completed 尚未到达') {
+    if (value == 'response.completed 尚未到达' ||
+        value.toLowerCase().contains('response.completed')) {
       return _text(
         '响应尚未完成，连接已中断',
         'The response was interrupted before completion',
@@ -525,7 +799,72 @@ class AiRunActivity extends StatelessWidget {
     if (value == 'Responses stream ended before response.completed.') {
       return _text('响应流在完成前结束', 'The response stream ended before completion');
     }
+    if (value.contains('重新建立事件流')) {
+      return _text('已重新建立事件流', 'Event stream restored');
+    }
+    if (value.contains('sequence')) {
+      return _text('已从中断位置继续监听', 'Listening again from the interruption point');
+    }
+    if (value.contains('AiClientException') ||
+        value.contains('SocketException') ||
+        value.contains('TimeoutException')) {
+      return _readableError(null, value);
+    }
     return value;
+  }
+
+  String _readableError(String? code, String? message) {
+    final String normalized = '${code ?? ''} ${message ?? ''}'.toLowerCase();
+    if (normalized.trim().isEmpty) return '';
+    if (normalized.contains('401') ||
+        normalized.contains('403') ||
+        normalized.contains('unauthorized') ||
+        normalized.contains('api key') ||
+        normalized.contains('authentication')) {
+      return _text('模型服务鉴权失败', 'Model service authentication failed');
+    }
+    if (normalized.contains('404') ||
+        normalized.contains('model not found') ||
+        normalized.contains('model_not_found') ||
+        normalized.contains('no such model')) {
+      return _text('模型不可用', 'Model unavailable');
+    }
+    if (normalized.contains('429') ||
+        normalized.contains('rate limit') ||
+        normalized.contains('too many requests')) {
+      return _text('服务商暂时繁忙，请稍后重试', 'Provider is busy; try again later');
+    }
+    if (normalized.contains('timeout') || normalized.contains('timed out')) {
+      return _text('网络请求超时', 'Network request timed out');
+    }
+    if (normalized.contains('socket') ||
+        normalized.contains('network') ||
+        normalized.contains('connection') ||
+        normalized.contains('dns')) {
+      return _text('网络连接失败', 'Network connection failed');
+    }
+    if (normalized.contains('500') ||
+        normalized.contains('502') ||
+        normalized.contains('503') ||
+        normalized.contains('504') ||
+        normalized.contains('server error')) {
+      return _text('服务商暂时不可用', 'Provider temporarily unavailable');
+    }
+    if (normalized.contains('parse') ||
+        normalized.contains('json') ||
+        normalized.contains('protocol') ||
+        normalized.contains('aiclientexception')) {
+      return _text('服务商返回了无法识别的响应', 'Provider returned an unreadable response');
+    }
+    if (normalized.contains('stage stream ended') ||
+        normalized.contains('response stream ended') ||
+        normalized.contains('response was incomplete') ||
+        normalized.contains('response failed') ||
+        normalized.contains('without a validated answer')) {
+      return _text('回答未完整生成', 'The answer was not fully generated');
+    }
+    final String readable = message?.trim() ?? '';
+    return readable.length > 180 ? '${readable.substring(0, 177)}…' : readable;
   }
 
   String _text(String zh, String en) => copy.isChinese ? zh : en;
@@ -715,6 +1054,12 @@ class _ActivityStep {
   final IconData icon;
   String detail;
   String? expandedDetail;
+  bool connectionActivity = false;
+  _ActivityStepStatus? connectionStatus;
+  List<String> detailLines = <String>[];
+  AiStageResult? stageResult;
+  final List<RuleCitation> inspectedSources = <RuleCitation>[];
+  final List<RuleCitation> citations = <RuleCitation>[];
   int citationCount = 0;
   _ActivityStepStatus status = _ActivityStepStatus.running;
 
@@ -835,6 +1180,9 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
     final bool running =
         widget.isRunning && step.status == _ActivityStepStatus.running;
     final bool failed = step.status == _ActivityStepStatus.failed;
+    final bool hasDetails =
+        step.detailLines.isNotEmpty ||
+        (step.expandedDetail?.trim().isNotEmpty ?? false);
     final ThemeData theme = Theme.of(context);
     final Color accent = failed
         ? palette.error
@@ -911,17 +1259,24 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
                   style: theme.textTheme.labelSmall?.copyWith(color: accent),
                 ),
               )
-            : Icon(
+            : hasDetails
+            ? Icon(
                 _expanded
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
                 size: 20,
                 color: palette.textSecondary,
-              ),
+              )
+            : const SizedBox(width: 20),
         children: <Widget>[
-          if (step.detail.trim().isNotEmpty)
+          if (hasDetails)
             _ActivityDetailBox(
-              text: 'detail: ${step.expandedDetail ?? step.detail}',
+              lines: step.expandedDetail?.trim().isNotEmpty ?? false
+                  ? <String>[
+                      ...step.detailLines,
+                      ...step.expandedDetail!.split('\n'),
+                    ]
+                  : step.detailLines,
               palette: palette,
             ),
         ],
@@ -931,9 +1286,9 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
 }
 
 class _ActivityDetailBox extends StatelessWidget {
-  const _ActivityDetailBox({required this.text, required this.palette});
+  const _ActivityDetailBox({required this.lines, required this.palette});
 
-  final String text;
+  final List<String> lines;
   final AppPalette palette;
 
   @override
@@ -951,12 +1306,23 @@ class _ActivityDetailBox extends StatelessWidget {
           ),
         ),
       ),
-      child: Text(
-        text,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: palette.textSecondary,
-          height: 1.45,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int index = 0; index < lines.length; index++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: index == lines.length - 1 ? 0 : 4,
+              ),
+              child: Text(
+                lines[index],
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: palette.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -2472,6 +2472,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                         child: _DesktopComposer(
                           controller: controller,
                           draftController: _draftController,
+                          useGlobalMode: useGlobalMode,
                           onSend: _send,
                           onMic: _toggleListening,
                         ),
@@ -2665,7 +2666,11 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
 
   Future<void> _send() async {
     final String text = _draftController.text.trim();
-    if (text.isEmpty || controller.isSending) return;
+    final bool useGlobalMode = controller.selectedConversationIsGlobal;
+    if (text.isEmpty ||
+        controller.isSendingForContext(useGlobalMode: useGlobalMode)) {
+      return;
+    }
     if (!controller.hasSelectedAiModel) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(controller.copy.aiApiModelRequired)),
@@ -2673,10 +2678,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
       return;
     }
     _draftController.clear();
-    await controller.sendPrompt(
-      text,
-      useGlobalMode: controller.selectedConversationIsGlobal,
-    );
+    await controller.sendPrompt(text, useGlobalMode: useGlobalMode);
   }
 
   Future<void> _toggleListening() async {
@@ -3052,12 +3054,14 @@ class _DesktopComposer extends StatelessWidget {
   const _DesktopComposer({
     required this.controller,
     required this.draftController,
+    required this.useGlobalMode,
     required this.onSend,
     required this.onMic,
   });
 
   final AppController controller;
   final TextEditingController draftController;
+  final bool useGlobalMode;
   final Future<void> Function() onSend;
   final Future<void> Function() onMic;
 
@@ -3069,7 +3073,8 @@ class _DesktopComposer extends StatelessWidget {
       animation: draftController,
       builder: (BuildContext context, Widget? child) {
         final bool canSend =
-            draftController.text.trim().isNotEmpty && !controller.isSending;
+            draftController.text.trim().isNotEmpty &&
+            !controller.isSendingForContext(useGlobalMode: useGlobalMode);
         return DecoratedBox(
           decoration: BoxDecoration(
             color: palette.inputSurface,
@@ -3083,7 +3088,12 @@ class _DesktopComposer extends StatelessWidget {
               children: <Widget>[
                 IconButton(
                   tooltip: copy.desktopVoiceInput,
-                  onPressed: controller.isSending ? null : onMic,
+                  onPressed:
+                      controller.isSendingForContext(
+                        useGlobalMode: useGlobalMode,
+                      )
+                      ? null
+                      : onMic,
                   icon: Icon(
                     controller.isListening
                         ? Icons.stop_rounded
@@ -3107,11 +3117,19 @@ class _DesktopComposer extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: controller.isSending
+                  tooltip:
+                      controller.isSendingForContext(
+                        useGlobalMode: useGlobalMode,
+                      )
                       ? copy.desktopStopGenerating
                       : copy.desktopSend,
-                  onPressed: controller.isSending
-                      ? controller.stopGenerating
+                  onPressed:
+                      controller.isSendingForContext(
+                        useGlobalMode: useGlobalMode,
+                      )
+                      ? () => controller.stopGenerating(
+                          useGlobalMode: useGlobalMode,
+                        )
                       : canSend
                       ? onSend
                       : null,
@@ -3124,7 +3142,7 @@ class _DesktopComposer extends StatelessWidget {
                         : palette.disabledForeground,
                   ),
                   icon: Icon(
-                    controller.isSending
+                    controller.isSendingForContext(useGlobalMode: useGlobalMode)
                         ? Icons.stop_rounded
                         : Icons.arrow_upward_rounded,
                   ),

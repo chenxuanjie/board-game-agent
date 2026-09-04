@@ -23,6 +23,7 @@ class BoardGameAiStreamEvent {
     this.status,
     this.citations = const <RuleCitation>[],
     this.runEvent,
+    this.runResult,
     this.errorMessage,
     this.isFailure = false,
   });
@@ -33,6 +34,13 @@ class BoardGameAiStreamEvent {
   final String? status;
   final List<RuleCitation> citations;
   final AiRunEvent? runEvent;
+
+  /// The complete normalized run outcome, available on terminal events.
+  ///
+  /// Keeping this beside [runEvent] lets the controller render a readable
+  /// failure summary from confirmed stage results without exposing provider
+  /// payloads or rebuilding state from a single error string.
+  final AiRunResult? runResult;
   final String? errorMessage;
   final bool isFailure;
 }

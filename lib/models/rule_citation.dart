@@ -26,7 +26,7 @@ class RuleCitation {
   final String? section;
   final String? quote;
 
-  Map<String, dynamic> toMap() => <String, dynamic>{
+  Map<String, dynamic> toMap({bool includeQuote = true}) => <String, dynamic>{
     'sourceType': sourceType,
     'sourceId': sourceId,
     if (title != null) 'title': title,
@@ -37,7 +37,7 @@ class RuleCitation {
     if (lineStart != null) 'lineStart': lineStart,
     if (lineEnd != null) 'lineEnd': lineEnd,
     if (section != null) 'section': section,
-    if (quote != null) 'quote': quote,
+    if (includeQuote && quote != null) 'quote': quote,
   };
 
   factory RuleCitation.fromMap(Map<String, dynamic> map) => RuleCitation(

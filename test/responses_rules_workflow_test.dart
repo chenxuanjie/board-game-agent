@@ -518,6 +518,41 @@ void main() {
     },
   );
 
+  test('does not retry when the stream fails after response.completed', () async {
+    final String payload =
+        '{"status":"answered","answer":"完成的回答","sourceIds":["puerto_rico-knowledge-0"]}';
+    final _TerminalThenErrorResponsesClient client =
+        _TerminalThenErrorResponsesClient(payload);
+    final ResponsesRulesWorkflow workflow = ResponsesRulesWorkflow(
+      responsesClient: client,
+    );
+
+    final List<BoardGameAiStreamEvent> events = await workflow
+        .streamReply(
+          prompt: '完成后关闭',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeOnly,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const <AssetSourceConfig>[],
+          remoteAssetService: _FakeRemoteAssetService(),
+          conversationHistory: const <ChatMessage>[],
+        )
+        .toList();
+
+    expect(events.last.answer?.text, '完成的回答');
+    expect(events.last.isFailure, isFalse);
+    expect(client.streamRequests, 1);
+    expect(
+      events.where(
+        (BoardGameAiStreamEvent event) =>
+            event.runEvent?.type == AiRunEventType.retry,
+      ),
+      isEmpty,
+    );
+  });
+
   test(
     'commits an explicit insufficient answer when knowledge stages find nothing',
     () async {
@@ -679,6 +714,8 @@ void main() {
       expect(events.last.isFailure, isTrue);
       expect(events.last.runEvent?.stageResult?.bufferedText, contains('部分答案'));
       expect(events.last.runEvent?.stageResult?.errorCode, 'upstream_failed');
+      expect(events.last.runResult?.status, AiRunStatus.failed);
+      expect(events.last.runResult?.stages, isNotEmpty);
     },
   );
 
@@ -1635,6 +1672,38 @@ class _FakeResponsesClient implements ResponsesAiClient {
       return;
     }
     yield ResponsesStreamEvent.completed(responses.removeAt(0));
+  }
+
+  @override
+  void close() {}
+}
+
+class _TerminalThenErrorResponsesClient implements ResponsesAiClient {
+  _TerminalThenErrorResponsesClient(this.payload);
+
+  final String payload;
+  int streamRequests = 0;
+
+  @override
+  Future<ResponsesResponse> complete(
+    ResponsesRequest request, {
+    Future<void>? abortTrigger,
+  }) async {
+    throw UnsupportedError('This test only exercises streaming.');
+  }
+
+  @override
+  Stream<ResponsesStreamEvent> stream(
+    ResponsesRequest request, {
+    Future<void>? abortTrigger,
+  }) async* {
+    streamRequests += 1;
+    yield ResponsesStreamEvent.text(payload);
+    yield ResponsesStreamEvent.textDone(payload);
+    yield ResponsesStreamEvent.completed(
+      ResponsesResponse(text: payload, model: 'test-model'),
+    );
+    throw const AiTransportException('connection reset after completion');
   }
 
   @override
