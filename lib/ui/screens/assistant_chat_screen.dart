@@ -54,6 +54,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       );
     }
     widget.controller.addListener(_onControllerChanged);
+    _scheduleInitialScrollToBottom();
   }
 
   @override
@@ -188,6 +189,15 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         duration: const Duration(milliseconds: 260),
         curve: Curves.easeOut,
       );
+    });
+  }
+
+  void _scheduleInitialScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
     });
   }
 

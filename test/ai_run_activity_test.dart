@@ -127,11 +127,22 @@ void main() {
     await tester.pumpWidget(
       buildActivity(events: completedEvents, isRunning: false),
     );
-    await tester.pump();
-    expect(find.text('已查阅官方规则'), findsNWidgets(2));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('用时'), findsOneWidget);
+    expect(find.text('已查阅官方规则'), findsNothing);
+    expect(find.text('detail: 已查阅官方规则'), findsNothing);
     expect(find.text('回答已完成'), findsNothing);
     expect(find.text('已完成 · 3s'), findsNothing);
     expect(find.text('查看过程'), findsNothing);
+
+    await tester.tap(find.textContaining('用时'));
+    await tester.pumpAndSettle();
+    expect(find.text('已查阅官方规则'), findsNWidgets(2));
+    expect(find.text('detail: 已查阅官方规则'), findsOneWidget);
+
+    await tester.tap(find.textContaining('用时'));
+    await tester.pumpAndSettle();
+    expect(find.text('detail: 已查阅官方规则'), findsNothing);
   });
 
   testWidgets('does not show a later stage before the active stage completes', (
@@ -290,4 +301,192 @@ void main() {
     expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
     expect(find.text('resume'), findsOneWidget);
   });
+
+  testWidgets('collapses completed details but keeps them user-expandable', (
+    WidgetTester tester,
+  ) async {
+    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+    final AiRunEvent started = AiRunEvent(
+      runId: 'run-collapse',
+      sequence: 0,
+      type: AiRunEventType.stageStarted,
+      timestamp: startedAt,
+      stageId: 'official',
+    );
+    final AiRunEvent completed = AiRunEvent(
+      runId: 'run-collapse',
+      sequence: 1,
+      type: AiRunEventType.stageCompleted,
+      timestamp: startedAt.add(const Duration(seconds: 1)),
+      stageId: 'official',
+      stageResult: AiStageResult(
+        stageId: 'official',
+        scope: const AiKnowledgeScope.official(gameId: 'game-1'),
+        status: AiStageStatus.answered,
+      ),
+    );
+
+    Widget buildActivity({
+      required List<AiRunEvent> events,
+      required bool isRunning,
+    }) {
+      return MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: isRunning,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(
+      buildActivity(events: <AiRunEvent>[started], isRunning: true),
+    );
+    expect(find.text('detail: 从当前桌游资料中查找依据'), findsOneWidget);
+
+    await tester.pumpWidget(
+      buildActivity(events: <AiRunEvent>[started, completed], isRunning: true),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('detail: 已查阅官方规则'), findsNothing);
+
+    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.pumpAndSettle();
+    expect(find.text('detail: 已查阅官方规则'), findsOneWidget);
+  });
+
+  testWidgets('failed protocol details stay visible while the run retries', (
+    WidgetTester tester,
+  ) async {
+    final List<AiRunEvent> events = <AiRunEvent>[
+      event(sequence: 0, type: AiRunEventType.runStarted),
+      AiRunEvent(
+        runId: 'run-1',
+        sequence: 1,
+        type: AiRunEventType.responseStreamFailed,
+        timestamp: DateTime(2026, 9, 1, 12, 0, 1),
+        detail: 'response.completed 尚未到达',
+        attempt: 1,
+        maxAttempts: 3,
+        lastSequence: 18,
+        partialOutputRetained: true,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: true,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+    expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: AiRunActivity(
+            events: events,
+            isRunning: false,
+            palette: PaletteRegistry.classic,
+            copy: copy,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('attempt: 1 / 3'), findsNothing);
+    await tester.tap(find.text('response stream'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
+  });
+
+  testWidgets(
+    'terminal completion collapses details even when it arrives with the final answer',
+    (WidgetTester tester) async {
+      final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+      final List<AiRunEvent> runningEvents = <AiRunEvent>[
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 0,
+          type: AiRunEventType.stageStarted,
+          timestamp: startedAt,
+          stageId: 'official',
+        ),
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 1,
+          type: AiRunEventType.responseStreamStarted,
+          timestamp: startedAt.add(const Duration(milliseconds: 1)),
+          attempt: 1,
+          maxAttempts: 3,
+        ),
+      ];
+      final List<AiRunEvent> completedEvents = <AiRunEvent>[
+        ...runningEvents,
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 2,
+          type: AiRunEventType.stageCompleted,
+          timestamp: startedAt.add(const Duration(milliseconds: 2)),
+          stageId: 'official',
+          stageResult: AiStageResult(
+            stageId: 'official',
+            scope: const AiKnowledgeScope.official(gameId: 'game-1'),
+            status: AiStageStatus.answered,
+          ),
+        ),
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 3,
+          type: AiRunEventType.status,
+          timestamp: startedAt.add(const Duration(milliseconds: 3)),
+          status: 'response_completed',
+        ),
+        AiRunEvent(
+          runId: 'run-terminal',
+          sequence: 4,
+          type: AiRunEventType.completed,
+          timestamp: startedAt.add(const Duration(milliseconds: 4)),
+        ),
+      ];
+
+      Widget buildActivity(List<AiRunEvent> events, bool isRunning) {
+        return MaterialApp(
+          theme: ThemeData.dark(),
+          home: Scaffold(
+            body: AiRunActivity(
+              events: events,
+              isRunning: isRunning,
+              palette: PaletteRegistry.classic,
+              copy: copy,
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildActivity(runningEvents, true));
+      expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
+
+      await tester.pumpWidget(buildActivity(completedEvents, false));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('用时'), findsOneWidget);
+      expect(find.text('response stream'), findsNothing);
+      await tester.tap(find.textContaining('用时'));
+      await tester.pumpAndSettle();
+      expect(find.text('response stream'), findsOneWidget);
+      expect(find.textContaining('attempt: 1 / 3'), findsNothing);
+    },
+  );
 }

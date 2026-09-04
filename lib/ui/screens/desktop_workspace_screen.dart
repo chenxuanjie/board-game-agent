@@ -2122,6 +2122,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     _draftController = TextEditingController();
     _scrollController = ScrollController()..addListener(_handleScrollChanged);
     controller.addListener(_handleControllerChanged);
+    _scheduleInitialScrollToBottom();
   }
 
   @override
@@ -2402,6 +2403,16 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
     );
+  }
+
+  void _scheduleInitialScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      _showJumpToBottom = false;
+    });
   }
 
   Future<void> _showAssistantSheet({

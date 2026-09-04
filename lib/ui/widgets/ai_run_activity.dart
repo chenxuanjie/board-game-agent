@@ -33,41 +33,94 @@ class AiRunActivity extends StatelessWidget {
 
     final List<_ActivityStep> steps = _steps;
     final List<_ProtocolCard> protocolCards = _protocolCards;
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.topCenter,
-      child: steps.isEmpty && protocolCards.isEmpty
+    final bool hasTimeline = steps.isNotEmpty || protocolCards.isNotEmpty;
+    final bool isRunCompleted =
+        !isRunning &&
+        events.any(
+          (AiRunEvent event) => event.type == AiRunEventType.completed,
+        );
+    Widget buildTimeline(bool expandDetails) {
+      return steps.isEmpty && protocolCards.isEmpty
           ? _EmptyActivityStep(palette: palette, copy: copy)
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (int index = 0; index < steps.length; index++)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      bottom: index == steps.length - 1 ? 0 : 7,
-                    ),
-                    child: _ActivityStepTile(
-                      step: steps[index],
-                      palette: palette,
-                      isChinese: copy.isChinese,
-                    ),
-                  ),
-                for (int index = 0; index < protocolCards.length; index++)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      top: steps.isEmpty && index == 0 ? 0 : 7,
-                      bottom: index == protocolCards.length - 1 ? 0 : 7,
-                    ),
-                    child: _ProtocolCardTile(
-                      card: protocolCards[index],
-                      palette: palette,
-                      isChinese: copy.isChinese,
-                    ),
-                  ),
-              ],
-            ),
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                border: hasTimeline
+                    ? Border(
+                        left: BorderSide(
+                          color: palette.outline.withValues(
+                            alpha: isRunning ? 0.38 : 0.18,
+                          ),
+                          width: 1,
+                        ),
+                      )
+                    : null,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (int index = 0; index < steps.length; index++)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index == steps.length - 1 ? 0 : 7,
+                        ),
+                        child: _ActivityStepTile(
+                          key: ValueKey<String>(steps[index].key),
+                          step: steps[index],
+                          palette: palette,
+                          isChinese: copy.isChinese,
+                          isRunning: isRunning,
+                          isRunCompleted: isRunCompleted,
+                          forceExpanded: expandDetails,
+                        ),
+                      ),
+                    for (int index = 0; index < protocolCards.length; index++)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: steps.isEmpty && index == 0 ? 0 : 7,
+                          bottom: index == protocolCards.length - 1 ? 0 : 7,
+                        ),
+                        child: _ProtocolCardTile(
+                          key: ValueKey<_ProtocolCardKind>(
+                            protocolCards[index].kind,
+                          ),
+                          card: protocolCards[index],
+                          palette: palette,
+                          isChinese: copy.isChinese,
+                          isRunning: isRunning,
+                          isRunCompleted: isRunCompleted,
+                          forceExpanded: expandDetails,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+    }
+
+    return _AiRunActivityView(
+      runId: events.isEmpty ? null : events.first.runId,
+      isRunning: isRunning,
+      isCompleted: isRunCompleted,
+      duration: _runDuration,
+      palette: palette,
+      copy: copy,
+      timelineBuilder: buildTimeline,
     );
+  }
+
+  Duration get _runDuration {
+    if (events.isEmpty) return Duration.zero;
+    final List<AiRunEvent> ordered = events.toList(growable: false)
+      ..sort((AiRunEvent a, AiRunEvent b) {
+        final int sequence = a.sequence.compareTo(b.sequence);
+        return sequence != 0 ? sequence : a.timestamp.compareTo(b.timestamp);
+      });
+    final Duration duration = ordered.last.timestamp.difference(
+      ordered.first.timestamp,
+    );
+    return duration.isNegative ? Duration.zero : duration;
   }
 
   List<_ProtocolCard> get _protocolCards {
@@ -488,6 +541,144 @@ class AiRunActivity extends StatelessWidget {
   String _text(String zh, String en) => copy.isChinese ? zh : en;
 }
 
+class _AiRunActivityView extends StatefulWidget {
+  const _AiRunActivityView({
+    required this.runId,
+    required this.isRunning,
+    required this.isCompleted,
+    required this.duration,
+    required this.palette,
+    required this.copy,
+    required this.timelineBuilder,
+  });
+
+  final String? runId;
+  final bool isRunning;
+  final bool isCompleted;
+  final Duration duration;
+  final AppPalette palette;
+  final AppCopy copy;
+  final Widget Function(bool expandDetails) timelineBuilder;
+
+  @override
+  State<_AiRunActivityView> createState() => _AiRunActivityViewState();
+}
+
+class _AiRunActivityViewState extends State<_AiRunActivityView> {
+  bool _expanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = !widget.isCompleted;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AiRunActivityView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bool runChanged =
+        widget.runId != null && widget.runId != oldWidget.runId;
+    final bool completedNow = !oldWidget.isCompleted && widget.isCompleted;
+    if (runChanged || completedNow) {
+      _expanded = !widget.isCompleted;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool showDuration = widget.isCompleted;
+    final Widget content = showDuration
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _DurationToggle(
+                duration: widget.duration,
+                palette: widget.palette,
+                copy: widget.copy,
+                expanded: _expanded,
+                onTap: () => setState(() => _expanded = !_expanded),
+              ),
+              if (_expanded) widget.timelineBuilder(true),
+            ],
+          )
+        : widget.timelineBuilder(false);
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: content,
+    );
+  }
+}
+
+class _DurationToggle extends StatelessWidget {
+  const _DurationToggle({
+    required this.duration,
+    required this.palette,
+    required this.copy,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final Duration duration;
+  final AppPalette palette;
+  final AppCopy copy;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final int hours = duration.inHours;
+    final int minutes = duration.inMinutes.remainder(60);
+    final int seconds = duration.inSeconds.remainder(60);
+    final String label = copy.isChinese
+        ? hours > 0
+              ? '用时 $hours 小时 $minutes 分钟 $seconds 秒'
+              : minutes > 0
+              ? '用时 $minutes 分钟 $seconds 秒'
+              : '用时 $seconds 秒'
+        : hours > 0
+        ? 'Duration ${hours}h ${minutes}m ${seconds}s'
+        : minutes > 0
+        ? 'Duration ${minutes}m ${seconds}s'
+        : 'Duration ${seconds}s';
+    return Semantics(
+      button: true,
+      expanded: expanded,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Row(
+            children: <Widget>[
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: palette.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                expanded
+                    ? Icons.keyboard_arrow_down_rounded
+                    : Icons.chevron_right_rounded,
+                size: 20,
+                color: palette.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Divider(color: palette.outline.withValues(alpha: 0.35)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 enum _ActivityStepStatus { running, completed, warning, failed }
 
 class _StageMeta {
@@ -556,22 +747,85 @@ class _EmptyActivityStep extends StatelessWidget {
   }
 }
 
-class _ActivityStepTile extends StatelessWidget {
+class _ActivityStepTile extends StatefulWidget {
   const _ActivityStepTile({
+    super.key,
     required this.step,
     required this.palette,
     required this.isChinese,
+    required this.isRunning,
+    required this.isRunCompleted,
+    required this.forceExpanded,
   });
 
   final _ActivityStep step;
   final AppPalette palette;
   final bool isChinese;
+  final bool isRunning;
+  final bool isRunCompleted;
+  final bool forceExpanded;
+
+  @override
+  State<_ActivityStepTile> createState() => _ActivityStepTileState();
+}
+
+class _ActivityStepTileState extends State<_ActivityStepTile> {
+  late final ExpansibleController _controller;
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ExpansibleController();
+    _expanded =
+        widget.forceExpanded ||
+        (widget.isRunning &&
+            (widget.step.status == _ActivityStepStatus.running ||
+                widget.step.status == _ActivityStepStatus.failed));
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActivityStepTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final _ActivityStepStatus oldStatus = oldWidget.step.status;
+    final _ActivityStepStatus status = widget.step.status;
+    final bool statusChanged = oldStatus != status;
+    final bool runResumed = !oldWidget.isRunning && widget.isRunning;
+    final bool runEnded = oldWidget.isRunning && !widget.isRunning;
+    final bool completed = !oldWidget.isRunCompleted && widget.isRunCompleted;
+    final bool expandedNow = !oldWidget.forceExpanded && widget.forceExpanded;
+    final bool collapsedNow = oldWidget.forceExpanded && !widget.forceExpanded;
+
+    if (runEnded || completed || collapsedNow) {
+      _controller.collapse();
+    } else if (expandedNow) {
+      _controller.expand();
+    } else if (widget.isRunning &&
+        (runResumed || statusChanged) &&
+        (status == _ActivityStepStatus.running ||
+            status == _ActivityStepStatus.failed)) {
+      _controller.expand();
+    } else if (widget.isRunning &&
+        statusChanged &&
+        (status == _ActivityStepStatus.completed ||
+            status == _ActivityStepStatus.warning)) {
+      _controller.collapse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final _ActivityStep step = widget.step;
+    final AppPalette palette = widget.palette;
     final bool running = step.status == _ActivityStepStatus.running;
     final bool failed = step.status == _ActivityStepStatus.failed;
+    final ThemeData theme = Theme.of(context);
     final Color accent = failed
         ? palette.error
         : step.status == _ActivityStepStatus.warning
@@ -582,82 +836,94 @@ class _ActivityStepTile extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.surfaceContainer.withValues(
-          alpha: running ? 0.72 : 0.42,
+          alpha: running ? 0.60 : 0.30,
         ),
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: running
-              ? palette.primary.withValues(alpha: 0.62)
-              : palette.outline.withValues(alpha: 0.62),
+              ? palette.primary.withValues(alpha: 0.48)
+              : palette.outline.withValues(alpha: 0.38),
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SizedBox(
-              width: 22,
-              child: running
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: Padding(
-                        padding: const EdgeInsets.all(1),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: accent,
-                        ),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _controller,
+          onExpansionChanged: (bool expanded) {
+            if (_expanded == expanded || !mounted) return;
+            setState(() => _expanded = expanded);
+          },
+          initiallyExpanded:
+              widget.forceExpanded ||
+              (widget.isRunning &&
+                  (step.status == _ActivityStepStatus.running ||
+                      step.status == _ActivityStepStatus.failed)),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+          childrenPadding: const EdgeInsets.fromLTRB(43, 0, 12, 10),
+          leading: SizedBox(
+            width: 22,
+            child: running
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: Padding(
+                      padding: const EdgeInsets.all(1),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: accent,
                       ),
-                    )
-                  : Icon(
-                      failed
-                          ? Icons.error_outline_rounded
-                          : step.status == _ActivityStepStatus.warning
-                          ? Icons.info_outline_rounded
-                          : Icons.check_circle_outline_rounded,
-                      size: 17,
-                      color: accent,
                     ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    step.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: palette.textPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  )
+                : Icon(
+                    failed
+                        ? Icons.error_outline_rounded
+                        : step.status == _ActivityStepStatus.warning
+                        ? Icons.info_outline_rounded
+                        : Icons.check_circle_outline_rounded,
+                    size: 17,
+                    color: accent,
                   ),
-                  if (step.detail.trim().isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 2),
-                    Text(
-                      step.detail,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: palette.textSecondary,
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+          ),
+          title: Text(
+            step.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: palette.textPrimary,
+              fontWeight: FontWeight.w700,
             ),
-            if (running)
-              Padding(
-                padding: const EdgeInsets.only(left: 8, top: 1),
-                child: Text(
-                  isChinese ? '进行中' : 'Running',
-                  // Keep the status short so it reads as a live activity
-                  // indicator instead of a second explanatory panel.
-                  style: theme.textTheme.labelSmall?.copyWith(color: accent),
+          ),
+          subtitle: step.detail.trim().isEmpty
+              ? null
+              : Text(
+                  step.detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: palette.textSecondary,
+                    height: 1.3,
+                  ),
                 ),
+          trailing: running
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 1),
+                  child: Text(
+                    widget.isChinese ? '进行中' : 'Running',
+                    style: theme.textTheme.labelSmall?.copyWith(color: accent),
+                  ),
+                )
+              : Icon(
+                  _expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: palette.textSecondary,
+                ),
+          children: <Widget>[
+            if (step.detail.trim().isNotEmpty)
+              _ActivityDetailBox(
+                text: 'detail: ${step.detail}',
+                palette: palette,
               ),
           ],
         ),
@@ -698,19 +964,81 @@ class _ProtocolCard {
   );
 }
 
-class _ProtocolCardTile extends StatelessWidget {
+class _ProtocolCardTile extends StatefulWidget {
   const _ProtocolCardTile({
+    super.key,
     required this.card,
     required this.palette,
     required this.isChinese,
+    required this.isRunning,
+    required this.isRunCompleted,
+    required this.forceExpanded,
   });
 
   final _ProtocolCard card;
   final AppPalette palette;
   final bool isChinese;
+  final bool isRunning;
+  final bool isRunCompleted;
+  final bool forceExpanded;
+
+  @override
+  State<_ProtocolCardTile> createState() => _ProtocolCardTileState();
+}
+
+class _ProtocolCardTileState extends State<_ProtocolCardTile> {
+  late final ExpansibleController _controller;
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ExpansibleController();
+    _expanded =
+        widget.forceExpanded ||
+        (widget.isRunning &&
+            (widget.card.status == _ProtocolCardStatus.running ||
+                widget.card.status == _ProtocolCardStatus.failed));
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProtocolCardTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final _ProtocolCardStatus oldStatus = oldWidget.card.status;
+    final _ProtocolCardStatus status = widget.card.status;
+    final bool statusChanged = oldStatus != status;
+    final bool runResumed = !oldWidget.isRunning && widget.isRunning;
+    final bool runEnded = oldWidget.isRunning && !widget.isRunning;
+    final bool completed = !oldWidget.isRunCompleted && widget.isRunCompleted;
+    final bool expandedNow = !oldWidget.forceExpanded && widget.forceExpanded;
+    final bool collapsedNow = oldWidget.forceExpanded && !widget.forceExpanded;
+
+    if (runEnded || completed || collapsedNow) {
+      _controller.collapse();
+    } else if (expandedNow) {
+      _controller.expand();
+    } else if (widget.isRunning &&
+        (runResumed || statusChanged) &&
+        (status == _ProtocolCardStatus.running ||
+            status == _ProtocolCardStatus.failed)) {
+      _controller.expand();
+    } else if (widget.isRunning &&
+        statusChanged &&
+        status == _ProtocolCardStatus.completed) {
+      _controller.collapse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final _ProtocolCard card = widget.card;
+    final AppPalette palette = widget.palette;
     final ThemeData theme = Theme.of(context);
     final bool failed = card.status == _ProtocolCardStatus.failed;
     final bool running = card.status == _ProtocolCardStatus.running;
@@ -747,7 +1075,16 @@ class _ProtocolCardTile extends StatelessWidget {
         ),
       ),
       child: ExpansionTile(
-        initiallyExpanded: failed,
+        controller: _controller,
+        onExpansionChanged: (bool expanded) {
+          if (_expanded == expanded || !mounted) return;
+          setState(() => _expanded = expanded);
+        },
+        initiallyExpanded:
+            widget.forceExpanded ||
+            (widget.isRunning &&
+                (card.status == _ProtocolCardStatus.running ||
+                    card.status == _ProtocolCardStatus.failed)),
         tilePadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 1),
         childrenPadding: const EdgeInsets.fromLTRB(44, 0, 12, 10),
         leading: _ProtocolIcon(
@@ -790,23 +1127,55 @@ class _ProtocolCardTile extends StatelessWidget {
         children: logLines.isEmpty
             ? const <Widget>[]
             : <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    logLines.join('\n'),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: palette.textSecondary,
-                      height: 1.45,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
+                _ActivityDetailBox(
+                  palette: palette,
+                  text: logLines.join('\n'),
+                  monospace: true,
                 ),
               ],
       ),
     );
   }
 
-  String _text(String zh, String en) => isChinese ? zh : en;
+  String _text(String zh, String en) => widget.isChinese ? zh : en;
+}
+
+class _ActivityDetailBox extends StatelessWidget {
+  const _ActivityDetailBox({
+    required this.text,
+    required this.palette,
+    this.monospace = false,
+  });
+
+  final String text;
+  final AppPalette palette;
+  final bool monospace;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+      decoration: BoxDecoration(
+        color: palette.surfaceVariant.withValues(alpha: 0.48),
+        border: Border(
+          left: BorderSide(
+            color: palette.outline.withValues(alpha: 0.52),
+            width: 2,
+          ),
+        ),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: palette.textSecondary,
+          height: 1.45,
+          fontFamily: monospace ? 'monospace' : null,
+        ),
+      ),
+    );
+  }
 }
 
 class _ProtocolIcon extends StatelessWidget {
