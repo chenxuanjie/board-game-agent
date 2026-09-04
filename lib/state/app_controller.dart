@@ -929,6 +929,15 @@ class AppController extends ChangeNotifier {
     );
     messages.add(draftMessage);
     notifyListeners();
+    final _StreamTextBatcher deltaBatcher = _StreamTextBatcher((String delta) {
+      final ChatMessage? current = _messageById(messages, draftId);
+      if (current == null) return;
+      _replaceMessage(
+        messages,
+        current.copyWith(text: '${current.text}$delta'),
+      );
+      notifyListeners();
+    });
 
     final GameInfo game = featuredGame;
     final AiAnswerMode answerMode = chatAnswerMode(
@@ -969,26 +978,24 @@ class AppController extends ChangeNotifier {
         if (event.isDone || event.isFailure) {
           terminalEvent = event;
         }
-        // Every normalized event can change the visible activity row (for
-        // example a citation or retry has no textual status). Rebuild from
-        // the event stream instead of relying on a subset of status events.
-        notifyListeners();
         if (event.delta.isNotEmpty) {
-          _replaceMessage(
-            messages,
-            draftMessage.copyWith(
-              text:
-                  '${_messageById(messages, draftId)?.text ?? ''}${event.delta}',
-            ),
-          );
+          // Coalesce deltas into one UI update per frame-sized window. The
+          // activity timeline still receives each normalized event, while the
+          // markdown message avoids rebuilding once per token.
+          deltaBatcher.add(event.delta);
+        } else {
+          // Every non-text event can change the visible activity row (for
+          // example a citation or retry has no textual status).
           notifyListeners();
         }
         if (event.answer != null) {
+          deltaBatcher.flush();
           finalAnswer = event.answer;
           _completeSyntheticAnswerStage(generation);
         }
       }
 
+      deltaBatcher.flush();
       final ChatMessage? currentDraft = _messageById(messages, draftId);
       if (generation.wasStopped) {
         _finishRunPresentation(generation, AiRunStatus.cancelled);
@@ -1048,9 +1055,18 @@ class AppController extends ChangeNotifier {
           AiRunEventType.cancelled => copy.aiReplyIncomplete,
           _ => copy.aiReplyFailed,
         };
+        final String reason = _streamFailureReason(
+          terminalEvent,
+          fallback: runEvent?.detail,
+        );
+        final String failureNotice = _failureNotice(
+          terminalNotice,
+          reason: reason,
+          attempts: _runAttemptCount(generation),
+        );
         final String text = partialText.isEmpty
-            ? terminalNotice
-            : '${draft!.text}\n\n$terminalNotice';
+            ? failureNotice
+            : '${draft!.text}\n\n$failureNotice';
         _replaceMessage(
           messages,
           (draft ?? draftMessage).copyWith(
@@ -1067,6 +1083,7 @@ class AppController extends ChangeNotifier {
         throw StateError('The AI stream ended without an answer.');
       }
     } catch (error, stackTrace) {
+      deltaBatcher.flush();
       debugPrint('[chat] sendPrompt failed: $error');
       debugPrint('$stackTrace');
       if (generation.wasStopped) {
@@ -1087,9 +1104,14 @@ class AppController extends ChangeNotifier {
         _finishRunPresentation(generation, AiRunStatus.failed);
         final ChatMessage? currentDraft = _messageById(messages, draftId);
         final String partialText = currentDraft?.text.trim() ?? '';
+        final String failureNotice = _failureNotice(
+          copy.aiReplyFailed,
+          reason: _safeStatusError(error),
+          attempts: _runAttemptCount(generation),
+        );
         final String text = partialText.isEmpty
-            ? copy.aiReplyFailed
-            : '${currentDraft!.text}\n\n${copy.aiReplyIncomplete}';
+            ? failureNotice
+            : '${currentDraft!.text}\n\n$failureNotice';
         _replaceMessage(
           messages,
           (currentDraft ?? draftMessage).copyWith(
@@ -1108,6 +1130,7 @@ class AppController extends ChangeNotifier {
       _trimConversationMessages(messages);
       _queueConversationSave(conversationId: conversationId);
     } finally {
+      deltaBatcher.dispose();
       generation.abort = null;
       generation.isSending = false;
       notifyListeners();
@@ -1424,6 +1447,37 @@ class AppController extends ChangeNotifier {
     final String apiKey = _aiApiConfig.apiKey.trim();
     if (apiKey.isEmpty) return message;
     return message.replaceAll(apiKey, '<redacted>');
+  }
+
+  String _streamFailureReason(
+    BoardGameAiStreamEvent event, {
+    String? fallback,
+  }) {
+    final String value = (event.errorMessage ?? fallback ?? '').trim();
+    return value.isEmpty ? '未提供详细错误' : _safeStatusError(value);
+  }
+
+  int _runAttemptCount(_ChatGenerationState generation) {
+    int attempts = 1;
+    for (final AiRunEvent event in generation.runEvents) {
+      final int reported = event.attempt ?? 0;
+      if (reported > attempts) attempts = reported;
+    }
+    return attempts;
+  }
+
+  String _failureNotice(
+    String base, {
+    required String reason,
+    required int attempts,
+  }) {
+    final String attemptText = _language == AppLanguage.zhHans
+        ? '尝试 $attempts 次'
+        : 'Attempted $attempts time${attempts == 1 ? '' : 's'}';
+    final String reasonText = _language == AppLanguage.zhHans
+        ? '失败原因：$reason'
+        : 'Reason: $reason';
+    return '$base\n$reasonText · $attemptText';
   }
 
   Future<void> prefetchHomeImages() async {
@@ -3404,6 +3458,33 @@ class AppController extends ChangeNotifier {
       }
     }
     return null;
+  }
+}
+
+class _StreamTextBatcher {
+  _StreamTextBatcher(this._onFlush);
+
+  final void Function(String delta) _onFlush;
+  final StringBuffer _buffer = StringBuffer();
+  Timer? _timer;
+
+  void add(String delta) {
+    if (delta.isEmpty) return;
+    _buffer.write(delta);
+    _timer ??= Timer(const Duration(milliseconds: 16), flush);
+  }
+
+  void flush() {
+    _timer?.cancel();
+    _timer = null;
+    if (_buffer.isEmpty) return;
+    final String delta = _buffer.toString();
+    _buffer.clear();
+    _onFlush(delta);
+  }
+
+  void dispose() {
+    flush();
   }
 }
 

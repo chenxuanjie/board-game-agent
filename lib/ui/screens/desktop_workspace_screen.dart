@@ -2110,8 +2110,10 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
   late final ScrollController _scrollController;
   bool _showMessageTimes = false;
   bool _showJumpToBottom = false;
+  bool _hasNewContent = false;
   String? _lastConversationId;
   bool _followNewMessages = true;
+  final Map<String, double> _scrollOffsets = <String, double>{};
   Timer? _messageTimesTimer;
 
   AppController get controller => widget.controller;
@@ -2121,6 +2123,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
     super.initState();
     _draftController = TextEditingController();
     _scrollController = ScrollController()..addListener(_handleScrollChanged);
+    _lastConversationId = controller.selectedConversationId;
     controller.addListener(_handleControllerChanged);
     _scheduleInitialScrollToBottom();
   }
@@ -2324,13 +2327,31 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                             ),
                             if (_showJumpToBottom)
                               Positioned(
-                                right: 18,
+                                left: 0,
+                                right: 0,
                                 bottom: 14,
-                                child: FloatingActionButton.small(
-                                  heroTag: 'assistant-jump-to-bottom',
-                                  tooltip: controller.copy.desktopJumpToBottom,
-                                  onPressed: _scrollToBottom,
-                                  child: const Icon(Icons.south_rounded),
+                                child: Center(
+                                  child: FilledButton.tonalIcon(
+                                    onPressed: _jumpToBottom,
+                                    icon: const Icon(
+                                      Icons.south_rounded,
+                                      size: 17,
+                                    ),
+                                    label: Text(
+                                      _hasNewContent
+                                          ? controller.copy.aiNewMessages
+                                          : controller.copy.desktopJumpToBottom,
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: palette.surfaceContainer,
+                                      foregroundColor: palette.textPrimary,
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 9,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                           ],
@@ -2366,16 +2387,36 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
 
   void _handleControllerChanged() {
     if (!mounted) return;
-    _followNewMessages = _isNearBottom();
     final String? conversationId = controller.selectedConversationId;
-    if (conversationId != _lastConversationId) {
+    final bool contextChanged = conversationId != _lastConversationId;
+    if (contextChanged) {
+      _saveScrollPosition();
       _lastConversationId = conversationId;
       _showJumpToBottom = false;
-      _forceScrollToBottom = true;
+      _hasNewContent = false;
+      _followNewMessages = true;
+      _forceScrollToBottom = false;
+    } else if (!_followNewMessages) {
+      _showJumpToBottom = true;
+      _hasNewContent = true;
     }
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_forceScrollToBottom || _followNewMessages) _scrollToBottom();
+      if (!mounted || !_scrollController.hasClients) return;
+      if (contextChanged) {
+        final double? saved = conversationId == null
+            ? null
+            : _scrollOffsets[conversationId];
+        if (saved == null) {
+          _scrollToBottom(animated: false);
+        } else {
+          _scrollController.jumpTo(
+            saved.clamp(0.0, _scrollController.position.maxScrollExtent),
+          );
+        }
+      } else if (_forceScrollToBottom || _followNewMessages) {
+        _scrollToBottom();
+      }
       _forceScrollToBottom = false;
     });
   }
@@ -2390,19 +2431,51 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
 
   void _handleScrollChanged() {
     if (!mounted) return;
-    final bool show = !_isNearBottom();
-    if (show != _showJumpToBottom) {
-      setState(() => _showJumpToBottom = show);
+    final bool nearBottom = _isNearBottom();
+    if (nearBottom) {
+      if (_followNewMessages || !_showJumpToBottom) return;
+      setState(() {
+        _followNewMessages = true;
+        _showJumpToBottom = false;
+        _hasNewContent = false;
+      });
+      return;
+    }
+    _saveScrollPosition();
+    if (_followNewMessages || !_showJumpToBottom) {
+      setState(() {
+        _followNewMessages = false;
+        _showJumpToBottom = true;
+      });
     }
   }
 
-  void _scrollToBottom() {
+  void _saveScrollPosition() {
+    final String? conversationId = _lastConversationId;
+    if (conversationId == null || !_scrollController.hasClients) return;
+    _scrollOffsets[conversationId] = _scrollController.position.pixels;
+  }
+
+  void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
+    final double target = _scrollController.position.maxScrollExtent;
+    if (!animated) {
+      _scrollController.jumpTo(target);
+      return;
+    }
     _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
+      target,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
     );
+  }
+
+  void _jumpToBottom() {
+    _followNewMessages = true;
+    _showJumpToBottom = false;
+    _hasNewContent = false;
+    _scrollToBottom();
+    if (mounted) setState(() {});
   }
 
   void _scheduleInitialScrollToBottom() {
@@ -2410,8 +2483,10 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
       if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      _scrollToBottom(animated: false);
+      _followNewMessages = true;
       _showJumpToBottom = false;
+      _hasNewContent = false;
     });
   }
 

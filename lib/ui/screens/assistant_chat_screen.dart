@@ -37,6 +37,11 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
   bool _showMessageTimes = false;
+  bool _followNewMessages = true;
+  bool _showJumpToBottom = false;
+  bool _hasNewContent = false;
+  String? _lastScrollContextKey;
+  final Map<String, double> _scrollOffsets = <String, double>{};
   Timer? _messageTimeVisibilityTimer;
 
   @override
@@ -54,6 +59,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       );
     }
     widget.controller.addListener(_onControllerChanged);
+    _lastScrollContextKey = _conversationContextKey;
+    _scrollController.addListener(_handleScrollChanged);
     _scheduleInitialScrollToBottom();
   }
 
@@ -61,6 +68,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   void dispose() {
     widget.controller.stopSpeaking();
     widget.controller.removeListener(_onControllerChanged);
+    _scrollController.removeListener(_handleScrollChanged);
+    _saveScrollPosition();
     _textController.removeListener(_onDraftChanged);
     _textController.dispose();
     _scrollController.dispose();
@@ -131,23 +140,41 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   ),
                 ),
                 Expanded(
-                  child: AnimatedBuilder(
-                    animation: controller,
-                    builder: (context, _) {
-                      final messages = controller.messagesForContext(
-                        useGlobalMode: widget.useGlobalMode,
-                      );
-                      return _MessageList(
-                        controller: controller,
-                        messages: messages,
-                        scrollController: _scrollController,
-                        onQuickPrompt: _sendQuickPrompt,
-                        onCopy: _copyAssistantAnswer,
-                        useGlobalMode: widget.useGlobalMode,
-                        showMessageTimes: _showMessageTimes,
-                        onMessageTap: _showMessageTimesTemporarily,
-                      );
-                    },
+                  child: Stack(
+                    children: <Widget>[
+                      AnimatedBuilder(
+                        animation: controller,
+                        builder: (context, _) {
+                          final messages = controller.messagesForContext(
+                            useGlobalMode: widget.useGlobalMode,
+                          );
+                          return _MessageList(
+                            controller: controller,
+                            messages: messages,
+                            scrollController: _scrollController,
+                            onQuickPrompt: _sendQuickPrompt,
+                            onCopy: _copyAssistantAnswer,
+                            useGlobalMode: widget.useGlobalMode,
+                            showMessageTimes: _showMessageTimes,
+                            onMessageTap: _showMessageTimesTemporarily,
+                          );
+                        },
+                      ),
+                      if (_showJumpToBottom)
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 8,
+                          child: Center(
+                            child: _JumpToBottomButton(
+                              label: _hasNewContent
+                                  ? copy.aiNewMessages
+                                  : copy.desktopJumpToBottom,
+                              onPressed: _jumpToBottom,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 Padding(
@@ -179,17 +206,96 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (!mounted) {
       return;
     }
+    final String contextKey = _conversationContextKey;
+    final bool contextChanged =
+        _lastScrollContextKey != null && _lastScrollContextKey != contextKey;
+    if (contextChanged) {
+      _saveScrollPosition();
+      _lastScrollContextKey = contextKey;
+      _followNewMessages = true;
+      _showJumpToBottom = false;
+      _hasNewContent = false;
+    } else if (!_followNewMessages) {
+      _showJumpToBottom = true;
+      _hasNewContent = true;
+    }
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) {
+      if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 96,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOut,
-      );
+      if (contextChanged) {
+        final double? saved = _scrollOffsets[contextKey];
+        if (saved == null) {
+          _scrollToBottom(animated: false);
+        } else {
+          _scrollController.jumpTo(
+            saved.clamp(0.0, _scrollController.position.maxScrollExtent),
+          );
+        }
+      } else if (_followNewMessages) {
+        _scrollToBottom();
+      }
     });
+  }
+
+  String get _conversationContextKey => widget.useGlobalMode
+      ? 'global'
+      : (widget.controller.selectedConversationId ??
+            'game:${widget.controller.selectedGame.id}');
+
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) return true;
+    final ScrollPosition position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels < 96;
+  }
+
+  void _handleScrollChanged() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final bool nearBottom = _isNearBottom();
+    if (nearBottom) {
+      if (_followNewMessages || !_showJumpToBottom) return;
+      setState(() {
+        _followNewMessages = true;
+        _showJumpToBottom = false;
+        _hasNewContent = false;
+      });
+      return;
+    }
+    _saveScrollPosition();
+    if (_followNewMessages || !_showJumpToBottom) {
+      setState(() {
+        _followNewMessages = false;
+        _showJumpToBottom = true;
+      });
+    }
+  }
+
+  void _saveScrollPosition() {
+    if (_lastScrollContextKey == null || !_scrollController.hasClients) return;
+    _scrollOffsets[_lastScrollContextKey!] = _scrollController.position.pixels;
+  }
+
+  void _scrollToBottom({bool animated = true}) {
+    if (!_scrollController.hasClients) return;
+    final double target = _scrollController.position.maxScrollExtent;
+    if (!animated) {
+      _scrollController.jumpTo(target);
+      return;
+    }
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _jumpToBottom() {
+    _followNewMessages = true;
+    _showJumpToBottom = false;
+    _hasNewContent = false;
+    _scrollToBottom();
+    if (mounted) setState(() {});
   }
 
   void _scheduleInitialScrollToBottom() {
@@ -197,7 +303,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      _scrollToBottom(animated: false);
     });
   }
 
@@ -783,6 +889,29 @@ class _MessageList extends StatelessWidget {
         if (showQuickPrompts)
           _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),
       ],
+    );
+  }
+}
+
+class _JumpToBottomButton extends StatelessWidget {
+  const _JumpToBottomButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = AppPalette.of(context);
+    return FilledButton.tonalIcon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.south_rounded, size: 17),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        backgroundColor: palette.surfaceContainer,
+        foregroundColor: palette.textPrimary,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      ),
     );
   }
 }

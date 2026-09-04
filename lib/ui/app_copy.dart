@@ -465,6 +465,7 @@ class AppCopy {
   String get desktopVoiceInput => isChinese ? '语音输入' : 'Voice input';
   String get desktopInputHint => isChinese ? '输入问题…' : 'Ask a question…';
   String get desktopJumpToBottom => isChinese ? '回到底部' : 'Jump to bottom';
+  String get aiNewMessages => isChinese ? '有新内容' : 'New content';
   String get desktopSend => isChinese ? '发送' : 'Send';
   String get desktopStopGenerating => isChinese ? '停止生成' : 'Stop generating';
   String get desktopPreferences => isChinese ? '偏好' : 'Preferences';

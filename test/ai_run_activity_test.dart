@@ -222,7 +222,7 @@ void main() {
     expect(find.text('正在查阅社区资料'), findsOneWidget);
   });
 
-  testWidgets('renders response stream failure and resume as separate cards', (
+  testWidgets('renders reconnects as one continuous response stream card', (
     WidgetTester tester,
   ) async {
     final List<AiRunEvent> events = <AiRunEvent>[
@@ -292,14 +292,13 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('response stream'), findsOneWidget);
-    expect(find.text('resume'), findsOneWidget);
-    expect(find.text('response.completed 尚未到达'), findsOneWidget);
-    expect(find.text('已重新建立事件流，继续监听 sequence 19'), findsOneWidget);
-    expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
-    expect(find.text('resume'), findsOneWidget);
+    expect(find.text('连接过程'), findsOneWidget);
+    expect(find.text('resume'), findsNothing);
+    expect(find.textContaining('response.completed 尚未到达'), findsOneWidget);
+    expect(find.textContaining('已重新建立事件流，继续监听 sequence 19'), findsNWidgets(2));
+    expect(find.textContaining('第 1 次尝试'), findsOneWidget);
   });
 
   testWidgets('collapses completed details but keeps them user-expandable', (
@@ -390,7 +389,7 @@ void main() {
         ),
       ),
     );
-    expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
+    expect(find.textContaining('第 1 次尝试'), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -406,10 +405,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('attempt: 1 / 3'), findsNothing);
-    await tester.tap(find.text('response stream'));
+    expect(find.textContaining('第 1 次尝试'), findsNothing);
+    await tester.tap(find.text('连接过程'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
+    expect(find.textContaining('第 1 次尝试'), findsOneWidget);
   });
 
   testWidgets(
@@ -477,16 +476,16 @@ void main() {
       }
 
       await tester.pumpWidget(buildActivity(runningEvents, true));
-      expect(find.textContaining('attempt: 1 / 3'), findsOneWidget);
+      expect(find.textContaining('第 1 次尝试'), findsOneWidget);
 
       await tester.pumpWidget(buildActivity(completedEvents, false));
       await tester.pumpAndSettle();
       expect(find.textContaining('用时'), findsOneWidget);
-      expect(find.text('response stream'), findsNothing);
+      expect(find.text('连接过程'), findsNothing);
       await tester.tap(find.textContaining('用时'));
       await tester.pumpAndSettle();
-      expect(find.text('response stream'), findsOneWidget);
-      expect(find.textContaining('attempt: 1 / 3'), findsNothing);
+      expect(find.text('连接过程'), findsOneWidget);
+      expect(find.textContaining('第 1 次尝试'), findsOneWidget);
     },
   );
 }

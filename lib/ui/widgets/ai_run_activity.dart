@@ -126,110 +126,63 @@ class AiRunActivity extends StatelessWidget {
   List<_ProtocolCard> get _protocolCards {
     final List<AiRunEvent> orderedEvents = events.toList(growable: false)
       ..sort((AiRunEvent a, AiRunEvent b) => a.sequence.compareTo(b.sequence));
-    final List<_ProtocolCard> cards = <_ProtocolCard>[];
-
-    void upsertStream(_ProtocolCard card) {
-      final int index = cards.indexWhere(
-        (_ProtocolCard value) => value.kind == _ProtocolCardKind.stream,
-      );
-      if (index < 0) {
-        cards.add(card);
-      } else {
-        cards[index] = card;
-      }
-    }
-
-    void upsertResume(_ProtocolCard card) {
-      final int index = cards.indexWhere(
-        (_ProtocolCard value) => value.kind == _ProtocolCardKind.resume,
-      );
-      if (index < 0) {
-        cards.add(card);
-      } else {
-        cards[index] = card;
-      }
-    }
-
+    final List<AiRunEvent> connectionEvents = <AiRunEvent>[];
+    _ProtocolCardStatus? status;
+    String? subtitle;
     for (final AiRunEvent event in orderedEvents) {
       switch (event.type) {
         case AiRunEventType.responseStreamStarted:
-          upsertStream(
-            _ProtocolCard(
-              kind: _ProtocolCardKind.stream,
-              status: _ProtocolCardStatus.running,
-              title: 'response stream',
-              subtitle: _text('正在监听事件流', 'Listening to the event stream'),
-              event: event,
-            ),
-          );
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.running;
+          subtitle = _text('正在监听事件流', 'Listening to the event stream');
         case AiRunEventType.responseStreamFailed:
-          final _ProtocolCard failedCard = _ProtocolCard(
-            kind: _ProtocolCardKind.stream,
-            status: _ProtocolCardStatus.failed,
-            title: 'response stream',
-            subtitle: event.detail?.trim().isNotEmpty == true
-                ? event.detail!.trim()
-                : _text('响应流中断', 'Response stream interrupted'),
-            event: event,
-          );
-          upsertStream(failedCard);
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.failed;
+          subtitle = event.detail?.trim().isNotEmpty == true
+              ? event.detail!.trim()
+              : _text('响应流中断', 'Response stream interrupted');
         case AiRunEventType.resumeStarted:
-          upsertResume(
-            _ProtocolCard(
-              kind: _ProtocolCardKind.resume,
-              status: _ProtocolCardStatus.running,
-              title: 'resume',
-              subtitle: event.detail?.trim().isNotEmpty == true
-                  ? event.detail!.trim()
-                  : _text('正在恢复连接', 'Resuming the connection'),
-              event: event,
-            ),
-          );
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.running;
+          subtitle = event.detail?.trim().isNotEmpty == true
+              ? event.detail!.trim()
+              : _text('正在恢复连接', 'Resuming the connection');
         case AiRunEventType.resumeCompleted:
-          final int resumeIndex = cards.indexWhere(
-            (_ProtocolCard card) => card.kind == _ProtocolCardKind.resume,
-          );
-          if (resumeIndex >= 0) {
-            cards[resumeIndex] = cards[resumeIndex].copyWith(
-              status: _ProtocolCardStatus.completed,
-              subtitle: event.detail?.trim().isNotEmpty == true
-                  ? event.detail!.trim()
-                  : _text('已恢复', 'Resumed'),
-              event: event,
-            );
-          }
+          connectionEvents.add(event);
+          // A resumed stream is still active until the provider emits its
+          // terminal response completion event.
+          status = _ProtocolCardStatus.running;
+          subtitle = event.detail?.trim().isNotEmpty == true
+              ? event.detail!.trim()
+              : _text('已恢复连接，继续监听', 'Connection restored; listening continues');
         case AiRunEventType.status:
           if (event.status == 'response_completed') {
-            final int streamIndex = cards.indexWhere(
-              (_ProtocolCard card) => card.kind == _ProtocolCardKind.stream,
-            );
-            if (streamIndex >= 0) {
-              cards[streamIndex] = cards[streamIndex].copyWith(
-                status: _ProtocolCardStatus.completed,
-                subtitle: _text('事件流已完成', 'Event stream completed'),
-                event: event,
-              );
-            }
+            connectionEvents.add(event);
+            status = _ProtocolCardStatus.completed;
+            subtitle = _text('事件流已完成', 'Event stream completed');
           }
           break;
         case AiRunEventType.retry:
-          upsertResume(
-            _ProtocolCard(
-              kind: _ProtocolCardKind.resume,
-              status: _ProtocolCardStatus.running,
-              title: 'resume',
-              subtitle: event.detail?.trim().isNotEmpty == true
-                  ? event.detail!.trim()
-                  : _text('正在重试连接', 'Retrying the connection'),
-              event: event,
-            ),
-          );
+          connectionEvents.add(event);
+          status = _ProtocolCardStatus.running;
+          subtitle = event.detail?.trim().isNotEmpty == true
+              ? event.detail!.trim()
+              : _text('正在重试连接', 'Retrying the connection');
           break;
         default:
           break;
       }
     }
-    return cards;
+    if (connectionEvents.isEmpty) return const <_ProtocolCard>[];
+    return <_ProtocolCard>[
+      _ProtocolCard(
+        kind: _ProtocolCardKind.stream,
+        status: status ?? _ProtocolCardStatus.running,
+        title: _text('连接过程', 'Connection activity'),
+        subtitle: subtitle ?? _text('正在监听事件流', 'Listening to the event stream'),
+        events: connectionEvents,
+      ),
+    ];
   }
 
   List<_ActivityStep> get _steps {
@@ -942,26 +895,14 @@ class _ProtocolCard {
     required this.status,
     required this.title,
     required this.subtitle,
-    required this.event,
+    required this.events,
   });
 
   final _ProtocolCardKind kind;
   final _ProtocolCardStatus status;
   final String title;
   final String subtitle;
-  final AiRunEvent event;
-
-  _ProtocolCard copyWith({
-    _ProtocolCardStatus? status,
-    String? subtitle,
-    AiRunEvent? event,
-  }) => _ProtocolCard(
-    kind: kind,
-    status: status ?? this.status,
-    title: title,
-    subtitle: subtitle ?? this.subtitle,
-    event: event ?? this.event,
-  );
+  final List<AiRunEvent> events;
 }
 
 class _ProtocolCardTile extends StatefulWidget {
@@ -1047,21 +988,30 @@ class _ProtocolCardTileState extends State<_ProtocolCardTile> {
         : card.kind == _ProtocolCardKind.resume
         ? palette.primary
         : palette.textSecondary;
-    final AiRunEvent event = card.event;
+    final AiRunEvent event = card.events.last;
     final List<String> logLines = <String>[
-      if (event.runId.trim().isNotEmpty) 'runId: ${event.runId}',
       if (event.attempt != null)
-        'attempt: ${event.attempt} / ${event.maxAttempts ?? 3}',
-      if (event.lastSequence != null) 'lastSequence: ${event.lastSequence}',
-      if (event.sequenceNumber != null) 'sequence: ${event.sequenceNumber}',
-      if (event.replay != null)
-        'replay: ${event.replay == true ? 'enabled' : 'disabled'}',
+        _text(
+          '第 ${event.attempt} 次尝试（共 ${event.maxAttempts ?? 3} 次）',
+          'Attempt ${event.attempt} of ${event.maxAttempts ?? 3}',
+        ),
       if (event.duplicateUserMessagePrevented)
         _text('重复用户消息：已阻止', 'duplicate user message: prevented'),
       if (event.partialOutputRetained)
         _text('部分输出：已保留', 'partial output: retained'),
-      if (event.rawType != null) 'event: ${event.rawType}',
+      for (final AiRunEvent item in card.events)
+        if (item.detail?.trim().isNotEmpty == true) item.detail!.trim(),
     ];
+    final List<String> attemptLines = <String>[];
+    for (final AiRunEvent item in card.events) {
+      if (item.attempt == null) continue;
+      final String line = _text(
+        '第 ${item.attempt} 次尝试（共 ${item.maxAttempts ?? 3} 次）',
+        'Attempt ${item.attempt} of ${item.maxAttempts ?? 3}',
+      );
+      if (!attemptLines.contains(line)) attemptLines.add(line);
+    }
+    logLines.insertAll(logLines.isEmpty ? 0 : 1, attemptLines);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.surfaceContainer.withValues(
