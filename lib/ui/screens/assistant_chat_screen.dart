@@ -9,6 +9,7 @@ import '../../models/chat_message.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../widgets/ai_run_activity.dart';
+import '../widgets/assistant_feature_chip.dart';
 import '../widgets/message_bubble.dart';
 
 class AssistantChatScreen extends StatefulWidget {
@@ -1030,7 +1031,7 @@ class _Composer extends StatelessWidget {
       useGlobalMode: useGlobalMode,
     );
     final activeFeatures = <Widget>[
-      _FeatureChip(
+      AssistantFeatureChip(
         icon: smartSupplement
             ? Icons.auto_awesome_rounded
             : Icons.menu_book_rounded,
@@ -1043,7 +1044,7 @@ class _Composer extends StatelessWidget {
         onRemove: onOpenContext,
       ),
       if (controller.voiceReplyEnabled)
-        _FeatureChip(
+        AssistantFeatureChip(
           icon: Icons.graphic_eq_rounded,
           label: copy.voiceReplySwitchLabel,
           foregroundColor: palette.primary,
@@ -1304,52 +1305,6 @@ class _SpeechWaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SpeechWaveformPainter oldDelegate) =>
       (oldDelegate.level - level).abs() > 0.01 || oldDelegate.color != color;
-}
-
-class _FeatureChip extends StatelessWidget {
-  const _FeatureChip({
-    required this.icon,
-    required this.label,
-    required this.foregroundColor,
-    required this.backgroundColor,
-    required this.onRemove,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color foregroundColor;
-  final Color backgroundColor;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: backgroundColor,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onRemove,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 16, color: foregroundColor),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelLarge?.copyWith(color: foregroundColor),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.close_rounded, size: 15, color: foregroundColor),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _AssistantAvatar extends StatelessWidget {

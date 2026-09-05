@@ -88,6 +88,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('desktop assistant composer expands beyond the message column', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    controller.openGlobalAssistant();
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    await tester.pumpWidget(_buildApp(controller));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('通用 AI 助手').first);
+    await tester.pumpAndSettle();
+
+    final Size composerSize = tester.getSize(
+      find.byKey(const ValueKey<String>('desktop-composer-box')),
+    );
+    expect(composerSize.width, greaterThan(780));
+    final Offset composerRight = tester.getTopRight(
+      find.byKey(const ValueKey<String>('desktop-composer-box')),
+    );
+    final Offset sendRight = tester.getTopRight(
+      find.byKey(const ValueKey<String>('desktop-composer-send')),
+    );
+    expect(composerRight.dx - sendRight.dx, lessThan(10));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('library more opens the rulebook document viewer', (
     WidgetTester tester,
   ) async {

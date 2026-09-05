@@ -393,7 +393,6 @@ class AppCopy {
   String get desktopSessionTitle => isChinese ? '会话' : 'Sessions';
   String get desktopContextTitle => isChinese ? '上下文' : 'Context';
   String get desktopAnswerModeTitle => isChinese ? '回答模式' : 'Answer mode';
-  String get desktopAllResources => isChinese ? '全部资料' : 'All resources';
   String get desktopOfficialFirst => isChinese ? '官方资料优先' : 'Official sources';
   String get desktopSmartSupplement =>
       isChinese ? '允许智能补充' : 'Smart supplement';

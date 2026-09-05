@@ -21,6 +21,7 @@ import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../app_copy.dart';
 import '../widgets/ai_run_activity.dart';
+import '../widgets/assistant_feature_chip.dart';
 import '../widgets/language_sheet.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/desktop_resolved_image.dart';
@@ -2365,6 +2366,14 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
           17,
           (constraints.maxWidth - 780) / 2,
         );
+        // The message column stays readable at 780px, while the composer
+        // follows the wider desktop reference layout. Keeping its inset
+        // independent prevents a wide window from squeezing the input row
+        // into the message column.
+        final double composerInset = math.max(
+          17,
+          (constraints.maxWidth - 1360) / 2,
+        );
         return Column(
           children: <Widget>[
             Container(
@@ -2411,13 +2420,10 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                       ],
                     ),
                   ),
-                  if (!narrow) ...[
-                    _AssistantStatusLabel(
-                      label: useGlobalMode
-                          ? controller.copy.desktopAllResources
-                          : game.title,
-                      palette: palette,
-                    ),
+                  if (!narrow &&
+                      (!useGlobalMode ||
+                          controller.globalUseCurrentGameKnowledge)) ...[
+                    _AssistantStatusLabel(label: game.title, palette: palette),
                     const SizedBox(width: 14),
                     _AssistantStatusLabel(
                       label: controller.copy.desktopRulebookCached,
@@ -2611,12 +2617,19 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(contentInset, 9, contentInset, 18),
+              padding: EdgeInsets.fromLTRB(composerInset, 9, composerInset, 18),
               child: _DesktopComposer(
                 controller: controller,
                 draftController: _draftController,
                 useGlobalMode: useGlobalMode,
                 onSend: _send,
+                onOpenContext: () => _showAssistantSheet(
+                  title: controller.copy.desktopContextTitle,
+                  child: _DesktopContextPanel(
+                    controller: controller,
+                    useGlobalMode: useGlobalMode,
+                  ),
+                ),
               ),
             ),
           ],
@@ -3040,19 +3053,20 @@ class _AssistantAppMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppPalette palette = AppPalette.of(context);
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: palette.surfaceContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.auto_awesome_outlined,
-        size: 18,
-        color: palette.primary,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(11),
+      child: Image.asset(
+        'branding/app_icon.png',
+        width: 38,
+        height: 38,
+        fit: BoxFit.cover,
+        errorBuilder:
+            (BuildContext context, Object error, StackTrace? stackTrace) =>
+                const SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Icon(Icons.casino_rounded),
+                ),
       ),
     );
   }
@@ -3138,20 +3152,20 @@ class _DesktopContextPanel extends StatelessWidget {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 13),
-          _DesktopContextLine(
-            icon: Icons.casino_outlined,
-            label: useGlobalMode
-                ? controller.copy.desktopAllResources
-                : selectedGame.title,
-          ),
-          _DesktopContextLine(
-            icon: Icons.menu_book_outlined,
-            label: controller.copy.desktopRulebook,
-          ),
-          _DesktopContextLine(
-            icon: Icons.fact_check_outlined,
-            label: controller.copy.desktopFaq,
-          ),
+          if (!useGlobalMode || controller.globalUseCurrentGameKnowledge) ...[
+            _DesktopContextLine(
+              icon: Icons.casino_outlined,
+              label: selectedGame.title,
+            ),
+            _DesktopContextLine(
+              icon: Icons.menu_book_outlined,
+              label: controller.copy.desktopRulebook,
+            ),
+            _DesktopContextLine(
+              icon: Icons.fact_check_outlined,
+              label: controller.copy.desktopFaq,
+            ),
+          ],
           const SizedBox(height: 18),
           Text(
             controller.copy.desktopAnswerModeTitle,
@@ -3259,12 +3273,14 @@ class _DesktopComposer extends StatelessWidget {
     required this.draftController,
     required this.useGlobalMode,
     required this.onSend,
+    required this.onOpenContext,
   });
 
   final AppController controller;
   final TextEditingController draftController;
   final bool useGlobalMode;
   final Future<void> Function() onSend;
+  final VoidCallback onOpenContext;
 
   @override
   Widget build(BuildContext context) {
@@ -3278,82 +3294,114 @@ class _DesktopComposer extends StatelessWidget {
         );
         final bool canSend =
             draftController.text.trim().isNotEmpty && !isSending;
-        return Container(
-          constraints: const BoxConstraints(minHeight: 52),
-          decoration: BoxDecoration(
-            color: palette.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: palette.outline),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(7, 4, 7, 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                _DesktopAnswerModeSelector(
-                  controller: controller,
-                  useGlobalMode: useGlobalMode,
-                  enabled: !isSending,
+        final bool smartSupplement = controller.allowSmartSupplement(
+          useGlobalMode: useGlobalMode,
+        );
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 9),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AssistantFeatureChip(
+                  icon: smartSupplement
+                      ? Icons.auto_awesome_rounded
+                      : Icons.menu_book_rounded,
+                  label: smartSupplement
+                      ? copy.smartSupplementLabel
+                      : copy.knowledgeOnlyLabel,
+                  foregroundColor: smartSupplement
+                      ? palette.secondary
+                      : palette.primary,
+                  backgroundColor:
+                      (smartSupplement ? palette.secondary : palette.primary)
+                          .withValues(alpha: 0.14),
+                  onRemove: onOpenContext,
                 ),
-                Expanded(
-                  child: TextField(
-                    controller: draftController,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: canSend ? (_) => onSend() : null,
-                    decoration: InputDecoration(
-                      hintText: copy.desktopInputHint,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 7),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Flexible(
-                  flex: 2,
-                  child: _DesktopModelAndReasoningSelector(
-                    controller: controller,
-                    enabled: !isSending,
-                  ),
-                ),
-                IconButton(
-                  tooltip: isSending
-                      ? copy.desktopStopGenerating
-                      : copy.desktopSend,
-                  onPressed: isSending
-                      ? () => controller.stopGenerating(
-                          useGlobalMode: useGlobalMode,
-                        )
-                      : canSend
-                      ? onSend
-                      : null,
-                  style: IconButton.styleFrom(
-                    backgroundColor: canSend || controller.isSending
-                        ? palette.primary
-                        : palette.disabledBackground,
-                    foregroundColor: canSend || controller.isSending
-                        ? palette.onPrimary
-                        : palette.disabledForeground,
-                    minimumSize: const Size.square(37),
-                    maximumSize: const Size.square(37),
-                    fixedSize: const Size.square(37),
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                  ),
-                  icon: Icon(
-                    isSending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            Container(
+              key: const ValueKey<String>('desktop-composer-box'),
+              constraints: const BoxConstraints(minHeight: 52),
+              decoration: BoxDecoration(
+                color: palette.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: palette.outline),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(7, 4, 7, 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    _DesktopAnswerModeSelector(
+                      controller: controller,
+                      useGlobalMode: useGlobalMode,
+                      enabled: !isSending,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: draftController,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: canSend ? (_) => onSend() : null,
+                        decoration: InputDecoration(
+                          hintText: copy.desktopInputHint,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 7,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    _DesktopModelAndReasoningSelector(
+                      controller: controller,
+                      enabled: !isSending,
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>('desktop-composer-send'),
+                      tooltip: isSending
+                          ? copy.desktopStopGenerating
+                          : copy.desktopSend,
+                      onPressed: isSending
+                          ? () => controller.stopGenerating(
+                              useGlobalMode: useGlobalMode,
+                            )
+                          : canSend
+                          ? onSend
+                          : null,
+                      style: IconButton.styleFrom(
+                        backgroundColor: canSend || controller.isSending
+                            ? palette.primary
+                            : palette.disabledBackground,
+                        foregroundColor: canSend || controller.isSending
+                            ? palette.onPrimary
+                            : palette.disabledForeground,
+                        minimumSize: const Size.square(37),
+                        maximumSize: const Size.square(37),
+                        fixedSize: const Size.square(37),
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                      ),
+                      icon: Icon(
+                        isSending
+                            ? Icons.stop_rounded
+                            : Icons.arrow_upward_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
