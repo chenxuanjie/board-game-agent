@@ -462,6 +462,8 @@ class AppCopy {
   String get desktopOfficialLoaded =>
       isChinese ? '官方资料已加载' : 'Official sources loaded';
   String get desktopRulebookCached => isChinese ? '规则书已缓存' : 'Rulebook cached';
+  String get desktopAssistantRuleMeta =>
+      isChinese ? '规则说明' : 'Rule explanation';
   String get desktopCrossGameQuestions =>
       isChinese ? '跨桌游知识问答' : 'Cross-game questions';
   String desktopConversationSummary(bool global, int count) => global

@@ -10,6 +10,7 @@ import '../../models/app_language.dart';
 import '../../models/ai_api_config.dart';
 import '../../models/ai_conversation.dart';
 import '../../models/ai_run.dart';
+import '../../models/answer_source.dart';
 import '../../models/chat_message.dart';
 import '../../models/color_scheme_option.dart';
 import '../../models/desktop_library_resource.dart';
@@ -545,12 +546,12 @@ class _DesktopSidebar extends StatelessWidget {
       width: width,
       padding: EdgeInsets.fromLTRB(
         compact ? 10 : 14,
-        20,
+        22,
         compact ? 10 : 14,
         14,
       ),
       decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.72),
+        color: palette.surfaceVariant,
         border: Border(right: BorderSide(color: palette.outline)),
       ),
       child: Column(
@@ -636,25 +637,17 @@ class _DesktopBrand extends StatelessWidget {
           ? MainAxisAlignment.center
           : MainAxisAlignment.start,
       children: <Widget>[
-        ClipRRect(
-          borderRadius: BorderRadius.circular(11),
-          child: Image.asset(
-            'branding/app_icon.png',
-            width: 36,
-            height: 36,
-            fit: BoxFit.cover,
-            errorBuilder:
-                (BuildContext context, Object error, StackTrace? stackTrace) =>
-                    Container(
-                      width: 36,
-                      height: 36,
-                      color: palette.primary,
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.casino_rounded,
-                        color: palette.onPrimary,
-                      ),
-                    ),
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: palette.primary,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '♟',
+            style: TextStyle(color: palette.onPrimary, fontSize: 21, height: 1),
           ),
         ),
         if (!compact) ...[
@@ -792,57 +785,62 @@ class _DesktopWorkspaceIdentity extends StatelessWidget {
     return Semantics(
       button: true,
       label: '本地工作区，桌面端 2.0 预览',
-      child: Material(
-        color: palette.surfaceContainer.withValues(alpha: 0.42),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(9),
-            child: Row(
-              children: <Widget>[
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: palette.primary.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(
-                      color: palette.primary.withValues(alpha: 0.28),
+      child: Container(
+        padding: const EdgeInsets.only(top: 12),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: palette.outline)),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: palette.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: palette.primary.withValues(alpha: 0.28),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.desktop_windows_rounded,
+                      size: 19,
+                      color: palette.primary,
                     ),
                   ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.desktop_windows_rounded,
-                    size: 19,
-                    color: palette.primary,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '本地工作区',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                        Text(
+                          '桌面端 · 2.0',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '本地工作区',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      Text(
-                        '桌面端 · 2.0',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: palette.textSecondary,
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: palette.textSecondary,
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -910,6 +908,7 @@ class _DesktopTopBar extends StatelessWidget {
                   key: activityButtonKey,
                   tooltip: copy.activityTitle,
                   onPressed: onOpenActivities,
+                  style: _desktopIconButtonStyle(palette),
                   icon: const Icon(Icons.notifications_none_rounded),
                 ),
                 if (unreadActivityCount > 0)
@@ -952,6 +951,7 @@ class _DesktopTopBar extends StatelessWidget {
             IconButton(
               tooltip: copy.desktopSearchAction,
               onPressed: onSearch,
+              style: _desktopIconButtonStyle(palette),
               icon: const Icon(Icons.search_rounded),
             )
           else
@@ -962,6 +962,15 @@ class _DesktopTopBar extends StatelessWidget {
                 onPressed: onSearch,
                 icon: const Icon(Icons.search_rounded),
                 label: Text(copy.desktopSearchAction),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: palette.textSecondary,
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  side: BorderSide(color: palette.outline),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
             ),
           const SizedBox(width: 6),
@@ -970,29 +979,68 @@ class _DesktopTopBar extends StatelessWidget {
                 ? IconButton.filled(
                     tooltip: primaryLabel ?? copy.askAiAssistant,
                     onPressed: primaryAction,
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(34),
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                     icon: const Icon(Icons.chat_bubble_outline_rounded),
                   )
                 : FilledButton.icon(
                     onPressed: primaryAction,
                     icon: const Icon(Icons.chat_bubble_outline_rounded),
                     label: Text(primaryLabel ?? copy.askAiAssistant),
+                    style: _desktopFilledButtonStyle(palette),
                   )
           else
             compact
                 ? IconButton.filled(
                     tooltip: copy.desktopCreate,
                     onPressed: onNew,
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(34),
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                     icon: const Icon(Icons.add_rounded),
                   )
                 : FilledButton.icon(
                     onPressed: onNew,
                     icon: const Icon(Icons.add_rounded),
                     label: Text(copy.desktopCreate),
+                    style: _desktopFilledButtonStyle(palette),
                   ),
         ],
       ),
     );
   }
+}
+
+ButtonStyle _desktopIconButtonStyle(AppPalette palette) {
+  return IconButton.styleFrom(
+    foregroundColor: palette.textSecondary,
+    backgroundColor: Colors.transparent,
+    minimumSize: const Size.square(34),
+    maximumSize: const Size.square(34),
+    fixedSize: const Size.square(34),
+    padding: EdgeInsets.zero,
+    visualDensity: VisualDensity.standard,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  );
+}
+
+ButtonStyle _desktopFilledButtonStyle(AppPalette palette) {
+  return FilledButton.styleFrom(
+    backgroundColor: palette.primary,
+    foregroundColor: palette.onPrimary,
+    minimumSize: const Size(0, 34),
+    padding: const EdgeInsets.symmetric(horizontal: 11),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  );
 }
 
 class _DesktopSearchDialog extends StatefulWidget {
@@ -1344,13 +1392,13 @@ class _DesktopFeaturedGameCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Ink(
           height: 250,
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: palette.primary.withValues(alpha: 0.45)),
             gradient: LinearGradient(
               colors: <Color>[palette.surfaceContainer, palette.surface],
@@ -1447,7 +1495,7 @@ class _DesktopSurface extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: palette.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: palette.outline),
       ),
       child: Column(
@@ -1558,9 +1606,9 @@ class _DesktopGameRow extends StatelessWidget {
     final AppPalette palette = AppPalette.of(context);
     return Material(
       color: palette.surfaceContainer.withValues(alpha: 0.5),
-      borderRadius: BorderRadius.circular(11),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(8),
@@ -1698,12 +1746,12 @@ class _DesktopActivityPopupState extends State<_DesktopActivityPopup> {
               color: Colors.transparent,
               elevation: 18,
               shadowColor: Colors.black.withValues(alpha: 0.32),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               child: DecoratedBox(
                 key: const ValueKey<String>('desktop-activity-popup'),
                 decoration: BoxDecoration(
                   color: palette.surface,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: palette.outline),
                 ),
                 child: ConstrainedBox(
@@ -1845,7 +1893,7 @@ class _DesktopActivityTile extends StatelessWidget {
       decoration: compact
           ? BoxDecoration(
               color: palette.surfaceContainer.withValues(alpha: 0.52),
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(8),
             )
           : null,
       child: Row(
@@ -2163,9 +2211,9 @@ class _DesktopGamesPane extends StatelessWidget {
         final GameInfo game = controller.games[index];
         return Material(
           color: palette.surface,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(12),
           child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(12),
             onTap: () => onOpenGame(game),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -2174,7 +2222,7 @@ class _DesktopGamesPane extends StatelessWidget {
                 children: <Widget>[
                   Expanded(
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(8),
                       child: DesktopResolvedImage(
                         controller: controller,
                         assetPath: game.coverAssetPath,
@@ -2386,6 +2434,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                           controller: controller,
                         ),
                       ),
+                      style: _desktopIconButtonStyle(palette),
                       icon: const Icon(Icons.forum_outlined),
                     ),
                   if (narrow)
@@ -2398,6 +2447,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                           useGlobalMode: useGlobalMode,
                         ),
                       ),
+                      style: _desktopIconButtonStyle(palette),
                       icon: const Icon(Icons.tune_rounded),
                     ),
                   IconButton(
@@ -2405,6 +2455,7 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                     onPressed: () => controller.clearConversationForContext(
                       useGlobalMode: useGlobalMode,
                     ),
+                    style: _desktopIconButtonStyle(palette),
                     icon: const Icon(Icons.delete_sweep_outlined),
                   ),
                   PopupMenuButton<String>(
@@ -2427,6 +2478,12 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                             child: Text(controller.copy.desktopContextTitle),
                           ),
                         ],
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 34,
+                      height: 34,
+                    ),
+                    iconSize: 18,
                     icon: const Icon(Icons.more_horiz_rounded),
                   ),
                 ],
@@ -2482,6 +2539,11 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
                             showAssistantAvatar: false,
                             showAssistantActionLabels: true,
                             maxWidth: 780,
+                            desktopLayout: true,
+                            desktopMeta: _desktopMessageMeta(
+                              messages[index],
+                              controller.copy,
+                            ),
                             onSpeak: messages[index].role == ChatRole.assistant
                                 ? () => controller.speakMessage(
                                     messages[index].text,
@@ -2749,6 +2811,21 @@ class _DesktopAssistantPaneState extends State<_DesktopAssistantPane> {
   }
 }
 
+String _desktopMessageMeta(ChatMessage message, AppCopy copy) {
+  if (message.role == ChatRole.user) return copy.activityJustNow;
+  final String source = switch (message.source) {
+    AnswerSource.official ||
+    AnswerSource.rulebook => copy.desktopAssistantRuleMeta,
+    AnswerSource.community => copy.answerSourceCommunity,
+    AnswerSource.web => copy.answerSourceWeb,
+    AnswerSource.modelKnowledge => copy.answerSourceModelKnowledge,
+    AnswerSource.generalAdvice => copy.answerSourceGeneral,
+    AnswerSource.insufficient => copy.answerSourceInsufficient,
+    null => copy.desktopAssistantRuleMeta,
+  };
+  return '$source · ${copy.activityJustNow}';
+}
+
 class _DesktopAssistantEmptyPane extends StatelessWidget {
   const _DesktopAssistantEmptyPane({required this.controller});
 
@@ -2804,11 +2881,14 @@ class _DesktopAssistantSessions extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppPalette palette = AppPalette.of(context);
     return Container(
+      margin: embedded ? const EdgeInsets.only(left: 28) : EdgeInsets.zero,
       padding: embedded
-          ? const EdgeInsets.fromLTRB(28, 12, 4, 4)
+          ? const EdgeInsets.fromLTRB(15, 12, 4, 4)
           : const EdgeInsets.all(14),
       decoration: embedded
-          ? const BoxDecoration()
+          ? BoxDecoration(
+              border: Border(left: BorderSide(color: palette.outline)),
+            )
           : BoxDecoration(
               color: palette.surface.withValues(alpha: 0.6),
               border: Border(right: BorderSide(color: palette.outline)),
@@ -2960,20 +3040,19 @@ class _AssistantAppMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(11),
-      child: Image.asset(
-        'branding/app_icon.png',
-        width: 34,
-        height: 34,
-        fit: BoxFit.cover,
-        errorBuilder:
-            (BuildContext context, Object error, StackTrace? stackTrace) =>
-                const SizedBox(
-                  width: 34,
-                  height: 34,
-                  child: Icon(Icons.casino_rounded),
-                ),
+    final AppPalette palette = AppPalette.of(context);
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: palette.surfaceContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.auto_awesome_outlined,
+        size: 18,
+        color: palette.primary,
       ),
     );
   }
@@ -3199,7 +3278,8 @@ class _DesktopComposer extends StatelessWidget {
         );
         final bool canSend =
             draftController.text.trim().isNotEmpty && !isSending;
-        return DecoratedBox(
+        return Container(
+          constraints: const BoxConstraints(minHeight: 52),
           decoration: BoxDecoration(
             color: palette.surface,
             borderRadius: BorderRadius.circular(12),
@@ -3228,6 +3308,8 @@ class _DesktopComposer extends StatelessWidget {
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       filled: false,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 7),
                     ),
                   ),
                 ),
@@ -3257,6 +3339,13 @@ class _DesktopComposer extends StatelessWidget {
                     foregroundColor: canSend || controller.isSending
                         ? palette.onPrimary
                         : palette.disabledForeground,
+                    minimumSize: const Size.square(37),
+                    maximumSize: const Size.square(37),
+                    fixedSize: const Size.square(37),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
                   ),
                   icon: Icon(
                     isSending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
@@ -3545,7 +3634,7 @@ class _DesktopModelReasoningChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 0, maxWidth: 210),
+      constraints: const BoxConstraints(minWidth: 0, maxWidth: 165),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 11),
         child: Row(
@@ -3693,7 +3782,7 @@ class _DesktopLibraryPaneState extends State<_DesktopLibraryPane> {
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: palette.surface,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: palette.outline),
               ),
               child: Wrap(
@@ -4074,12 +4163,12 @@ class _LibraryItemTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: isLoading || !resource.canOpen ? null : onOpen,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: palette.surface,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: palette.outline),
           ),
           child: Row(
@@ -4359,7 +4448,7 @@ class _DesktopSettingsCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
       decoration: BoxDecoration(
         color: palette.surface,
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: palette.outline),
       ),
       child: Column(

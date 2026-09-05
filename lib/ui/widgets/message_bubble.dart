@@ -26,6 +26,8 @@ class MessageBubble extends StatelessWidget {
     this.showAssistantAvatar = true,
     this.showAssistantActionLabels = false,
     this.maxWidth = 720,
+    this.desktopLayout = false,
+    this.desktopMeta,
   });
 
   final ChatMessage message;
@@ -42,6 +44,8 @@ class MessageBubble extends StatelessWidget {
   final bool showAssistantAvatar;
   final bool showAssistantActionLabels;
   final double maxWidth;
+  final bool desktopLayout;
+  final String? desktopMeta;
 
   @override
   Widget build(BuildContext context) {
@@ -49,13 +53,21 @@ class MessageBubble extends StatelessWidget {
     final Color userForeground = palette.onPrimaryContainer;
     final ThemeData theme = Theme.of(context);
     final TextStyle bodyStyle = theme.textTheme.bodyLarge!.copyWith(
+      fontSize: desktopLayout ? 14 : null,
       color: isUser ? userForeground : palette.textPrimary,
-      height: 1.5,
+      height: desktopLayout ? 1.72 : 1.5,
     );
-    final BorderRadius borderRadius = BorderRadius.circular(24).copyWith(
-      bottomLeft: Radius.circular(isUser ? 24 : 8),
-      bottomRight: Radius.circular(isUser ? 8 : 24),
-    );
+    final BorderRadius borderRadius = desktopLayout
+        ? BorderRadius.only(
+            topLeft: const Radius.circular(13),
+            topRight: const Radius.circular(13),
+            bottomLeft: const Radius.circular(13),
+            bottomRight: Radius.circular(isUser ? 4 : 13),
+          )
+        : BorderRadius.circular(24).copyWith(
+            bottomLeft: Radius.circular(isUser ? 24 : 8),
+            bottomRight: Radius.circular(isUser ? 8 : 24),
+          );
     final bool hasAssistantAction = _hasAssistantAction;
     final bool hasAssistantReferences = _hasAssistantReferences;
     // User messages keep the existing compact bubble. Assistant output is a
@@ -63,7 +75,9 @@ class MessageBubble extends StatelessWidget {
     // the dynamic run presentation, so a second assistant bubble would be
     // redundant and visually misleading.
     final EdgeInsets messagePadding = isUser
-        ? const EdgeInsets.fromLTRB(16, 13, 12, 11)
+        ? desktopLayout
+              ? const EdgeInsets.fromLTRB(14, 10, 14, 10)
+              : const EdgeInsets.fromLTRB(16, 13, 12, 11)
         : EdgeInsets.zero;
 
     return Align(
@@ -89,6 +103,21 @@ class MessageBubble extends StatelessWidget {
                       ? CrossAxisAlignment.end
                       : CrossAxisAlignment.start,
                   children: <Widget>[
+                    if (desktopMeta != null && desktopMeta!.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: 6,
+                          left: 2,
+                          right: 2,
+                        ),
+                        child: Text(
+                          desktopMeta!,
+                          textAlign: isUser ? TextAlign.right : TextAlign.left,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                      ),
                     _TapToShowTimes(
                       onTap: onTap,
                       child: Material(
@@ -99,15 +128,17 @@ class MessageBubble extends StatelessWidget {
                               ? BoxDecoration(
                                   color: palette.primaryContainer,
                                   borderRadius: borderRadius,
-                                  boxShadow: <BoxShadow>[
-                                    BoxShadow(
-                                      color: palette.shadow.withValues(
-                                        alpha: 0.28,
-                                      ),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 7),
-                                    ),
-                                  ],
+                                  boxShadow: desktopLayout
+                                      ? null
+                                      : <BoxShadow>[
+                                          BoxShadow(
+                                            color: palette.shadow.withValues(
+                                              alpha: 0.28,
+                                            ),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 7),
+                                          ),
+                                        ],
                                 )
                               : null,
                           child: InkWell(
