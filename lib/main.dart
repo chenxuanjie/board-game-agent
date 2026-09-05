@@ -25,6 +25,10 @@ import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/screens/desktop_workspace_screen.dart';
 
+const double _webDesktopMinWidth = 1000;
+const double _webDesktopMinHeight = 620;
+const double _webDesktopMinAspectRatio = 1.28;
+
 Future<void> main() async {
   enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
@@ -158,18 +162,28 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           }
 
           _scheduleStartupUpdateCheck(context);
-          // The desktop workspace is intentionally Windows-only for this
-          // rollout. Keep Web on the existing mobile-style shell until its
-          // desktop adaptation is explicitly enabled.
-          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-            return DesktopWorkspaceScreen(
-              controller: widget.controller,
-              onOpenAbout: _openAbout,
-            );
-          }
-          return HomeScreen(
-            controller: widget.controller,
-            onOpenAbout: _openAbout,
+          return LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double width = constraints.maxWidth;
+              final double height = constraints.maxHeight;
+              final bool wideWeb =
+                  kIsWeb &&
+                  width >= _webDesktopMinWidth &&
+                  height >= _webDesktopMinHeight &&
+                  width / height >= _webDesktopMinAspectRatio;
+              final bool nativeWindows =
+                  !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+              if (wideWeb || nativeWindows) {
+                return DesktopWorkspaceScreen(
+                  controller: widget.controller,
+                  onOpenAbout: _openAbout,
+                );
+              }
+              return HomeScreen(
+                controller: widget.controller,
+                onOpenAbout: _openAbout,
+              );
+            },
           );
         },
       ),
