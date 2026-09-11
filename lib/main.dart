@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:webdav_settings/webdav_settings.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'services/board_game_ai_service.dart';
 import 'services/game_manifest_service.dart';
@@ -32,6 +33,7 @@ const double _webDesktopMinAspectRatio = 1.28;
 Future<void> main() async {
   enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
+  await _configureWindowsWindow();
 
   final preferencesService = PreferencesService();
   final initialColorScheme = await _loadInitialColorScheme(preferencesService);
@@ -67,6 +69,24 @@ Future<void> main() async {
       updateSettingsController: updateSettingsController,
     ),
   );
+}
+
+Future<void> _configureWindowsWindow() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+  await windowManager.ensureInitialized();
+  const WindowOptions options = WindowOptions(
+    size: Size(1280, 820),
+    minimumSize: Size(900, 600),
+    center: true,
+    backgroundColor: Colors.transparent,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
+  );
+  windowManager.waitUntilReadyToShow(options, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
 }
 
 Future<ColorSchemeOption> _loadInitialColorScheme(

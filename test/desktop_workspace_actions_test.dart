@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +39,42 @@ void main() {
   });
   tearDownAll(() => controller.dispose());
 
+  testWidgets(
+    'last game adapts to widths and both actions open their destination',
+    (WidgetTester tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      controller.selectGame('puerto-rico');
+      for (final double width in <double>[900, 1280, 1920]) {
+        await tester.binding.setSurfaceSize(Size(width, 1000));
+        await tester.pumpWidget(_buildApp(controller));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('desktop-last-game-card')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.tap(find.widgetWithText(OutlinedButton, '查看详情'));
+      await tester.pumpAndSettle();
+      expect(find.text('桌游详情'), findsWidgets);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(_buildApp(controller));
+      await tester.pumpAndSettle();
+      final Finder card = find.byKey(
+        const ValueKey<String>('desktop-last-game-card'),
+      );
+      await tester.tap(
+        find.descendant(of: card, matching: find.byType(FilledButton)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('desktop-composer-box')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('desktop search filters games and opens the selected detail', (
     WidgetTester tester,
   ) async {
@@ -85,6 +122,57 @@ void main() {
 
     expect(find.byType(GridView), findsOneWidget);
     expect(find.text('我的游戏'), findsWidgets);
+    for (final double width in <double>[900, 1280, 1920]) {
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      await tester.pumpAndSettle();
+      final Rect all = tester.getRect(find.text('全部'));
+      final Rect recent = tester.getRect(find.text('最近游玩'));
+      expect(all.center.dy, closeTo(recent.center.dy, 1));
+      expect(recent.left, greaterThan(all.right));
+      expect(recent.left - all.right, lessThan(50));
+      expect(tester.takeException(), isNull);
+    }
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    final Finder poster = find.byKey(
+      const ValueKey<String>('desktop-game-card-puerto-rico'),
+    );
+    final Finder animatedPoster = find.byKey(
+      const ValueKey<String>('desktop-poster-puerto-rico'),
+    );
+    final Rect posterRect = tester.getRect(poster);
+    for (int i = 0; i < 3; i++) {
+      await mouse.moveTo(posterRect.center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+      final AnimatedContainer hoveredPoster = tester.widget<AnimatedContainer>(
+        animatedPoster,
+      );
+      expect(hoveredPoster.transform!.storage[6].abs(), greaterThan(0.0));
+      final Finder preview = find.byKey(
+        const ValueKey<String>('desktop-game-hover-preview-puerto-rico'),
+      );
+      expect(preview, findsOneWidget);
+      expect(tester.getSize(preview).width, closeTo(290, 1));
+      expect(tester.getSize(preview).height, greaterThan(318));
+      expect(tester.takeException(), isNull);
+      final InkWell posterInkWell = tester.widget<InkWell>(
+        find.descendant(of: poster, matching: find.byType(InkWell)),
+      );
+      posterInkWell.onFocusChange?.call(true);
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+      final AnimatedContainer unfocusedPoster = tester
+          .widget<AnimatedContainer>(animatedPoster);
+      expect(unfocusedPoster.transform!.storage[0], closeTo(1.0, 0.001));
+      expect(tester.getRect(poster), posterRect);
+      expect(
+        find.descendant(of: poster, matching: find.text('波多黎各')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    }
     expect(tester.takeException(), isNull);
   });
 

@@ -28,6 +28,7 @@ dependencies:
     path: ../shared_packages/webdav_settings
   webdav_storage:
     path: ../shared_packages/webdav_storage
+  window_manager: ^0.5.2
 
 dependency_overrides:
   # Keep the Windows SAPI implementation in-repo so its compatibility fixes

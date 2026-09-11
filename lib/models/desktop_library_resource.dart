@@ -2,7 +2,7 @@ enum DesktopLibraryResourceType {
   rulebook,
   faq,
   // Kept for source compatibility with older callers and cached data. New
-  // resources are normalized to [other] unless they are a rulebook or FAQ.
+  // resources use the specific type when the manifest declares one.
   assetIndex,
   reference,
   playerAid,
@@ -85,10 +85,11 @@ class DesktopLibraryResource {
         return 'faq';
       case DesktopLibraryResourceType.assetIndex:
       case DesktopLibraryResourceType.reference:
-      case DesktopLibraryResourceType.playerAid:
       case DesktopLibraryResourceType.supplement:
       case DesktopLibraryResourceType.other:
         return 'other';
+      case DesktopLibraryResourceType.playerAid:
+        return 'player_aid';
     }
   }
 
@@ -176,6 +177,19 @@ class DesktopLibraryResource {
       case 'ruling':
       case 'errata':
         return DesktopLibraryResourceType.faq;
+      case 'player_aid':
+      case 'player-aid':
+      case 'playeraid':
+      case 'aid':
+      case 'quick_reference':
+        return DesktopLibraryResourceType.playerAid;
+      case 'supplement':
+        return DesktopLibraryResourceType.supplement;
+      case 'reference':
+      case 'rules_reference':
+        return DesktopLibraryResourceType.reference;
+      case 'asset_index':
+        return DesktopLibraryResourceType.assetIndex;
       default:
         // The desktop library intentionally exposes only three categories.
         return DesktopLibraryResourceType.other;
@@ -227,10 +241,11 @@ class DesktopLibraryResource {
         return 'FAQ';
       case DesktopLibraryResourceType.assetIndex:
       case DesktopLibraryResourceType.reference:
-      case DesktopLibraryResourceType.playerAid:
       case DesktopLibraryResourceType.supplement:
       case DesktopLibraryResourceType.other:
         return '其他';
+      case DesktopLibraryResourceType.playerAid:
+        return '玩家辅助';
     }
   }
 

@@ -2550,12 +2550,17 @@ class AppController extends ChangeNotifier {
         return DesktopLibraryResourceType.faq;
       case 'asset_index':
       case 'rules_reference':
-      case 'player_aid':
       case 'supplement':
       case 'variant':
       case 'campaign_guide':
       case 'scenario_book':
         return DesktopLibraryResourceType.other;
+      case 'player_aid':
+      case 'player-aid':
+      case 'playeraid':
+      case 'aid':
+      case 'quick_reference':
+        return DesktopLibraryResourceType.playerAid;
     }
 
     final String lower = path.toLowerCase();
@@ -2564,6 +2569,11 @@ class AppController extends ChangeNotifier {
         lower.contains('ruling') ||
         lower.contains('errata')) {
       return DesktopLibraryResourceType.faq;
+    }
+    if (lower.contains('player_aid') ||
+        lower.contains('player-aid') ||
+        lower.contains('quick_reference')) {
+      return DesktopLibraryResourceType.playerAid;
     }
     if (lower.contains('reference')) {
       return DesktopLibraryResourceType.other;
