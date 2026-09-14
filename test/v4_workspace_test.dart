@@ -148,6 +148,29 @@ void main() {
     expect(find.byType(V4HomePane), findsOneWidget);
   });
 
+  testWidgets('home hero exposes three manually selectable carousel pages', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    expect(
+      find.byKey(const ValueKey<String>('home-hero-carousel')),
+      findsOneWidget,
+    );
+    for (var index = 0; index < 3; index++) {
+      expect(
+        find.byKey(ValueKey<String>('home-hero-dot-$index')),
+        findsOneWidget,
+      );
+    }
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('好友组局 · 暂未开放').hitTestable(), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-2')));
+    await tester.pumpAndSettle();
+    expect(find.text('桌游活动 · 暂未开放').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('V3 assistant runs inside the Warmwood Study V4 shell', (
     tester,
   ) async {

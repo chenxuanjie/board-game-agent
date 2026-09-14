@@ -1,4 +1,6 @@
 // Body layout adapted directly from the read-only V4 reference.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
@@ -76,7 +78,10 @@ class _MainColumn extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _HeroBanner(onTap: () => onUnavailable('开始探索')),
+        _HeroBanner(
+          onExplore: () => onUnavailable('开始探索'),
+          onPending: () => onUnavailable('即将开放'),
+        ),
         const SizedBox(height: 11),
         _SectionHeader(
           icon: Icons.local_fire_department_rounded,
@@ -141,26 +146,243 @@ class _MainColumn extends StatelessWidget {
   }
 }
 
-class _HeroBanner extends StatelessWidget {
-  final VoidCallback onTap;
+class _HeroBanner extends StatefulWidget {
+  final VoidCallback onExplore;
+  final VoidCallback onPending;
 
-  const _HeroBanner({required this.onTap});
+  const _HeroBanner({required this.onExplore, required this.onPending});
+
+  @override
+  State<_HeroBanner> createState() => _HeroBannerState();
+}
+
+class _HeroBannerState extends State<_HeroBanner> {
+  static const _pageCount = 3;
+  static const _interval = Duration(seconds: 5);
+  final PageController _controller = PageController();
+  Timer? _timer;
+  int _page = 0;
+  bool _hovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(_interval, (_) {
+      if (!mounted || _hovering || !_controller.hasClients) return;
+      _goTo((_page + 1) % _pageCount);
+    });
+  }
+
+  void _goTo(int page) {
+    _controller.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 480),
+      curve: Curves.easeInOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return HoverSurface(
-      onTap: onTap,
-      lift: 1,
-      borderRadius: BorderRadius.circular(12),
+    return MouseRegion(
+      onEnter: (_) => _hovering = true,
+      onExit: (_) => _hovering = false,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
           aspectRatio: 782 / 256,
-          child: Image.asset('assets/v4/hero_banner.png', fit: BoxFit.cover),
+          child: Stack(
+            children: [
+              PageView(
+                key: const ValueKey<String>('home-hero-carousel'),
+                controller: _controller,
+                onPageChanged: (page) => setState(() => _page = page),
+                children: [
+                  _HeroImagePage(onTap: widget.onExplore),
+                  _HeroPendingPage(
+                    key: const ValueKey<String>('home-hero-page-1'),
+                    image: 'assets/v4/meeting.png',
+                    eyebrow: '好友组局',
+                    title: '和同频玩伴，约一场好局',
+                    subtitle: '组建牌局、邀请好友、记录每一次相聚',
+                    onTap: widget.onPending,
+                  ),
+                  _HeroPendingPage(
+                    key: const ValueKey<String>('home-hero-page-2'),
+                    image: 'assets/v4/promo_art.png',
+                    eyebrow: '桌游活动',
+                    title: '发现附近的桌游新鲜事',
+                    subtitle: '主题活动、玩家聚会与新品体验',
+                    onTap: widget.onPending,
+                  ),
+                ],
+              ),
+              Positioned(
+                right: 18,
+                bottom: 14,
+                child: Row(
+                  children: List.generate(
+                    _pageCount,
+                    (index) => Padding(
+                      padding: const EdgeInsets.only(left: 7),
+                      child: Tooltip(
+                        message: '第 ${index + 1} 页',
+                        child: InkWell(
+                          key: ValueKey<String>('home-hero-dot-$index'),
+                          onTap: () => _goTo(index),
+                          customBorder: const CircleBorder(),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: index == _page ? 18 : 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: index == _page
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.58),
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x33000000),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _HeroImagePage extends StatelessWidget {
+  const _HeroImagePage({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => HoverSurface(
+    onTap: onTap,
+    lift: 1,
+    borderRadius: BorderRadius.zero,
+    child: Image.asset(
+      'assets/v4/hero_banner.png',
+      width: double.infinity,
+      height: double.infinity,
+      fit: BoxFit.cover,
+    ),
+  );
+}
+
+class _HeroPendingPage extends StatelessWidget {
+  const _HeroPendingPage({
+    super.key,
+    required this.image,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final String image;
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => HoverSurface(
+    onTap: onTap,
+    lift: 1,
+    borderRadius: BorderRadius.zero,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(image, fit: BoxFit.cover),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xF2FFF8EF), Color(0x8C7A3E27)],
+              stops: [0.0, 1.0],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(34, 25, 30, 25),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 410),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: V4Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$eyebrow · 暂未开放',
+                      style: const TextStyle(
+                        color: V4Colors.brown,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: V4Colors.text,
+                      fontSize: 27,
+                      height: 1.16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: V4Colors.secondaryText,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SectionHeader extends StatelessWidget {
