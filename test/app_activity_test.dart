@@ -40,4 +40,20 @@ void main() {
     expect(restored.conversationId, isNull);
     expect(restored.messageId, isNull);
   });
+
+  test('library load failures persist as notification activity kinds', () {
+    final AppActivity original = AppActivity(
+      id: 'activity-library-failed',
+      kind: AppActivityKind.libraryLoadFailed,
+      title: '资料加载失败',
+      message: '连接超时。打开资料库可重试。',
+      createdAt: DateTime.utc(2026, 9, 14),
+    );
+
+    final AppActivity restored = AppActivity.fromMap(original.toMap());
+
+    expect(restored.kind, AppActivityKind.libraryLoadFailed);
+    expect(restored.title, original.title);
+    expect(restored.message, original.message);
+  });
 }

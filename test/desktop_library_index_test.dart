@@ -5,6 +5,7 @@ import 'package:board_game_agent/models/ai_answer_mode.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
 import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/answer_source.dart';
+import 'package:board_game_agent/models/app_activity.dart';
 import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
@@ -112,6 +113,21 @@ void main() {
       expect(second.libraryLoadState, LibraryLoadState.failure);
       expect(second.libraryResources, hasLength(2));
       expect(offline.cachedPaths, isEmpty);
+      expect(
+        second.activities.where(
+          (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
+        ),
+        hasLength(1),
+      );
+
+      await second.refreshLibraryResources(force: true);
+      expect(
+        second.activities.where(
+          (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
+        ),
+        hasLength(1),
+        reason: 'the same unresolved failure should not spam notifications',
+      );
     },
   );
 }

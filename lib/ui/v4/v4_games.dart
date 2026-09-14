@@ -63,10 +63,7 @@ class _V4GamesPaneState extends State<V4GamesPane> {
       final main = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          V4ContentStatus(
-            controller: widget.controller,
-            onOpenLibrary: () => widget.onNavigate('library'),
-          ),
+          V4ContentStatus(controller: widget.controller),
           _LibraryMain(
             games: games,
             selectedIndex: index,

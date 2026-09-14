@@ -621,6 +621,11 @@ class DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
 
     activity = widget.controller.resolveActivityTarget(activity);
 
+    if (activity.kind == AppActivityKind.libraryLoadFailed) {
+      _selectDestination(_DesktopDestination.library);
+      return;
+    }
+
     final String? conversationId = activity.conversationId;
     if (conversationId == null || conversationId.isEmpty) {
       if (activity.kind == AppActivityKind.aiCompleted ||
@@ -3422,6 +3427,7 @@ IconData _activityIcon(AppActivityKind kind) {
     AppActivityKind.aiCompleted => Icons.check_circle_outline_rounded,
     AppActivityKind.aiFailed => Icons.error_outline_rounded,
     AppActivityKind.libraryUpdate => Icons.system_update_alt_rounded,
+    AppActivityKind.libraryLoadFailed => Icons.error_outline_rounded,
     AppActivityKind.info => Icons.info_outline_rounded,
   };
 }
@@ -3432,6 +3438,7 @@ Color _activityColor(AppPalette palette, AppActivityKind kind) {
     AppActivityKind.aiCompleted => palette.success,
     AppActivityKind.aiFailed => palette.error,
     AppActivityKind.libraryUpdate => palette.warning,
+    AppActivityKind.libraryLoadFailed => palette.error,
     AppActivityKind.info => palette.textSecondary,
   };
 }

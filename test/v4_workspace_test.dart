@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/models/ai_answer_mode.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
 import 'package:board_game_agent/models/answer_source.dart';
+import 'package:board_game_agent/models/app_activity.dart';
 import 'package:board_game_agent/models/asset_source_config.dart';
 import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/board_game_ai_answer.dart';
@@ -243,6 +244,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'home library load failures are shown in notifications, not inline',
+    (tester) async {
+      await controller.refreshLibraryResources();
+      expect(controller.libraryLoadError, isNotNull);
+      expect(
+        controller.activities.any(
+          (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
+        ),
+        isTrue,
+      );
+
+      await _mount(tester, controller, const Size(1995, 1248));
+      expect(find.text('资料加载失败，请在资料库重试。'), findsNothing);
+      expect(find.text('打开资料库'), findsNothing);
+
+      await tester.tap(find.byTooltip('通知').hitTestable());
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('desktop-activity-popup')),
+        findsOneWidget,
+      );
+      expect(find.text('资料加载失败'), findsOneWidget);
+      expect(find.textContaining('打开资料库可重试'), findsOneWidget);
+
+      await tester.tap(find.text('资料加载失败'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .state<DesktopWorkspaceScreenState>(
+              find.byType(DesktopWorkspaceScreen),
+            )
+            .destinationName,
+        'library',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('empty game filters do not insert an empty-state panel', (
     tester,
   ) async {
@@ -358,6 +398,29 @@ void main() {
       expect(find.byType(V4GameDetailPane), findsNothing);
     });
   }
+
+  testWidgets('AI hero banner opens a visible assistant on a wide desktop', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1995, 1248));
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-2')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-page-2')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .state<DesktopWorkspaceScreenState>(
+            find.byType(DesktopWorkspaceScreen),
+          )
+          .destinationName,
+      'assistant',
+    );
+    final composer = find.byKey(const ValueKey<String>('desktop-composer-box'));
+    expect(composer.hitTestable(), findsOneWidget);
+    expect(tester.getSize(composer).width, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('V3 assistant runs inside the Warmwood Study V4 shell', (
     tester,

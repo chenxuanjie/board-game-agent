@@ -205,16 +205,18 @@ class _V4WorkspaceState extends State<V4Workspace> {
           Expanded(
             child: Stack(
               children: [
-                Offstage(
-                  offstage: !_oldPage,
-                  child: DesktopWorkspaceScreen(
-                    key: _legacy,
-                    controller: widget.controller,
-                    onOpenAbout: widget.onOpenAbout,
-                    embedded: true,
-                    activityLink: _activityLink,
-                    onDestinationChanged: (page) => setState(
-                      () => _page = page == 'settings' ? 'advanced' : page,
+                Positioned.fill(
+                  child: Offstage(
+                    offstage: !_oldPage,
+                    child: DesktopWorkspaceScreen(
+                      key: _legacy,
+                      controller: widget.controller,
+                      onOpenAbout: widget.onOpenAbout,
+                      embedded: true,
+                      activityLink: _activityLink,
+                      onDestinationChanged: (page) => setState(
+                        () => _page = page == 'settings' ? 'advanced' : page,
+                      ),
                     ),
                   ),
                 ),

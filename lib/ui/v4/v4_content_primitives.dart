@@ -140,29 +140,18 @@ class V4ContentColumns extends StatelessWidget {
 }
 
 class V4ContentStatus extends StatelessWidget {
-  const V4ContentStatus({
-    super.key,
-    required this.controller,
-    required this.onOpenLibrary,
-  });
+  const V4ContentStatus({super.key, required this.controller});
   final AppController controller;
-  final VoidCallback onOpenLibrary;
   @override
   Widget build(BuildContext context) {
     final loading = controller.homeAssetsLoading;
-    final error = controller.libraryLoadError;
-    if (!loading && error == null) {
+    if (!loading) {
       return const SizedBox.shrink();
     }
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
-        children: [
-          if (loading) const LinearProgressIndicator(),
-          Text(error != null ? '资料加载失败，请在资料库重试。' : '正在加载游戏…'),
-          if (error != null)
-            TextButton(onPressed: onOpenLibrary, child: const Text('打开资料库')),
-        ],
+        children: [const LinearProgressIndicator(), const Text('正在加载游戏…')],
       ),
     );
   }

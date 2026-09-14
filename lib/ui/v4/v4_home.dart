@@ -49,10 +49,7 @@ class V4HomePane extends StatelessWidget {
       return V4ContentColumns(
         main: Column(
           children: [
-            V4ContentStatus(
-              controller: controller,
-              onOpenLibrary: () => onNavigate('library'),
-            ),
+            V4ContentStatus(controller: controller),
             if (!controller.hasGames)
               TextButton(
                 onPressed: () => onNavigate('library'),
@@ -82,6 +79,7 @@ class _MainColumn extends StatelessWidget {
         _HeroBanner(
           onExplore: () => onUnavailable('开始探索'),
           onPending: () => onUnavailable('即将开放'),
+          onOpenAssistant: () => onUnavailable('AI助手'),
         ),
         const SizedBox(height: 11),
         _SectionHeader(
@@ -155,8 +153,13 @@ class _MainColumn extends StatelessWidget {
 class _HeroBanner extends StatefulWidget {
   final VoidCallback onExplore;
   final VoidCallback onPending;
+  final VoidCallback onOpenAssistant;
 
-  const _HeroBanner({required this.onExplore, required this.onPending});
+  const _HeroBanner({
+    required this.onExplore,
+    required this.onPending,
+    required this.onOpenAssistant,
+  });
 
   @override
   State<_HeroBanner> createState() => _HeroBannerState();
@@ -231,7 +234,7 @@ class _HeroBannerState extends State<_HeroBanner> {
                     key: const ValueKey<String>('home-hero-page-2'),
                     assetPath: 'assets/desktop/home/banner_ai.png',
                     semanticLabel: '桌游有 AI，拍照、提问、秒懂桌游规则',
-                    onTap: widget.onPending,
+                    onTap: widget.onOpenAssistant,
                   ),
                 ],
               ),

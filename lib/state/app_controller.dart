@@ -118,6 +118,7 @@ class AppController extends ChangeNotifier {
   List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
+  String? _lastNotifiedLibraryLoadFailure;
   Future<void>? _libraryRefreshFuture;
   Future<void>? _libraryCacheLoadFuture;
   bool _libraryCacheLoadAttempted = false;
@@ -322,6 +323,19 @@ class AppController extends ChangeNotifier {
     }
     _queueActivitySave();
     notifyListeners();
+  }
+
+  void _recordLibraryLoadFailure(String message) {
+    final String normalized = message.trim();
+    if (normalized.isEmpty || normalized == _lastNotifiedLibraryLoadFailure) {
+      return;
+    }
+    _lastNotifiedLibraryLoadFailure = normalized;
+    _recordActivity(
+      kind: AppActivityKind.libraryLoadFailed,
+      title: copy.activityLibraryLoadFailedTitle,
+      message: copy.activityLibraryLoadFailedMessage(normalized),
+    );
   }
 
   void _queueActivitySave() {
@@ -2079,6 +2093,11 @@ class AppController extends ChangeNotifier {
           ? LibraryLoadState.empty
           : LibraryLoadState.success;
       _libraryLoadError = index.warning;
+      if (index.failedSlugs.isNotEmpty && index.warning != null) {
+        _recordLibraryLoadFailure(index.warning!);
+      } else if (index.failedSlugs.isEmpty) {
+        _lastNotifiedLibraryLoadFailure = null;
+      }
     } catch (error) {
       if (generation != _libraryRefreshGeneration) {
         return;
@@ -2088,6 +2107,7 @@ class AppController extends ChangeNotifier {
       }
       _libraryLoadState = LibraryLoadState.failure;
       _libraryLoadError = _safeStatusError(error);
+      _recordLibraryLoadFailure(_libraryLoadError!);
       debugPrint('[assets] desktop library index unavailable: $error');
     }
     notifyListeners();
