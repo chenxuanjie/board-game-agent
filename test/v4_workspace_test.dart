@@ -200,6 +200,10 @@ void main() {
       );
       final Rect posterRect = tester.getRect(poster);
       expect(posterRect.width / posterRect.height, closeTo(2 / 3, 0.005));
+      expect(
+        find.descendant(of: poster, matching: find.byType(AnimatedOpacity)),
+        findsNothing,
+      );
 
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);

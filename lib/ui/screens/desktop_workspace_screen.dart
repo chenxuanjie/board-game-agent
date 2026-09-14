@@ -4395,23 +4395,6 @@ class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
                                     ),
                                   ),
                             ),
-                            Center(
-                              child: AnimatedOpacity(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.ease,
-                                opacity: _hovered ? 0.45 : 0.28,
-                                child: AnimatedScale(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.ease,
-                                  scale: _hovered ? 1.05 : 1,
-                                  child: Icon(
-                                    _posterIcon(game),
-                                    size: 78,
-                                    color: accent,
-                                  ),
-                                ),
-                              ),
-                            ),
                             const IgnorePointer(
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
