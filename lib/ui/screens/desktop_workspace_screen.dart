@@ -140,21 +140,23 @@ class DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.embedded) {
-      return Stack(
-        children: <Widget>[
-          Positioned.fill(child: _buildPage(false)),
-          _RulesDrawerOverlay(
-            open: _rulesDrawerOpen,
-            tabIndex: _rulesDrawerTab,
-            game: _rulesDrawerGame,
-            resource: _rulesDrawerResource,
-            controller: widget.controller,
-            onClose: _closeRulesDrawer,
-            onTabChanged: (value) => setState(() => _rulesDrawerTab = value),
-            onOpenAssistant: _openDrawerAssistant,
-            onOpenResource: _openDrawerResource,
-          ),
-        ],
+      return LayoutBuilder(
+        builder: (context, constraints) => Stack(
+          children: <Widget>[
+            Positioned.fill(child: _buildPage(constraints.maxWidth < 960)),
+            _RulesDrawerOverlay(
+              open: _rulesDrawerOpen,
+              tabIndex: _rulesDrawerTab,
+              game: _rulesDrawerGame,
+              resource: _rulesDrawerResource,
+              controller: widget.controller,
+              onClose: _closeRulesDrawer,
+              onTabChanged: (value) => setState(() => _rulesDrawerTab = value),
+              onOpenAssistant: _openDrawerAssistant,
+              onOpenResource: _openDrawerResource,
+            ),
+          ],
+        ),
       );
     }
     final AppCopy copy = widget.controller.copy;

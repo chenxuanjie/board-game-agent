@@ -11,10 +11,12 @@ class V4GamesPane extends StatefulWidget {
     required this.controller,
     required this.onNavigate,
     required this.onOpenGame,
+    this.showPreview = true,
   });
   final AppController controller;
   final ValueChanged<String> onNavigate;
   final ValueChanged<GameInfo> onOpenGame;
+  final bool showPreview;
   @override
   State<V4GamesPane> createState() => _V4GamesPaneState();
 }
@@ -58,49 +60,52 @@ class _V4GamesPaneState extends State<V4GamesPane> {
         }
       }
 
+      final main = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          V4ContentStatus(
+            controller: widget.controller,
+            onOpenLibrary: () => widget.onNavigate('library'),
+          ),
+          if (games.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text('暂无符合条件的游戏'),
+                  TextButton(
+                    onPressed: () => widget.onNavigate('library'),
+                    child: const Text('打开资料库'),
+                  ),
+                ],
+              ),
+            ),
+          _LibraryMain(
+            games: games,
+            selectedIndex: index,
+            selectedCategory: _category,
+            onSelectGame: (i) {
+              if (!widget.showPreview ||
+                  games[i].data.id == selected?.data.id) {
+                widget.onOpenGame(games[i].data);
+              } else {
+                setState(() => _selectedId = games[i].data.id);
+              }
+            },
+            onCategory: (i) => setState(() => _category = i),
+            sortLabel: _sort.label,
+            hasFilter: _playerFilter != null || _weightFilter != null,
+            onSort: _chooseSort,
+            onFilter: _chooseFilter,
+            onUnavailable: action,
+          ),
+        ],
+      );
+      if (!widget.showPreview) return main;
       return V4ContentColumns(
         gap: 13,
         rightWidth: 360,
-        main: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            V4ContentStatus(
-              controller: widget.controller,
-              onOpenLibrary: () => widget.onNavigate('library'),
-            ),
-            if (games.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Text('暂无符合条件的游戏'),
-                    TextButton(
-                      onPressed: () => widget.onNavigate('library'),
-                      child: const Text('打开资料库'),
-                    ),
-                  ],
-                ),
-              ),
-            _LibraryMain(
-              games: games,
-              selectedIndex: index,
-              selectedCategory: _category,
-              onSelectGame: (i) {
-                if (games[i].data.id == selected?.data.id) {
-                  widget.onOpenGame(games[i].data);
-                } else {
-                  setState(() => _selectedId = games[i].data.id);
-                }
-              },
-              onCategory: (i) => setState(() => _category = i),
-              sortLabel: _sort.label,
-              hasFilter: _playerFilter != null || _weightFilter != null,
-              onSort: _chooseSort,
-              onFilter: _chooseFilter,
-              onUnavailable: action,
-            ),
-          ],
-        ),
+        main: main,
         right: selected == null
             ? const SizedBox(height: 648, child: Center(child: Text('请选择游戏')))
             : _GameDetailPanel(

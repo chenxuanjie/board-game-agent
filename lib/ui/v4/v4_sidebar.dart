@@ -5,11 +5,15 @@ import 'v4_theme.dart';
 class V4Sidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
+  final bool compact;
+  final double? width;
 
   const V4Sidebar({
     super.key,
     required this.selectedIndex,
     required this.onSelect,
+    this.compact = false,
+    this.width,
   });
 
   static const _items = <({IconData icon, String label})>[
@@ -25,7 +29,8 @@ class V4Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 205,
+      key: ValueKey<String>(compact ? 'v4-sidebar-rail' : 'v4-sidebar-full'),
+      width: width ?? (compact ? 76 : 205),
       height: double.infinity,
       decoration: const BoxDecoration(
         color: V4Colors.sidebar,
@@ -33,54 +38,64 @@ class V4Sidebar extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned.fill(
-            top: 520,
-            child: Image.asset(
-              'assets/v4/sidebar_art.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
+          if (!compact)
+            Positioned.fill(
+              top: 520,
+              child: Image.asset(
+                'assets/v4/sidebar_art.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
             ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 24, 10, 18),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 8 : 10,
+              24,
+              compact ? 8 : 10,
+              18,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 21),
+                  padding: EdgeInsets.only(left: compact ? 3 : 21),
                   child: Image.asset(
                     'assets/v4/logo.png',
-                    width: 77,
-                    height: 72,
+                    width: compact ? 48 : 77,
+                    height: compact ? 48 : 72,
                     fit: BoxFit.contain,
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.only(left: 22, top: 5),
-                  child: Text(
-                    '桌游助手',
-                    style: TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
+                if (!compact) ...[
+                  const Padding(
+                    padding: EdgeInsets.only(left: 22, top: 5),
+                    child: Text(
+                      '桌游助手',
+                      style: TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
                     ),
                   ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.only(left: 22, top: 4, bottom: 16),
-                  child: Text(
-                    '发现更大的桌游世界',
-                    style: TextStyle(
-                      color: V4Colors.secondaryText,
-                      fontSize: 13,
+                  const Padding(
+                    padding: EdgeInsets.only(left: 22, top: 4, bottom: 16),
+                    child: Text(
+                      '发现更大的桌游世界',
+                      style: TextStyle(
+                        color: V4Colors.secondaryText,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                ),
+                ] else
+                  const SizedBox(height: 25),
                 for (var i = 0; i < _items.length; i++) ...[
                   _NavTile(
                     icon: _items[i].icon,
                     label: _items[i].label,
                     selected: i == selectedIndex,
+                    compact: compact,
                     onTap: i == selectedIndex ? null : () => onSelect(i),
                   ),
                   if (i == 5) const SizedBox(height: 7),
@@ -99,11 +114,13 @@ class _NavTile extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback? onTap;
+  final bool compact;
 
   const _NavTile({
     required this.icon,
     required this.label,
     required this.selected,
+    this.compact = false,
     this.onTap,
   });
 
@@ -117,7 +134,7 @@ class _NavTileState extends State<_NavTile> {
   @override
   Widget build(BuildContext context) {
     final active = widget.selected;
-    return MouseRegion(
+    final tile = MouseRegion(
       cursor: active ? MouseCursor.defer : SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovering = true),
       onExit: (_) => setState(() => hovering = false),
@@ -127,7 +144,7 @@ class _NavTileState extends State<_NavTile> {
           duration: const Duration(milliseconds: 120),
           height: 44,
           margin: const EdgeInsets.only(bottom: 3),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 0 : 18),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(11),
             gradient: active
@@ -138,25 +155,31 @@ class _NavTileState extends State<_NavTile> {
             color: !active && hovering ? const Color(0x0B9A5B38) : null,
           ),
           child: Row(
+            mainAxisAlignment: widget.compact
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
               Icon(
                 widget.icon,
                 size: 22,
                 color: active ? Colors.white : V4Colors.brown,
               ),
-              const SizedBox(width: 15),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                  color: active ? Colors.white : const Color(0xFF4B4038),
+              if (!widget.compact) ...[
+                const SizedBox(width: 15),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active ? Colors.white : const Color(0xFF4B4038),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
       ),
     );
+    return widget.compact ? Tooltip(message: widget.label, child: tile) : tile;
   }
 }

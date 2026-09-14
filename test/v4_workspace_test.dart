@@ -60,6 +60,7 @@ void main() {
   for (final size in const [
     Size(1280, 800),
     Size(1100, 700),
+    Size(720, 700),
     Size(1920, 1080),
   ]) {
     testWidgets('home, games and settings navigate without overflow at $size', (
@@ -131,6 +132,96 @@ void main() {
     }
   });
 
+  testWidgets(
+    'responsive shell switches between full sidebar, rail and drawer',
+    (tester) async {
+      await _mount(tester, controller, const Size(1280, 800));
+      expect(
+        find.byKey(const ValueKey<String>('v4-sidebar-full')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('v4-sidebar-rail')),
+        findsNothing,
+      );
+
+      await tester.binding.setSurfaceSize(const Size(1100, 700));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('v4-sidebar-rail')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.binding.setSurfaceSize(const Size(720, 700));
+      await tester.pumpAndSettle();
+      expect(find.byType(V4Sidebar), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('v4-open-navigation')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('v4-open-navigation')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('v4-sidebar-full')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('compact library opens a card directly and hides preview', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1100, 700));
+    await _navigate(tester, '游戏库');
+    final game = controller.games.length > 1
+        ? controller.games[1]
+        : controller.games.first;
+    final title = find.descendant(
+      of: find.byType(V4GamesPane),
+      matching: find.text(game.title),
+    );
+    expect(title, findsOneWidget);
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+    expect(find.byType(V4GameDetailPane), findsOneWidget);
+    expect(controller.selectedGame.id, game.id);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('narrow drawer reaches every migrated workspace', (tester) async {
+    await _mount(tester, controller, const Size(720, 700));
+    await _navigate(tester, '游戏库');
+    expect(find.byType(V4GamesPane), findsOneWidget);
+    await _navigate(tester, 'AI助手');
+    expect(find.byType(DesktopWorkspaceScreen), findsOneWidget);
+    expect(
+      tester
+          .state<DesktopWorkspaceScreenState>(
+            find.byType(DesktopWorkspaceScreen),
+          )
+          .destinationName,
+      'assistant',
+    );
+    await _navigate(tester, '设置');
+    expect(find.byType(V4SettingsPane), findsOneWidget);
+    await tester.ensureVisible(find.text('完整设置'));
+    await tester.tap(find.text('完整设置'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .state<DesktopWorkspaceScreenState>(
+            find.byType(DesktopWorkspaceScreen),
+          )
+          .destinationName,
+      'settings',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('rules library remains reachable and shows real rule resources', (
     tester,
   ) async {
@@ -172,7 +263,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final size in const [Size(1280, 800), Size(1100, 700)]) {
+  for (final size in const [
+    Size(1280, 800),
+    Size(1100, 700),
+    Size(720, 700),
+    Size(600, 700),
+  ]) {
     testWidgets('V5 game detail opens with real data at $size', (tester) async {
       await _mount(tester, controller, size);
       await _navigate(tester, '游戏库');
@@ -282,9 +378,19 @@ Future<void> _mount(
 }
 
 Future<void> _navigate(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(of: find.byType(V4Sidebar), matching: find.text(label)),
+  if (find.byType(V4Sidebar).evaluate().isEmpty) {
+    await tester.tap(find.byKey(const ValueKey<String>('v4-open-navigation')));
+    await tester.pumpAndSettle();
+  }
+  final textItem = find.descendant(
+    of: find.byType(V4Sidebar),
+    matching: find.text(label),
   );
+  if (textItem.evaluate().isNotEmpty) {
+    await tester.tap(textItem);
+  } else {
+    await tester.tap(find.byTooltip(label));
+  }
   await tester.pumpAndSettle();
 }
 
