@@ -6,6 +6,7 @@ import '../../state/app_controller.dart';
 import '../screens/desktop_workspace_screen.dart';
 import 'v4_home.dart';
 import 'v4_games.dart';
+import 'v4_game_detail.dart';
 import 'v4_settings.dart';
 import 'v4_sidebar.dart';
 import 'v4_theme.dart';
@@ -44,8 +45,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
       widget.enableNativeWindowControls &&
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.windows;
-  bool get _oldPage =>
-      ['assistant', 'library', 'advanced', 'gameDetail'].contains(_page);
+  bool get _oldPage => ['assistant', 'library', 'advanced'].contains(_page);
 
   @override
   void initState() {
@@ -76,7 +76,21 @@ class _V4WorkspaceState extends State<V4Workspace> {
   void _game(GameInfo game) {
     widget.controller.selectGame(game.id);
     setState(() => _page = 'gameDetail');
-    _legacy.currentState?.showGame(game);
+  }
+
+  void _openRules(GameInfo game) {
+    setState(() => _page = 'library');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _legacy.currentState?.navigateTo('library');
+      _legacy.currentState?.openRulesForGame(game);
+    });
+  }
+
+  void _askAi(GameInfo game) {
+    setState(() => _page = 'assistant');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _legacy.currentState?.openAssistantForGame(game);
+    });
   }
 
   void _unavailable(String title) {
@@ -135,14 +149,11 @@ class _V4WorkspaceState extends State<V4Workspace> {
                           controller: _scroll,
                           child: Column(
                             children: [
-                              _topBar(),
+                              if (_page != 'gameDetail') _topBar(),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  15,
-                                  0,
-                                  12,
-                                  14,
-                                ),
+                                padding: _page == 'gameDetail'
+                                    ? EdgeInsets.zero
+                                    : const EdgeInsets.fromLTRB(15, 0, 12, 14),
                                 child: switch (_page) {
                                   'home' => V4HomePane(
                                     controller: widget.controller,
@@ -153,6 +164,17 @@ class _V4WorkspaceState extends State<V4Workspace> {
                                     controller: widget.controller,
                                     onNavigate: _navigate,
                                     onOpenGame: _game,
+                                  ),
+                                  'gameDetail' => V4GameDetailPane(
+                                    controller: widget.controller,
+                                    game: widget.controller.selectedGame,
+                                    onBack: () => _navigate('games'),
+                                    onSearch: _find,
+                                    onOpenRules: () => _openRules(
+                                      widget.controller.selectedGame,
+                                    ),
+                                    onAskAi: () =>
+                                        _askAi(widget.controller.selectedGame),
                                   ),
                                   'settings' => V4SettingsPane(
                                     controller: widget.controller,

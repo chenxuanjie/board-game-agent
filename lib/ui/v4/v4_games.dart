@@ -85,8 +85,13 @@ class _V4GamesPaneState extends State<V4GamesPane> {
               games: games,
               selectedIndex: index,
               selectedCategory: _category,
-              onSelectGame: (i) =>
-                  setState(() => _selectedId = games[i].data.id),
+              onSelectGame: (i) {
+                if (games[i].data.id == selected?.data.id) {
+                  widget.onOpenGame(games[i].data);
+                } else {
+                  setState(() => _selectedId = games[i].data.id);
+                }
+              },
               onCategory: (i) => setState(() => _category = i),
               sortLabel: _sort.label,
               hasFilter: _playerFilter != null || _weightFilter != null,
@@ -102,6 +107,7 @@ class _V4GamesPaneState extends State<V4GamesPane> {
                 game: selected,
                 favorite: false,
                 onToggleFavorite: () => v4ContentPending(context, '收藏'),
+                onOpenDetail: () => widget.onOpenGame(selected.data),
                 onUnavailable: action,
               ),
       );
@@ -762,12 +768,14 @@ class _GameDetailPanel extends StatelessWidget {
   final V4ContentGame game;
   final bool favorite;
   final VoidCallback onToggleFavorite;
+  final VoidCallback onOpenDetail;
   final ValueChanged<String> onUnavailable;
 
   const _GameDetailPanel({
     required this.game,
     required this.favorite,
     required this.onToggleFavorite,
+    required this.onOpenDetail,
     required this.onUnavailable,
   });
 
@@ -794,9 +802,22 @@ class _GameDetailPanel extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(9),
-                child: SizedBox(width: 160, height: 236, child: game.cover()),
+              Tooltip(
+                message: '打开完整详情页',
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: onOpenDetail,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: SizedBox(
+                        width: 160,
+                        height: 236,
+                        child: game.cover(),
+                      ),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(width: 13),
               Expanded(

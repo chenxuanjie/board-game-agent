@@ -33,6 +33,7 @@ import 'package:board_game_agent/ui/v4/v4_theme.dart';
 import 'package:board_game_agent/ui/v4/v4_sidebar.dart';
 import 'package:board_game_agent/ui/v4/v4_home.dart';
 import 'package:board_game_agent/ui/v4/v4_games.dart';
+import 'package:board_game_agent/ui/v4/v4_game_detail.dart';
 import 'package:board_game_agent/ui/v4/v4_settings.dart';
 
 void main() {
@@ -170,6 +171,45 @@ void main() {
     expect(find.text('桌游活动 · 暂未开放').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in const [Size(1280, 800), Size(1100, 700)]) {
+    testWidgets('V5 game detail opens with real data at $size', (tester) async {
+      await _mount(tester, controller, size);
+      await _navigate(tester, '游戏库');
+      final game = controller.games.first;
+      final titleInLibrary = find.descendant(
+        of: find.byType(V4GamesPane),
+        matching: find.text(game.title),
+      );
+      await tester.tap(titleInLibrary.first);
+      await tester.pumpAndSettle();
+      expect(find.byType(V4GameDetailPane), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('v4-game-detail')),
+        findsOneWidget,
+      );
+      expect(find.text(game.title), findsWidgets);
+      expect(find.text(game.subtitle), findsWidgets);
+      expect(find.text('询问 AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('detail-tab-2')),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('detail-tab-2')));
+      await tester.pumpAndSettle();
+      expect(find.text('玩家评价'), findsWidgets);
+      expect(find.text('未开放'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(find.byTooltip('返回游戏库'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('返回游戏库'));
+      await tester.pumpAndSettle();
+      expect(find.byType(V4GamesPane), findsOneWidget);
+      expect(find.byType(V4GameDetailPane), findsNothing);
+    });
+  }
 
   testWidgets('V3 assistant runs inside the Warmwood Study V4 shell', (
     tester,

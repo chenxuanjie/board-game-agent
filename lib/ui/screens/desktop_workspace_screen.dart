@@ -288,6 +288,8 @@ class DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
   void showGame(GameInfo game) => _openGame(game);
   void openSearch() => _openSearch();
   void openActivities() => _openActivityCenter();
+  void openRulesForGame(GameInfo game) => _openRulesDrawerForGame(game);
+  void openAssistantForGame(GameInfo game) => _openAssistantForGame(game.id);
   void _navigateBack() {
     if (_destination == _DesktopDestination.gameDetail) {
       setState(() => _destination = _detailReturnDestination);
