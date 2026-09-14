@@ -74,7 +74,7 @@ class _V4SettingsPaneState extends State<V4SettingsPane> {
                   onRecommendation: null,
                 ),
                 const _AppearanceCard(
-                  selected: -1,
+                  selected: 2,
                   accent: -1,
                   zoom: 1,
                   onSelected: null,
@@ -175,7 +175,7 @@ class _V4SettingsPaneState extends State<V4SettingsPane> {
                     ),
                   const SizedBox(height: 8),
                   const Text(
-                    '完整设置：模型 · WebDAV · 下载 · 旧版/Web 配色（不影响 V4）',
+                    '完整设置：模型 · WebDAV · 下载 · 主题 · 更新',
                     textAlign: TextAlign.right,
                     style: TextStyle(
                       fontSize: 10,
@@ -645,14 +645,14 @@ class _AppearanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const themes = [
-      ('assets/v4/theme_system.png', '跟随系统'),
-      ('assets/v4/theme_light.png', '浅色模式'),
-      ('assets/v4/theme_dark.png', '深色模式'),
+      ('assets/v4/theme_dark.png', '默认主题'),
+      ('assets/v4/theme_light.png', '晚霞海岸'),
+      ('assets/v4/theme_system.png', '暖木书房'),
     ];
     return _SettingsCard(
       icon: Icons.palette_rounded,
       title: '外观与主题',
-      subtitle: 'V4 固定暖色；主题、色彩与缩放未开放',
+      subtitle: '当前主题：暖木书房；其它主题见完整设置',
       height: 286,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

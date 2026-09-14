@@ -34,7 +34,9 @@ import 'pdf_document_screen.dart';
 import 'library_resource_document_screen.dart';
 
 Color _v4Color(BuildContext context, Color original, Color replacement) =>
-    AppPalette.of(context).nameEn == 'V4 Warm Light' ? replacement : original;
+    AppPalette.of(context).scheme == ColorSchemeOption.warmwoodStudy
+    ? replacement
+    : original;
 
 enum _DesktopDestination {
   home,

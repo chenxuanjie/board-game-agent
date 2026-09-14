@@ -70,9 +70,14 @@ void main() {
   test('color scheme codes expose the supported themes', () {
     expect(ColorSchemeOption.classic.code, 'classic');
     expect(ColorSchemeOption.sunsetCoast.code, 'sunset_coast');
+    expect(ColorSchemeOption.warmwoodStudy.code, 'warmwood_study');
     expect(
       ColorSchemeOptionX.fromCode('sunset_coast'),
       ColorSchemeOption.sunsetCoast,
+    );
+    expect(
+      ColorSchemeOptionX.fromCode('warmwood_study'),
+      ColorSchemeOption.warmwoodStudy,
     );
     expect(
       ColorSchemeOptionX.fromCode('removed_theme'),
@@ -159,6 +164,18 @@ void main() {
         PaletteRegistry.sunsetCoast,
       ).bottomSheetTheme.backgroundColor,
       PaletteRegistry.sunsetCoast.surface,
+    );
+
+    activePalette.value = PaletteRegistry.warmwoodStudy;
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const ValueKey<String>('theme-background')),
+          )
+          .color,
+      PaletteRegistry.warmwoodStudy.pageBackground,
     );
 
     activePalette.dispose();

@@ -15,6 +15,7 @@ import 'package:board_game_agent/models/app_language.dart';
 import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
 import 'package:board_game_agent/models/chat_message.dart';
+import 'package:board_game_agent/models/color_scheme_option.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/models/remote_asset_file.dart';
 import 'package:board_game_agent/services/ai_service.dart';
@@ -24,6 +25,7 @@ import 'package:board_game_agent/services/remote_asset_service.dart';
 import 'package:board_game_agent/services/speech_service.dart';
 import 'package:board_game_agent/services/tts_service.dart';
 import 'package:board_game_agent/state/app_controller.dart';
+import 'package:board_game_agent/theme/app_palette.dart';
 import 'package:board_game_agent/ui/screens/desktop_workspace_screen.dart';
 
 import 'package:board_game_agent/ui/v4/v4_workspace.dart';
@@ -144,6 +146,26 @@ void main() {
     expect(tester.takeException(), isNull);
     await _navigate(tester, '首页');
     expect(find.byType(V4HomePane), findsOneWidget);
+  });
+
+  testWidgets('V3 assistant runs inside the Warmwood Study V4 shell', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, 'AI助手');
+    final state = tester.state<DesktopWorkspaceScreenState>(
+      find.byType(DesktopWorkspaceScreen),
+    );
+    expect(state.destinationName, 'assistant');
+    expect(
+      find.byKey(const ValueKey<String>('desktop-composer-box')),
+      findsOneWidget,
+    );
+    final context = tester.element(
+      find.byKey(const ValueKey<String>('desktop-composer-box')),
+    );
+    expect(AppPalette.of(context).scheme, ColorSchemeOption.warmwoodStudy);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

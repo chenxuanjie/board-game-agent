@@ -68,12 +68,47 @@ class PaletteRegistry {
     shadow: Color(0xFF8D747E),
   );
 
+  /// Warm ivory, orange and walnut tones used by the V4 desktop workspace.
+  static const AppPalette warmwoodStudy = AppPalette(
+    scheme: ColorSchemeOption.warmwoodStudy,
+    nameZh: '暖木书房',
+    nameEn: 'Warmwood Study',
+    pageBackground: Color(0xFFFFFCF7),
+    surface: Color(0xFFFFFEFC),
+    surfaceContainer: Color(0xFFFFFAF1),
+    surfaceVariant: Color(0xFFF8F3EC),
+    inputSurface: Color(0xFFFFFEFC),
+    textPrimary: Color(0xFF171412),
+    textSecondary: Color(0xFF7D756D),
+    outline: Color(0xFFE8DDD2),
+    primary: Color(0xFFFF6846),
+    primaryContainer: Color(0xFFFFDDD4),
+    onPrimary: Color(0xFF171412),
+    onPrimaryContainer: Color(0xFF572012),
+    secondary: Color(0xFF9B5435),
+    secondaryContainer: Color(0xFFF4E4D9),
+    onSecondary: Color(0xFFFFFFFF),
+    onSecondaryContainer: Color(0xFF4D2919),
+    success: Color(0xFF497461),
+    onSuccess: Color(0xFFFFFFFF),
+    warning: Color(0xFF945D31),
+    onWarning: Color(0xFFFFFFFF),
+    error: Color(0xFF9F4D5D),
+    onError: Color(0xFFFFFFFF),
+    focusRing: Color(0xFF9B5435),
+    disabledForeground: Color(0xFF9B928A),
+    disabledBackground: Color(0xFFF1EBE4),
+    shadow: Color(0xFF5A392A),
+  );
+
   static AppPalette of(ColorSchemeOption scheme) {
     switch (scheme) {
       case ColorSchemeOption.classic:
         return classic;
       case ColorSchemeOption.sunsetCoast:
         return sunsetCoast;
+      case ColorSchemeOption.warmwoodStudy:
+        return warmwoodStudy;
     }
   }
 }

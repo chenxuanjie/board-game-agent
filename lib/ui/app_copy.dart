@@ -526,6 +526,8 @@ class AppCopy {
         return isChinese ? '默认主题' : 'Default Theme';
       case ColorSchemeOption.sunsetCoast:
         return isChinese ? '晚霞海岸' : 'Sunset Coast';
+      case ColorSchemeOption.warmwoodStudy:
+        return isChinese ? '暖木书房' : 'Warmwood Study';
     }
   }
 }
