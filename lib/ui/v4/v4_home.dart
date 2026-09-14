@@ -36,7 +36,7 @@ class V4HomePane extends StatelessWidget {
         final route = {
           '开始探索': 'games',
           '游戏库': 'games',
-          '规则查询': 'library',
+          '规则查询': 'games',
           'AI助手': 'assistant',
         }[label];
         if (route != null) {
@@ -842,6 +842,9 @@ class _QuickPanel extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final a = actions[i];
                   return HoverSurface(
+                    key: a.$1 == '规则查询'
+                        ? const ValueKey<String>('home-quick-entry-rules')
+                        : null,
                     onTap: () => onUnavailable(a.$1),
                     lift: 1,
                     borderRadius: BorderRadius.circular(9),

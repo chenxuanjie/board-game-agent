@@ -151,7 +151,7 @@ class V4ContentStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final loading = controller.homeAssetsLoading;
     final error = controller.libraryLoadError;
-    if (!loading && error == null && controller.hasGames) {
+    if (!loading && error == null) {
       return const SizedBox.shrink();
     }
     return Padding(
@@ -159,14 +159,8 @@ class V4ContentStatus extends StatelessWidget {
       child: Column(
         children: [
           if (loading) const LinearProgressIndicator(),
-          Text(
-            error != null
-                ? '资料加载失败，请在资料库重试。'
-                : loading
-                ? '正在加载游戏…'
-                : '暂无游戏，请在资料库检查资源。',
-          ),
-          if (error != null || !loading)
+          Text(error != null ? '资料加载失败，请在资料库重试。' : '正在加载游戏…'),
+          if (error != null)
             TextButton(onPressed: onOpenLibrary, child: const Text('打开资料库')),
         ],
       ),

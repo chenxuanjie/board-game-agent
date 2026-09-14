@@ -67,19 +67,6 @@ class _V4GamesPaneState extends State<V4GamesPane> {
             controller: widget.controller,
             onOpenLibrary: () => widget.onNavigate('library'),
           ),
-          if (games.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text('暂无符合条件的游戏'),
-                  TextButton(
-                    onPressed: () => widget.onNavigate('library'),
-                    child: const Text('打开资料库'),
-                  ),
-                ],
-              ),
-            ),
           _LibraryMain(
             games: games,
             selectedIndex: index,
@@ -107,7 +94,7 @@ class _V4GamesPaneState extends State<V4GamesPane> {
         rightWidth: 360,
         main: main,
         right: selected == null
-            ? const SizedBox(height: 648, child: Center(child: Text('请选择游戏')))
+            ? const SizedBox.shrink()
             : _GameDetailPanel(
                 game: selected,
                 favorite: false,

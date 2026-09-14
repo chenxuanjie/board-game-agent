@@ -222,22 +222,56 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('rules library remains reachable and shows real rule resources', (
+  testWidgets('home rules query shortcut navigates to the game library', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
-    await tester.tap(find.text('规则查询'));
-    await tester.pumpAndSettle();
-    expect(find.byType(DesktopWorkspaceScreen), findsOneWidget);
-    final state = tester.state<DesktopWorkspaceScreenState>(
-      find.byType(DesktopWorkspaceScreen),
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-quick-entry-rules')),
     );
-    expect(state.destinationName, 'library');
-    expect(controller.games, isNotEmpty);
+    await tester.pumpAndSettle();
+    expect(find.byType(V4GamesPane), findsOneWidget);
     expect(find.byType(V4HomePane), findsNothing);
+    expect(controller.games, isNotEmpty);
+    expect(
+      find.descendant(
+        of: find.byType(V4GamesPane),
+        matching: find.text(controller.games.first.title),
+      ),
+      findsWidgets,
+    );
     expect(tester.takeException(), isNull);
-    await _navigate(tester, '首页');
-    expect(find.byType(V4HomePane), findsOneWidget);
+  });
+
+  testWidgets('empty game filters do not insert an empty-state panel', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, '游戏库');
+    expect(
+      controller.games.where(
+        (game) =>
+            '${game.categoryLine} ${game.keywords.join(' ')}'.contains('合作') &&
+            game.supportedPlayers.any((players) => players >= 5),
+      ),
+      isEmpty,
+    );
+
+    await tester.tap(
+      find.descendant(of: find.byType(V4GamesPane), matching: find.text('合作')),
+    );
+    await tester.tap(find.text('筛选'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('5+')),
+    );
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无符合条件的游戏'), findsNothing);
+    expect(find.text('请选择游戏'), findsNothing);
+    expect(find.text('暂无游戏，请在资料库检查资源。'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('home hero exposes three manually selectable carousel pages', (
