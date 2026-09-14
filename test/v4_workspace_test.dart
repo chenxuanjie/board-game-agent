@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -282,6 +283,90 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('home search filters catalog data and opens a real game', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    final GameInfo game = controller.games.first;
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('v4-home-search-field'),
+    );
+
+    await tester.tap(searchField);
+    await tester.enterText(searchField, game.title);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey<String>('v4-search-result-${game.id}')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(
+      find.byKey(ValueKey<String>('v4-search-result-${game.id}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(V4GameDetailPane), findsOneWidget);
+    expect(controller.selectedGame.id, game.id);
+    expect(
+      find.byKey(const ValueKey<String>('v4-home-search-overlay')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home search handles empty results and clears the query', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('v4-home-search-field'),
+    );
+    await tester.tap(searchField);
+    await tester.enterText(searchField, '肯定不存在的桌游关键字');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('没有找到'), findsOneWidget);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清空关键词'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('没有找到'), findsNothing);
+    expect(find.text('最近搜索'), findsOneWidget);
+    expect(find.text('肯定不存在的桌游关键字'), findsOneWidget);
+    await tester.tap(find.text('清空记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无最近搜索'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('v4-home-search-overlay')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final Size size in const <Size>[
+    Size(1280, 800),
+    Size(720, 700),
+    Size(600, 700),
+  ]) {
+    testWidgets('home search panel fits the workspace at $size', (
+      tester,
+    ) async {
+      await _mount(tester, controller, size);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('v4-home-search-field')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('v4-home-search-overlay')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'home library load failures are shown in notifications, not inline',
