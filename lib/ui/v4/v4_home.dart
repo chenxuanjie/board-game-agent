@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
 import 'v4_content_primitives.dart';
@@ -84,8 +85,13 @@ class _MainColumn extends StatelessWidget {
         ),
         const SizedBox(height: 11),
         _SectionHeader(
-          icon: Icons.local_fire_department_rounded,
-          iconColor: const Color(0xFFFF593D),
+          leading: SvgPicture.asset(
+            'assets/desktop/home/flame_icon_hd.svg',
+            key: const ValueKey<String>('v4-home-library-flame'),
+            width: 25,
+            height: 25,
+            semanticsLabel: '热门桌游',
+          ),
           title: '游戏库',
           subtitle: '已收录的桌游',
           onMore: () => onUnavailable('游戏库'),
@@ -209,21 +215,22 @@ class _HeroBannerState extends State<_HeroBanner> {
                 controller: _controller,
                 onPageChanged: (page) => setState(() => _page = page),
                 children: [
-                  _HeroImagePage(onTap: widget.onExplore),
-                  _HeroPendingPage(
+                  _HeroImagePage(
+                    key: const ValueKey<String>('home-hero-image-page-0'),
+                    assetPath: 'assets/desktop/home/banner_tonight.png',
+                    semanticLabel: '今晚玩什么：好游戏，好朋友，好时光',
+                    onTap: widget.onExplore,
+                  ),
+                  _HeroImagePage(
                     key: const ValueKey<String>('home-hero-page-1'),
-                    image: 'assets/v4/meeting.png',
-                    eyebrow: '好友组局',
-                    title: '和同频玩伴，约一场好局',
-                    subtitle: '组建牌局、邀请好友、记录每一次相聚',
+                    assetPath: 'assets/desktop/home/banner_gathering.png',
+                    semanticLabel: '国庆桌游聚会清单',
                     onTap: widget.onPending,
                   ),
-                  _HeroPendingPage(
+                  _HeroImagePage(
                     key: const ValueKey<String>('home-hero-page-2'),
-                    image: 'assets/v4/promo_art.png',
-                    eyebrow: '桌游活动',
-                    title: '发现附近的桌游新鲜事',
-                    subtitle: '主题活动、玩家聚会与新品体验',
+                    assetPath: 'assets/desktop/home/banner_ai.png',
+                    semanticLabel: '桌游有 AI，拍照、提问、秒懂桌游规则',
                     onTap: widget.onPending,
                   ),
                 ],
@@ -274,8 +281,15 @@ class _HeroBannerState extends State<_HeroBanner> {
 }
 
 class _HeroImagePage extends StatelessWidget {
-  const _HeroImagePage({required this.onTap});
+  const _HeroImagePage({
+    super.key,
+    required this.assetPath,
+    required this.semanticLabel,
+    required this.onTap,
+  });
 
+  final String assetPath;
+  final String semanticLabel;
   final VoidCallback onTap;
 
   @override
@@ -284,121 +298,31 @@ class _HeroImagePage extends StatelessWidget {
     lift: 1,
     borderRadius: BorderRadius.zero,
     child: Image.asset(
-      'assets/v4/hero_banner.png',
+      assetPath,
       width: double.infinity,
       height: double.infinity,
       fit: BoxFit.cover,
-    ),
-  );
-}
-
-class _HeroPendingPage extends StatelessWidget {
-  const _HeroPendingPage({
-    super.key,
-    required this.image,
-    required this.eyebrow,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final String image;
-  final String eyebrow;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => HoverSurface(
-    onTap: onTap,
-    lift: 1,
-    borderRadius: BorderRadius.zero,
-    child: Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(image, fit: BoxFit.cover),
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xF2FFF8EF), Color(0x8C7A3E27)],
-              stops: [0.0, 1.0],
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(34, 25, 30, 25),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 410),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: V4Colors.orange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$eyebrow · 暂未开放',
-                      style: const TextStyle(
-                        color: V4Colors.brown,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: V4Colors.text,
-                      fontSize: 27,
-                      height: 1.16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: V4Colors.secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
+      semanticLabel: semanticLabel,
     ),
   );
 }
 
 class _SectionHeader extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
+  final Widget? leading;
+  final IconData? icon;
+  final Color? iconColor;
   final String title;
   final String? subtitle;
   final VoidCallback onMore;
 
   const _SectionHeader({
-    required this.icon,
-    required this.iconColor,
+    this.leading,
+    this.icon,
+    this.iconColor,
     required this.title,
     this.subtitle,
     required this.onMore,
-  });
+  }) : assert(leading != null || icon != null);
 
   @override
   Widget build(BuildContext context) {
@@ -406,7 +330,11 @@ class _SectionHeader extends StatelessWidget {
       height: 32,
       child: Row(
         children: [
-          Icon(icon, size: 25, color: iconColor),
+          SizedBox(
+            width: 25,
+            height: 25,
+            child: leading ?? Icon(icon, size: 25, color: iconColor),
+          ),
           const SizedBox(width: 8),
           Text(
             title,

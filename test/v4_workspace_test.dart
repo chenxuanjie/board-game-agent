@@ -256,10 +256,28 @@ void main() {
     }
     await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-1')));
     await tester.pumpAndSettle();
-    expect(find.text('好友组局 · 暂未开放').hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-hero-page-1')),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-2')));
     await tester.pumpAndSettle();
-    expect(find.text('桌游活动 · 暂未开放').hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-hero-page-2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('v4-home-library-flame')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('v4-sidebar-logo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('v4-sidebar-art')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

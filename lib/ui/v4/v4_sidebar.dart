@@ -42,7 +42,8 @@ class V4Sidebar extends StatelessWidget {
             Positioned.fill(
               top: 520,
               child: Image.asset(
-                'assets/v4/sidebar_art.png',
+                'assets/desktop/home/sidebar_castle.png',
+                key: const ValueKey<String>('v4-sidebar-art'),
                 fit: BoxFit.cover,
                 alignment: Alignment.topCenter,
               ),
@@ -60,7 +61,8 @@ class V4Sidebar extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.only(left: compact ? 3 : 21),
                   child: Image.asset(
-                    'assets/v4/logo.png',
+                    'assets/desktop/home/logo.png',
+                    key: const ValueKey<String>('v4-sidebar-logo'),
                     width: compact ? 48 : 77,
                     height: compact ? 48 : 72,
                     fit: BoxFit.contain,

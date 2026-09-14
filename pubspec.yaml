@@ -15,6 +15,7 @@ dependencies:
     path: ../shared_packages/app_ai_client
   crypto: ^3.0.7
   flutter_secure_storage: ^9.2.4
+  flutter_svg: ^2.3.0
   flutter_tts: ^4.2.3
   google_fonts: ^6.2.1
   http: ^1.6.0
@@ -44,6 +45,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/desktop/home/
     - assets/v4/
     - branding/app_icon.png
     - assets/catalog.json
