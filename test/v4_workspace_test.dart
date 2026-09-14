@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
@@ -83,11 +84,8 @@ void main() {
       expect(find.byType(V4HomePane), findsNothing);
       for (final game in controller.games) {
         expect(
-          find.descendant(
-            of: find.byType(V4GamesPane),
-            matching: find.text(game.title),
-          ),
-          findsWidgets,
+          find.byKey(ValueKey('desktop-poster-${game.id}')),
+          findsOneWidget,
         );
       }
       // These titles occur in the reference mock data, not the bundled manifest.
@@ -181,17 +179,58 @@ void main() {
     final game = controller.games.length > 1
         ? controller.games[1]
         : controller.games.first;
-    final title = find.descendant(
-      of: find.byType(V4GamesPane),
-      matching: find.text(game.title),
-    );
-    expect(title, findsOneWidget);
-    await tester.tap(title);
+    final poster = find.byKey(ValueKey<String>('desktop-poster-${game.id}'));
+    expect(poster, findsOneWidget);
+    await tester.tap(poster);
     await tester.pumpAndSettle();
     expect(find.byType(V4GameDetailPane), findsOneWidget);
     expect(controller.selectedGame.id, game.id);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'library posters match legacy proportion and hover preview, then open V4 details',
+    (tester) async {
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, '游戏库');
+      final GameInfo game = controller.games[1];
+      final Finder poster = find.byKey(
+        ValueKey<String>('desktop-poster-${game.id}'),
+      );
+      final Rect posterRect = tester.getRect(poster);
+      expect(posterRect.width / posterRect.height, closeTo(2 / 3, 0.005));
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(posterRect.center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 420));
+      final AnimatedContainer hoveredPoster = tester.widget<AnimatedContainer>(
+        poster,
+      );
+      expect(hoveredPoster.transform!.storage[6].abs(), greaterThan(0));
+      final Finder preview = find.byKey(
+        ValueKey<String>('desktop-game-hover-preview-${game.id}'),
+      );
+      expect(preview, findsOneWidget);
+      expect(tester.getSize(preview).width, closeTo(290, 1));
+
+      await mouse.moveTo(Offset.zero);
+      await tester.pump(const Duration(milliseconds: 130));
+      await tester.tap(poster);
+      await tester.pumpAndSettle();
+      expect(find.byType(V4GameDetailPane), findsNothing);
+      await tester.tap(poster);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('v4-game-detail')),
+        findsOneWidget,
+      );
+      expect(find.byType(V4GameDetailPane), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('narrow drawer reaches every migrated workspace', (tester) async {
     await _mount(tester, controller, const Size(720, 700));
@@ -223,7 +262,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('home rules query shortcut navigates to the game library', (
+  testWidgets('home rules query shortcut navigates to the legacy library', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
@@ -231,15 +270,15 @@ void main() {
       find.byKey(const ValueKey<String>('home-quick-entry-rules')),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(V4GamesPane), findsOneWidget);
+    expect(find.byType(V4GamesPane), findsNothing);
     expect(find.byType(V4HomePane), findsNothing);
-    expect(controller.games, isNotEmpty);
     expect(
-      find.descendant(
-        of: find.byType(V4GamesPane),
-        matching: find.text(controller.games.first.title),
-      ),
-      findsWidgets,
+      tester
+          .state<DesktopWorkspaceScreenState>(
+            find.byType(DesktopWorkspaceScreen),
+          )
+          .destinationName,
+      'library',
     );
     expect(tester.takeException(), isNull);
   });
@@ -318,6 +357,12 @@ void main() {
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
+    final frame = find.byKey(const ValueKey<String>('home-hero-frame'));
+    final initialFrame = tester.getRect(frame);
+    expect(
+      initialFrame.width / initialFrame.height,
+      closeTo(2169 / 725, 0.005),
+    );
     expect(
       find.byKey(const ValueKey<String>('home-hero-carousel')),
       findsOneWidget,
@@ -334,12 +379,14 @@ void main() {
       find.byKey(const ValueKey<String>('home-hero-page-1')),
       findsOneWidget,
     );
+    expect(tester.getRect(frame), initialFrame);
     await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-2')));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey<String>('home-hero-page-2')),
       findsOneWidget,
     );
+    expect(tester.getRect(frame), initialFrame);
     expect(
       find.byKey(const ValueKey<String>('v4-home-library-flame')),
       findsOneWidget,
@@ -365,11 +412,9 @@ void main() {
       await _mount(tester, controller, size);
       await _navigate(tester, '游戏库');
       final game = controller.games.first;
-      final titleInLibrary = find.descendant(
-        of: find.byType(V4GamesPane),
-        matching: find.text(game.title),
-      );
-      await tester.tap(titleInLibrary.first);
+      final poster = find.byKey(ValueKey<String>('desktop-poster-${game.id}'));
+      expect(poster, findsOneWidget);
+      await tester.tap(poster);
       await tester.pumpAndSettle();
       expect(find.byType(V4GameDetailPane), findsOneWidget);
       expect(

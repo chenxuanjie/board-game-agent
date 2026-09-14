@@ -36,7 +36,7 @@ class V4HomePane extends StatelessWidget {
         final route = {
           '开始探索': 'games',
           '游戏库': 'games',
-          '规则查询': 'games',
+          '规则查询': 'library',
           'AI助手': 'assistant',
         }[label];
         if (route != null) {
@@ -168,6 +168,9 @@ class _HeroBanner extends StatefulWidget {
 class _HeroBannerState extends State<_HeroBanner> {
   static const _pageCount = 3;
   static const _interval = Duration(seconds: 5);
+  static const _frameAspectRatio = 2169 / 725;
+  // The first source has embedded side gutters; crop them into the shared frame.
+  static const _firstBannerImageScale = 1.04;
   final PageController _controller = PageController();
   Timer? _timer;
   int _page = 0;
@@ -208,9 +211,10 @@ class _HeroBannerState extends State<_HeroBanner> {
       onEnter: (_) => _hovering = true,
       onExit: (_) => _hovering = false,
       child: ClipRRect(
+        key: const ValueKey<String>('home-hero-frame'),
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
-          aspectRatio: 782 / 256,
+          aspectRatio: _frameAspectRatio,
           child: Stack(
             children: [
               PageView(
@@ -223,6 +227,7 @@ class _HeroBannerState extends State<_HeroBanner> {
                     assetPath: 'assets/desktop/home/banner_tonight.png',
                     semanticLabel: '今晚玩什么：好游戏，好朋友，好时光',
                     onTap: widget.onExplore,
+                    imageScale: _firstBannerImageScale,
                   ),
                   _HeroImagePage(
                     key: const ValueKey<String>('home-hero-page-1'),
@@ -289,23 +294,29 @@ class _HeroImagePage extends StatelessWidget {
     required this.assetPath,
     required this.semanticLabel,
     required this.onTap,
+    this.imageScale = 1,
   });
 
   final String assetPath;
   final String semanticLabel;
   final VoidCallback onTap;
+  final double imageScale;
 
   @override
   Widget build(BuildContext context) => HoverSurface(
     onTap: onTap,
     lift: 1,
     borderRadius: BorderRadius.zero,
-    child: Image.asset(
-      assetPath,
-      width: double.infinity,
-      height: double.infinity,
-      fit: BoxFit.cover,
-      semanticLabel: semanticLabel,
+    child: Transform.scale(
+      scale: imageScale,
+      child: Image.asset(
+        assetPath,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        semanticLabel: semanticLabel,
+      ),
     ),
   );
 }

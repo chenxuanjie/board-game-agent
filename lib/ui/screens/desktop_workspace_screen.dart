@@ -3752,7 +3752,7 @@ class _DesktopGamesPaneState extends State<_DesktopGamesPane> {
                 itemCount: games.length,
                 itemBuilder: (BuildContext context, int index) {
                   final GameInfo game = games[index];
-                  return _DesktopPosterCard(
+                  return DesktopLibraryPosterCard(
                     key: ValueKey<String>('desktop-game-card-${game.id}'),
                     controller: controller,
                     game: game,
@@ -4140,8 +4140,8 @@ class _DesktopGamesEmptyState extends StatelessWidget {
   }
 }
 
-class _DesktopPosterCard extends StatefulWidget {
-  const _DesktopPosterCard({
+class DesktopLibraryPosterCard extends StatefulWidget {
+  const DesktopLibraryPosterCard({
     super.key,
     required this.controller,
     required this.game,
@@ -4155,10 +4155,10 @@ class _DesktopPosterCard extends StatefulWidget {
   final VoidCallback? onOpenAssistant;
 
   @override
-  State<_DesktopPosterCard> createState() => _DesktopPosterCardState();
+  State<DesktopLibraryPosterCard> createState() => _DesktopPosterCardState();
 }
 
-class _DesktopPosterCardState extends State<_DesktopPosterCard> {
+class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
   static const double _previewWidth = 290;
   static const double _previewGap = 14;
   static const double _previewEstimatedHeight = 318;

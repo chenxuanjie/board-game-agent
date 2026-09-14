@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
+import '../screens/desktop_workspace_screen.dart' show DesktopLibraryPosterCard;
 import 'v4_content_primitives.dart';
 import 'v4_theme.dart';
 
@@ -66,7 +67,6 @@ class _V4GamesPaneState extends State<V4GamesPane> {
           V4ContentStatus(controller: widget.controller),
           _LibraryMain(
             games: games,
-            selectedIndex: index,
             selectedCategory: _category,
             onSelectGame: (i) {
               if (!widget.showPreview ||
@@ -75,6 +75,10 @@ class _V4GamesPaneState extends State<V4GamesPane> {
               } else {
                 setState(() => _selectedId = games[i].data.id);
               }
+            },
+            onOpenAssistant: (game) {
+              widget.controller.selectGame(game.id);
+              widget.onNavigate('assistant');
             },
             onCategory: (i) => setState(() => _category = i),
             sortLabel: _sort.label,
@@ -237,9 +241,9 @@ enum _V4GameSort {
 
 class _LibraryMain extends StatelessWidget {
   final List<V4ContentGame> games;
-  final int selectedIndex;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
+  final ValueChanged<GameInfo> onOpenAssistant;
   final ValueChanged<int> onCategory;
   final String sortLabel;
   final bool hasFilter;
@@ -249,9 +253,9 @@ class _LibraryMain extends StatelessWidget {
 
   const _LibraryMain({
     required this.games,
-    required this.selectedIndex,
     required this.selectedCategory,
     required this.onSelectGame,
+    required this.onOpenAssistant,
     required this.onCategory,
     required this.sortLabel,
     required this.hasFilter,
@@ -332,24 +336,29 @@ class _LibraryMain extends StatelessWidget {
         const SizedBox(height: 10),
         LayoutBuilder(
           builder: (context, constraints) {
-            const gap = 10.0;
-            final columns = (constraints.maxWidth / 145).floor().clamp(1, 4);
-            final cardWidth =
-                (constraints.maxWidth - gap * (columns - 1)) / columns;
-            return Wrap(
-              spacing: gap,
-              runSpacing: 12,
-              children: [
-                for (var i = 0; i < games.length; i++)
-                  SizedBox(
-                    width: cardWidth,
-                    child: _LibraryGameCard(
-                      game: games[i],
-                      selected: i == selectedIndex,
-                      onTap: () => onSelectGame(i),
-                    ),
-                  ),
-              ],
+            const crossAxisSpacing = 18.0;
+            final columns = ((constraints.maxWidth + crossAxisSpacing) / 198)
+                .floor();
+            return GridView.builder(
+              key: const ValueKey<String>('v4-library-posters'),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              clipBehavior: Clip.none,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns < 1 ? 1 : columns,
+                childAspectRatio: 2 / 3,
+                crossAxisSpacing: crossAxisSpacing,
+                mainAxisSpacing: 24,
+              ),
+              itemCount: games.length,
+              itemBuilder: (context, index) {
+                final V4ContentGame game = games[index];
+                return _LibraryGameCard(
+                  game: game,
+                  onTap: () => onSelectGame(index),
+                  onOpenAssistant: () => onOpenAssistant(game.data),
+                );
+              },
             );
           },
         ),
@@ -523,169 +532,23 @@ class _OutlineActionState extends State<_OutlineAction> {
 
 class _LibraryGameCard extends StatelessWidget {
   final V4ContentGame game;
-  final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onOpenAssistant;
 
   const _LibraryGameCard({
     required this.game,
-    required this.selected,
     required this.onTap,
+    required this.onOpenAssistant,
   });
 
   @override
   Widget build(BuildContext context) {
-    return HoverSurface(
+    return DesktopLibraryPosterCard(
+      key: ValueKey<String>('desktop-game-card-${game.data.id}'),
+      controller: game.controller,
+      game: game.data,
       onTap: onTap,
-      lift: 2,
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        height: 278,
-        decoration: BoxDecoration(
-          color: V4Colors.card,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? V4Colors.orange : const Color(0x128A6044),
-            width: selected ? 1.6 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: selected
-                  ? const Color(0x1FFF6846)
-                  : const Color(0x0A7E4D2B),
-              blurRadius: selected ? 13 : 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(7),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 158,
-                  child: game.cover(),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                game.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 15.2,
-                  fontWeight: FontWeight.w800,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                game.englishTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 8.2,
-                  color: V4Colors.secondaryText,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.star_rounded,
-                    color: Color(0xFFFFA400),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 1),
-                  Text(
-                    game.score,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 5),
-              SizedBox(
-                height: 20,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: game.tags.length > 3 ? 3 : game.tags.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 4),
-                  itemBuilder: (context, index) => _SmallTag(game.tags[index]),
-                ),
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.group_rounded,
-                    size: 11,
-                    color: V4Colors.secondaryText,
-                  ),
-                  const SizedBox(width: 2),
-                  Expanded(
-                    child: Text(
-                      game.players,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 9.1,
-                        color: V4Colors.secondaryText,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.schedule_rounded,
-                    size: 11,
-                    color: V4Colors.secondaryText,
-                  ),
-                  const SizedBox(width: 2),
-                  Expanded(
-                    child: Text(
-                      game.duration,
-                      maxLines: 1,
-                      textAlign: TextAlign.end,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 8.8,
-                        color: V4Colors.secondaryText,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SmallTag extends StatelessWidget {
-  final String text;
-  const _SmallTag(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F1EC),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 8.8, color: Color(0xFF74675E)),
-      ),
+      onOpenAssistant: onOpenAssistant,
     );
   }
 }
