@@ -33,6 +33,9 @@ import 'markdown_document_screen.dart';
 import 'pdf_document_screen.dart';
 import 'library_resource_document_screen.dart';
 
+Color _v4Color(BuildContext context, Color original, Color replacement) =>
+    AppPalette.of(context).nameEn == 'V4 Warm Light' ? replacement : original;
+
 enum _DesktopDestination {
   home,
   games,
@@ -72,18 +75,33 @@ class DesktopWorkspaceScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.embedded = false,
+    this.activityLink,
+    this.onDestinationChanged,
   });
 
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final bool embedded;
+  final LayerLink? activityLink;
+  final ValueChanged<String>? onDestinationChanged;
 
   @override
-  State<DesktopWorkspaceScreen> createState() => _DesktopWorkspaceScreenState();
+  State<DesktopWorkspaceScreen> createState() => DesktopWorkspaceScreenState();
 }
 
-class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
-  _DesktopDestination _destination = _DesktopDestination.home;
+class DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
+  _DesktopDestination _currentDestination = _DesktopDestination.home;
+  _DesktopDestination get _destination => _currentDestination;
+  set _destination(_DesktopDestination value) {
+    _currentDestination = value;
+    widget.onDestinationChanged?.call(value.name);
+  }
+
   _DesktopDestination _detailReturnDestination = _DesktopDestination.games;
+
+  /// Current business pane exposed to the V4 host and integration tests.
+  String get destinationName => _destination.name;
   final GlobalKey<_DesktopAssistantPaneState> _assistantPaneKey =
       GlobalKey<_DesktopAssistantPaneState>();
   final GlobalKey _activityButtonKey = GlobalKey();
@@ -119,6 +137,24 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return Stack(
+        children: <Widget>[
+          Positioned.fill(child: _buildPage(false)),
+          _RulesDrawerOverlay(
+            open: _rulesDrawerOpen,
+            tabIndex: _rulesDrawerTab,
+            game: _rulesDrawerGame,
+            resource: _rulesDrawerResource,
+            controller: widget.controller,
+            onClose: _closeRulesDrawer,
+            onTabChanged: (value) => setState(() => _rulesDrawerTab = value),
+            onOpenAssistant: _openDrawerAssistant,
+            onOpenResource: _openDrawerResource,
+          ),
+        ],
+      );
+    }
     final AppCopy copy = widget.controller.copy;
     return Scaffold(
       backgroundColor: const Color(0xFF0C0F14),
@@ -239,6 +275,17 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
     );
   }
 
+  /// Host access for the V4 shell; uses the same business panes and run state.
+  void navigateTo(String destination) {
+    final target = _DesktopDestination.values
+        .where((value) => value.name == destination)
+        .firstOrNull;
+    if (target != null) _selectDestination(target);
+  }
+
+  void showGame(GameInfo game) => _openGame(game);
+  void openSearch() => _openSearch();
+  void openActivities() => _openActivityCenter();
   void _navigateBack() {
     if (_destination == _DesktopDestination.gameDetail) {
       setState(() => _destination = _detailReturnDestination);
@@ -536,7 +583,7 @@ class _DesktopWorkspaceScreenState extends State<DesktopWorkspaceScreen> {
             return Stack(
               children: <Widget>[
                 CompositedTransformFollower(
-                  link: _activityLayerLink,
+                  link: widget.activityLink ?? _activityLayerLink,
                   showWhenUnlinked: false,
                   targetAnchor: Alignment.bottomRight,
                   followerAnchor: Alignment.topRight,
@@ -1843,9 +1890,21 @@ class _RulesDrawerPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111722),
-        border: Border(left: BorderSide(color: Color(0x12FFFFFF))),
+      decoration: BoxDecoration(
+        color: _v4Color(
+          context,
+          Color(0xFF111722),
+          AppPalette.of(context).surface,
+        ),
+        border: Border(
+          left: BorderSide(
+            color: _v4Color(
+              context,
+              Color(0x12FFFFFF),
+              AppPalette.of(context).outline,
+            ),
+          ),
+        ),
         boxShadow: <BoxShadow>[
           BoxShadow(
             color: Color(0xE6000000),
@@ -1858,10 +1917,22 @@ class _RulesDrawerPanel extends StatelessWidget {
         children: <Widget>[
           Container(
             height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            decoration: const BoxDecoration(
-              color: Color(0xB3121924),
-              border: Border(bottom: BorderSide(color: Color(0x12FFFFFF))),
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            decoration: BoxDecoration(
+              color: _v4Color(
+                context,
+                Color(0xB3121924),
+                AppPalette.of(context).surfaceContainer,
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: _v4Color(
+                    context,
+                    Color(0x12FFFFFF),
+                    AppPalette.of(context).outline,
+                  ),
+                ),
+              ),
             ),
             child: Row(
               children: <Widget>[
@@ -1874,19 +1945,27 @@ class _RulesDrawerPanel extends StatelessWidget {
                         _title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: _v4Color(
+                            context,
+                            Colors.white,
+                            AppPalette.of(context).textPrimary,
+                          ),
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      SizedBox(height: 2),
                       Text(
                         _subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF8A96A3),
+                        style: TextStyle(
+                          color: _v4Color(
+                            context,
+                            Color(0xFF8A96A3),
+                            AppPalette.of(context).textSecondary,
+                          ),
                           fontSize: 11.5,
                         ),
                       ),
@@ -1896,10 +1975,14 @@ class _RulesDrawerPanel extends StatelessWidget {
                 IconButton(
                   onPressed: onClose,
                   tooltip: '关闭',
-                  icon: const Icon(Icons.close_rounded, size: 17),
-                  color: const Color(0xFF8A96A3),
+                  icon: Icon(Icons.close_rounded, size: 17),
+                  color: _v4Color(
+                    context,
+                    Color(0xFF8A96A3),
+                    AppPalette.of(context).textSecondary,
+                  ),
                   style: IconButton.styleFrom(
-                    fixedSize: const Size.square(28),
+                    fixedSize: Size.square(28),
                     padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
@@ -1911,10 +1994,22 @@ class _RulesDrawerPanel extends StatelessWidget {
           ),
           Container(
             height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0E131D),
-              border: Border(bottom: BorderSide(color: Color(0x12FFFFFF))),
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            decoration: BoxDecoration(
+              color: _v4Color(
+                context,
+                Color(0xFF0E131D),
+                AppPalette.of(context).surfaceContainer,
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: _v4Color(
+                    context,
+                    Color(0x12FFFFFF),
+                    AppPalette.of(context).outline,
+                  ),
+                ),
+              ),
             ),
             child: Row(
               children: <Widget>[
@@ -1923,7 +2018,7 @@ class _RulesDrawerPanel extends StatelessWidget {
                   selected: tabIndex == 0,
                   onTap: () => onTabChanged(0),
                 ),
-                const SizedBox(width: 20),
+                SizedBox(width: 20),
                 _RulesDrawerTab(
                   label: '规则裁决问答',
                   selected: tabIndex == 1,
@@ -1973,19 +2068,35 @@ class _RulesDrawerTab extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : const Color(0xFF8A96A3),
+                color: selected
+                    ? _v4Color(
+                        context,
+                        Colors.white,
+                        AppPalette.of(context).textPrimary,
+                      )
+                    : _v4Color(
+                        context,
+                        Color(0xFF8A96A3),
+                        AppPalette.of(context).textSecondary,
+                      ),
                 fontSize: 12.5,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
             if (selected)
-              const Positioned(
+              Positioned(
                 left: 0,
                 right: 0,
                 bottom: 0,
                 child: SizedBox(
                   height: 2,
-                  child: ColoredBox(color: Color(0xFF66C0F4)),
+                  child: ColoredBox(
+                    color: _v4Color(
+                      context,
+                      Color(0xFF66C0F4),
+                      AppPalette.of(context).primary,
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -2008,7 +2119,7 @@ class _RulesReaderContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> roundFlow = game?.roundFlow ?? const <String>[];
+    final List<String> roundFlow = game?.roundFlow ?? <String>[];
     final List<GameResource> resources =
         game?.resources
             .where(
@@ -2016,27 +2127,41 @@ class _RulesReaderContent extends StatelessWidget {
                   item.enabled && item.isAvailable && !item.isInOthersDirectory,
             )
             .toList(growable: false) ??
-        const <GameResource>[];
+        <GameResource>[];
     final bool hasContent =
         game != null &&
         ((game!.summary.trim().isNotEmpty) ||
             roundFlow.isNotEmpty ||
             resources.isNotEmpty);
     return ListView(
-      padding: const EdgeInsets.all(28),
+      padding: EdgeInsets.all(28),
       children: <Widget>[
         Container(
-          padding: const EdgeInsets.all(26),
+          padding: EdgeInsets.all(26),
           decoration: BoxDecoration(
-            color: const Color(0x40000000),
+            color: _v4Color(
+              context,
+              Color(0x40000000),
+              AppPalette.of(context).surfaceVariant,
+            ),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0x12FFFFFF)),
+            border: Border.all(
+              color: _v4Color(
+                context,
+                Color(0x12FFFFFF),
+                AppPalette.of(context).outline,
+              ),
+            ),
           ),
           child: !hasContent
-              ? const Text(
+              ? Text(
                   '暂无可用规则摘要。请先挂载规则书或 FAQ 资料。',
                   style: TextStyle(
-                    color: Color(0xFF8A96A3),
+                    color: _v4Color(
+                      context,
+                      Color(0xFF8A96A3),
+                      AppPalette.of(context).textSecondary,
+                    ),
                     fontSize: 13,
                     height: 1.8,
                   ),
@@ -2047,40 +2172,56 @@ class _RulesReaderContent extends StatelessWidget {
                     if (game != null) ...<Widget>[
                       Text(
                         '《${game!.title}》· 规则资料速览',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: _v4Color(
+                            context,
+                            Colors.white,
+                            AppPalette.of(context).textPrimary,
+                          ),
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      SizedBox(height: 14),
                       if (game!.summary.trim().isNotEmpty)
                         Text(
                           game!.summary,
-                          style: const TextStyle(
-                            color: Color(0xFFC9D2DB),
+                          style: TextStyle(
+                            color: _v4Color(
+                              context,
+                              Color(0xFFC9D2DB),
+                              AppPalette.of(context).textSecondary,
+                            ),
                             fontSize: 13,
                             height: 1.8,
                           ),
                         ),
                       if (roundFlow.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 18),
-                        const Text(
+                        SizedBox(height: 18),
+                        Text(
                           '回合流程',
                           style: TextStyle(
-                            color: Color(0xFF66C0F4),
+                            color: _v4Color(
+                              context,
+                              Color(0xFF66C0F4),
+                              AppPalette.of(context).primary,
+                            ),
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: 8),
                         ...roundFlow.asMap().entries.map(
                           (MapEntry<int, String> entry) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
+                            padding: EdgeInsets.only(bottom: 6),
                             child: Text(
                               '${entry.key + 1}. ${entry.value}',
-                              style: const TextStyle(
-                                color: Color(0xFFC9D2DB),
+                              style: TextStyle(
+                                color: _v4Color(
+                                  context,
+                                  Color(0xFFC9D2DB),
+                                  AppPalette.of(context).textSecondary,
+                                ),
                                 fontSize: 13,
                                 height: 1.6,
                               ),
@@ -2089,23 +2230,31 @@ class _RulesReaderContent extends StatelessWidget {
                         ),
                       ],
                       if (resources.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 18),
-                        const Text(
+                        SizedBox(height: 18),
+                        Text(
                           '已挂载资料',
                           style: TextStyle(
-                            color: Color(0xFF66C0F4),
+                            color: _v4Color(
+                              context,
+                              Color(0xFF66C0F4),
+                              AppPalette.of(context).primary,
+                            ),
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: 8),
                         ...resources.map(
                           (GameResource item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 5),
+                            padding: EdgeInsets.only(bottom: 5),
                             child: Text(
                               '• ${item.fileName} · ${item.format.toUpperCase()}',
-                              style: const TextStyle(
-                                color: Color(0xFFC9D2DB),
+                              style: TextStyle(
+                                color: _v4Color(
+                                  context,
+                                  Color(0xFFC9D2DB),
+                                  AppPalette.of(context).textSecondary,
+                                ),
                                 fontSize: 12.5,
                               ),
                             ),
@@ -2114,14 +2263,18 @@ class _RulesReaderContent extends StatelessWidget {
                       ],
                     ],
                     if (resource != null && resource!.canOpen) ...<Widget>[
-                      const SizedBox(height: 20),
+                      SizedBox(height: 20),
                       TextButton.icon(
                         onPressed: onOpenResource,
-                        icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                        label: const Text('打开原始资料'),
+                        icon: Icon(Icons.open_in_new_rounded, size: 15),
+                        label: Text('打开原始资料'),
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF66C0F4),
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          foregroundColor: _v4Color(
+                            context,
+                            Color(0xFF66C0F4),
+                            AppPalette.of(context).primary,
+                          ),
+                          padding: EdgeInsets.symmetric(horizontal: 10),
                         ),
                       ),
                     ],
@@ -2145,7 +2298,7 @@ class _RulesAssistantContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(28),
+      padding: EdgeInsets.all(28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -2153,19 +2306,33 @@ class _RulesAssistantContent extends StatelessWidget {
             child: Align(
               alignment: Alignment.topLeft,
               child: Container(
-                constraints: const BoxConstraints(maxWidth: 560),
-                padding: const EdgeInsets.all(16),
+                constraints: BoxConstraints(maxWidth: 560),
+                padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xB3161F2C),
+                  color: _v4Color(
+                    context,
+                    Color(0xB3161F2C),
+                    AppPalette.of(context).surfaceVariant,
+                  ),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0x12FFFFFF)),
+                  border: Border.all(
+                    color: _v4Color(
+                      context,
+                      Color(0x12FFFFFF),
+                      AppPalette.of(context).outline,
+                    ),
+                  ),
                 ),
                 child: Text(
                   game == null
                       ? '请选择一款桌游后再进入规则裁决问答。'
                       : '这里会继续使用《${game!.title}》的真实 AI 会话。打开助手后，回答、引用和运行过程会保留在同一会话中。',
-                  style: const TextStyle(
-                    color: Color(0xFFF0F3F7),
+                  style: TextStyle(
+                    color: _v4Color(
+                      context,
+                      Color(0xFFF0F3F7),
+                      AppPalette.of(context).textPrimary,
+                    ),
                     fontSize: 12.5,
                     height: 1.6,
                   ),
@@ -2174,19 +2341,35 @@ class _RulesAssistantContent extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.only(top: 14),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0x12FFFFFF))),
+            padding: EdgeInsets.only(top: 14),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: _v4Color(
+                    context,
+                    Color(0x12FFFFFF),
+                    AppPalette.of(context).outline,
+                  ),
+                ),
+              ),
             ),
             child: Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: onOpenAssistant,
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
-                label: const Text('打开桌游助手'),
+                icon: Icon(Icons.chat_bubble_outline_rounded, size: 15),
+                label: Text('打开桌游助手'),
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF66C0F4),
-                  backgroundColor: const Color(0x1A66C0F4),
+                  foregroundColor: _v4Color(
+                    context,
+                    Color(0xFF66C0F4),
+                    AppPalette.of(context).primary,
+                  ),
+                  backgroundColor: _v4Color(
+                    context,
+                    Color(0x1A66C0F4),
+                    AppPalette.of(context).primaryContainer,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -4028,14 +4211,10 @@ class _DesktopPosterCardState extends State<_DesktopPosterCard> {
     _previewEntry = OverlayEntry(
       builder: (BuildContext overlayContext) {
         final Alignment targetAnchor = _previewAlignBottom
-            ? (_previewOnLeft
-                  ? Alignment.bottomLeft
-                  : Alignment.bottomRight)
+            ? (_previewOnLeft ? Alignment.bottomLeft : Alignment.bottomRight)
             : (_previewOnLeft ? Alignment.topLeft : Alignment.topRight);
         final Alignment followerAnchor = _previewAlignBottom
-            ? (_previewOnLeft
-                  ? Alignment.bottomRight
-                  : Alignment.bottomLeft)
+            ? (_previewOnLeft ? Alignment.bottomRight : Alignment.bottomLeft)
             : (_previewOnLeft ? Alignment.topRight : Alignment.topLeft);
         final Offset offset = Offset(
           _previewOnLeft ? -_previewGap : _previewGap,
@@ -4510,7 +4689,8 @@ class _DesktopGameHoverPreview extends StatelessWidget {
         )
         .toList(growable: false);
     if (rulebooks.any(
-      (DesktopLibraryResource resource) => resource.canOpen && !resource.isRemote,
+      (DesktopLibraryResource resource) =>
+          resource.canOpen && !resource.isRemote,
     )) {
       return '规则手册已缓存 · 离线可用';
     }

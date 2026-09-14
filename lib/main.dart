@@ -24,6 +24,8 @@ import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
+import 'ui/v4/v4_workspace.dart';
+import 'ui/v4/v4_theme.dart';
 import 'ui/screens/desktop_workspace_screen.dart';
 
 const double _webDesktopMinWidth = 1000;
@@ -75,8 +77,8 @@ Future<void> _configureWindowsWindow() async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
   await windowManager.ensureInitialized();
   const WindowOptions options = WindowOptions(
-    size: Size(1280, 820),
-    minimumSize: Size(900, 600),
+    size: Size(1280, 800),
+    minimumSize: Size(1100, 700),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
@@ -162,7 +164,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       navigatorKey: _navigatorKey,
       title: widget.controller.copy.appTitle,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.buildTheme(widget.controller.palette),
+      theme: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+          ? buildV4Theme()
+          : AppTheme.buildTheme(widget.controller.palette),
       home: FutureBuilder<void>(
         future: _initialization,
         builder: (context, snapshot) {
@@ -193,7 +197,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   width / height >= _webDesktopMinAspectRatio;
               final bool nativeWindows =
                   !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
-              if (wideWeb || nativeWindows) {
+              if (nativeWindows) {
+                return V4Workspace(
+                  controller: widget.controller,
+                  onOpenAbout: _openAbout,
+                );
+              }
+              if (wideWeb) {
                 return DesktopWorkspaceScreen(
                   controller: widget.controller,
                   onOpenAbout: _openAbout,
