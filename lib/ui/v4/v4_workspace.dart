@@ -39,6 +39,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
   final List<String> _searchHistory = <String>[];
   bool _searchOpen = false;
   String _page = 'home';
+  String _gameDetailReturnPage = 'games';
   static const _routes = [
     'home',
     'games',
@@ -101,7 +102,11 @@ class _V4WorkspaceState extends State<V4Workspace> {
   void _game(GameInfo game) {
     _dismissSearch();
     widget.controller.selectGame(game.id);
-    setState(() => _page = 'gameDetail');
+    final origin = _page == 'gameDetail' ? _gameDetailReturnPage : _page;
+    setState(() {
+      _gameDetailReturnPage = origin == 'gameDetail' ? 'games' : origin;
+      _page = 'gameDetail';
+    });
   }
 
   void _openRules(GameInfo game) {
@@ -336,7 +341,10 @@ class _V4WorkspaceState extends State<V4Workspace> {
                             'gameDetail' => V4GameDetailPane(
                               controller: widget.controller,
                               game: widget.controller.selectedGame,
-                              onBack: () => _navigate('games'),
+                              backTooltip: _gameDetailReturnPage == 'home'
+                                  ? '返回首页'
+                                  : '返回游戏库',
+                              onBack: () => _navigate(_gameDetailReturnPage),
                               onSearch: _find,
                               onOpenRules: () =>
                                   _openRules(widget.controller.selectedGame),

@@ -11,6 +11,7 @@ class V4GameDetailPane extends StatefulWidget {
     super.key,
     required this.controller,
     required this.game,
+    required this.backTooltip,
     required this.onBack,
     required this.onSearch,
     required this.onOpenRules,
@@ -19,6 +20,7 @@ class V4GameDetailPane extends StatefulWidget {
 
   final AppController controller;
   final GameInfo game;
+  final String backTooltip;
   final VoidCallback onBack;
   final VoidCallback onSearch;
   final VoidCallback onOpenRules;
@@ -127,7 +129,7 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
                   children: [
                     _RoundIcon(
                       icon: Icons.arrow_back_rounded,
-                      tooltip: '返回游戏库',
+                      tooltip: widget.backTooltip,
                       onTap: widget.onBack,
                     ),
                     const SizedBox(width: 12),

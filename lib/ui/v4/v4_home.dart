@@ -83,6 +83,7 @@ class _MainColumn extends StatelessWidget {
         ),
         const SizedBox(height: 11),
         _SectionHeader(
+          key: const ValueKey<String>('v4-home-recommendation-header'),
           leading: SvgPicture.asset(
             'assets/desktop/home/flame_icon_hd.svg',
             key: const ValueKey<String>('v4-home-library-flame'),
@@ -90,7 +91,7 @@ class _MainColumn extends StatelessWidget {
             height: 25,
             semanticsLabel: '热门桌游',
           ),
-          title: '游戏库',
+          title: '今日推荐',
           subtitle: '已收录的桌游',
           onMore: () => onUnavailable('游戏库'),
         ),
@@ -330,6 +331,7 @@ class _SectionHeader extends StatelessWidget {
   final VoidCallback onMore;
 
   const _SectionHeader({
+    super.key,
     this.leading,
     this.icon,
     this.iconColor,
@@ -356,7 +358,7 @@ class _SectionHeader extends StatelessWidget {
           ),
           if (subtitle != null) ...[
             const SizedBox(width: 12),
-            Flexible(
+            Expanded(
               child: Text(
                 subtitle!,
                 overflow: TextOverflow.ellipsis,
@@ -366,8 +368,8 @@ class _SectionHeader extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-          const Spacer(),
+          ] else
+            const Spacer(),
           _TextLink(label: '查看更多', onTap: onMore),
         ],
       ),

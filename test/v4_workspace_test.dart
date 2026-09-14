@@ -316,6 +316,47 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'home recommendation header aligns more action and returns home',
+    (tester) async {
+      await _mount(tester, controller, const Size(1280, 800));
+      final Finder home = find.byType(V4HomePane);
+      final Finder header = find.byKey(
+        const ValueKey<String>('v4-home-recommendation-header'),
+      );
+      final Finder moreText = find.descendant(
+        of: header,
+        matching: find.text('查看更多'),
+      );
+      final Finder moreAction = find
+          .ancestor(of: moreText, matching: find.byType(InkWell))
+          .first;
+
+      expect(
+        find.descendant(of: home, matching: find.text('今日推荐')),
+        findsOneWidget,
+      );
+      expect(
+        tester.getRect(header).right - tester.getRect(moreAction).right,
+        lessThan(1),
+      );
+
+      final GameInfo game = controller.games.first;
+      await tester.tap(
+        find.descendant(of: home, matching: find.text(game.title)).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(V4GameDetailPane), findsOneWidget);
+      expect(find.byTooltip('返回首页'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('返回首页'));
+      await tester.pumpAndSettle();
+      expect(find.byType(V4HomePane), findsOneWidget);
+      expect(find.byType(V4GameDetailPane), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('home search handles empty results and clears the query', (
     tester,
   ) async {
