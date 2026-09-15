@@ -16,13 +16,13 @@ class DesktopSidebar extends StatelessWidget {
     this.width,
   });
 
-  static const _items = <({IconData icon, String label})>[
-    (icon: Icons.home_rounded, label: '首页'),
-    (icon: Icons.casino_rounded, label: '游戏库'),
-    (icon: Icons.smart_toy_rounded, label: 'AI助手'),
-    (icon: Icons.favorite_rounded, label: '我的喜欢'),
-    (icon: Icons.chat_bubble_rounded, label: '社区'),
-    (icon: Icons.settings_rounded, label: '设置'),
+  static const _items = <({String asset, String label})>[
+    (asset: 'sidebar_home.png', label: '首页'),
+    (asset: 'sidebar_library.png', label: '游戏库'),
+    (asset: 'sidebar_ai.png', label: 'AI助手'),
+    (asset: 'sidebar_likes.png', label: '我的喜欢'),
+    (asset: 'sidebar_community.png', label: '社区'),
+    (asset: 'sidebar_settings.png', label: '设置'),
   ];
 
   @override
@@ -95,7 +95,7 @@ class DesktopSidebar extends StatelessWidget {
                   const SizedBox(height: 25),
                 for (var i = 0; i < _items.length; i++) ...[
                   _NavTile(
-                    icon: _items[i].icon,
+                    asset: _items[i].asset,
                     label: _items[i].label,
                     selected: i == selectedIndex,
                     compact: compact,
@@ -113,14 +113,14 @@ class DesktopSidebar extends StatelessWidget {
 }
 
 class _NavTile extends StatefulWidget {
-  final IconData icon;
+  final String asset;
   final String label;
   final bool selected;
   final VoidCallback? onTap;
   final bool compact;
 
   const _NavTile({
-    required this.icon,
+    required this.asset,
     required this.label,
     required this.selected,
     this.compact = false,
@@ -162,13 +162,21 @@ class _NavTileState extends State<_NavTile> {
                 ? MainAxisAlignment.center
                 : MainAxisAlignment.start,
             children: [
-              Icon(
-                widget.icon,
-                size: 22,
-                color: active ? Colors.white : DesktopColors.brown,
+              ColorFiltered(
+                colorFilter: active
+                    ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
+                    : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                child: Image.asset(
+                  'assets/desktop/home/sidebar_icons/${widget.asset}',
+                  key: ValueKey<String>('desktop-sidebar-icon-${widget.asset}'),
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                ),
               ),
               if (!widget.compact) ...[
-                const SizedBox(width: 15),
+                const SizedBox(width: 10),
                 Text(
                   widget.label,
                   style: TextStyle(

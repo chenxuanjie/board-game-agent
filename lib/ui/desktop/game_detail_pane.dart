@@ -275,6 +275,9 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                         runSpacing: 8,
                         children: [
                           _HeroButton(
+                            key: const ValueKey<String>(
+                              'desktop-detail-favorite-button',
+                            ),
                             label: widget.controller.isFavorite(game)
                                 ? '已喜欢'
                                 : '喜欢',
@@ -282,6 +285,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
                             onTap: () => widget.onToggleFavorite(game),
+                            width: 108,
                           ),
                           _HeroButton(
                             label: '加入想玩 · 未开放',
@@ -745,15 +749,18 @@ class _HeroTag extends StatelessWidget {
 
 class _HeroButton extends StatefulWidget {
   const _HeroButton({
+    super.key,
     required this.label,
     required this.icon,
     required this.onTap,
     this.light = false,
+    this.width,
   });
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final bool light;
+  final double? width;
   @override
   State<_HeroButton> createState() => _HeroButtonState();
 }
@@ -771,6 +778,7 @@ class _HeroButtonState extends State<_HeroButton> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 130),
         transform: Matrix4.translationValues(0, hover ? -2 : 0, 0),
+        width: widget.width,
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
@@ -786,25 +794,34 @@ class _HeroButtonState extends State<_HeroButton> {
                 ]
               : null,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              widget.icon,
-              color: widget.light ? const Color(0xFF59463B) : Colors.white,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              widget.label,
-              style: TextStyle(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          reverseDuration: const Duration(milliseconds: 150),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: Row(
+            key: ValueKey<String>('${widget.icon.codePoint}-${widget.label}'),
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                widget.icon,
                 color: widget.light ? const Color(0xFF59463B) : Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
+                size: 18,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  color: widget.light ? const Color(0xFF59463B) : Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),

@@ -623,6 +623,9 @@ class _GameDetailPanel extends StatelessWidget {
                     ),
                     const SizedBox(height: 15),
                     _FavoriteButton(
+                      key: const ValueKey<String>(
+                        'desktop-preview-favorite-button',
+                      ),
                       favorite: favorite,
                       onTap: onToggleFavorite,
                     ),
@@ -785,7 +788,11 @@ class _FavoriteButton extends StatefulWidget {
   final bool favorite;
   final VoidCallback onTap;
 
-  const _FavoriteButton({required this.favorite, required this.onTap});
+  const _FavoriteButton({
+    super.key,
+    required this.favorite,
+    required this.onTap,
+  });
 
   @override
   State<_FavoriteButton> createState() => _FavoriteButtonState();
@@ -802,44 +809,66 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
       onExit: (_) => setState(() => hover = false),
       child: InkWell(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 104,
           height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 13),
-          decoration: BoxDecoration(
-            gradient: widget.favorite
-                ? const LinearGradient(
-                    colors: [DesktopColors.orange, DesktopColors.orange2],
-                  )
-                : null,
-            color: widget.favorite
-                ? null
-                : (hover ? const Color(0xFFFFF2E9) : Colors.white),
-            borderRadius: BorderRadius.circular(10),
-            border: widget.favorite
-                ? null
-                : Border.all(color: const Color(0x309B5435)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                widget.favorite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                size: 19,
-                color: widget.favorite ? Colors.white : DesktopColors.orange,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            reverseDuration: const Duration(milliseconds: 150),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              alignment: Alignment.center,
+              children: <Widget>[...previousChildren, ?currentChild],
+            ),
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: AnimatedContainer(
+              key: ValueKey<bool>(widget.favorite),
+              duration: const Duration(milliseconds: 120),
+              width: 104,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: widget.favorite
+                    ? const LinearGradient(
+                        colors: [DesktopColors.orange, DesktopColors.orange2],
+                      )
+                    : null,
+                color: widget.favorite
+                    ? null
+                    : (hover ? const Color(0xFFFFF2E9) : Colors.white),
+                borderRadius: BorderRadius.circular(10),
+                border: widget.favorite
+                    ? null
+                    : Border.all(color: const Color(0x309B5435)),
               ),
-              const SizedBox(width: 7),
-              Text(
-                widget.favorite ? '已喜欢' : '喜欢',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: widget.favorite ? Colors.white : DesktopColors.orange,
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    widget.favorite
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    size: 19,
+                    color: widget.favorite
+                        ? Colors.white
+                        : DesktopColors.orange,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    widget.favorite ? '已喜欢' : '喜欢',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: widget.favorite
+                          ? Colors.white
+                          : DesktopColors.orange,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

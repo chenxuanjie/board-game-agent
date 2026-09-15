@@ -185,6 +185,39 @@ void main() {
     expect(controller.favoriteCount, 0);
   });
 
+  testWidgets('favorite button keeps its size while state crossfades', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, '游戏库');
+
+    final button = find.byKey(
+      const ValueKey<String>('desktop-preview-favorite-button'),
+    );
+    expect(button, findsOneWidget);
+    expect(tester.getSize(button), const Size(104, 40));
+    expect(
+      find.descendant(of: button, matching: find.text('喜欢')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      expect(await controller.toggleFavorite(controller.games.first), isTrue);
+    });
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getSize(button), const Size(104, 40));
+    expect(
+      find.descendant(of: button, matching: find.byType(AnimatedSwitcher)),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(tester.getSize(button), const Size(104, 40));
+    expect(controller.isFavorite(controller.games.first), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'responsive shell switches between full sidebar, rail and drawer',
     (tester) async {
@@ -196,6 +229,21 @@ void main() {
       expect(
         find.byKey(const ValueKey<String>('desktop-sidebar-rail')),
         findsNothing,
+      );
+      final fullSidebar = find.byKey(
+        const ValueKey<String>('desktop-sidebar-full'),
+      );
+      final homeIcon = find.byKey(
+        const ValueKey<String>('desktop-sidebar-icon-sidebar_home.png'),
+      );
+      final homeLabel = find.descendant(
+        of: fullSidebar,
+        matching: find.text('首页'),
+      );
+      expect(tester.getSize(homeIcon), const Size.square(24));
+      expect(
+        tester.getTopLeft(homeLabel).dx - tester.getTopRight(homeIcon).dx,
+        closeTo(10, 0.1),
       );
 
       await tester.binding.setSurfaceSize(const Size(1100, 700));
@@ -541,7 +589,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('empty search results can open the game library', (tester) async {
+  testWidgets('empty search results do not show a game library action', (
+    tester,
+  ) async {
     await _mount(tester, controller, const Size(1280, 800));
     final Finder searchField = find.byKey(
       const ValueKey<String>('desktop-home-search-field'),
@@ -550,10 +600,8 @@ void main() {
     await tester.enterText(searchField, '肯定不存在的桌游关键字');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('打开游戏库'));
-    await tester.pumpAndSettle();
-    expect(find.byType(DesktopGamesPane), findsOneWidget);
-    expect(find.byType(DesktopHomePane), findsNothing);
+    expect(find.text('没有找到“肯定不存在的桌游关键字”'), findsOneWidget);
+    expect(find.text('打开游戏库'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -695,6 +743,18 @@ void main() {
     );
     expect(sidebarArt.fit, BoxFit.contain);
     expect(sidebarArt.alignment, Alignment.bottomCenter);
+    for (final asset in [
+      'sidebar_home.png',
+      'sidebar_library.png',
+      'sidebar_ai.png',
+      'sidebar_likes.png',
+      'sidebar_community.png',
+      'sidebar_settings.png',
+    ]) {
+      final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
+      expect(icon, findsOneWidget);
+      expect(tester.getSize(icon), const Size(24, 24));
+    }
     expect(tester.takeException(), isNull);
   });
 

@@ -209,12 +209,6 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
       _SectionHeader(
         icon: Icons.search_rounded,
         title: '搜索结果（${results.length}）',
-        trailing: TextButton.icon(
-          onPressed: onViewAll,
-          icon: const Icon(Icons.chevron_right_rounded, size: 18),
-          label: const Text('打开游戏库'),
-          style: _linkStyle,
-        ),
       ),
       const SizedBox(height: 8),
       if (results.isEmpty)
