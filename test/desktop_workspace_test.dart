@@ -387,6 +387,17 @@ void main() {
       find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
       findsNothing,
     );
+    await tester.tap(find.byTooltip('返回首页'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
+    await tester.tap(searchField);
+    await tester.pumpAndSettle();
+    expect(find.text('最近搜索'), findsOneWidget);
+    expect(find.widgetWithText(ActionChip, game.title), findsOneWidget);
+    expect(
+      await PreferencesService().loadRecentSearches(),
+      contains(game.title),
+    );
     expect(tester.takeException(), isNull);
   });
 

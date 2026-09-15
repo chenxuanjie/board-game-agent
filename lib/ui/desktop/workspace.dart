@@ -10,6 +10,7 @@ import '../../models/app_activity.dart';
 import '../../models/desktop_library_resource.dart';
 import '../../models/game_info.dart';
 import '../../models/resolved_document.dart';
+import '../../services/preferences_service.dart';
 import '../../state/app_controller.dart';
 import '../screens/markdown_document_screen.dart';
 import '../screens/pdf_document_screen.dart';
@@ -48,8 +49,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   final _searchFocus = FocusNode();
   final _searchTapRegionGroup = Object();
   final _scroll = ScrollController();
+  final _preferencesService = PreferencesService();
   final List<String> _searchHistory = <String>[];
+  Future<void> _searchHistorySaveQueue = Future<void>.value();
   Timer? _favoriteSnackBarTimer;
+  bool _searchHistoryDirty = false;
+  bool _searchHistoryReady = false;
   bool _searchOpen = false;
   String _page = 'home';
   String _gameDetailReturnPage = 'games';
@@ -78,6 +83,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.addListener(_refresh);
     _search.addListener(_refreshSearch);
     _searchFocus.addListener(_handleSearchFocusChanged);
+    unawaited(_loadSearchHistory());
   }
 
   void _refresh() {
@@ -97,7 +103,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _navigate(String page) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     if (page == 'assistant' && widget.controller.selectedConversation == null) {
       widget.controller.openGlobalAssistant();
     }
@@ -123,7 +129,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _game(GameInfo game) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     widget.controller.selectGame(game.id);
     final origin = _page == 'gameDetail' ? _gameDetailReturnPage : _page;
     setState(() {
@@ -133,7 +139,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _openRules(GameInfo game) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     widget.controller.selectGame(game.id);
     setState(() {
       _page = 'library';
@@ -145,7 +151,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _askAi(GameInfo game) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     if (!widget.controller.openGameAssistant(game.id)) return;
     setState(() => _page = 'assistant');
   }
@@ -358,6 +364,31 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _loadSearchHistory() async {
+    List<String> loaded = const <String>[];
+    try {
+      loaded = await _preferencesService.loadRecentSearches();
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load recent searches: $error\n$stackTrace');
+    }
+
+    if (!mounted) return;
+    var persistCurrentHistory = false;
+    setState(() {
+      if (_searchHistoryDirty) {
+        // A search was recorded before the async load completed. Keep the
+        // user's newer state and persist it after the load finishes.
+        persistCurrentHistory = true;
+      } else {
+        _searchHistory
+          ..clear()
+          ..addAll(loaded.take(PreferencesService.recentSearchesLimit));
+      }
+      _searchHistoryReady = true;
+    });
+    if (persistCurrentHistory) _queueSearchHistorySave();
+  }
+
   void _handleSearchFocusChanged() {
     if (_searchFocus.hasFocus && !_searchOpen && mounted) {
       setState(() => _searchOpen = true);
@@ -370,11 +401,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   void _closeSearch() {
     _searchFocus.unfocus();
+    _search.clear();
     if (_searchOpen) setState(() => _searchOpen = false);
   }
 
-  void _dismissSearch() {
+  void _dismissSearch({bool clearQuery = false}) {
     _searchFocus.unfocus();
+    if (clearQuery) _search.clear();
     _searchOpen = false;
   }
 
@@ -385,6 +418,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _setSearchQuery(String value) {
+    _recordSearch(value);
     _search.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
@@ -399,12 +433,31 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _searchHistory
       ..remove(query)
       ..insert(0, query);
-    if (_searchHistory.length > 5) _searchHistory.removeLast();
+    if (_searchHistory.length > PreferencesService.recentSearchesLimit) {
+      _searchHistory.removeLast();
+    }
+    _searchHistoryDirty = true;
     setState(() {});
+    _queueSearchHistorySave();
   }
 
   void _clearSearchHistory() {
+    _searchHistoryDirty = true;
     setState(_searchHistory.clear);
+    _queueSearchHistorySave();
+  }
+
+  void _queueSearchHistorySave() {
+    if (!_searchHistoryReady) return;
+
+    final snapshot = List<String>.unmodifiable(_searchHistory);
+    _searchHistorySaveQueue = _searchHistorySaveQueue.then((_) async {
+      try {
+        await _preferencesService.saveRecentSearches(snapshot);
+      } catch (error, stackTrace) {
+        debugPrint('Failed to save recent searches: $error\n$stackTrace');
+      }
+    });
   }
 
   void _find() {
@@ -418,6 +471,26 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   void _submitSearch(String value) {
     _recordSearch(value);
     _openSearch();
+  }
+
+  void _openSearchGame(GameInfo game) {
+    _recordSearch(_search.text);
+    _game(game);
+  }
+
+  void _openSearchRules(GameInfo game) {
+    _recordSearch(_search.text);
+    _openRules(game);
+  }
+
+  void _openSearchAi(GameInfo game) {
+    _recordSearch(_search.text);
+    _askAi(game);
+  }
+
+  void _openAllSearchResults() {
+    _recordSearch(_search.text);
+    _navigate('games');
   }
 
   @override
@@ -656,10 +729,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         onSelectQuery: _setSearchQuery,
                         onClearHistory: _clearSearchHistory,
                         onTapOutside: _closeSearch,
-                        onOpenGame: _game,
-                        onOpenRules: _openRules,
-                        onAskAi: _askAi,
-                        onViewAll: () => _navigate('games'),
+                        onOpenGame: _openSearchGame,
+                        onOpenRules: _openSearchRules,
+                        onAskAi: _openSearchAi,
+                        onViewAll: _openAllSearchResults,
                       ),
                     ),
                   ),

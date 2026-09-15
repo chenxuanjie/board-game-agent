@@ -29,6 +29,8 @@ class PreferencesService {
   static const _activitiesKey = 'app_activities';
   static const _desktopLibraryResourcesKey = 'desktop_library_resources_v1';
   static const _favoriteGamesKey = 'favorite_games_v1';
+  static const _recentSearchesKey = 'recent_searches_v1';
+  static const int recentSearchesLimit = 8;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -295,5 +297,31 @@ class PreferencesService {
             .toList(growable: false),
       }),
     );
+  }
+
+  Future<List<String>> loadRecentSearches() async {
+    final prefs = await _prefs;
+    return _normalizeRecentSearches(prefs.getStringList(_recentSearchesKey));
+  }
+
+  Future<void> saveRecentSearches(Iterable<String> queries) async {
+    final prefs = await _prefs;
+    await prefs.setStringList(
+      _recentSearchesKey,
+      _normalizeRecentSearches(queries),
+    );
+  }
+
+  static List<String> _normalizeRecentSearches(Iterable<String>? queries) {
+    if (queries == null) return const <String>[];
+
+    final result = <String>[];
+    for (final value in queries) {
+      final query = value.trim();
+      if (query.isEmpty || result.contains(query)) continue;
+      result.add(query);
+      if (result.length >= recentSearchesLimit) break;
+    }
+    return result;
   }
 }
