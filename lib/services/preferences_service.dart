@@ -11,6 +11,8 @@ import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
 import '../models/desktop_library_resource.dart';
 import '../models/favorite_game_record.dart';
+import '../models/recent_game_record.dart';
+import '../models/search_history_record.dart';
 
 class PreferencesService {
   static const _languageKey = 'app_language';
@@ -30,7 +32,9 @@ class PreferencesService {
   static const _desktopLibraryResourcesKey = 'desktop_library_resources_v1';
   static const _favoriteGamesKey = 'favorite_games_v1';
   static const _recentSearchesKey = 'recent_searches_v1';
+  static const _recentGamesKey = 'recent_games_v1';
   static const int recentSearchesLimit = 8;
+  static const int recentGamesLimit = 20;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -299,28 +303,136 @@ class PreferencesService {
     );
   }
 
-  Future<List<String>> loadRecentSearches() async {
+  Future<List<SearchHistoryRecord>> loadSearchHistory() async {
     final prefs = await _prefs;
-    return _normalizeRecentSearches(prefs.getStringList(_recentSearchesKey));
+    final Object? stored = prefs.get(_recentSearchesKey);
+    if (stored is List) {
+      final DateTime migratedAt = DateTime.now().toUtc();
+      return _normalizeSearchHistory(
+        stored.whereType<String>().map(
+          (query) => SearchHistoryRecord(query: query, searchedAt: migratedAt),
+        ),
+      );
+    }
+    if (stored is! String || stored.trim().isEmpty) {
+      return const <SearchHistoryRecord>[];
+    }
+
+    try {
+      final Object? decoded = jsonDecode(stored);
+      final Object? rawRecords = decoded is Map<String, dynamic>
+          ? decoded['records']
+          : decoded;
+      if (rawRecords is! List) {
+        return const <SearchHistoryRecord>[];
+      }
+      return _normalizeSearchHistory(
+        rawRecords
+            .whereType<Map<String, dynamic>>()
+            .map(SearchHistoryRecord.tryFromMap)
+            .whereType<SearchHistoryRecord>(),
+      );
+    } catch (_) {
+      return const <SearchHistoryRecord>[];
+    }
   }
 
-  Future<void> saveRecentSearches(Iterable<String> queries) async {
+  Future<void> saveSearchHistory(Iterable<SearchHistoryRecord> records) async {
     final prefs = await _prefs;
-    await prefs.setStringList(
+    await prefs.setString(
       _recentSearchesKey,
-      _normalizeRecentSearches(queries),
+      jsonEncode(<String, dynamic>{
+        'schemaVersion': 1,
+        'records': _normalizeSearchHistory(
+          records,
+        ).map((record) => record.toMap()).toList(growable: false),
+      }),
     );
   }
 
-  static List<String> _normalizeRecentSearches(Iterable<String>? queries) {
-    if (queries == null) return const <String>[];
+  Future<List<String>> loadRecentSearches() async {
+    final records = await loadSearchHistory();
+    return records.map((record) => record.query).toList(growable: false);
+  }
 
-    final result = <String>[];
-    for (final value in queries) {
-      final query = value.trim();
-      if (query.isEmpty || result.contains(query)) continue;
-      result.add(query);
+  Future<void> saveRecentSearches(Iterable<String> queries) async {
+    final DateTime searchedAt = DateTime.now().toUtc();
+    await saveSearchHistory(
+      queries.map(
+        (query) => SearchHistoryRecord(query: query, searchedAt: searchedAt),
+      ),
+    );
+  }
+
+  Future<List<RecentGameRecord>> loadRecentGames() async {
+    final prefs = await _prefs;
+    final String? stored = prefs.getString(_recentGamesKey);
+    if (stored == null || stored.trim().isEmpty) {
+      return const <RecentGameRecord>[];
+    }
+
+    try {
+      final Object? decoded = jsonDecode(stored);
+      final Object? rawRecords = decoded is Map<String, dynamic>
+          ? decoded['records']
+          : decoded;
+      if (rawRecords is! List) return const <RecentGameRecord>[];
+      return _normalizeRecentGames(
+        rawRecords
+            .whereType<Map<String, dynamic>>()
+            .map(RecentGameRecord.tryFromMap)
+            .whereType<RecentGameRecord>(),
+      );
+    } catch (_) {
+      return const <RecentGameRecord>[];
+    }
+  }
+
+  Future<void> saveRecentGames(Iterable<RecentGameRecord> records) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _recentGamesKey,
+      jsonEncode(<String, dynamic>{
+        'schemaVersion': 1,
+        'records': _normalizeRecentGames(
+          records,
+        ).map((record) => record.toMap()).toList(growable: false),
+      }),
+    );
+  }
+
+  static List<SearchHistoryRecord> _normalizeSearchHistory(
+    Iterable<SearchHistoryRecord> records,
+  ) {
+    final seen = <String>{};
+    final result = <SearchHistoryRecord>[];
+    for (final record in records) {
+      final query = record.query.trim();
+      final normalized = query.toLowerCase();
+      if (query.isEmpty || !seen.add(normalized)) continue;
+      result.add(
+        SearchHistoryRecord(
+          query: query,
+          searchedAt: record.searchedAt.toUtc(),
+        ),
+      );
       if (result.length >= recentSearchesLimit) break;
+    }
+    return result;
+  }
+
+  static List<RecentGameRecord> _normalizeRecentGames(
+    Iterable<RecentGameRecord> records,
+  ) {
+    final seen = <String>{};
+    final result = <RecentGameRecord>[];
+    for (final record in records) {
+      final slug = record.gameSlug.trim();
+      if (slug.isEmpty || !seen.add(slug.toLowerCase())) continue;
+      result.add(
+        RecentGameRecord(gameSlug: slug, viewedAt: record.viewedAt.toUtc()),
+      );
+      if (result.length >= recentGamesLimit) break;
     }
     return result;
   }

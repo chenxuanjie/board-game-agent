@@ -10,7 +10,6 @@ import '../../models/app_activity.dart';
 import '../../models/desktop_library_resource.dart';
 import '../../models/game_info.dart';
 import '../../models/resolved_document.dart';
-import '../../services/preferences_service.dart';
 import '../../state/app_controller.dart';
 import '../screens/markdown_document_screen.dart';
 import '../screens/pdf_document_screen.dart';
@@ -49,12 +48,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   final _searchFocus = FocusNode();
   final _searchTapRegionGroup = Object();
   final _scroll = ScrollController();
-  final _preferencesService = PreferencesService();
-  final List<String> _searchHistory = <String>[];
-  Future<void> _searchHistorySaveQueue = Future<void>.value();
   Timer? _favoriteSnackBarTimer;
-  bool _searchHistoryDirty = false;
-  bool _searchHistoryReady = false;
   bool _searchOpen = false;
   String _page = 'home';
   String _gameDetailReturnPage = 'games';
@@ -83,7 +77,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.addListener(_refresh);
     _search.addListener(_refreshSearch);
     _searchFocus.addListener(_handleSearchFocusChanged);
-    unawaited(_loadSearchHistory());
   }
 
   void _refresh() {
@@ -130,6 +123,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   void _game(GameInfo game) {
     _dismissSearch(clearQuery: true);
+    unawaited(widget.controller.recordRecentlyViewed(game));
     widget.controller.selectGame(game.id);
     final origin = _page == 'gameDetail' ? _gameDetailReturnPage : _page;
     setState(() {
@@ -364,31 +358,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadSearchHistory() async {
-    List<String> loaded = const <String>[];
-    try {
-      loaded = await _preferencesService.loadRecentSearches();
-    } catch (error, stackTrace) {
-      debugPrint('Failed to load recent searches: $error\n$stackTrace');
-    }
-
-    if (!mounted) return;
-    var persistCurrentHistory = false;
-    setState(() {
-      if (_searchHistoryDirty) {
-        // A search was recorded before the async load completed. Keep the
-        // user's newer state and persist it after the load finishes.
-        persistCurrentHistory = true;
-      } else {
-        _searchHistory
-          ..clear()
-          ..addAll(loaded.take(PreferencesService.recentSearchesLimit));
-      }
-      _searchHistoryReady = true;
-    });
-    if (persistCurrentHistory) _queueSearchHistorySave();
-  }
-
   void _handleSearchFocusChanged() {
     if (_searchFocus.hasFocus && !_searchOpen && mounted) {
       setState(() => _searchOpen = true);
@@ -418,7 +387,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _setSearchQuery(String value) {
-    _recordSearch(value);
     _search.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
@@ -428,36 +396,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _recordSearch(String value) {
-    final query = value.trim();
-    if (query.isEmpty) return;
-    _searchHistory
-      ..remove(query)
-      ..insert(0, query);
-    if (_searchHistory.length > PreferencesService.recentSearchesLimit) {
-      _searchHistory.removeLast();
-    }
-    _searchHistoryDirty = true;
-    setState(() {});
-    _queueSearchHistorySave();
+    unawaited(widget.controller.recordSearch(value));
   }
 
   void _clearSearchHistory() {
-    _searchHistoryDirty = true;
-    setState(_searchHistory.clear);
-    _queueSearchHistorySave();
+    unawaited(widget.controller.clearSearchHistory());
   }
 
-  void _queueSearchHistorySave() {
-    if (!_searchHistoryReady) return;
-
-    final snapshot = List<String>.unmodifiable(_searchHistory);
-    _searchHistorySaveQueue = _searchHistorySaveQueue.then((_) async {
-      try {
-        await _preferencesService.saveRecentSearches(snapshot);
-      } catch (error, stackTrace) {
-        debugPrint('Failed to save recent searches: $error\n$stackTrace');
-      }
-    });
+  void _removeSearchHistoryEntry(String value) {
+    unawaited(widget.controller.removeSearch(value));
   }
 
   void _find() {
@@ -724,10 +671,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         query: _search.text,
                         games: widget.controller.games,
                         controller: widget.controller,
-                        recentQueries: _searchHistory,
+                        recentQueries: widget.controller.searchHistory
+                            .map((record) => record.query)
+                            .toList(growable: false),
                         tapRegionGroup: _searchTapRegionGroup,
                         onSelectQuery: _setSearchQuery,
                         onClearHistory: _clearSearchHistory,
+                        onRemoveQuery: _removeSearchHistoryEntry,
                         onTapOutside: _closeSearch,
                         onOpenGame: _openSearchGame,
                         onOpenRules: _openSearchRules,

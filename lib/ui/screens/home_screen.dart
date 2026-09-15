@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -179,6 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         game: game,
                         palette: palette,
                         onTap: () {
+                          unawaited(controller.recordRecentlyViewed(game));
                           controller.selectGame(game.id);
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(

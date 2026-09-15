@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart';
@@ -19,8 +20,11 @@ import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/color_scheme_option.dart';
+import 'package:board_game_agent/models/favorite_game_record.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/models/remote_asset_file.dart';
+import 'package:board_game_agent/models/recent_game_record.dart';
+import 'package:board_game_agent/models/search_history_record.dart';
 import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/game_manifest_service.dart';
 import 'package:board_game_agent/services/preferences_service.dart';
@@ -42,9 +46,11 @@ import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late AppController controller;
+  late _InMemoryPreferencesService preferences;
 
   setUp(() async {
-    controller = await _createController();
+    preferences = _InMemoryPreferencesService();
+    controller = await _createController(preferencesService: preferences);
     controller.selectGame('puerto-rico');
   });
   tearDown(() {
@@ -159,7 +165,7 @@ void main() {
     expect(await controller.toggleFavorite(game), isTrue);
     expect(controller.isFavorite(game), isTrue);
     expect(controller.favoriteCount, 1);
-    final stored = await PreferencesService().loadFavoriteGames();
+    final stored = await preferences.loadFavoriteGames();
     expect(stored, hasLength(1));
     expect(stored.single.gameSlug, game.slug);
     expect(stored.single.createdAt, isNotNull);
@@ -393,11 +399,60 @@ void main() {
     await tester.tap(searchField);
     await tester.pumpAndSettle();
     expect(find.text('最近搜索'), findsOneWidget);
-    expect(find.widgetWithText(ActionChip, game.title), findsOneWidget);
+    expect(find.widgetWithText(InputChip, game.title), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recently viewed games are shown on home and deduplicated', (
+    tester,
+  ) async {
+    final GameInfo first = controller.games[0];
+    final GameInfo second = controller.games[1];
+
+    unawaited(controller.recordRecentlyViewed(first));
+    unawaited(controller.recordRecentlyViewed(second));
+    unawaited(controller.recordRecentlyViewed(first));
+    await _mount(tester, controller, const Size(1280, 800), settle: false);
+    await tester.pump();
+
+    expect(controller.recentlyViewedGames.map((game) => game.slug), <String>[
+      first.slug,
+      second.slug,
+    ]);
     expect(
-      await PreferencesService().loadRecentSearches(),
-      contains(game.title),
+      find.byKey(ValueKey<String>('desktop-recent-game-${first.id}')),
+      findsOneWidget,
     );
+    final firstTile = find.byKey(
+      ValueKey<String>('desktop-recent-game-${first.id}'),
+    );
+    final firstThumbnail = find.byKey(
+      ValueKey<String>('desktop-recent-thumbnail-${first.id}'),
+    );
+    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(126.1));
+    expect(
+      tester.getSize(firstThumbnail).width /
+          tester.getSize(firstThumbnail).height,
+      closeTo(16 / 9, 0.01),
+    );
+    expect(find.textContaining('上次浏览：'), findsNWidgets(2));
+    final recentPanel = find.byKey(
+      const ValueKey<String>('desktop-home-recent-panel'),
+    );
+    expect(
+      find.descendant(of: recentPanel, matching: find.text('未开放')),
+      findsNothing,
+    );
+
+    final secondTile = find.byKey(
+      ValueKey<String>('desktop-recent-game-${second.id}'),
+    );
+    await tester.ensureVisible(secondTile);
+    await tester.tap(secondTile);
+    await tester.pump();
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    expect(controller.recentlyViewedGames.first.slug, second.slug);
+    expect(find.byTooltip('返回首页'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -715,6 +770,7 @@ Future<void> _mount(
   AppController controller,
   Size size, {
   VoidCallback? onOpenAbout,
+  bool settle = true,
 }) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.binding.setSurfaceSize(size);
@@ -728,7 +784,11 @@ Future<void> _mount(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 500));
+  }
 }
 
 Future<void> _navigate(WidgetTester tester, String label) async {
@@ -750,10 +810,14 @@ Future<void> _navigate(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-Future<AppController> _createController() async {
-  SharedPreferences.setMockInitialValues(<String, Object>{});
+Future<AppController> _createController({
+  PreferencesService? preferencesService,
+}) async {
+  if (preferencesService == null) {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  }
   final AppController controller = AppController(
-    preferencesService: PreferencesService(),
+    preferencesService: preferencesService ?? PreferencesService(),
     aiService: _FakeAiService(),
     gameManifestService: GameManifestService(),
     remoteAssetService: _NoNetworkAssetService(),
@@ -762,6 +826,65 @@ Future<AppController> _createController() async {
   );
   await controller.reloadGames();
   return controller;
+}
+
+class _InMemoryPreferencesService extends PreferencesService {
+  Map<String, DateTime> _favoriteGames = <String, DateTime>{};
+  List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
+  List<RecentGameRecord> _recentGames = <RecentGameRecord>[];
+
+  @override
+  Future<void> clearSelectedConversationId() async {}
+
+  @override
+  Future<void> saveSelectedConversationId(String conversationId) async {}
+
+  @override
+  Future<List<FavoriteGameRecord>> loadFavoriteGames() async => _favoriteGames
+      .entries
+      .map(
+        (entry) =>
+            FavoriteGameRecord(gameSlug: entry.key, createdAt: entry.value),
+      )
+      .toList(growable: false);
+
+  @override
+  Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
+    _favoriteGames = <String, DateTime>{
+      for (final record in records) record.gameSlug: record.createdAt,
+    };
+  }
+
+  @override
+  Future<List<RecentGameRecord>> loadRecentGames() async =>
+      List<RecentGameRecord>.unmodifiable(_recentGames);
+
+  @override
+  Future<void> saveRecentGames(Iterable<RecentGameRecord> records) {
+    _recentGames = List<RecentGameRecord>.from(records);
+    return Future<void>.value();
+  }
+
+  @override
+  Future<List<SearchHistoryRecord>> loadSearchHistory() async =>
+      const <SearchHistoryRecord>[];
+
+  @override
+  Future<void> saveSearchHistory(Iterable<SearchHistoryRecord> records) async {
+    _searchHistory = List<SearchHistoryRecord>.from(records);
+  }
+
+  @override
+  Future<List<String>> loadRecentSearches() async =>
+      _searchHistory.map((record) => record.query).toList(growable: false);
+
+  @override
+  Future<void> saveRecentSearches(Iterable<String> queries) async {
+    final now = DateTime.now().toUtc();
+    _searchHistory = queries
+        .map((query) => SearchHistoryRecord(query: query, searchedAt: now))
+        .toList(growable: false);
+  }
 }
 
 class _NoNetworkAssetService extends RemoteAssetService {

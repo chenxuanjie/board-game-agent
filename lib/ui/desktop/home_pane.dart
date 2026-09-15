@@ -4,7 +4,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../models/game_info.dart';
+import '../../models/recent_game_record.dart';
 import '../../state/app_controller.dart';
+import '../widgets/desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'theme.dart';
 
@@ -55,7 +57,13 @@ class DesktopHomePane extends StatelessWidget {
                 onPressed: () => onNavigate('library'),
                 child: const Text('打开资料库'),
               ),
-            _MainColumn(games: games, onUnavailable: action),
+            _MainColumn(
+              controller: controller,
+              games: games,
+              onNavigate: onNavigate,
+              onOpenGame: onOpenGame,
+              onUnavailable: action,
+            ),
           ],
         ),
         right: _RightColumn(
@@ -70,10 +78,19 @@ class DesktopHomePane extends StatelessWidget {
 }
 
 class _MainColumn extends StatelessWidget {
+  final AppController controller;
   final ValueChanged<String> onUnavailable;
+  final ValueChanged<String> onNavigate;
+  final ValueChanged<GameInfo> onOpenGame;
 
   final List<DesktopContentGame> games;
-  const _MainColumn({required this.onUnavailable, required this.games});
+  const _MainColumn({
+    required this.controller,
+    required this.onUnavailable,
+    required this.onNavigate,
+    required this.onOpenGame,
+    required this.games,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -130,7 +147,11 @@ class _MainColumn extends StatelessWidget {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _RecentCard(onUnavailable: onUnavailable),
+                  _RecentCard(
+                    controller: controller,
+                    onMore: () => onNavigate('games'),
+                    onOpenGame: onOpenGame,
+                  ),
                   const SizedBox(height: 12),
                   _CommunityCard(onUnavailable: onUnavailable),
                 ],
@@ -142,7 +163,11 @@ class _MainColumn extends StatelessWidget {
               children: [
                 SizedBox(
                   width: leftWidth,
-                  child: _RecentCard(onUnavailable: onUnavailable),
+                  child: _RecentCard(
+                    controller: controller,
+                    onMore: () => onNavigate('games'),
+                    onOpenGame: onOpenGame,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(child: _CommunityCard(onUnavailable: onUnavailable)),
@@ -572,33 +597,212 @@ class _Tag extends StatelessWidget {
 }
 
 class _RecentCard extends StatelessWidget {
-  final ValueChanged<String> onUnavailable;
-  const _RecentCard({required this.onUnavailable});
+  final AppController controller;
+  final VoidCallback onMore;
+  final ValueChanged<GameInfo> onOpenGame;
+
+  const _RecentCard({
+    required this.controller,
+    required this.onMore,
+    required this.onOpenGame,
+  });
+
   @override
-  Widget build(BuildContext context) => _Panel(
-    height: 171,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-      child: Column(
-        children: [
-          _SectionHeader(
-            icon: Icons.history_rounded,
-            iconColor: DesktopColors.orange,
-            title: '最近浏览',
-            onMore: () => onUnavailable('最近浏览'),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                '未开放',
+  Widget build(BuildContext context) {
+    final gamesBySlug = <String, GameInfo>{
+      for (final game in controller.games) game.slug.trim().toLowerCase(): game,
+    };
+    final recentItems = controller.recentGameRecords
+        .map(
+          (record) =>
+              (game: gamesBySlug[record.normalizedGameSlug], record: record),
+        )
+        .where((item) => item.game != null)
+        .take(3)
+        .toList();
+    return _Panel(
+      key: const ValueKey<String>('desktop-home-recent-panel'),
+      height: 171,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+        child: Column(
+          children: [
+            _SectionHeader(
+              key: const ValueKey<String>('desktop-home-recent-header'),
+              icon: Icons.history_rounded,
+              iconColor: DesktopColors.orange,
+              title: '最近浏览',
+              onMore: onMore,
+            ),
+            const SizedBox(height: 7),
+            Expanded(
+              child: recentItems.isEmpty
+                  ? _RecentEmptyState(onTap: onMore)
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        const gap = 8.0;
+                        final slotWidth = ((constraints.maxWidth - gap * 2) / 3)
+                            .clamp(88.0, 126.0);
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (var i = 0; i < recentItems.length; i++) ...[
+                                if (i > 0) const SizedBox(width: gap),
+                                SizedBox(
+                                  width: slotWidth,
+                                  child: _RecentGameTile(
+                                    key: ValueKey<String>(
+                                      'desktop-recent-game-${recentItems[i].game!.id}',
+                                    ),
+                                    game: recentItems[i].game!,
+                                    record: recentItems[i].record,
+                                    controller: controller,
+                                    onTap: () =>
+                                        onOpenGame(recentItems[i].game!),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentEmptyState extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _RecentEmptyState({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: InkWell(
+        key: const ValueKey<String>('desktop-home-recent-empty'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '还没有浏览记录',
                 style: TextStyle(color: DesktopColors.secondaryText),
               ),
-            ),
+              SizedBox(height: 4),
+              Text(
+                '去游戏库看看 →',
+                style: TextStyle(
+                  color: DesktopColors.orange,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _RecentGameTile extends StatelessWidget {
+  final GameInfo game;
+  final RecentGameRecord record;
+  final AppController controller;
+  final VoidCallback onTap;
+
+  const _RecentGameTile({
+    super.key,
+    required this.game,
+    required this.record,
+    required this.controller,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final contentGame = DesktopContentGame(game, controller);
+    final imagePath = game.bannerAssetPath.trim().isNotEmpty
+        ? game.bannerAssetPath
+        : game.coverAssetPath;
+    return Semantics(
+      button: true,
+      label: '打开${contentGame.title}详情',
+      child: HoverSurface(
+        onTap: onTap,
+        lift: 2,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFCF8),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0x0F8A5A3C)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: AspectRatio(
+                  key: ValueKey<String>('desktop-recent-thumbnail-${game.id}'),
+                  aspectRatio: 16 / 9,
+                  child: DesktopResolvedImage(
+                    controller: controller,
+                    assetPath: imagePath,
+                    palette: controller.palette,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                contentGame.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  height: 1.15,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '上次浏览：${_formatRecentTime(record.viewedAt)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  height: 1.15,
+                  color: DesktopColors.secondaryText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _formatRecentTime(DateTime viewedAt, {DateTime? now}) {
+  final current = (now ?? DateTime.now()).toUtc();
+  final elapsed = current.difference(viewedAt.toUtc());
+  if (elapsed.isNegative || elapsed.inMinutes < 1) return '刚刚';
+  if (elapsed.inHours < 1) return '${elapsed.inMinutes} 分钟前';
+  if (elapsed.inDays < 1) return '${elapsed.inHours} 小时前';
+  if (elapsed.inDays < 30) return '${elapsed.inDays} 天前';
+  final localDate = viewedAt.toLocal();
+  return '${localDate.month} 月 ${localDate.day} 日';
 }
 
 class _CommunityCard extends StatelessWidget {
@@ -681,7 +885,7 @@ class _Panel extends StatelessWidget {
   final Widget child;
   final double? height;
 
-  const _Panel({required this.child, this.height});
+  const _Panel({super.key, required this.child, this.height});
 
   @override
   Widget build(BuildContext context) {
@@ -719,14 +923,36 @@ class _ProfilePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final stats = [
       (
-        '${controller.favoriteCount}',
-        '我的收藏',
-        Icons.menu_book_rounded,
-        const Color(0xFFB34DE9),
+        value: '${controller.favoriteCount}',
+        label: '我的喜欢',
+        assetPath: 'assets/desktop/home/profile_favorite.png',
+        onTap: () => onNavigate('favorites'),
+        key: const ValueKey<String>('desktop-home-favorites-entry'),
       ),
-      ('-', '心愿单', Icons.favorite_rounded, Color(0xFFFF5759)),
-      ('-', '游戏记录', Icons.bar_chart_rounded, Color(0xFF19C889)),
-      ('-', '想玩游戏', Icons.star_rounded, Color(0xFFFFA91C)),
+      (
+        // The wishlist data layer is not available yet, so show its real
+        // empty count instead of a placeholder value.
+        value: '0',
+        label: '想玩游戏',
+        assetPath: 'assets/desktop/home/profile_wishlist.png',
+        onTap: () => onUnavailable('想玩游戏'),
+        key: null,
+      ),
+      (
+        value: '${controller.conversations.length}',
+        label: 'AI对话',
+        assetPath: 'assets/desktop/home/profile_ai_chat.png',
+        onTap: () => onNavigate('assistant'),
+        key: const ValueKey<String>('desktop-home-ai-entry'),
+      ),
+      (
+        // Voting has no persisted records in the current product scope.
+        value: '0',
+        label: '我的投票',
+        assetPath: 'assets/desktop/home/profile_vote.png',
+        onTap: () => onUnavailable('我的投票'),
+        key: null,
+      ),
     ];
     return _Panel(
       height: 255,
@@ -741,7 +967,7 @@ class _ProfilePanel extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              '个人中心 · 未开放',
+              '个人中心',
               style: TextStyle(
                 fontSize: 12,
                 color: DesktopColors.secondaryText,
@@ -762,11 +988,8 @@ class _ProfilePanel extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final s = stats[i];
                   return HoverSurface(
-                    key: i == 0
-                        ? const ValueKey<String>('desktop-home-favorites-entry')
-                        : null,
-                    onTap: () =>
-                        i == 0 ? onNavigate('favorites') : onUnavailable(s.$2),
+                    key: s.key,
+                    onTap: s.onTap,
                     lift: 1,
                     borderRadius: BorderRadius.circular(9),
                     child: Container(
@@ -786,7 +1009,7 @@ class _ProfilePanel extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  s.$1,
+                                  s.value,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                     fontSize: 20,
@@ -794,7 +1017,7 @@ class _ProfilePanel extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  s.$2,
+                                  s.label,
                                   style: const TextStyle(
                                     fontSize: 10.5,
                                     color: DesktopColors.secondaryText,
@@ -803,7 +1026,13 @@ class _ProfilePanel extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Icon(s.$3, color: s.$4, size: 25),
+                          Image.asset(
+                            s.assetPath,
+                            width: 42,
+                            height: 42,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
                         ],
                       ),
                     ),

@@ -18,6 +18,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
     required this.tapRegionGroup,
     required this.onSelectQuery,
     required this.onClearHistory,
+    required this.onRemoveQuery,
     required this.onTapOutside,
     required this.onOpenGame,
     required this.onOpenRules,
@@ -32,6 +33,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
   final Object tapRegionGroup;
   final ValueChanged<String> onSelectQuery;
   final VoidCallback onClearHistory;
+  final ValueChanged<String> onRemoveQuery;
   final VoidCallback onTapOutside;
   final ValueChanged<GameInfo> onOpenGame;
   final ValueChanged<GameInfo> onOpenRules;
@@ -123,10 +125,11 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
           runSpacing: 8,
           children: <Widget>[
             for (final String value in recentQueries)
-              _QueryChip(
+              _RecentQueryChip(
                 label: value,
                 icon: Icons.schedule_rounded,
                 onPressed: () => onSelectQuery(value),
+                onDeleted: () => onRemoveQuery(value),
               ),
           ],
         ),
@@ -359,18 +362,43 @@ class _SectionHeader extends StatelessWidget {
   );
 }
 
-class _QueryChip extends StatelessWidget {
-  const _QueryChip({required this.label, required this.onPressed, this.icon});
+class _RecentQueryChip extends StatelessWidget {
+  const _RecentQueryChip({
+    required this.label,
+    required this.onPressed,
+    required this.onDeleted,
+    required this.icon,
+  });
 
   final String label;
   final VoidCallback onPressed;
-  final IconData? icon;
+  final VoidCallback onDeleted;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => InputChip(
+    avatar: Icon(icon, size: 14, color: DesktopColors.secondaryText),
+    label: Text(label),
+    onPressed: onPressed,
+    onDeleted: onDeleted,
+    deleteIcon: const Icon(Icons.close_rounded, size: 14),
+    deleteButtonTooltipMessage: '删除最近搜索',
+    labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
+    visualDensity: VisualDensity.compact,
+    side: BorderSide.none,
+    backgroundColor: DesktopColors.soft,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+  );
+}
+
+class _QueryChip extends StatelessWidget {
+  const _QueryChip({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) => ActionChip(
-    avatar: icon == null
-        ? null
-        : Icon(icon, size: 14, color: DesktopColors.secondaryText),
     label: Text(label),
     onPressed: onPressed,
     labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
