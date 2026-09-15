@@ -39,6 +39,8 @@ class DesktopWorkspace extends StatefulWidget {
 }
 
 class _DesktopWorkspaceState extends State<DesktopWorkspace> {
+  static const Duration _favoriteSnackBarDuration = Duration(seconds: 3);
+
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
   final _activityLink = LayerLink();
@@ -47,6 +49,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   final _searchTapRegionGroup = Object();
   final _scroll = ScrollController();
   final List<String> _searchHistory = <String>[];
+  Timer? _favoriteSnackBarTimer;
   bool _searchOpen = false;
   String _page = 'home';
   String _gameDetailReturnPage = 'games';
@@ -86,6 +89,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.removeListener(_refresh);
     _search.removeListener(_refreshSearch);
     _searchFocus.removeListener(_handleSearchFocusChanged);
+    _favoriteSnackBarTimer?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     _scroll.dispose();
@@ -146,32 +150,57 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     setState(() => _page = 'assistant');
   }
 
+  void _dismissFavoriteSnackBar() {
+    _favoriteSnackBarTimer?.cancel();
+    _favoriteSnackBarTimer = null;
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+  }
+
+  void _showFavoriteSnackBar({
+    required String message,
+    SnackBarAction? action,
+  }) {
+    _favoriteSnackBarTimer?.cancel();
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: _favoriteSnackBarDuration,
+        action: action,
+      ),
+    );
+    final timer = Timer(_favoriteSnackBarDuration, controller.close);
+    _favoriteSnackBarTimer = timer;
+    unawaited(
+      controller.closed.whenComplete(() {
+        if (identical(_favoriteSnackBarTimer, timer)) {
+          _favoriteSnackBarTimer = null;
+        }
+      }),
+    );
+  }
+
   Future<void> _toggleFavorite(GameInfo game) async {
+    _dismissFavoriteSnackBar();
     final saved = await widget.controller.toggleFavorite(game);
     if (!mounted) return;
 
     final copy = widget.controller.copy;
     if (!saved) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(copy.favoriteSaveFailed)));
+      _showFavoriteSnackBar(message: copy.favoriteSaveFailed);
       return;
     }
 
     final isFavorite = widget.controller.isFavorite(game);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(isFavorite ? copy.favoriteAdded : copy.favoriteRemoved),
-          action: isFavorite
-              ? null
-              : SnackBarAction(
-                  label: copy.favoriteUndo,
-                  onPressed: () => unawaited(_toggleFavorite(game)),
-                ),
-        ),
-      );
+    _showFavoriteSnackBar(
+      message: isFavorite ? copy.favoriteAdded : copy.favoriteRemoved,
+      action: isFavorite
+          ? null
+          : SnackBarAction(
+              label: copy.favoriteUndo,
+              onPressed: () => unawaited(_toggleFavorite(game)),
+            ),
+    );
   }
 
   void _openRulesForResource(DesktopLibraryResource resource) {

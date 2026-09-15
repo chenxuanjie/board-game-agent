@@ -119,7 +119,6 @@ class AppController extends ChangeNotifier {
   List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
-  String? _lastNotifiedLibraryLoadFailure;
   Future<void>? _libraryRefreshFuture;
   Future<void>? _libraryCacheLoadFuture;
   bool _libraryCacheLoadAttempted = false;
@@ -331,29 +330,34 @@ class AppController extends ChangeNotifier {
     String? conversationId,
     String? messageId,
   }) {
+    final DateTime occurredAt = createdAt ?? DateTime.now();
+    final AppActivity? existing = _activities
+        .where((AppActivity activity) => activity.kind == kind)
+        .cast<AppActivity?>()
+        .firstWhere(
+          (AppActivity? activity) => activity != null,
+          orElse: () => null,
+        );
     final AppActivity activity = AppActivity(
-      id: 'activity-${DateTime.now().microsecondsSinceEpoch}',
+      id: existing?.id ?? 'activity-${DateTime.now().microsecondsSinceEpoch}',
       kind: kind,
       title: title,
       message: message,
-      createdAt: createdAt ?? DateTime.now(),
+      createdAt: occurredAt,
       conversationId: conversationId,
       messageId: messageId,
     );
-    _activities = <AppActivity>[activity, ..._activities];
-    if (_activities.length > _maxActivities) {
-      _activities = _activities.sublist(0, _maxActivities);
-    }
+    _activities = latestActivitiesByKind(<AppActivity>[
+      activity,
+      ..._activities,
+    ], maxEntries: _maxActivities);
     _queueActivitySave();
     notifyListeners();
   }
 
   void _recordLibraryLoadFailure(String message) {
     final String normalized = message.trim();
-    if (normalized.isEmpty || normalized == _lastNotifiedLibraryLoadFailure) {
-      return;
-    }
-    _lastNotifiedLibraryLoadFailure = normalized;
+    if (normalized.isEmpty) return;
     _recordActivity(
       kind: AppActivityKind.libraryLoadFailed,
       title: copy.activityLibraryLoadFailedTitle,
@@ -550,7 +554,15 @@ class AppController extends ChangeNotifier {
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
     _selectedConversationId = await _preferencesService
         .loadSelectedConversationId();
-    _activities = await _preferencesService.loadActivities();
+    final List<AppActivity> storedActivities = await _preferencesService
+        .loadActivities();
+    _activities = latestActivitiesByKind(
+      storedActivities,
+      maxEntries: _maxActivities,
+    );
+    if (_activities.length != storedActivities.length) {
+      _queueActivitySave();
+    }
     try {
       final records = await _preferencesService.loadFavoriteGames();
       _favoriteCreatedAtBySlug
@@ -2170,8 +2182,6 @@ class AppController extends ChangeNotifier {
       _libraryLoadError = index.warning;
       if (index.failedSlugs.isNotEmpty && index.warning != null) {
         _recordLibraryLoadFailure(index.warning!);
-      } else if (index.failedSlugs.isEmpty) {
-        _lastNotifiedLibraryLoadFailure = null;
       }
     } catch (error) {
       if (generation != _libraryRefreshGeneration) {

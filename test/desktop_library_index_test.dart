@@ -119,15 +119,30 @@ void main() {
         ),
         hasLength(1),
       );
+      final AppActivity firstFailure = second.activities.singleWhere(
+        (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
+      );
+      await second.markActivitiesRead();
+      await Future<void>.delayed(const Duration(milliseconds: 2));
 
       await second.refreshLibraryResources(force: true);
+      final List<AppActivity> failures = second.activities
+          .where(
+            (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
+          )
+          .toList(growable: false);
+      expect(failures, hasLength(1));
       expect(
-        second.activities.where(
-          (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
-        ),
-        hasLength(1),
-        reason: 'the same unresolved failure should not spam notifications',
+        failures.single.id,
+        firstFailure.id,
+        reason: 'the notification row keeps its stable identity',
       );
+      expect(
+        failures.single.createdAt.isAfter(firstFailure.createdAt),
+        isTrue,
+        reason: 'a repeated failure updates the visible occurrence time',
+      );
+      expect(failures.single.isRead, isFalse);
     },
   );
 }
