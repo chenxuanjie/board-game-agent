@@ -148,20 +148,26 @@ class _MainColumn extends StatelessWidget {
             final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
               constraints.maxWidth,
             );
-            return Wrap(
-              spacing: gap,
-              runSpacing: 13,
-              children: [
-                for (var i = 0; i < games.length; i++) ...[
-                  SizedBox(
-                    width: cardWidth,
-                    child: _GameCard(
-                      game: games[i],
-                      onTap: () => onUnavailable(games[i].title),
+            return SingleChildScrollView(
+              key: const ValueKey<String>('desktop-home-recommendation-row'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < games.length; i++) ...[
+                    if (i > 0) const SizedBox(width: gap),
+                    SizedBox(
+                      width: cardWidth,
+                      child: _GameCard(
+                        key: ValueKey<String>(
+                          'desktop-home-recommendation-card-${games[i].data.id}',
+                        ),
+                        game: games[i],
+                        onTap: () => onUnavailable(games[i].title),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             );
           },
         ),
@@ -480,7 +486,7 @@ class _GameCard extends StatelessWidget {
   final DesktopContentGame game;
   final VoidCallback onTap;
 
-  const _GameCard({required this.game, required this.onTap});
+  const _GameCard({super.key, required this.game, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1053,8 +1059,8 @@ class _ProfilePanel extends StatelessWidget {
                           ),
                           Image.asset(
                             s.assetPath,
-                            width: 42,
-                            height: 42,
+                            width: 52,
+                            height: 52,
                             fit: BoxFit.contain,
                             filterQuality: FilterQuality.high,
                           ),

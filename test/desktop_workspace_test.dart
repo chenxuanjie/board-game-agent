@@ -20,6 +20,7 @@ import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/color_scheme_option.dart';
+import 'package:board_game_agent/models/desktop_library_resource.dart';
 import 'package:board_game_agent/models/favorite_game_record.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/models/remote_asset_file.dart';
@@ -240,7 +241,8 @@ void main() {
         of: fullSidebar,
         matching: find.text('首页'),
       );
-      expect(tester.getSize(homeIcon), const Size.square(24));
+      final fullHomeIconRect = tester.getRect(homeIcon);
+      expect(tester.getSize(homeIcon), const Size.square(28));
       expect(
         tester.getTopLeft(homeLabel).dx - tester.getTopRight(homeIcon).dx,
         closeTo(10, 0.1),
@@ -252,6 +254,17 @@ void main() {
         find.byKey(const ValueKey<String>('desktop-sidebar-rail')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+        findsNothing,
+      );
+      final compactHomeIconRect = tester.getRect(homeIcon);
+      expect(compactHomeIconRect.size, fullHomeIconRect.size);
+      expect(
+        compactHomeIconRect.center.dx,
+        closeTo(fullHomeIconRect.center.dx, 0.5),
+      );
+      expect(compactHomeIconRect.top, closeTo(fullHomeIconRect.top, 0.5));
       expect(tester.takeException(), isNull);
 
       await tester.binding.setSurfaceSize(const Size(720, 700));
@@ -541,6 +554,17 @@ void main() {
         lessThan(1),
       );
 
+      final recommendationRects = [
+        for (final game in controller.games.take(5))
+          tester.getRect(
+            find.byKey(
+              ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+            ),
+          ),
+      ];
+      expect(recommendationRects, hasLength(5));
+      expect(recommendationRects.map((rect) => rect.top).toSet(), hasLength(1));
+
       final GameInfo game = controller.games.first;
       await tester.tap(
         find.descendant(of: home, matching: find.text(game.title)).first,
@@ -741,8 +765,21 @@ void main() {
     final sidebarArt = tester.widget<Image>(
       find.byKey(const ValueKey<String>('desktop-sidebar-art')),
     );
-    expect(sidebarArt.fit, BoxFit.contain);
+    expect(sidebarArt.fit, BoxFit.fitWidth);
     expect(sidebarArt.alignment, Alignment.bottomCenter);
+    final sidebarRect = tester.getRect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-full')),
+    );
+    final sidebarArtRect = tester.getRect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+    );
+    expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
+    expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
+    expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
+    expect(
+      sidebarArtRect.width / sidebarArtRect.height,
+      closeTo(971 / 1619, 0.005),
+    );
     for (final asset in [
       'sidebar_home.png',
       'sidebar_library.png',
@@ -753,7 +790,7 @@ void main() {
     ]) {
       final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
       expect(icon, findsOneWidget);
-      expect(tester.getSize(icon), const Size(24, 24));
+      expect(tester.getSize(icon), const Size(28, 28));
     }
     expect(tester.takeException(), isNull);
   });
@@ -924,6 +961,8 @@ Future<AppController> _createController({
 
 class _InMemoryPreferencesService extends PreferencesService {
   Map<String, DateTime> _favoriteGames = <String, DateTime>{};
+  List<DesktopLibraryResource> _desktopLibraryResources =
+      <DesktopLibraryResource>[];
   List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
   List<RecentGameRecord> _recentGames = <RecentGameRecord>[];
 
@@ -947,6 +986,17 @@ class _InMemoryPreferencesService extends PreferencesService {
     _favoriteGames = <String, DateTime>{
       for (final record in records) record.gameSlug: record.createdAt,
     };
+  }
+
+  @override
+  Future<List<DesktopLibraryResource>> loadDesktopLibraryResources() async =>
+      List<DesktopLibraryResource>.unmodifiable(_desktopLibraryResources);
+
+  @override
+  Future<void> saveDesktopLibraryResources(
+    Iterable<DesktopLibraryResource> resources,
+  ) async {
+    _desktopLibraryResources = List<DesktopLibraryResource>.from(resources);
   }
 
   @override

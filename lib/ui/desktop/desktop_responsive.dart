@@ -8,6 +8,16 @@ import 'package:flutter/widgets.dart';
 /// one place prevents each pane from making a slightly different breakpoint
 /// decision when the window is resized.
 abstract final class DesktopResponsive {
+  static const Size desktopWindowDefaultSize = Size(1280, 800);
+  static const double desktopWindowMinimumWidth = 1100;
+  static const double desktopWindowMinimumHeight = 800;
+  static const Size desktopWindowMinimumSize = Size(
+    desktopWindowMinimumWidth,
+    desktopWindowMinimumHeight,
+  );
+  static const double desktopWindowMinimumAspectRatio =
+      desktopWindowMinimumWidth / desktopWindowMinimumHeight;
+
   static const narrowBreakpoint = 760.0;
   static const fullSidebarBreakpoint = 1200.0;
 

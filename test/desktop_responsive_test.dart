@@ -1,9 +1,18 @@
+import 'dart:ui' show Size;
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
 
 void main() {
   test('desktop layout tiers stay stable at their boundaries', () {
+    expect(DesktopResponsive.desktopWindowDefaultSize, const Size(1280, 800));
+    expect(DesktopResponsive.desktopWindowMinimumSize, const Size(1100, 800));
+    expect(
+      DesktopResponsive.desktopWindowMinimumAspectRatio,
+      closeTo(1.375, 0.001),
+    );
+
     expect(DesktopResponsive.libraryPosterWidthFor(799), 176);
     expect(DesktopResponsive.libraryPosterWidthFor(800), 184);
     expect(DesktopResponsive.libraryPosterWidthFor(1199), 184);
