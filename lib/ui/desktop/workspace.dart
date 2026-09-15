@@ -21,6 +21,7 @@ import 'game_detail_pane.dart';
 import 'home_search_overlay.dart';
 import 'settings_pane.dart';
 import 'sidebar.dart';
+import 'desktop_responsive.dart';
 import 'theme.dart';
 import 'window_controls.dart';
 
@@ -556,7 +557,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     controller: _scroll,
                     child: Column(
                       children: [
-                        Padding(
+                        DesktopResponsiveFrame(
+                          maxWidth: DesktopResponsive.maxContentWidthFor(_page),
                           padding: _page == 'gameDetail'
                               ? EdgeInsets.zero
                               : EdgeInsets.fromLTRB(
@@ -573,14 +575,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             ),
                             'games' => DesktopGamesPane(
                               controller: widget.controller,
-                              showPreview: !compact && !narrow,
+                              showPreview: !narrow,
                               onNavigate: _navigate,
                               onOpenGame: _game,
                               onToggleFavorite: _toggleFavorite,
                             ),
                             'favorites' => DesktopFavoritesPane(
                               controller: widget.controller,
-                              showPreview: !compact && !narrow,
+                              showPreview: !narrow,
                               onNavigate: _navigate,
                               onOpenGame: _game,
                               onToggleFavorite: _toggleFavorite,

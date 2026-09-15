@@ -4,6 +4,7 @@ import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
 import '../widgets/desktop_resolved_image.dart';
 import 'content_primitives.dart';
+import 'desktop_responsive.dart';
 import 'theme.dart';
 
 class DesktopGameDetailPane extends StatefulWidget {
@@ -85,230 +86,244 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     final heroPath = game.bannerAssetPath.trim().isNotEmpty
         ? game.bannerAssetPath
         : game.coverAssetPath;
-    return SizedBox(
-      height: 450,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          DesktopResolvedImage(
-            controller: widget.controller,
-            assetPath: heroPath,
-            palette: widget.controller.palette,
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Color(0xE819110D),
-                  Color(0xB018100D),
-                  Color(0x3518100D),
-                ],
-                stops: [0, .48, 1],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final condensed = constraints.maxWidth < 1100;
+        return SizedBox(
+          height: DesktopResponsive.detailHeroHeightFor(constraints.maxWidth),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              DesktopResolvedImage(
+                controller: widget.controller,
+                assetPath: heroPath,
+                palette: widget.controller.palette,
               ),
-            ),
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0x33000000),
-                  Colors.transparent,
-                  Color(0xA6000000),
-                ],
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Color(0xE819110D),
+                      Color(0xB018100D),
+                      Color(0x3518100D),
+                    ],
+                    stops: [0, .48, 1],
+                  ),
+                ),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(34, 24, 32, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x33000000),
+                      Colors.transparent,
+                      Color(0xA6000000),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: condensed
+                    ? const EdgeInsets.fromLTRB(20, 16, 20, 16)
+                    : const EdgeInsets.fromLTRB(34, 24, 32, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _RoundIcon(
-                      icon: Icons.arrow_back_rounded,
-                      tooltip: widget.backTooltip,
-                      onTap: widget.onBack,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 340),
-                          child: InkWell(
-                            onTap: widget.onSearch,
-                            borderRadius: BorderRadius.circular(24),
-                            child: Container(
-                              height: 42,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 15,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xC95A4B42),
+                    Row(
+                      children: [
+                        _RoundIcon(
+                          icon: Icons.arrow_back_rounded,
+                          tooltip: widget.backTooltip,
+                          onTap: widget.onBack,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 340),
+                              child: InkWell(
+                                onTap: widget.onSearch,
                                 borderRadius: BorderRadius.circular(24),
-                                border: Border.all(
-                                  color: const Color(0x55FFFFFF),
-                                ),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.search_rounded,
-                                    color: Colors.white,
-                                    size: 20,
+                                child: Container(
+                                  height: 42,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 15,
                                   ),
-                                  SizedBox(width: 9),
-                                  Text(
-                                    '搜索桌游 / 机制 / 作者',
-                                    style: TextStyle(
-                                      color: Color(0xFFF2EAE5),
-                                      fontSize: 13,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xC95A4B42),
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: const Color(0x55FFFFFF),
                                     ),
                                   ),
-                                ],
+                                  child: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.search_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 9),
+                                      Text(
+                                        '搜索桌游 / 机制 / 作者',
+                                        style: TextStyle(
+                                          color: Color(0xFFF2EAE5),
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                    const Spacer(),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            value(game.title),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: condensed ? 30 : 42,
+                              height: 1.02,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            value(game.subtitle),
+                            style: TextStyle(
+                              color: Color(0xFFF2E7DF),
+                              fontSize: condensed ? 15 : 19,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          SizedBox(height: condensed ? 8 : 13),
+                          Text(
+                            '“ ${value(game.heroTagline)} ”',
+                            maxLines: condensed ? 1 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: condensed ? 12.5 : 15,
+                              height: 1.45,
+                            ),
+                          ),
+                          SizedBox(height: condensed ? 10 : 16),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.star_rounded,
+                                color: Color(0xFFFFD12D),
+                                size: condensed ? 20 : 25,
+                              ),
+                              SizedBox(width: condensed ? 5 : 7),
+                              Text(
+                                value(game.score),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: condensed ? 18 : 22,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(width: condensed ? 7 : 10),
+                              Text(
+                                '(${value(game.scoreCountLabel)})',
+                                style: const TextStyle(
+                                  color: Color(0xFFD9CEC7),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: condensed ? 10 : 17),
+                          Row(
+                            children: [
+                              _HeroMetric(
+                                Icons.group_rounded,
+                                value(game.playerCount),
+                                '推荐人数',
+                              ),
+                              _HeroMetric(
+                                Icons.schedule_rounded,
+                                value(game.playTime),
+                                '游戏时长',
+                              ),
+                              _HeroMetric(
+                                Icons.bar_chart_rounded,
+                                value(game.complexity),
+                                '游戏难度',
+                              ),
+                            ],
+                          ),
+                          if (!condensed) ...[
+                            const SizedBox(height: 15),
+                            Wrap(
+                              spacing: 7,
+                              runSpacing: 7,
+                              children: [
+                                for (final tag in _tags().take(6))
+                                  _HeroTag(tag),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                          ] else
+                            const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 8,
+                            children: [
+                              _HeroButton(
+                                key: const ValueKey<String>(
+                                  'desktop-detail-favorite-button',
+                                ),
+                                label: widget.controller.isFavorite(game)
+                                    ? '已喜欢'
+                                    : '喜欢',
+                                icon: widget.controller.isFavorite(game)
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                                onTap: () => widget.onToggleFavorite(game),
+                                width: 108,
+                              ),
+                              _HeroButton(
+                                label: '加入想玩 · 未开放',
+                                icon: Icons.add_circle_outline_rounded,
+                                onTap: () =>
+                                    desktopContentPending(context, '加入想玩'),
+                                light: true,
+                              ),
+                              _HeroButton(
+                                label: '询问 AI',
+                                icon: Icons.auto_awesome_rounded,
+                                onTap: widget.onAskAi,
+                                light: true,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const Spacer(),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        value(game.title),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 42,
-                          height: 1.02,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        value(game.subtitle),
-                        style: const TextStyle(
-                          color: Color(0xFFF2E7DF),
-                          fontSize: 19,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 13),
-                      Text(
-                        '“ ${value(game.heroTagline)} ”',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          height: 1.45,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Color(0xFFFFD12D),
-                            size: 25,
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            value(game.score),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '(${value(game.scoreCountLabel)})',
-                            style: const TextStyle(
-                              color: Color(0xFFD9CEC7),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 17),
-                      Row(
-                        children: [
-                          _HeroMetric(
-                            Icons.group_rounded,
-                            value(game.playerCount),
-                            '推荐人数',
-                          ),
-                          _HeroMetric(
-                            Icons.schedule_rounded,
-                            value(game.playTime),
-                            '游戏时长',
-                          ),
-                          _HeroMetric(
-                            Icons.bar_chart_rounded,
-                            value(game.complexity),
-                            '游戏难度',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 15),
-                      Wrap(
-                        spacing: 7,
-                        runSpacing: 7,
-                        children: [
-                          for (final tag in _tags().take(6)) _HeroTag(tag),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 8,
-                        children: [
-                          _HeroButton(
-                            key: const ValueKey<String>(
-                              'desktop-detail-favorite-button',
-                            ),
-                            label: widget.controller.isFavorite(game)
-                                ? '已喜欢'
-                                : '喜欢',
-                            icon: widget.controller.isFavorite(game)
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            onTap: () => widget.onToggleFavorite(game),
-                            width: 108,
-                          ),
-                          _HeroButton(
-                            label: '加入想玩 · 未开放',
-                            icon: Icons.add_circle_outline_rounded,
-                            onTap: () => desktopContentPending(context, '加入想玩'),
-                            light: true,
-                          ),
-                          _HeroButton(
-                            label: '询问 AI',
-                            icon: Icons.auto_awesome_rounded,
-                            onTap: widget.onAskAi,
-                            light: true,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

@@ -188,7 +188,7 @@ void main() {
   testWidgets('favorite button keeps its size while state crossfades', (
     tester,
   ) async {
-    await _mount(tester, controller, const Size(1280, 800));
+    await _mount(tester, controller, const Size(1440, 800));
     await _navigate(tester, '游戏库');
 
     final button = find.byKey(
@@ -293,7 +293,7 @@ void main() {
   testWidgets(
     'library posters match legacy proportion and hover preview, then open Desktop details',
     (tester) async {
-      await _mount(tester, controller, const Size(1280, 800));
+      await _mount(tester, controller, const Size(1440, 800));
       await _navigate(tester, '游戏库');
       final GameInfo game = controller.games[1];
       final Finder poster = find.byKey(

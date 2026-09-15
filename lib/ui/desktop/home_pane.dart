@@ -8,6 +8,7 @@ import '../../models/recent_game_record.dart';
 import '../../state/app_controller.dart';
 import '../widgets/desktop_resolved_image.dart';
 import 'content_primitives.dart';
+import 'desktop_responsive.dart';
 import 'theme.dart';
 
 class DesktopHomePane extends StatelessWidget {
@@ -48,30 +49,46 @@ class DesktopHomePane extends StatelessWidget {
         }
       }
 
-      return DesktopContentColumns(
-        main: Column(
-          children: [
-            DesktopContentStatus(controller: controller),
-            if (!controller.hasGames)
-              TextButton(
-                onPressed: () => onNavigate('library'),
-                child: const Text('打开资料库'),
-              ),
-            _MainColumn(
-              controller: controller,
-              games: games,
-              onNavigate: onNavigate,
-              onOpenGame: onOpenGame,
-              onUnavailable: action,
+      final main = Column(
+        children: [
+          DesktopContentStatus(controller: controller),
+          if (!controller.hasGames)
+            TextButton(
+              onPressed: () => onNavigate('library'),
+              child: const Text('打开资料库'),
             ),
-          ],
-        ),
-        right: _RightColumn(
-          controller: controller,
-          onNavigate: onNavigate,
-          onUnavailable: action,
-        ),
-        rightWidth: 282,
+          _MainColumn(
+            controller: controller,
+            games: games,
+            onNavigate: onNavigate,
+            onOpenGame: onOpenGame,
+            onUnavailable: action,
+          ),
+        ],
+      );
+      final right = _RightColumn(
+        controller: controller,
+        onNavigate: onNavigate,
+        onUnavailable: action,
+      );
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = DesktopResponsive.homeUsesTwoColumns(
+            constraints.maxWidth,
+          );
+          if (!wide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [main, const SizedBox(height: 14), right],
+            );
+          }
+          return DesktopContentColumns(
+            wide: true,
+            main: main,
+            right: right,
+            rightWidth: 282,
+          );
+        },
       );
     },
   );
@@ -97,10 +114,18 @@ class _MainColumn extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _HeroBanner(
-          onExplore: () => onUnavailable('开始探索'),
-          onPending: () => onUnavailable('即将开放'),
-          onOpenAssistant: () => onUnavailable('AI助手'),
+        LayoutBuilder(
+          builder: (context, constraints) => Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: DesktopResponsive.homeHeroWidthFor(constraints.maxWidth),
+              child: _HeroBanner(
+                onExplore: () => onUnavailable('开始探索'),
+                onPending: () => onUnavailable('即将开放'),
+                onOpenAssistant: () => onUnavailable('AI助手'),
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 11),
         _SectionHeader(
@@ -120,9 +145,9 @@ class _MainColumn extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             const gap = 13.0;
-            final columns = (constraints.maxWidth / 145).floor().clamp(1, 5);
-            final cardWidth =
-                (constraints.maxWidth - gap * (columns - 1)) / columns;
+            final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
+              constraints.maxWidth,
+            );
             return Wrap(
               spacing: gap,
               runSpacing: 13,

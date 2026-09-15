@@ -104,39 +104,25 @@ class DesktopContentColumns extends StatelessWidget {
     required this.main,
     required this.right,
     required this.rightWidth,
+    required this.wide,
     this.gap = 14,
   });
   final Widget main, right;
   final double rightWidth, gap;
+  final bool wide;
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) {
-      final narrow = box.maxWidth < 900;
-      return narrow
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                main,
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: rightWidth),
-                    child: right,
-                  ),
-                ),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: main),
-                SizedBox(width: gap),
-                SizedBox(width: rightWidth, child: right),
-              ],
-            );
-    },
-  );
+  Widget build(BuildContext context) {
+    if (!wide) return main;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: main),
+        SizedBox(width: gap),
+        SizedBox(width: rightWidth, child: right),
+      ],
+    );
+  }
 }
 
 class DesktopContentStatus extends StatelessWidget {

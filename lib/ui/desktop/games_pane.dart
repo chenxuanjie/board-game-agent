@@ -4,6 +4,7 @@ import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
 import 'poster_card.dart';
 import 'content_primitives.dart';
+import 'desktop_responsive.dart';
 import 'theme.dart';
 
 class DesktopGamesPane extends StatefulWidget {
@@ -65,48 +66,60 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
         }
       }
 
-      final main = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          DesktopContentStatus(controller: widget.controller),
-          _LibraryMain(
-            games: games,
-            selectedCategory: _category,
-            onSelectGame: (i) {
-              if (!widget.showPreview ||
-                  games[i].data.id == selected?.data.id) {
-                widget.onOpenGame(games[i].data);
-              } else {
-                setState(() => _selectedId = games[i].data.id);
-              }
-            },
-            onOpenAssistant: (game) {
-              widget.controller.selectGame(game.id);
-              widget.onNavigate('assistant');
-            },
-            onCategory: (i) => setState(() => _category = i),
-            sortLabel: _sort.label,
-            hasFilter: _playerFilter != null || _weightFilter != null,
-            onSort: _chooseSort,
-            onFilter: _chooseFilter,
-            onUnavailable: action,
-          ),
-        ],
-      );
-      if (!widget.showPreview) return main;
-      return DesktopContentColumns(
-        gap: 13,
-        rightWidth: 360,
-        main: main,
-        right: selected == null
-            ? const SizedBox.shrink()
-            : _GameDetailPanel(
-                game: selected,
-                favorite: widget.controller.isFavorite(selected.data),
-                onToggleFavorite: () => widget.onToggleFavorite(selected.data),
-                onOpenDetail: () => widget.onOpenGame(selected.data),
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final showInspector =
+              widget.showPreview &&
+              DesktopResponsive.shouldShowGamesInspector(constraints.maxWidth);
+          final posterWidth = DesktopResponsive.libraryPosterWidthFor(
+            constraints.maxWidth,
+          );
+          final main = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DesktopContentStatus(controller: widget.controller),
+              _LibraryMain(
+                games: games,
+                posterWidth: posterWidth,
+                selectedCategory: _category,
+                onSelectGame: (i) {
+                  if (!showInspector || games[i].data.id == selected?.data.id) {
+                    widget.onOpenGame(games[i].data);
+                  } else {
+                    setState(() => _selectedId = games[i].data.id);
+                  }
+                },
+                onOpenAssistant: (game) {
+                  widget.controller.selectGame(game.id);
+                  widget.onNavigate('assistant');
+                },
+                onCategory: (i) => setState(() => _category = i),
+                sortLabel: _sort.label,
+                hasFilter: _playerFilter != null || _weightFilter != null,
+                onSort: _chooseSort,
+                onFilter: _chooseFilter,
                 onUnavailable: action,
               ),
+            ],
+          );
+          if (!showInspector) return main;
+          return DesktopContentColumns(
+            wide: true,
+            gap: 13,
+            rightWidth: 360,
+            main: main,
+            right: selected == null
+                ? const SizedBox.shrink()
+                : _GameDetailPanel(
+                    game: selected,
+                    favorite: widget.controller.isFavorite(selected.data),
+                    onToggleFavorite: () =>
+                        widget.onToggleFavorite(selected.data),
+                    onOpenDetail: () => widget.onOpenGame(selected.data),
+                    onUnavailable: action,
+                  ),
+          );
+        },
       );
     },
   );
@@ -246,6 +259,7 @@ enum _DesktopGameSort {
 
 class _LibraryMain extends StatelessWidget {
   final List<DesktopContentGame> games;
+  final double posterWidth;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
   final ValueChanged<GameInfo> onOpenAssistant;
@@ -258,6 +272,7 @@ class _LibraryMain extends StatelessWidget {
 
   const _LibraryMain({
     required this.games,
+    required this.posterWidth,
     required this.selectedCategory,
     required this.onSelectGame,
     required this.onOpenAssistant,
@@ -341,29 +356,24 @@ class _LibraryMain extends StatelessWidget {
         const SizedBox(height: 10),
         LayoutBuilder(
           builder: (context, constraints) {
-            const crossAxisSpacing = 18.0;
-            final columns = ((constraints.maxWidth + crossAxisSpacing) / 198)
-                .floor();
-            return GridView.builder(
+            const posterGap = 18.0;
+            return Wrap(
               key: const ValueKey<String>('desktop-library-posters'),
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+              spacing: posterGap,
+              runSpacing: 24,
               clipBehavior: Clip.none,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns < 1 ? 1 : columns,
-                childAspectRatio: 2 / 3,
-                crossAxisSpacing: crossAxisSpacing,
-                mainAxisSpacing: 24,
-              ),
-              itemCount: games.length,
-              itemBuilder: (context, index) {
-                final DesktopContentGame game = games[index];
-                return _LibraryGameCard(
-                  game: game,
-                  onTap: () => onSelectGame(index),
-                  onOpenAssistant: () => onOpenAssistant(game.data),
-                );
-              },
+              children: [
+                for (var index = 0; index < games.length; index++)
+                  SizedBox(
+                    width: posterWidth,
+                    height: posterWidth * 1.5,
+                    child: _LibraryGameCard(
+                      game: games[index],
+                      onTap: () => onSelectGame(index),
+                      onOpenAssistant: () => onOpenAssistant(games[index].data),
+                    ),
+                  ),
+              ],
             );
           },
         ),
