@@ -53,11 +53,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   GameInfo? _rulesDrawerGame;
   DesktopLibraryResource? _rulesDrawerResource;
   int _rulesDrawerTab = 0;
+  DesktopLibraryResourceType? _libraryFilter;
   static const _routes = [
     'home',
     'games',
     'assistant',
-    'rankings',
     'favorites',
     'community',
     'settings',
@@ -98,6 +98,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     }
     setState(() => _page = page);
     if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void _setLibraryFilter(DesktopLibraryResourceType? filter) {
+    if (_libraryFilter == filter) return;
+    setState(() => _libraryFilter = filter);
   }
 
   int get _selectedRouteIndex {
@@ -455,6 +460,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     ),
                     'library' => DesktopLibraryPane(
                       controller: widget.controller,
+                      filter: _libraryFilter,
+                      onFilterChanged: _setLibraryFilter,
                       onOpenRules: _openRulesForResource,
                     ),
                     'advanced' => DesktopAdvancedSettingsPane(
@@ -519,7 +526,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   children: [
                                     Text(
                                       switch (_page) {
-                                        'rankings' => '排行榜',
                                         'favorites' => '我的收藏',
                                         'community' => '社区',
                                         _ => _page,

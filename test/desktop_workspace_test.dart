@@ -109,11 +109,18 @@ void main() {
     });
   }
 
-  testWidgets('unsupported sidebar routes display their own unavailable body', (
+  testWidgets('hidden and unsupported desktop routes stay unavailable', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
-    for (final label in ['排行榜', '我的收藏', '社区']) {
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.text('排行榜'),
+      ),
+      findsNothing,
+    );
+    for (final label in ['我的收藏', '社区']) {
       await _navigate(tester, label);
       expect(find.byType(DesktopHomePane), findsNothing);
       final title = find.text(label).evaluate().where((element) {
@@ -262,6 +269,62 @@ void main() {
     expect(find.byType(DesktopGamesPane), findsNothing);
     expect(find.byType(DesktopHomePane), findsNothing);
     expect(find.byType(DesktopLibraryPane), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('library filter tabs update the selected state', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-quick-entry-rules')),
+    );
+    await tester.pumpAndSettle();
+
+    final allButton = find.widgetWithText(
+      TextButton,
+      controller.copy.desktopAll,
+    );
+    final faqButton = find.widgetWithText(
+      TextButton,
+      controller.copy.desktopFaq,
+    );
+    expect(allButton, findsOneWidget);
+    expect(faqButton, findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(allButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(faqButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNull,
+    );
+
+    await tester.tap(faqButton);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<TextButton>(allButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(faqButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNotNull,
+    );
     expect(tester.takeException(), isNull);
   });
 

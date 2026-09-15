@@ -20,7 +20,6 @@ class DesktopSidebar extends StatelessWidget {
     (icon: Icons.home_rounded, label: '首页'),
     (icon: Icons.casino_rounded, label: '游戏库'),
     (icon: Icons.smart_toy_rounded, label: 'AI助手'),
-    (icon: Icons.emoji_events_rounded, label: '排行榜'),
     (icon: Icons.favorite_rounded, label: '我的收藏'),
     (icon: Icons.chat_bubble_rounded, label: '社区'),
     (icon: Icons.settings_rounded, label: '设置'),
