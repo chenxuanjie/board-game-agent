@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'v4_theme.dart';
+import 'theme.dart';
 
-class V4Sidebar extends StatelessWidget {
+class DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
   final bool compact;
   final double? width;
 
-  const V4Sidebar({
+  const DesktopSidebar({
     super.key,
     required this.selectedIndex,
     required this.onSelect,
@@ -29,12 +29,14 @@ class V4Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      key: ValueKey<String>(compact ? 'v4-sidebar-rail' : 'v4-sidebar-full'),
+      key: ValueKey<String>(
+        compact ? 'desktop-sidebar-rail' : 'desktop-sidebar-full',
+      ),
       width: width ?? (compact ? 76 : 205),
       height: double.infinity,
       decoration: const BoxDecoration(
-        color: V4Colors.sidebar,
-        border: Border(right: BorderSide(color: V4Colors.line)),
+        color: DesktopColors.sidebar,
+        border: Border(right: BorderSide(color: DesktopColors.line)),
       ),
       child: Stack(
         children: [
@@ -43,7 +45,7 @@ class V4Sidebar extends StatelessWidget {
               top: 520,
               child: Image.asset(
                 'assets/desktop/home/sidebar_castle.png',
-                key: const ValueKey<String>('v4-sidebar-art'),
+                key: const ValueKey<String>('desktop-sidebar-art'),
                 fit: BoxFit.cover,
                 alignment: Alignment.topCenter,
               ),
@@ -62,7 +64,7 @@ class V4Sidebar extends StatelessWidget {
                   padding: EdgeInsets.only(left: compact ? 3 : 21),
                   child: Image.asset(
                     'assets/desktop/home/logo.png',
-                    key: const ValueKey<String>('v4-sidebar-logo'),
+                    key: const ValueKey<String>('desktop-sidebar-logo'),
                     width: compact ? 48 : 77,
                     height: compact ? 48 : 72,
                     fit: BoxFit.contain,
@@ -85,7 +87,7 @@ class V4Sidebar extends StatelessWidget {
                     child: Text(
                       '发现更大的桌游世界',
                       style: TextStyle(
-                        color: V4Colors.secondaryText,
+                        color: DesktopColors.secondaryText,
                         fontSize: 13,
                       ),
                     ),
@@ -164,7 +166,7 @@ class _NavTileState extends State<_NavTile> {
               Icon(
                 widget.icon,
                 size: 22,
-                color: active ? Colors.white : V4Colors.brown,
+                color: active ? Colors.white : DesktopColors.brown,
               ),
               if (!widget.compact) ...[
                 const SizedBox(width: 15),

@@ -1,15 +1,15 @@
-// Body layout adapted directly from the read-only V4 reference.
+// Body layout adapted directly from the read-only Desktop reference.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
-import 'v4_content_primitives.dart';
-import 'v4_theme.dart';
+import 'content_primitives.dart';
+import 'theme.dart';
 
-class V4HomePane extends StatelessWidget {
-  const V4HomePane({
+class DesktopHomePane extends StatelessWidget {
+  const DesktopHomePane({
     super.key,
     required this.controller,
     required this.onNavigate,
@@ -24,7 +24,7 @@ class V4HomePane extends StatelessWidget {
     builder: (context, _) {
       final games = controller.games
           .take(5)
-          .map((g) => V4ContentGame(g, controller))
+          .map((g) => DesktopContentGame(g, controller))
           .toList();
       void action(String label) {
         for (final g in games) {
@@ -42,14 +42,14 @@ class V4HomePane extends StatelessWidget {
         if (route != null) {
           onNavigate(route);
         } else {
-          v4ContentPending(context, label);
+          desktopContentPending(context, label);
         }
       }
 
-      return V4ContentColumns(
+      return DesktopContentColumns(
         main: Column(
           children: [
-            V4ContentStatus(controller: controller),
+            DesktopContentStatus(controller: controller),
             if (!controller.hasGames)
               TextButton(
                 onPressed: () => onNavigate('library'),
@@ -68,7 +68,7 @@ class V4HomePane extends StatelessWidget {
 class _MainColumn extends StatelessWidget {
   final ValueChanged<String> onUnavailable;
 
-  final List<V4ContentGame> games;
+  final List<DesktopContentGame> games;
   const _MainColumn({required this.onUnavailable, required this.games});
 
   @override
@@ -83,10 +83,10 @@ class _MainColumn extends StatelessWidget {
         ),
         const SizedBox(height: 11),
         _SectionHeader(
-          key: const ValueKey<String>('v4-home-recommendation-header'),
+          key: const ValueKey<String>('desktop-home-recommendation-header'),
           leading: SvgPicture.asset(
             'assets/desktop/home/flame_icon_hd.svg',
-            key: const ValueKey<String>('v4-home-library-flame'),
+            key: const ValueKey<String>('desktop-home-library-flame'),
             width: 25,
             height: 25,
             semanticsLabel: '热门桌游',
@@ -364,7 +364,7 @@ class _SectionHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 12,
-                  color: V4Colors.secondaryText,
+                  color: DesktopColors.secondaryText,
                 ),
               ),
             ),
@@ -404,7 +404,7 @@ class _TextLinkState extends State<_TextLink> {
             Text(
               widget.label,
               style: TextStyle(
-                color: hover ? V4Colors.orange : const Color(0xFF6C625A),
+                color: hover ? DesktopColors.orange : const Color(0xFF6C625A),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -413,7 +413,7 @@ class _TextLinkState extends State<_TextLink> {
             Icon(
               Icons.chevron_right_rounded,
               size: 17,
-              color: hover ? V4Colors.orange : const Color(0xFF6C625A),
+              color: hover ? DesktopColors.orange : const Color(0xFF6C625A),
             ),
           ],
         ),
@@ -423,7 +423,7 @@ class _TextLinkState extends State<_TextLink> {
 }
 
 class _GameCard extends StatelessWidget {
-  final V4ContentGame game;
+  final DesktopContentGame game;
   final VoidCallback onTap;
 
   const _GameCard({required this.game, required this.onTap});
@@ -437,7 +437,7 @@ class _GameCard extends StatelessWidget {
         height: 229,
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: V4Colors.card,
+          color: DesktopColors.card,
           borderRadius: BorderRadius.circular(9),
           border: Border.all(color: const Color(0x0D8A6044)),
           boxShadow: const [
@@ -476,7 +476,7 @@ class _GameCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 8.6,
-                color: V4Colors.secondaryText,
+                color: DesktopColors.secondaryText,
                 height: 1.2,
               ),
             ),
@@ -579,7 +579,7 @@ class _RecentCard extends StatelessWidget {
         children: [
           _SectionHeader(
             icon: Icons.history_rounded,
-            iconColor: V4Colors.orange,
+            iconColor: DesktopColors.orange,
             title: '最近浏览',
             onMore: () => onUnavailable('最近浏览'),
           ),
@@ -587,7 +587,7 @@ class _RecentCard extends StatelessWidget {
             child: Center(
               child: Text(
                 '未开放',
-                style: TextStyle(color: V4Colors.secondaryText),
+                style: TextStyle(color: DesktopColors.secondaryText),
               ),
             ),
           ),
@@ -609,7 +609,7 @@ class _CommunityCard extends StatelessWidget {
         children: [
           _SectionHeader(
             icon: Icons.chat_bubble_rounded,
-            iconColor: V4Colors.orange,
+            iconColor: DesktopColors.orange,
             title: '社区热门',
             onMore: () => onUnavailable('社区热门'),
           ),
@@ -617,7 +617,7 @@ class _CommunityCard extends StatelessWidget {
             child: Center(
               child: Text(
                 '未开放',
-                style: TextStyle(color: V4Colors.secondaryText),
+                style: TextStyle(color: DesktopColors.secondaryText),
               ),
             ),
           ),
@@ -651,7 +651,10 @@ class _RightColumn extends StatelessWidget {
             child: SizedBox(
               height: 104,
               width: double.infinity,
-              child: Image.asset('assets/v4/promo_art.png', fit: BoxFit.cover),
+              child: Image.asset(
+                'assets/desktop/warmwood/promo_art.png',
+                fit: BoxFit.cover,
+              ),
             ),
           ),
         ),
@@ -671,7 +674,7 @@ class _Panel extends StatelessWidget {
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: V4Colors.card,
+        color: DesktopColors.card,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0x0E8A6044)),
         boxShadow: const [
@@ -714,7 +717,10 @@ class _ProfilePanel extends StatelessWidget {
             const SizedBox(height: 6),
             const Text(
               '个人中心 · 未开放',
-              style: TextStyle(fontSize: 12, color: V4Colors.secondaryText),
+              style: TextStyle(
+                fontSize: 12,
+                color: DesktopColors.secondaryText,
+              ),
             ),
             const SizedBox(height: 13),
             Expanded(
@@ -762,7 +768,7 @@ class _ProfilePanel extends StatelessWidget {
                                   s.$2,
                                   style: const TextStyle(
                                     fontSize: 10.5,
-                                    color: V4Colors.secondaryText,
+                                    color: DesktopColors.secondaryText,
                                   ),
                                 ),
                               ],
@@ -795,7 +801,7 @@ class _MeetingPanel extends StatelessWidget {
         children: [
           _SectionHeader(
             icon: Icons.calendar_month_rounded,
-            iconColor: V4Colors.orange,
+            iconColor: DesktopColors.orange,
             title: '下次桌游聚会',
             onMore: () => onUnavailable('下次桌游聚会'),
           ),
@@ -803,7 +809,7 @@ class _MeetingPanel extends StatelessWidget {
             child: Center(
               child: Text(
                 '未开放',
-                style: TextStyle(color: V4Colors.secondaryText),
+                style: TextStyle(color: DesktopColors.secondaryText),
               ),
             ),
           ),
@@ -896,7 +902,7 @@ class _QuickPanel extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    color: V4Colors.secondaryText,
+                                    color: DesktopColors.secondaryText,
                                     fontSize: 9.5,
                                   ),
                                 ),

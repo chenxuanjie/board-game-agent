@@ -11,8 +11,8 @@ abstract final class _SettingsColors {
   static const orange = Color(0xFFFF6846);
 }
 
-class V4SettingsPane extends StatefulWidget {
-  const V4SettingsPane({
+class DesktopSettingsPane extends StatefulWidget {
+  const DesktopSettingsPane({
     super.key,
     required this.controller,
     required this.onOpenExistingSettings,
@@ -24,10 +24,10 @@ class V4SettingsPane extends StatefulWidget {
   final VoidCallback onOpenAbout;
 
   @override
-  State<V4SettingsPane> createState() => _V4SettingsPaneState();
+  State<DesktopSettingsPane> createState() => _DesktopSettingsPaneState();
 }
 
-class _V4SettingsPaneState extends State<V4SettingsPane> {
+class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   bool _saving = false;
   String? _failure;
 
@@ -208,7 +208,7 @@ const _accentColors = <Color>[
   Color(0xFFEF4A7A),
 ];
 
-// Geometry below is copied from the read-only V4 settings reference.
+// Geometry below is copied from the read-only Desktop settings reference.
 // Null callbacks mean unavailable, never a locally simulated saved value.
 class _SettingsCard extends StatelessWidget {
   final IconData icon;
@@ -645,9 +645,9 @@ class _AppearanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const themes = [
-      ('assets/v4/theme_dark.png', '默认主题'),
-      ('assets/v4/theme_light.png', '晚霞海岸'),
-      ('assets/v4/theme_system.png', '暖木书房'),
+      ('assets/desktop/warmwood/theme_dark.png', '默认主题'),
+      ('assets/desktop/warmwood/theme_light.png', '晚霞海岸'),
+      ('assets/desktop/warmwood/theme_system.png', '暖木书房'),
     ];
     return _SettingsCard(
       icon: Icons.palette_rounded,
@@ -878,7 +878,7 @@ class _LanguageCard extends StatelessWidget {
     return _SettingsCard(
       icon: Icons.language_rounded,
       title: '语言设置',
-      subtitle: '仅影响旧版页面；V4 界面固定中文',
+      subtitle: '语言设置将同步应用到支持多语言的页面',
       height: 177,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -914,7 +914,7 @@ class _LanguageCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           const Text(
-            '更改后自动保存，不改变 V4 界面语言',
+            '更改后自动保存',
             style: TextStyle(
               fontSize: 9.5,
               color: _SettingsColors.secondaryText,

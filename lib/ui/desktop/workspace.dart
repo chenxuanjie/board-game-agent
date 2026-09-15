@@ -1,21 +1,30 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../models/ai_conversation.dart';
+import '../../models/app_activity.dart';
+import '../../models/desktop_library_resource.dart';
 import '../../models/game_info.dart';
+import '../../models/resolved_document.dart';
 import '../../state/app_controller.dart';
-import '../screens/desktop_workspace_screen.dart';
-import 'v4_home.dart';
-import 'v4_games.dart';
-import 'v4_game_detail.dart';
-import 'v4_home_search_overlay.dart';
-import 'v4_settings.dart';
-import 'v4_sidebar.dart';
-import 'v4_theme.dart';
-import 'v4_window_controls.dart';
+import '../screens/markdown_document_screen.dart';
+import '../screens/pdf_document_screen.dart';
+import 'business_panes.dart';
+import 'home_pane.dart';
+import 'games_pane.dart';
+import 'game_detail_pane.dart';
+import 'home_search_overlay.dart';
+import 'settings_pane.dart';
+import 'sidebar.dart';
+import 'theme.dart';
+import 'window_controls.dart';
 
-class V4Workspace extends StatefulWidget {
-  const V4Workspace({
+class DesktopWorkspace extends StatefulWidget {
+  const DesktopWorkspace({
     super.key,
     required this.controller,
     required this.onOpenAbout,
@@ -25,12 +34,12 @@ class V4Workspace extends StatefulWidget {
   final VoidCallback onOpenAbout;
   final bool enableNativeWindowControls;
   @override
-  State<V4Workspace> createState() => _V4WorkspaceState();
+  State<DesktopWorkspace> createState() => _DesktopWorkspaceState();
 }
 
-class _V4WorkspaceState extends State<V4Workspace> {
+class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  final _legacy = GlobalKey<DesktopWorkspaceScreenState>();
+  final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
   final _activityLink = LayerLink();
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
@@ -40,6 +49,10 @@ class _V4WorkspaceState extends State<V4Workspace> {
   bool _searchOpen = false;
   String _page = 'home';
   String _gameDetailReturnPage = 'games';
+  bool _rulesDrawerOpen = false;
+  GameInfo? _rulesDrawerGame;
+  DesktopLibraryResource? _rulesDrawerResource;
+  int _rulesDrawerTab = 0;
   static const _routes = [
     'home',
     'games',
@@ -53,7 +66,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
       widget.enableNativeWindowControls &&
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.windows;
-  bool get _oldPage => ['assistant', 'library', 'advanced'].contains(_page);
+  bool get _featurePage => ['assistant', 'library', 'advanced'].contains(_page);
 
   @override
   void initState() {
@@ -80,10 +93,10 @@ class _V4WorkspaceState extends State<V4Workspace> {
 
   void _navigate(String page) {
     _dismissSearch();
-    setState(() => _page = page);
-    if (_oldPage) {
-      _legacy.currentState?.navigateTo(page == 'advanced' ? 'settings' : page);
+    if (page == 'assistant' && widget.controller.selectedConversation == null) {
+      widget.controller.openGlobalAssistant();
     }
+    setState(() => _page = page);
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
@@ -111,18 +124,154 @@ class _V4WorkspaceState extends State<V4Workspace> {
 
   void _openRules(GameInfo game) {
     _dismissSearch();
-    setState(() => _page = 'library');
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _legacy.currentState?.navigateTo('library');
-      _legacy.currentState?.openRulesForGame(game);
+    widget.controller.selectGame(game.id);
+    setState(() {
+      _page = 'library';
+      _rulesDrawerGame = game;
+      _rulesDrawerResource = null;
+      _rulesDrawerTab = 0;
+      _rulesDrawerOpen = true;
     });
   }
 
   void _askAi(GameInfo game) {
     _dismissSearch();
+    if (!widget.controller.openGameAssistant(game.id)) return;
+    setState(() => _page = 'assistant');
+  }
+
+  void _openRulesForResource(DesktopLibraryResource resource) {
+    final game = widget.controller.games
+        .where((item) => item.slug == resource.gameSlug)
+        .firstOrNull;
+    if (game != null) widget.controller.selectGame(game.id);
+    setState(() {
+      _rulesDrawerGame = game;
+      _rulesDrawerResource = resource;
+      _rulesDrawerTab = 0;
+      _rulesDrawerOpen = true;
+    });
+  }
+
+  void _closeRulesDrawer() => setState(() => _rulesDrawerOpen = false);
+
+  void _openDrawerAssistant() {
+    final game = _rulesDrawerGame;
+    _closeRulesDrawer();
+    if (game != null) {
+      _askAi(game);
+    } else {
+      _navigate('assistant');
+    }
+  }
+
+  Future<void> _openDrawerResource() async {
+    final resource = _rulesDrawerResource;
+    if (resource == null || !resource.canOpen) return;
+    _closeRulesDrawer();
+    final ResolvedDocument? document = await widget.controller
+        .resolveLibraryResource(resource);
+    if (!mounted || document == null) return;
+    final title = '${resource.gameTitle} · ${resource.title}';
+    final Widget page;
+    if (document.renderType == DocumentRenderType.markdown) {
+      page = MarkdownDocumentScreen(
+        controller: widget.controller,
+        remotePath: document.remotePath,
+        title: title,
+      );
+    } else if (document.renderType == DocumentRenderType.pdf) {
+      page = PdfDocumentScreen(
+        controller: widget.controller,
+        title: title,
+        remotePath: document.remotePath,
+      );
+    } else {
+      return;
+    }
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => page));
+  }
+
+  Future<void> _openActivityCenter() async {
+    if (!mounted) return;
+    final size = MediaQuery.sizeOf(context);
+    final width = math.min(math.max(240, size.width * .36), 332).toDouble();
+    final height = math.min(math.max(180, size.height - 100), 520).toDouble();
+    var markedRead = false;
+    await showGeneralDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent,
+      barrierDismissible: true,
+      barrierLabel: widget.controller.copy.activityTitle,
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (dialogContext, _, _) {
+        if (!markedRead) {
+          markedRead = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(widget.controller.markActivitiesRead());
+          });
+        }
+        return Stack(
+          children: [
+            CompositedTransformFollower(
+              link: _activityLink,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.bottomRight,
+              followerAnchor: Alignment.topRight,
+              offset: const Offset(0, 8),
+              child: UnconstrainedBox(
+                alignment: Alignment.topRight,
+                child: SizedBox(
+                  width: width,
+                  child: DesktopActivityPopup(
+                    controller: widget.controller,
+                    maxHeight: height,
+                    onClose: () => Navigator.of(dialogContext).pop(),
+                    onActivityTap: (activity) => _handleActivityTap(
+                      activity,
+                      closePanel: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _handleActivityTap(AppActivity activity, {VoidCallback? closePanel}) {
+    closePanel?.call();
+    unawaited(widget.controller.markActivityRead(activity.id));
+    activity = widget.controller.resolveActivityTarget(activity);
+    if (activity.kind == AppActivityKind.libraryLoadFailed) {
+      _navigate('library');
+      return;
+    }
+    final conversationId = activity.conversationId;
+    if (conversationId == null ||
+        !widget.controller.conversations.any(
+          (AiConversation item) => item.id == conversationId,
+        )) {
+      if (activity.kind == AppActivityKind.aiCompleted ||
+          activity.kind == AppActivityKind.aiFailed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.activityConversationUnavailable,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    widget.controller.selectConversation(conversationId);
     setState(() => _page = 'assistant');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _legacy.currentState?.openAssistantForGame(game);
+      _assistantPane.currentState?.revealMessage(activity.messageId);
     });
   }
 
@@ -218,7 +367,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
         Widget body = Row(
           children: [
             if (!narrow)
-              V4Sidebar(
+              DesktopSidebar(
                 compact: compact,
                 selectedIndex: _selectedRouteIndex,
                 onSelect: _selectRoute,
@@ -258,13 +407,13 @@ class _V4WorkspaceState extends State<V4Workspace> {
         }
         return Scaffold(
           key: _scaffoldKey,
-          backgroundColor: V4Colors.background,
+          backgroundColor: DesktopColors.background,
           drawer: narrow
               ? Drawer(
                   width: 280,
                   shape: const RoundedRectangleBorder(),
                   child: SafeArea(
-                    child: V4Sidebar(
+                    child: DesktopSidebar(
                       width: 280,
                       selectedIndex: _selectedRouteIndex,
                       onSelect: (index) =>
@@ -290,27 +439,32 @@ class _V4WorkspaceState extends State<V4Workspace> {
       return KeyEventResult.ignored;
     },
     child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_page != 'gameDetail') _topBar(compact: compact, narrow: narrow),
         Expanded(
           child: Stack(
+            fit: StackFit.expand,
             children: [
-              Positioned.fill(
-                child: Offstage(
-                  offstage: !_oldPage,
-                  child: DesktopWorkspaceScreen(
-                    key: _legacy,
-                    controller: widget.controller,
-                    onOpenAbout: widget.onOpenAbout,
-                    embedded: true,
-                    activityLink: _activityLink,
-                    onDestinationChanged: (page) => setState(
-                      () => _page = page == 'settings' ? 'advanced' : page,
+              if (_featurePage)
+                Positioned.fill(
+                  child: switch (_page) {
+                    'assistant' => DesktopAssistantPane(
+                      key: _assistantPane,
+                      controller: widget.controller,
                     ),
-                  ),
+                    'library' => DesktopLibraryPane(
+                      controller: widget.controller,
+                      onOpenRules: _openRulesForResource,
+                    ),
+                    'advanced' => DesktopAdvancedSettingsPane(
+                      controller: widget.controller,
+                      onOpenAbout: widget.onOpenAbout,
+                    ),
+                    _ => const SizedBox.shrink(),
+                  },
                 ),
-              ),
-              if (!_oldPage)
+              if (!_featurePage)
                 Scrollbar(
                   controller: _scroll,
                   child: SingleChildScrollView(
@@ -327,18 +481,18 @@ class _V4WorkspaceState extends State<V4Workspace> {
                                   14,
                                 ),
                           child: switch (_page) {
-                            'home' => V4HomePane(
+                            'home' => DesktopHomePane(
                               controller: widget.controller,
                               onNavigate: _navigate,
                               onOpenGame: _game,
                             ),
-                            'games' => V4GamesPane(
+                            'games' => DesktopGamesPane(
                               controller: widget.controller,
                               showPreview: !compact && !narrow,
                               onNavigate: _navigate,
                               onOpenGame: _game,
                             ),
-                            'gameDetail' => V4GameDetailPane(
+                            'gameDetail' => DesktopGameDetailPane(
                               controller: widget.controller,
                               game: widget.controller.selectedGame,
                               backTooltip: _gameDetailReturnPage == 'home'
@@ -351,7 +505,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                               onAskAi: () =>
                                   _askAi(widget.controller.selectedGame),
                             ),
-                            'settings' => V4SettingsPane(
+                            'settings' => DesktopSettingsPane(
                               controller: widget.controller,
                               onOpenExistingSettings: () =>
                                   _navigate('advanced'),
@@ -378,7 +532,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                                     const Text(
                                       '未开放',
                                       style: TextStyle(
-                                        color: V4Colors.secondaryText,
+                                        color: DesktopColors.secondaryText,
                                       ),
                                     ),
                                   ],
@@ -396,7 +550,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                   right: 12,
                   top: 12,
                   child: IconButton(
-                    key: const ValueKey<String>('v4-open-navigation'),
+                    key: const ValueKey<String>('desktop-open-navigation'),
                     tooltip: '打开导航',
                     onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                     style: IconButton.styleFrom(
@@ -415,8 +569,10 @@ class _V4WorkspaceState extends State<V4Workspace> {
                     alignment: Alignment.topLeft,
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 680),
-                      child: V4HomeSearchOverlay(
-                        key: const ValueKey<String>('v4-home-search-overlay'),
+                      child: DesktopHomeSearchOverlay(
+                        key: const ValueKey<String>(
+                          'desktop-home-search-overlay',
+                        ),
                         query: _search.text,
                         games: widget.controller.games,
                         controller: widget.controller,
@@ -433,6 +589,18 @@ class _V4WorkspaceState extends State<V4Workspace> {
                     ),
                   ),
                 ),
+              DesktopRulesDrawer(
+                open: _rulesDrawerOpen,
+                tabIndex: _rulesDrawerTab,
+                game: _rulesDrawerGame,
+                resource: _rulesDrawerResource,
+                controller: widget.controller,
+                onClose: _closeRulesDrawer,
+                onTabChanged: (value) =>
+                    setState(() => _rulesDrawerTab = value),
+                onOpenAssistant: _openDrawerAssistant,
+                onOpenResource: _openDrawerResource,
+              ),
             ],
           ),
         ),
@@ -448,10 +616,10 @@ class _V4WorkspaceState extends State<V4Workspace> {
         children: [
           if (narrow) ...[
             IconButton(
-              key: const ValueKey<String>('v4-open-navigation'),
+              key: const ValueKey<String>('desktop-open-navigation'),
               tooltip: '打开导航',
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-              icon: const Icon(Icons.menu_rounded, color: V4Colors.brown),
+              icon: const Icon(Icons.menu_rounded, color: DesktopColors.brown),
             ),
             const SizedBox(width: 6),
           ],
@@ -467,12 +635,12 @@ class _V4WorkspaceState extends State<V4Workspace> {
                     duration: const Duration(milliseconds: 120),
                     decoration: BoxDecoration(
                       color: _searchFocus.hasFocus
-                          ? V4Colors.card
+                          ? DesktopColors.card
                           : const Color(0xFFF8F2EA),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
                         color: _searchFocus.hasFocus
-                            ? V4Colors.orange
+                            ? DesktopColors.orange
                             : Colors.transparent,
                       ),
                       boxShadow: _searchFocus.hasFocus
@@ -488,7 +656,9 @@ class _V4WorkspaceState extends State<V4Workspace> {
                     child: TapRegion(
                       groupId: _searchTapRegionGroup,
                       child: TextField(
-                        key: const ValueKey<String>('v4-home-search-field'),
+                        key: const ValueKey<String>(
+                          'desktop-home-search-field',
+                        ),
                         controller: _search,
                         focusNode: _searchFocus,
                         onTap: _openSearch,
@@ -501,7 +671,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                           isDense: true,
                           prefixIcon: const Icon(
                             Icons.search_rounded,
-                            color: V4Colors.brown,
+                            color: DesktopColors.brown,
                             size: 21,
                           ),
                           suffixIcon: _searchOpen
@@ -515,7 +685,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                                   icon: const Icon(
                                     Icons.close_rounded,
                                     size: 18,
-                                    color: V4Colors.secondaryText,
+                                    color: DesktopColors.secondaryText,
                                   ),
                                 )
                               : null,
@@ -543,9 +713,9 @@ class _V4WorkspaceState extends State<V4Workspace> {
                 tooltip: '通知',
                 icon: const Icon(
                   Icons.notifications_none_rounded,
-                  color: V4Colors.brown,
+                  color: DesktopColors.brown,
                 ),
-                onPressed: () => _legacy.currentState?.openActivities(),
+                onPressed: _openActivityCenter,
               ),
             ),
           ),
@@ -558,7 +728,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                 children: [
                   ClipOval(
                     child: Image.asset(
-                      'assets/v4/avatar.png',
+                      'assets/desktop/warmwood/avatar.png',
                       width: 44,
                       height: 44,
                       fit: BoxFit.cover,
@@ -582,7 +752,7 @@ class _V4WorkspaceState extends State<V4Workspace> {
                           '未开放',
                           style: TextStyle(
                             fontSize: 11,
-                            color: V4Colors.secondaryText,
+                            color: DesktopColors.secondaryText,
                           ),
                         ),
                       ],

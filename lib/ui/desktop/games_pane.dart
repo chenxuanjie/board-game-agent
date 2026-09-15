@@ -1,13 +1,13 @@
-// Body layout adapted directly from the read-only V4 reference.
+// Body layout adapted directly from the read-only Desktop reference.
 import 'package:flutter/material.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
-import '../screens/desktop_workspace_screen.dart' show DesktopLibraryPosterCard;
-import 'v4_content_primitives.dart';
-import 'v4_theme.dart';
+import 'poster_card.dart';
+import 'content_primitives.dart';
+import 'theme.dart';
 
-class V4GamesPane extends StatefulWidget {
-  const V4GamesPane({
+class DesktopGamesPane extends StatefulWidget {
+  const DesktopGamesPane({
     super.key,
     required this.controller,
     required this.onNavigate,
@@ -19,13 +19,13 @@ class V4GamesPane extends StatefulWidget {
   final ValueChanged<GameInfo> onOpenGame;
   final bool showPreview;
   @override
-  State<V4GamesPane> createState() => _V4GamesPaneState();
+  State<DesktopGamesPane> createState() => _DesktopGamesPaneState();
 }
 
-class _V4GamesPaneState extends State<V4GamesPane> {
+class _DesktopGamesPaneState extends State<DesktopGamesPane> {
   String? _selectedId;
   int _category = 0;
-  _V4GameSort _sort = _V4GameSort.catalog;
+  _DesktopGameSort _sort = _DesktopGameSort.catalog;
   String? _playerFilter;
   String? _weightFilter;
   @override
@@ -45,7 +45,7 @@ class _V4GamesPaneState extends State<V4GamesPane> {
                     _matchesPlayer(g) &&
                     _matchesWeight(g),
               )
-              .map((g) => V4ContentGame(g, widget.controller))
+              .map((g) => DesktopContentGame(g, widget.controller))
               .toList()
             ..sort(_compareGames);
       final found = games.indexWhere((g) => g.data.id == _selectedId);
@@ -57,14 +57,14 @@ class _V4GamesPaneState extends State<V4GamesPane> {
         } else if ((label == '展开介绍' || label == '更多机制') && selected != null) {
           widget.onOpenGame(selected.data);
         } else {
-          v4ContentPending(context, label);
+          desktopContentPending(context, label);
         }
       }
 
       final main = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          V4ContentStatus(controller: widget.controller),
+          DesktopContentStatus(controller: widget.controller),
           _LibraryMain(
             games: games,
             selectedCategory: _category,
@@ -90,7 +90,7 @@ class _V4GamesPaneState extends State<V4GamesPane> {
         ],
       );
       if (!widget.showPreview) return main;
-      return V4ContentColumns(
+      return DesktopContentColumns(
         gap: 13,
         rightWidth: 360,
         main: main,
@@ -99,7 +99,7 @@ class _V4GamesPaneState extends State<V4GamesPane> {
             : _GameDetailPanel(
                 game: selected,
                 favorite: false,
-                onToggleFavorite: () => v4ContentPending(context, '收藏'),
+                onToggleFavorite: () => desktopContentPending(context, '收藏'),
                 onOpenDetail: () => widget.onOpenGame(selected.data),
                 onUnavailable: action,
               ),
@@ -107,14 +107,15 @@ class _V4GamesPaneState extends State<V4GamesPane> {
     },
   );
 
-  int _compareGames(V4ContentGame a, V4ContentGame b) => switch (_sort) {
-    _V4GameSort.catalog =>
-      widget.controller.games
-          .indexOf(a.data)
-          .compareTo(widget.controller.games.indexOf(b.data)),
-    _V4GameSort.name => a.title.compareTo(b.title),
-    _V4GameSort.score => _score(b.data).compareTo(_score(a.data)),
-  };
+  int _compareGames(DesktopContentGame a, DesktopContentGame b) =>
+      switch (_sort) {
+        _DesktopGameSort.catalog =>
+          widget.controller.games
+              .indexOf(a.data)
+              .compareTo(widget.controller.games.indexOf(b.data)),
+        _DesktopGameSort.name => a.title.compareTo(b.title),
+        _DesktopGameSort.score => _score(b.data).compareTo(_score(a.data)),
+      };
 
   double _score(GameInfo game) => double.tryParse(game.score) ?? -1;
 
@@ -138,12 +139,12 @@ class _V4GamesPaneState extends State<V4GamesPane> {
   }
 
   Future<void> _chooseSort() async {
-    final value = await showDialog<_V4GameSort>(
+    final value = await showDialog<_DesktopGameSort>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('排序'),
         children: [
-          for (final item in _V4GameSort.values)
+          for (final item in _DesktopGameSort.values)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, item),
               child: Row(
@@ -230,17 +231,17 @@ class _V4GamesPaneState extends State<V4GamesPane> {
   }
 }
 
-enum _V4GameSort {
+enum _DesktopGameSort {
   catalog('综合排序'),
   name('名称'),
   score('评分');
 
-  const _V4GameSort(this.label);
+  const _DesktopGameSort(this.label);
   final String label;
 }
 
 class _LibraryMain extends StatelessWidget {
-  final List<V4ContentGame> games;
+  final List<DesktopContentGame> games;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
   final ValueChanged<GameInfo> onOpenAssistant;
@@ -340,7 +341,7 @@ class _LibraryMain extends StatelessWidget {
             final columns = ((constraints.maxWidth + crossAxisSpacing) / 198)
                 .floor();
             return GridView.builder(
-              key: const ValueKey<String>('v4-library-posters'),
+              key: const ValueKey<String>('desktop-library-posters'),
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               clipBehavior: Clip.none,
@@ -352,7 +353,7 @@ class _LibraryMain extends StatelessWidget {
               ),
               itemCount: games.length,
               itemBuilder: (context, index) {
-                final V4ContentGame game = games[index];
+                final DesktopContentGame game = games[index];
                 return _LibraryGameCard(
                   game: game,
                   onTap: () => onSelectGame(index),
@@ -374,7 +375,7 @@ class _LibraryMain extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.asset(
-                        'assets/v4/ref_library_promo.png',
+                        'assets/desktop/warmwood/ref_library_promo.png',
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -397,7 +398,7 @@ class _LibraryMain extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.asset(
-                        'assets/v4/ref_library_promo.png',
+                        'assets/desktop/warmwood/ref_library_promo.png',
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -449,12 +450,12 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
           decoration: BoxDecoration(
             gradient: selected
                 ? const LinearGradient(
-                    colors: [V4Colors.orange, V4Colors.orange2],
+                    colors: [DesktopColors.orange, DesktopColors.orange2],
                   )
                 : null,
             color: selected
                 ? null
-                : (hover ? const Color(0xFFFFF2E9) : V4Colors.card),
+                : (hover ? const Color(0xFFFFF2E9) : DesktopColors.card),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: selected ? Colors.transparent : const Color(0x219B5435),
@@ -505,7 +506,7 @@ class _OutlineActionState extends State<_OutlineAction> {
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: hover ? const Color(0xFFFFF2E9) : V4Colors.card,
+            color: hover ? const Color(0xFFFFF2E9) : DesktopColors.card,
             borderRadius: BorderRadius.circular(9),
             border: Border.all(color: const Color(0x219B5435)),
           ),
@@ -521,7 +522,7 @@ class _OutlineActionState extends State<_OutlineAction> {
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(widget.icon, size: 16, color: V4Colors.brown),
+              Icon(widget.icon, size: 16, color: DesktopColors.brown),
             ],
           ),
         ),
@@ -531,7 +532,7 @@ class _OutlineActionState extends State<_OutlineAction> {
 }
 
 class _LibraryGameCard extends StatelessWidget {
-  final V4ContentGame game;
+  final DesktopContentGame game;
   final VoidCallback onTap;
   final VoidCallback onOpenAssistant;
 
@@ -567,7 +568,7 @@ class _LibraryStats extends StatelessWidget {
       height: 45,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: V4Colors.card,
+        color: DesktopColors.card,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0x108A6044)),
       ),
@@ -581,7 +582,9 @@ class _LibraryStats extends StatelessWidget {
                   Icon(
                     data[i].$1,
                     size: 19,
-                    color: i == 2 ? const Color(0xFFFF5E56) : V4Colors.orange,
+                    color: i == 2
+                        ? const Color(0xFFFF5E56)
+                        : DesktopColors.orange,
                   ),
                   const SizedBox(width: 6),
                   Column(
@@ -599,7 +602,7 @@ class _LibraryStats extends StatelessWidget {
                         data[i].$3,
                         style: const TextStyle(
                           fontSize: 8.5,
-                          color: V4Colors.secondaryText,
+                          color: DesktopColors.secondaryText,
                         ),
                       ),
                     ],
@@ -617,7 +620,7 @@ class _LibraryStats extends StatelessWidget {
 }
 
 class _GameDetailPanel extends StatelessWidget {
-  final V4ContentGame game;
+  final DesktopContentGame game;
   final bool favorite;
   final VoidCallback onToggleFavorite;
   final VoidCallback onOpenDetail;
@@ -637,7 +640,7 @@ class _GameDetailPanel extends StatelessWidget {
       height: 648,
       padding: const EdgeInsets.fromLTRB(13, 13, 13, 14),
       decoration: BoxDecoration(
-        color: V4Colors.card,
+        color: DesktopColors.card,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0x108A6044)),
         boxShadow: const [
@@ -694,7 +697,7 @@ class _GameDetailPanel extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 10,
-                        color: V4Colors.secondaryText,
+                        color: DesktopColors.secondaryText,
                         letterSpacing: .2,
                       ),
                     ),
@@ -720,7 +723,7 @@ class _GameDetailPanel extends StatelessWidget {
                             '(${game.reviewCount})',
                             style: const TextStyle(
                               fontSize: 9,
-                              color: V4Colors.secondaryText,
+                              color: DesktopColors.secondaryText,
                             ),
                           ),
                         ),
@@ -802,14 +805,14 @@ class _GameDetailPanel extends StatelessWidget {
                       '展开',
                       style: TextStyle(
                         fontSize: 10,
-                        color: V4Colors.orange,
+                        color: DesktopColors.orange,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     Icon(
                       Icons.keyboard_arrow_down_rounded,
                       size: 15,
-                      color: V4Colors.orange,
+                      color: DesktopColors.orange,
                     ),
                   ],
                 ),
@@ -834,13 +837,13 @@ class _GameDetailPanel extends StatelessWidget {
                         '查看更多',
                         style: TextStyle(
                           fontSize: 10,
-                          color: V4Colors.orange,
+                          color: DesktopColors.orange,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       Icon(
                         Icons.chevron_right_rounded,
-                        color: V4Colors.orange,
+                        color: DesktopColors.orange,
                         size: 16,
                       ),
                     ],
@@ -914,7 +917,7 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
           decoration: BoxDecoration(
             gradient: widget.favorite
                 ? const LinearGradient(
-                    colors: [V4Colors.orange, V4Colors.orange2],
+                    colors: [DesktopColors.orange, DesktopColors.orange2],
                   )
                 : null,
             color: widget.favorite
@@ -933,7 +936,7 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
                     ? Icons.favorite_rounded
                     : Icons.favorite_border_rounded,
                 size: 19,
-                color: widget.favorite ? Colors.white : V4Colors.orange,
+                color: widget.favorite ? Colors.white : DesktopColors.orange,
               ),
               const SizedBox(width: 7),
               Text(
@@ -941,7 +944,7 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: widget.favorite ? Colors.white : V4Colors.orange,
+                  color: widget.favorite ? Colors.white : DesktopColors.orange,
                 ),
               ),
             ],
@@ -969,7 +972,7 @@ class _DetailStat extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 22, color: V4Colors.orange),
+          Icon(icon, size: 22, color: DesktopColors.orange),
           const SizedBox(width: 6),
           Flexible(
             child: Column(
@@ -990,7 +993,7 @@ class _DetailStat extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     fontSize: 8.3,
-                    color: V4Colors.secondaryText,
+                    color: DesktopColors.secondaryText,
                   ),
                 ),
               ],
@@ -1063,7 +1066,7 @@ class _BottomActionState extends State<_BottomAction> {
           decoration: BoxDecoration(
             gradient: widget.filled
                 ? const LinearGradient(
-                    colors: [V4Colors.orange, V4Colors.orange2],
+                    colors: [DesktopColors.orange, DesktopColors.orange2],
                   )
                 : null,
             color: widget.filled
@@ -1089,7 +1092,7 @@ class _BottomActionState extends State<_BottomAction> {
               Icon(
                 widget.icon,
                 size: 19,
-                color: widget.filled ? Colors.white : V4Colors.brown,
+                color: widget.filled ? Colors.white : DesktopColors.brown,
               ),
               const SizedBox(width: 8),
               Text(

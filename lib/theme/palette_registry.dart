@@ -68,7 +68,7 @@ class PaletteRegistry {
     shadow: Color(0xFF8D747E),
   );
 
-  /// Warm ivory, orange and walnut tones used by the V4 desktop workspace.
+  /// Warm ivory, orange and walnut tones used by the desktop workspace.
   static const AppPalette warmwoodStudy = AppPalette(
     scheme: ColorSchemeOption.warmwoodStudy,
     nameZh: '暖木书房',

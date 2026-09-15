@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/palette_registry.dart';
 
-/// Tokens mirrored from the V4 reference's AppColors.
-abstract final class V4Colors {
+/// Design tokens for the Warmwood Study desktop theme.
+abstract final class DesktopColors {
   static const background = Color(0xFFFFFCF7);
   static const sidebar = Color(0xFFFFFAF1);
   static const card = Color(0xFFFFFEFC);
@@ -17,16 +17,16 @@ abstract final class V4Colors {
   static const soft = Color(0xFFF8F3EC);
 }
 
-/// V4 desktop presentation for the persisted Warmwood Study theme.
-ThemeData buildV4Theme() {
+/// Desktop presentation for the persisted Warmwood Study theme.
+ThemeData buildDesktopTheme() {
   final base = ThemeData.light(useMaterial3: true);
   final colorScheme = ColorScheme.fromSeed(
-    seedColor: V4Colors.orange,
+    seedColor: DesktopColors.orange,
     brightness: Brightness.light,
   );
   const palette = PaletteRegistry.warmwoodStudy;
   return base.copyWith(
-    scaffoldBackgroundColor: V4Colors.background,
+    scaffoldBackgroundColor: DesktopColors.background,
     colorScheme: colorScheme,
     textTheme: base.textTheme.apply(
       fontFamily: 'Microsoft YaHei',
@@ -36,13 +36,13 @@ ThemeData buildV4Theme() {
         'Segoe UI',
         'sans-serif',
       ],
-      bodyColor: V4Colors.text,
-      displayColor: V4Colors.text,
+      bodyColor: DesktopColors.text,
+      displayColor: DesktopColors.text,
     ),
     extensions: <ThemeExtension<dynamic>>[AppPaletteThemeExtension(palette)],
     splashFactory: NoSplash.splashFactory,
     highlightColor: Colors.transparent,
     hoverColor: Colors.transparent,
-    dividerColor: V4Colors.line,
+    dividerColor: DesktopColors.line,
   );
 }

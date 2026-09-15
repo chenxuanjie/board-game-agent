@@ -46,7 +46,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/desktop/home/
-    - assets/v4/
+    - assets/desktop/warmwood/
     - branding/app_icon.png
     - assets/catalog.json
     - assets/games/puerto_rico/images/

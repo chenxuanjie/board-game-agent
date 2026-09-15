@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
 import '../widgets/desktop_resolved_image.dart';
-import 'v4_content_primitives.dart';
-import 'v4_theme.dart';
+import 'content_primitives.dart';
+import 'theme.dart';
 
-class V4GameDetailPane extends StatefulWidget {
-  const V4GameDetailPane({
+class DesktopGameDetailPane extends StatefulWidget {
+  const DesktopGameDetailPane({
     super.key,
     required this.controller,
     required this.game,
@@ -27,21 +27,21 @@ class V4GameDetailPane extends StatefulWidget {
   final VoidCallback onAskAi;
 
   @override
-  State<V4GameDetailPane> createState() => _V4GameDetailPaneState();
+  State<DesktopGameDetailPane> createState() => _DesktopGameDetailPaneState();
 }
 
-class _V4GameDetailPaneState extends State<V4GameDetailPane> {
+class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
 
   static const _tabs = ['游戏介绍', '规则摘要', '玩家评价', '相关扩展', '讨论区'];
 
   GameInfo get game => widget.game;
-  String value(String text) => v4ContentValue(text);
+  String value(String text) => desktopContentValue(text);
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      key: const ValueKey<String>('v4-game-detail'),
+      key: const ValueKey<String>('desktop-game-detail'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _hero(),
@@ -49,9 +49,9 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
         Container(
           margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
           decoration: BoxDecoration(
-            color: V4Colors.card,
+            color: DesktopColors.card,
             borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: V4Colors.line),
+            border: Border.all(color: DesktopColors.line),
           ),
           child: Column(
             children: [
@@ -275,12 +275,12 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
                           _HeroButton(
                             label: '收藏 · 未开放',
                             icon: Icons.favorite_border_rounded,
-                            onTap: () => v4ContentPending(context, '收藏'),
+                            onTap: () => desktopContentPending(context, '收藏'),
                           ),
                           _HeroButton(
                             label: '加入想玩 · 未开放',
                             icon: Icons.add_circle_outline_rounded,
-                            onTap: () => v4ContentPending(context, '加入想玩'),
+                            onTap: () => desktopContentPending(context, '加入想玩'),
                             light: true,
                           ),
                           _HeroButton(
@@ -324,7 +324,10 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
       return const SizedBox(
         height: 96,
         child: Center(
-          child: Text('暂无图片', style: TextStyle(color: V4Colors.secondaryText)),
+          child: Text(
+            '暂无图片',
+            style: TextStyle(color: DesktopColors.secondaryText),
+          ),
         ),
       );
     }
@@ -365,7 +368,9 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: index == _tab ? V4Colors.orange : V4Colors.line,
+                    color: index == _tab
+                        ? DesktopColors.orange
+                        : DesktopColors.line,
                     width: index == _tab ? 2 : 1,
                   ),
                 ),
@@ -375,7 +380,9 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: index == _tab ? FontWeight.w800 : FontWeight.w500,
-                  color: index == _tab ? V4Colors.text : V4Colors.secondaryText,
+                  color: index == _tab
+                      ? DesktopColors.text
+                      : DesktopColors.secondaryText,
                 ),
               ),
             ),
@@ -441,7 +448,7 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
         const SizedBox(height: 8),
         Text(
           '已接入主项目资料库，共 ${available.length} 份可阅读资料。',
-          style: const TextStyle(color: V4Colors.secondaryText),
+          style: const TextStyle(color: DesktopColors.secondaryText),
         ),
         const SizedBox(height: 12),
         for (final label in labels.take(5))
@@ -452,7 +459,7 @@ class _V4GameDetailPaneState extends State<V4GameDetailPane> {
                 const Icon(
                   Icons.description_outlined,
                   size: 17,
-                  color: V4Colors.orange,
+                  color: DesktopColors.orange,
                 ),
                 const SizedBox(width: 7),
                 Expanded(child: Text(label)),
@@ -487,7 +494,7 @@ class _IntroCopy extends StatelessWidget {
     decoration: BoxDecoration(
       color: const Color(0xFFFFFCF9),
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: V4Colors.line),
+      border: Border.all(color: DesktopColors.line),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,7 +537,7 @@ class _IntroCopy extends StatelessWidget {
                 '设计师：${game.designers.isEmpty ? '-' : game.designers.join('、')}',
                 style: const TextStyle(
                   fontSize: 11,
-                  color: V4Colors.secondaryText,
+                  color: DesktopColors.secondaryText,
                 ),
               ),
               const SizedBox(height: 4),
@@ -538,7 +545,7 @@ class _IntroCopy extends StatelessWidget {
                 '发行：${game.publishers.isEmpty ? '-' : game.publishers.join('、')}',
                 style: const TextStyle(
                   fontSize: 11,
-                  color: V4Colors.secondaryText,
+                  color: DesktopColors.secondaryText,
                 ),
               ),
             ],
@@ -563,12 +570,12 @@ class _Highlights extends StatelessWidget {
       (
         Icons.psychology_alt_outlined,
         '学习难度',
-        v4ContentValue(game.learningDifficulty),
+        desktopContentValue(game.learningDifficulty),
       ),
       (
         Icons.translate_rounded,
         '语言需求',
-        v4ContentValue(game.languageRequirement),
+        desktopContentValue(game.languageRequirement),
       ),
       (
         Icons.workspace_premium_outlined,
@@ -604,11 +611,11 @@ class _Highlights extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: V4Colors.line),
+                    border: Border.all(color: DesktopColors.line),
                   ),
                   child: Row(
                     children: [
-                      Icon(item.$1, size: 19, color: V4Colors.orange),
+                      Icon(item.$1, size: 19, color: DesktopColors.orange),
                       const SizedBox(width: 7),
                       Expanded(
                         child: Column(
@@ -628,7 +635,7 @@ class _Highlights extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 9,
-                                color: V4Colors.secondaryText,
+                                color: DesktopColors.secondaryText,
                               ),
                             ),
                           ],
@@ -657,13 +664,16 @@ class _UnavailableTab extends StatelessWidget {
         children: [
           const Icon(
             Icons.hourglass_empty_rounded,
-            color: V4Colors.orange,
+            color: DesktopColors.orange,
             size: 28,
           ),
           const SizedBox(height: 8),
           Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          const Text('未开放', style: TextStyle(color: V4Colors.secondaryText)),
+          const Text(
+            '未开放',
+            style: TextStyle(color: DesktopColors.secondaryText),
+          ),
         ],
       ),
     ),
@@ -758,7 +768,7 @@ class _HeroButtonState extends State<_HeroButton> {
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: widget.light ? const Color(0xEFFCF7F3) : V4Colors.orange,
+          color: widget.light ? const Color(0xEFFCF7F3) : DesktopColors.orange,
           borderRadius: BorderRadius.circular(11),
           boxShadow: hover
               ? const [

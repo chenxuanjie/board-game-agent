@@ -29,15 +29,14 @@ import 'package:board_game_agent/services/speech_service.dart';
 import 'package:board_game_agent/services/tts_service.dart';
 import 'package:board_game_agent/state/app_controller.dart';
 import 'package:board_game_agent/theme/app_palette.dart';
-import 'package:board_game_agent/ui/screens/desktop_workspace_screen.dart';
-
-import 'package:board_game_agent/ui/v4/v4_workspace.dart';
-import 'package:board_game_agent/ui/v4/v4_theme.dart';
-import 'package:board_game_agent/ui/v4/v4_sidebar.dart';
-import 'package:board_game_agent/ui/v4/v4_home.dart';
-import 'package:board_game_agent/ui/v4/v4_games.dart';
-import 'package:board_game_agent/ui/v4/v4_game_detail.dart';
-import 'package:board_game_agent/ui/v4/v4_settings.dart';
+import 'package:board_game_agent/ui/desktop/business_panes.dart';
+import 'package:board_game_agent/ui/desktop/workspace.dart';
+import 'package:board_game_agent/ui/desktop/theme.dart';
+import 'package:board_game_agent/ui/desktop/sidebar.dart';
+import 'package:board_game_agent/ui/desktop/home_pane.dart';
+import 'package:board_game_agent/ui/desktop/games_pane.dart';
+import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
+import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,12 +50,12 @@ void main() {
     controller.dispose();
   });
 
-  test('V4 theme keeps the host platform and supports legacy content', () {
-    final theme = buildV4Theme();
+  test('Desktop theme keeps the host platform and shared content', () {
+    final theme = buildDesktopTheme();
     expect(theme.platform, defaultTargetPlatform);
     expect(theme.brightness, Brightness.light);
     expect(theme.useMaterial3, isTrue);
-    expect(theme.scaffoldBackgroundColor, V4Colors.background);
+    expect(theme.scaffoldBackgroundColor, DesktopColors.background);
     expect(theme.extensions, isNotEmpty);
   });
 
@@ -70,8 +69,8 @@ void main() {
       tester,
     ) async {
       await _mount(tester, controller, size);
-      expect(find.byType(V4HomePane), findsOneWidget);
-      final home = find.byType(V4HomePane);
+      expect(find.byType(DesktopHomePane), findsOneWidget);
+      final home = find.byType(DesktopHomePane);
       expect(controller.games, isNotEmpty);
       for (final game in controller.games.take(5)) {
         expect(
@@ -81,8 +80,8 @@ void main() {
       }
       expect(tester.takeException(), isNull);
       await _navigate(tester, '游戏库');
-      expect(find.byType(V4GamesPane), findsOneWidget);
-      expect(find.byType(V4HomePane), findsNothing);
+      expect(find.byType(DesktopGamesPane), findsOneWidget);
+      expect(find.byType(DesktopHomePane), findsNothing);
       for (final game in controller.games) {
         expect(
           find.byKey(ValueKey('desktop-poster-${game.id}')),
@@ -96,7 +95,7 @@ void main() {
       }
       expect(tester.takeException(), isNull);
       await _navigate(tester, '设置');
-      expect(find.byType(V4SettingsPane), findsOneWidget);
+      expect(find.byType(DesktopSettingsPane), findsOneWidget);
       expect(find.text('语言设置'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.ensureVisible(find.text('完整设置'));
@@ -104,8 +103,8 @@ void main() {
       expect(find.text('完整设置').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _navigate(tester, '首页');
-      expect(find.byType(V4HomePane), findsOneWidget);
-      expect(find.byType(V4SettingsPane), findsNothing);
+      expect(find.byType(DesktopHomePane), findsOneWidget);
+      expect(find.byType(DesktopSettingsPane), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
@@ -116,9 +115,9 @@ void main() {
     await _mount(tester, controller, const Size(1280, 800));
     for (final label in ['排行榜', '我的收藏', '社区']) {
       await _navigate(tester, label);
-      expect(find.byType(V4HomePane), findsNothing);
+      expect(find.byType(DesktopHomePane), findsNothing);
       final title = find.text(label).evaluate().where((element) {
-        return element.findAncestorWidgetOfExactType<V4Sidebar>() == null;
+        return element.findAncestorWidgetOfExactType<DesktopSidebar>() == null;
       });
       expect(title, hasLength(1));
       final body = find
@@ -137,35 +136,35 @@ void main() {
     (tester) async {
       await _mount(tester, controller, const Size(1280, 800));
       expect(
-        find.byKey(const ValueKey<String>('v4-sidebar-full')),
+        find.byKey(const ValueKey<String>('desktop-sidebar-full')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('v4-sidebar-rail')),
+        find.byKey(const ValueKey<String>('desktop-sidebar-rail')),
         findsNothing,
       );
 
       await tester.binding.setSurfaceSize(const Size(1100, 700));
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey<String>('v4-sidebar-rail')),
+        find.byKey(const ValueKey<String>('desktop-sidebar-rail')),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
 
       await tester.binding.setSurfaceSize(const Size(720, 700));
       await tester.pumpAndSettle();
-      expect(find.byType(V4Sidebar), findsNothing);
+      expect(find.byType(DesktopSidebar), findsNothing);
       expect(
-        find.byKey(const ValueKey<String>('v4-open-navigation')),
+        find.byKey(const ValueKey<String>('desktop-open-navigation')),
         findsOneWidget,
       );
       await tester.tap(
-        find.byKey(const ValueKey<String>('v4-open-navigation')),
+        find.byKey(const ValueKey<String>('desktop-open-navigation')),
       );
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey<String>('v4-sidebar-full')),
+        find.byKey(const ValueKey<String>('desktop-sidebar-full')),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
@@ -184,13 +183,13 @@ void main() {
     expect(poster, findsOneWidget);
     await tester.tap(poster);
     await tester.pumpAndSettle();
-    expect(find.byType(V4GameDetailPane), findsOneWidget);
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
     expect(controller.selectedGame.id, game.id);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-    'library posters match legacy proportion and hover preview, then open V4 details',
+    'library posters match legacy proportion and hover preview, then open Desktop details',
     (tester) async {
       await _mount(tester, controller, const Size(1280, 800));
       await _navigate(tester, '游戏库');
@@ -225,14 +224,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 130));
       await tester.tap(poster);
       await tester.pumpAndSettle();
-      expect(find.byType(V4GameDetailPane), findsNothing);
+      expect(find.byType(DesktopGameDetailPane), findsNothing);
       await tester.tap(poster);
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey<String>('v4-game-detail')),
+        find.byKey(const ValueKey<String>('desktop-game-detail')),
         findsOneWidget,
       );
-      expect(find.byType(V4GameDetailPane), findsOneWidget);
+      expect(find.byType(DesktopGameDetailPane), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -240,34 +239,19 @@ void main() {
   testWidgets('narrow drawer reaches every migrated workspace', (tester) async {
     await _mount(tester, controller, const Size(720, 700));
     await _navigate(tester, '游戏库');
-    expect(find.byType(V4GamesPane), findsOneWidget);
+    expect(find.byType(DesktopGamesPane), findsOneWidget);
     await _navigate(tester, 'AI助手');
-    expect(find.byType(DesktopWorkspaceScreen), findsOneWidget);
-    expect(
-      tester
-          .state<DesktopWorkspaceScreenState>(
-            find.byType(DesktopWorkspaceScreen),
-          )
-          .destinationName,
-      'assistant',
-    );
+    expect(find.byType(DesktopAssistantPane), findsOneWidget);
     await _navigate(tester, '设置');
-    expect(find.byType(V4SettingsPane), findsOneWidget);
+    expect(find.byType(DesktopSettingsPane), findsOneWidget);
     await tester.ensureVisible(find.text('完整设置'));
     await tester.tap(find.text('完整设置'));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .state<DesktopWorkspaceScreenState>(
-            find.byType(DesktopWorkspaceScreen),
-          )
-          .destinationName,
-      'settings',
-    );
+    expect(find.byType(DesktopAdvancedSettingsPane), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('home rules query shortcut navigates to the legacy library', (
+  testWidgets('home rules query shortcut navigates to the shared library', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
@@ -275,16 +259,9 @@ void main() {
       find.byKey(const ValueKey<String>('home-quick-entry-rules')),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(V4GamesPane), findsNothing);
-    expect(find.byType(V4HomePane), findsNothing);
-    expect(
-      tester
-          .state<DesktopWorkspaceScreenState>(
-            find.byType(DesktopWorkspaceScreen),
-          )
-          .destinationName,
-      'library',
-    );
+    expect(find.byType(DesktopGamesPane), findsNothing);
+    expect(find.byType(DesktopHomePane), findsNothing);
+    expect(find.byType(DesktopLibraryPane), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -294,7 +271,7 @@ void main() {
     await _mount(tester, controller, const Size(1280, 800));
     final GameInfo game = controller.games.first;
     final Finder searchField = find.byKey(
-      const ValueKey<String>('v4-home-search-field'),
+      const ValueKey<String>('desktop-home-search-field'),
     );
 
     await tester.tap(searchField);
@@ -302,19 +279,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(ValueKey<String>('v4-search-result-${game.id}')),
+      find.byKey(ValueKey<String>('desktop-search-result-${game.id}')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
 
     await tester.tap(
-      find.byKey(ValueKey<String>('v4-search-result-${game.id}')),
+      find.byKey(ValueKey<String>('desktop-search-result-${game.id}')),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(V4GameDetailPane), findsOneWidget);
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
     expect(controller.selectedGame.id, game.id);
     expect(
-      find.byKey(const ValueKey<String>('v4-home-search-overlay')),
+      find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -324,9 +301,9 @@ void main() {
     'home recommendation header aligns more action and returns home',
     (tester) async {
       await _mount(tester, controller, const Size(1280, 800));
-      final Finder home = find.byType(V4HomePane);
+      final Finder home = find.byType(DesktopHomePane);
       final Finder header = find.byKey(
-        const ValueKey<String>('v4-home-recommendation-header'),
+        const ValueKey<String>('desktop-home-recommendation-header'),
       );
       final Finder moreText = find.descendant(
         of: header,
@@ -350,13 +327,13 @@ void main() {
         find.descendant(of: home, matching: find.text(game.title)).first,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(V4GameDetailPane), findsOneWidget);
+      expect(find.byType(DesktopGameDetailPane), findsOneWidget);
       expect(find.byTooltip('返回首页'), findsOneWidget);
 
       await tester.tap(find.byTooltip('返回首页'));
       await tester.pumpAndSettle();
-      expect(find.byType(V4HomePane), findsOneWidget);
-      expect(find.byType(V4GameDetailPane), findsNothing);
+      expect(find.byType(DesktopHomePane), findsOneWidget);
+      expect(find.byType(DesktopGameDetailPane), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -366,7 +343,7 @@ void main() {
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
     final Finder searchField = find.byKey(
-      const ValueKey<String>('v4-home-search-field'),
+      const ValueKey<String>('desktop-home-search-field'),
     );
     await tester.tap(searchField);
     await tester.enterText(searchField, '肯定不存在的桌游关键字');
@@ -386,7 +363,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey<String>('v4-home-search-overlay')),
+      find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -402,11 +379,11 @@ void main() {
     ) async {
       await _mount(tester, controller, size);
       await tester.tap(
-        find.byKey(const ValueKey<String>('v4-home-search-field')),
+        find.byKey(const ValueKey<String>('desktop-home-search-field')),
       );
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey<String>('v4-home-search-overlay')),
+        find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
@@ -440,14 +417,7 @@ void main() {
 
       await tester.tap(find.text('资料加载失败'));
       await tester.pumpAndSettle();
-      expect(
-        tester
-            .state<DesktopWorkspaceScreenState>(
-              find.byType(DesktopWorkspaceScreen),
-            )
-            .destinationName,
-        'library',
-      );
+      expect(find.byType(DesktopLibraryPane), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -467,7 +437,10 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: find.byType(V4GamesPane), matching: find.text('合作')),
+      find.descendant(
+        of: find.byType(DesktopGamesPane),
+        matching: find.text('合作'),
+      ),
     );
     await tester.tap(find.text('筛选'));
     await tester.pumpAndSettle();
@@ -518,15 +491,15 @@ void main() {
     );
     expect(tester.getRect(frame), initialFrame);
     expect(
-      find.byKey(const ValueKey<String>('v4-home-library-flame')),
+      find.byKey(const ValueKey<String>('desktop-home-library-flame')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('v4-sidebar-logo')),
+      find.byKey(const ValueKey<String>('desktop-sidebar-logo')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('v4-sidebar-art')),
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
@@ -546,9 +519,9 @@ void main() {
       expect(poster, findsOneWidget);
       await tester.tap(poster);
       await tester.pumpAndSettle();
-      expect(find.byType(V4GameDetailPane), findsOneWidget);
+      expect(find.byType(DesktopGameDetailPane), findsOneWidget);
       expect(
-        find.byKey(const ValueKey<String>('v4-game-detail')),
+        find.byKey(const ValueKey<String>('desktop-game-detail')),
         findsOneWidget,
       );
       expect(find.text(game.title), findsWidgets);
@@ -569,8 +542,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('返回游戏库'));
       await tester.pumpAndSettle();
-      expect(find.byType(V4GamesPane), findsOneWidget);
-      expect(find.byType(V4GameDetailPane), findsNothing);
+      expect(find.byType(DesktopGamesPane), findsOneWidget);
+      expect(find.byType(DesktopGameDetailPane), findsNothing);
     });
   }
 
@@ -583,29 +556,20 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('home-hero-page-2')));
     await tester.pumpAndSettle();
 
-    expect(
-      tester
-          .state<DesktopWorkspaceScreenState>(
-            find.byType(DesktopWorkspaceScreen),
-          )
-          .destinationName,
-      'assistant',
-    );
+    expect(find.byType(DesktopAssistantPane), findsOneWidget);
     final composer = find.byKey(const ValueKey<String>('desktop-composer-box'));
+    expect(composer, findsOneWidget);
     expect(composer.hitTestable(), findsOneWidget);
     expect(tester.getSize(composer).width, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('V3 assistant runs inside the Warmwood Study V4 shell', (
+  testWidgets('assistant runs inside the Warmwood Study Desktop shell', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
     await _navigate(tester, 'AI助手');
-    final state = tester.state<DesktopWorkspaceScreenState>(
-      find.byType(DesktopWorkspaceScreen),
-    );
-    expect(state.destinationName, 'assistant');
+    expect(find.byType(DesktopAssistantPane), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('desktop-composer-box')),
       findsOneWidget,
@@ -635,12 +599,8 @@ void main() {
       await tester.ensureVisible(find.text('完整设置'));
       await tester.tap(find.text('完整设置'));
       await tester.pumpAndSettle();
-      expect(find.byType(V4SettingsPane), findsNothing);
-      expect(find.byType(DesktopWorkspaceScreen), findsOneWidget);
-      final state = tester.state<DesktopWorkspaceScreenState>(
-        find.byType(DesktopWorkspaceScreen),
-      );
-      expect(state.destinationName, 'settings');
+      expect(find.byType(DesktopSettingsPane), findsNothing);
+      expect(find.byType(DesktopAdvancedSettingsPane), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -656,8 +616,8 @@ Future<void> _mount(
   await tester.binding.setSurfaceSize(size);
   await tester.pumpWidget(
     MaterialApp(
-      theme: buildV4Theme(),
-      home: V4Workspace(
+      theme: buildDesktopTheme(),
+      home: DesktopWorkspace(
         controller: controller,
         onOpenAbout: onOpenAbout ?? () {},
         enableNativeWindowControls: false,
@@ -668,12 +628,14 @@ Future<void> _mount(
 }
 
 Future<void> _navigate(WidgetTester tester, String label) async {
-  if (find.byType(V4Sidebar).evaluate().isEmpty) {
-    await tester.tap(find.byKey(const ValueKey<String>('v4-open-navigation')));
+  if (find.byType(DesktopSidebar).evaluate().isEmpty) {
+    await tester.tap(
+      find.byKey(const ValueKey<String>('desktop-open-navigation')),
+    );
     await tester.pumpAndSettle();
   }
   final textItem = find.descendant(
-    of: find.byType(V4Sidebar),
+    of: find.byType(DesktopSidebar),
     matching: find.text(label),
   );
   if (textItem.evaluate().isNotEmpty) {

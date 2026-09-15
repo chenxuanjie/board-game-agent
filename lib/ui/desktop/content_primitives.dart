@@ -1,4 +1,4 @@
-// Body primitives adapted from the read-only V4 reference layout.
+// Body primitives adapted from the read-only Desktop reference layout.
 import 'package:flutter/material.dart';
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
@@ -64,25 +64,25 @@ class _HoverSurfaceState extends State<HoverSurface> {
   }
 }
 
-String v4ContentValue(String value) =>
+String desktopContentValue(String value) =>
     value.trim().isEmpty || value == '—' ? '-' : value;
 
-class V4ContentGame {
-  const V4ContentGame(this.data, this.controller);
+class DesktopContentGame {
+  const DesktopContentGame(this.data, this.controller);
   final GameInfo data;
   final AppController controller;
-  String get title => v4ContentValue(data.title);
-  String get englishTitle => v4ContentValue(data.subtitle);
-  String get score => v4ContentValue(data.score);
-  String get reviewCount => v4ContentValue(data.scoreCountLabel);
+  String get title => desktopContentValue(data.title);
+  String get englishTitle => desktopContentValue(data.subtitle);
+  String get score => desktopContentValue(data.score);
+  String get reviewCount => desktopContentValue(data.scoreCountLabel);
   List<String> get tags => data.keywords.isEmpty ? ['-'] : data.keywords;
   String get tagA => tags.first;
   String get tagB => tags.length > 1 ? tags[1] : '-';
-  String get players => v4ContentValue(data.playerCount);
-  String get duration => v4ContentValue(data.playTime);
-  String get difficulty => v4ContentValue(data.complexity);
-  String get description => v4ContentValue(data.summary);
-  String get quote => v4ContentValue(data.heroTagline);
+  String get players => desktopContentValue(data.playerCount);
+  String get duration => desktopContentValue(data.playTime);
+  String get difficulty => desktopContentValue(data.complexity);
+  String get description => desktopContentValue(data.summary);
+  String get quote => desktopContentValue(data.heroTagline);
   List<String> get mechanisms =>
       tags; // The source provides keywords, not a separate mechanism taxonomy.
   Widget cover() => DesktopResolvedImage(
@@ -92,14 +92,14 @@ class V4ContentGame {
   );
 }
 
-void v4ContentPending(BuildContext context, String feature) {
+void desktopContentPending(BuildContext context, String feature) {
   ScaffoldMessenger.maybeOf(
     context,
   )?.showSnackBar(SnackBar(content: Text('$feature · 未开放')));
 }
 
-class V4ContentColumns extends StatelessWidget {
-  const V4ContentColumns({
+class DesktopContentColumns extends StatelessWidget {
+  const DesktopContentColumns({
     super.key,
     required this.main,
     required this.right,
@@ -139,8 +139,8 @@ class V4ContentColumns extends StatelessWidget {
   );
 }
 
-class V4ContentStatus extends StatelessWidget {
-  const V4ContentStatus({super.key, required this.controller});
+class DesktopContentStatus extends StatelessWidget {
+  const DesktopContentStatus({super.key, required this.controller});
   final AppController controller;
   @override
   Widget build(BuildContext context) {

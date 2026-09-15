@@ -24,9 +24,8 @@ import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
-import 'ui/v4/v4_workspace.dart';
-import 'ui/v4/v4_theme.dart';
-import 'ui/screens/desktop_workspace_screen.dart';
+import 'ui/desktop/workspace.dart';
+import 'ui/desktop/theme.dart';
 
 const double _webDesktopMinWidth = 1000;
 const double _webDesktopMinHeight = 620;
@@ -165,7 +164,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       title: widget.controller.copy.appTitle,
       debugShowCheckedModeBanner: false,
       theme: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
-          ? buildV4Theme()
+          ? buildDesktopTheme()
           : AppTheme.buildTheme(widget.controller.palette),
       home: FutureBuilder<void>(
         future: _initialization,
@@ -198,13 +197,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
               final bool nativeWindows =
                   !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
               if (nativeWindows) {
-                return V4Workspace(
+                return DesktopWorkspace(
                   controller: widget.controller,
                   onOpenAbout: _openAbout,
                 );
               }
               if (wideWeb) {
-                return DesktopWorkspaceScreen(
+                return DesktopWorkspace(
                   controller: widget.controller,
                   onOpenAbout: _openAbout,
                 );

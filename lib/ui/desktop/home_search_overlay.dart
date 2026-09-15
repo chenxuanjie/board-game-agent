@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
-import 'v4_content_primitives.dart';
-import 'v4_theme.dart';
+import 'content_primitives.dart';
+import 'theme.dart';
 
 /// Search suggestions and results backed by the active game catalog.
-class V4HomeSearchOverlay extends StatelessWidget {
-  const V4HomeSearchOverlay({
+class DesktopHomeSearchOverlay extends StatelessWidget {
+  const DesktopHomeSearchOverlay({
     super.key,
     required this.query,
     required this.games,
@@ -69,9 +69,9 @@ class V4HomeSearchOverlay extends StatelessWidget {
           return Container(
             constraints: BoxConstraints(maxHeight: maxHeight),
             decoration: BoxDecoration(
-              color: V4Colors.card,
+              color: DesktopColors.card,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: V4Colors.line),
+              border: Border.all(color: DesktopColors.line),
               boxShadow: const <BoxShadow>[
                 BoxShadow(
                   color: Color(0x16000000),
@@ -134,7 +134,7 @@ class V4HomeSearchOverlay extends StatelessWidget {
       const _SectionHeader(
         icon: Icons.tune_rounded,
         title: '快速筛选',
-        iconColor: V4Colors.orange,
+        iconColor: DesktopColors.orange,
       ),
       const SizedBox(height: 8),
       Wrap(
@@ -314,7 +314,7 @@ class V4HomeSearchOverlay extends StatelessWidget {
 
 const TextStyle _metaStyle = TextStyle(
   fontSize: 12,
-  color: V4Colors.secondaryText,
+  color: DesktopColors.secondaryText,
   height: 1.45,
 );
 
@@ -324,14 +324,14 @@ const ButtonStyle _linkStyle = ButtonStyle(
     EdgeInsets.symmetric(horizontal: 6),
   ),
   textStyle: WidgetStatePropertyAll<TextStyle>(TextStyle(fontSize: 12)),
-  foregroundColor: WidgetStatePropertyAll<Color>(V4Colors.secondaryText),
+  foregroundColor: WidgetStatePropertyAll<Color>(DesktopColors.secondaryText),
 );
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.icon,
     required this.title,
-    this.iconColor = V4Colors.secondaryText,
+    this.iconColor = DesktopColors.secondaryText,
     this.trailing,
   });
 
@@ -350,7 +350,7 @@ class _SectionHeader extends StatelessWidget {
         style: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w700,
-          color: V4Colors.text,
+          color: DesktopColors.text,
         ),
       ),
       const Spacer(),
@@ -370,13 +370,13 @@ class _QueryChip extends StatelessWidget {
   Widget build(BuildContext context) => ActionChip(
     avatar: icon == null
         ? null
-        : Icon(icon, size: 14, color: V4Colors.secondaryText),
+        : Icon(icon, size: 14, color: DesktopColors.secondaryText),
     label: Text(label),
     onPressed: onPressed,
-    labelStyle: const TextStyle(fontSize: 12, color: V4Colors.text),
+    labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
     visualDensity: VisualDensity.compact,
     side: BorderSide.none,
-    backgroundColor: V4Colors.soft,
+    backgroundColor: DesktopColors.soft,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
   );
 }
@@ -405,7 +405,7 @@ class _RecommendationCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(7),
             child: AspectRatio(
               aspectRatio: 1,
-              child: V4ContentGame(game, controller).cover(),
+              child: DesktopContentGame(game, controller).cover(),
             ),
           ),
           const SizedBox(height: 4),
@@ -416,14 +416,17 @@ class _RecommendationCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: V4Colors.text,
+              color: DesktopColors.text,
             ),
           ),
           Text(
             game.subtitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, color: V4Colors.secondaryText),
+            style: const TextStyle(
+              fontSize: 10,
+              color: DesktopColors.secondaryText,
+            ),
           ),
         ],
       ),
@@ -445,13 +448,13 @@ class _SuggestionRow extends StatelessWidget {
     leading: const Icon(
       Icons.search_rounded,
       size: 17,
-      color: V4Colors.secondaryText,
+      color: DesktopColors.secondaryText,
     ),
     title: Text(label, style: const TextStyle(fontSize: 13)),
     trailing: const Icon(
       Icons.chevron_right_rounded,
       size: 18,
-      color: V4Colors.secondaryText,
+      color: DesktopColors.secondaryText,
     ),
     onTap: onTap,
   );
@@ -478,7 +481,7 @@ class _SearchResultRow extends StatelessWidget {
     child: Material(
       color: Colors.transparent,
       child: InkWell(
-        key: ValueKey<String>('v4-search-result-${game.id}'),
+        key: ValueKey<String>('desktop-search-result-${game.id}'),
         onTap: onOpen,
         borderRadius: BorderRadius.circular(9),
         child: Padding(
@@ -490,7 +493,7 @@ class _SearchResultRow extends StatelessWidget {
                 child: SizedBox(
                   width: 42,
                   height: 56,
-                  child: V4ContentGame(game, controller).cover(),
+                  child: DesktopContentGame(game, controller).cover(),
                 ),
               ),
               const SizedBox(width: 10),
@@ -505,7 +508,7 @@ class _SearchResultRow extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: V4Colors.text,
+                        color: DesktopColors.text,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -567,7 +570,7 @@ class _EmptyResult extends StatelessWidget {
         const Icon(
           Icons.search_off_rounded,
           size: 30,
-          color: V4Colors.secondaryText,
+          color: DesktopColors.secondaryText,
         ),
         const SizedBox(height: 7),
         Text(
