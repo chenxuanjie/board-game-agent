@@ -690,6 +690,11 @@ void main() {
       find.byKey(const ValueKey<String>('desktop-sidebar-art')),
       findsOneWidget,
     );
+    final sidebarArt = tester.widget<Image>(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+    );
+    expect(sidebarArt.fit, BoxFit.contain);
+    expect(sidebarArt.alignment, Alignment.bottomCenter);
     expect(tester.takeException(), isNull);
   });
 

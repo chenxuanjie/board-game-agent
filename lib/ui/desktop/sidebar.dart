@@ -45,8 +45,8 @@ class DesktopSidebar extends StatelessWidget {
               child: Image.asset(
                 'assets/desktop/home/sidebar_castle.png',
                 key: const ValueKey<String>('desktop-sidebar-art'),
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
+                fit: BoxFit.contain,
+                alignment: Alignment.bottomCenter,
               ),
             ),
           Padding(
