@@ -71,7 +71,6 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
           DesktopContentStatus(controller: widget.controller),
           _LibraryMain(
             games: games,
-            favoriteCount: widget.controller.favoriteCount,
             selectedCategory: _category,
             onSelectGame: (i) {
               if (!widget.showPreview ||
@@ -247,7 +246,6 @@ enum _DesktopGameSort {
 
 class _LibraryMain extends StatelessWidget {
   final List<DesktopContentGame> games;
-  final int favoriteCount;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
   final ValueChanged<GameInfo> onOpenAssistant;
@@ -260,7 +258,6 @@ class _LibraryMain extends StatelessWidget {
 
   const _LibraryMain({
     required this.games,
-    required this.favoriteCount,
     required this.selectedCategory,
     required this.onSelectGame,
     required this.onOpenAssistant,
@@ -367,61 +364,6 @@ class _LibraryMain extends StatelessWidget {
                   onOpenAssistant: () => onOpenAssistant(game.data),
                 );
               },
-            );
-          },
-        ),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 700) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: 45,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.asset(
-                        'assets/desktop/warmwood/ref_library_promo.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _LibraryStats(
-                    count: games.length,
-                    favoriteCount: favoriteCount,
-                  ),
-                ],
-              );
-            }
-            final promoWidth = constraints.maxWidth * 0.58;
-            return Row(
-              children: [
-                SizedBox(
-                  width: promoWidth,
-                  height: 45,
-                  child: HoverSurface(
-                    onTap: () => onUnavailable('桌游寄语'),
-                    lift: 1,
-                    borderRadius: BorderRadius.circular(10),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.asset(
-                        'assets/desktop/warmwood/ref_library_promo.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _LibraryStats(
-                    count: games.length,
-                    favoriteCount: favoriteCount,
-                  ),
-                ),
-              ],
             );
           },
         ),
@@ -565,72 +507,6 @@ class _LibraryGameCard extends StatelessWidget {
       game: game.data,
       onTap: onTap,
       onOpenAssistant: onOpenAssistant,
-    );
-  }
-}
-
-class _LibraryStats extends StatelessWidget {
-  const _LibraryStats({required this.count, required this.favoriteCount});
-  final int count;
-  final int favoriteCount;
-  @override
-  Widget build(BuildContext context) {
-    final data = [
-      (Icons.casino_rounded, '$count', '当前桌游'),
-      (Icons.group_rounded, '-', '桌游爱好者'),
-      (Icons.favorite_rounded, '$favoriteCount', '收藏总数'),
-    ];
-    return Container(
-      height: 45,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: DesktopColors.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0x108A6044)),
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < data.length; i++) ...[
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    data[i].$1,
-                    size: 19,
-                    color: i == 2
-                        ? const Color(0xFFFF5E56)
-                        : DesktopColors.orange,
-                  ),
-                  const SizedBox(width: 6),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data[i].$2,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        data[i].$3,
-                        style: const TextStyle(
-                          fontSize: 8.5,
-                          color: DesktopColors.secondaryText,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (i < data.length - 1)
-              Container(width: 1, height: 33, color: const Color(0x128A6044)),
-          ],
-        ],
-      ),
     );
   }
 }
@@ -956,7 +832,7 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
               ),
               const SizedBox(width: 7),
               Text(
-                widget.favorite ? '取消收藏' : '收藏',
+                widget.favorite ? '已喜欢' : '喜欢',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,

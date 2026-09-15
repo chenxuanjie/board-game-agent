@@ -89,6 +89,9 @@ void main() {
       await _navigate(tester, '游戏库');
       expect(find.byType(DesktopGamesPane), findsOneWidget);
       expect(find.byType(DesktopHomePane), findsNothing);
+      expect(find.text('当前桌游'), findsNothing);
+      expect(find.text('桌游爱好者'), findsNothing);
+      expect(find.text('收藏总数'), findsNothing);
       for (final game in controller.games) {
         expect(
           find.byKey(ValueKey('desktop-poster-${game.id}')),
@@ -149,15 +152,23 @@ void main() {
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
-    await _navigate(tester, '我的收藏');
+    await _navigate(tester, '我的喜欢');
     expect(find.byType(DesktopFavoritesPane), findsOneWidget);
-    expect(find.text('还没有收藏桌游'), findsOneWidget);
+    expect(find.text('还没有喜欢的桌游'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey<String>('desktop-favorites-open-library')),
     );
     await tester.pumpAndSettle();
     expect(find.byType(DesktopGamesPane), findsOneWidget);
     expect(find.byType(DesktopFavoritesPane), findsNothing);
+  });
+
+  testWidgets('home uses likes and activity terminology', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    expect(find.text('我的喜欢'), findsWidgets);
+    expect(find.text('我的活动'), findsOneWidget);
+    expect(find.text('我的投票'), findsNothing);
+    expect(find.text('我的收藏'), findsNothing);
   });
 
   test('favorite state is persisted and can be toggled repeatedly', () async {
@@ -369,12 +380,13 @@ void main() {
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
     final GameInfo game = controller.games.first;
+    final String query = game.title.substring(0, 2);
     final Finder searchField = find.byKey(
       const ValueKey<String>('desktop-home-search-field'),
     );
 
     await tester.tap(searchField);
-    await tester.enterText(searchField, game.title);
+    await tester.enterText(searchField, query);
     await tester.pumpAndSettle();
 
     expect(
@@ -399,7 +411,7 @@ void main() {
     await tester.tap(searchField);
     await tester.pumpAndSettle();
     expect(find.text('最近搜索'), findsOneWidget);
-    expect(find.widgetWithText(InputChip, game.title), findsOneWidget);
+    expect(find.widgetWithText(InputChip, query), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -497,7 +509,7 @@ void main() {
     },
   );
 
-  testWidgets('home search handles empty results and clears the query', (
+  testWidgets('home search handles empty results without inline clear action', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
@@ -509,9 +521,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('没有找到'), findsOneWidget);
+    expect(find.text('清空关键词'), findsNothing);
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('清空关键词'));
+    await tester.tap(find.byTooltip('清空搜索'));
     await tester.pumpAndSettle();
     expect(find.textContaining('没有找到'), findsNothing);
     expect(find.text('最近搜索'), findsOneWidget);
@@ -525,6 +538,22 @@ void main() {
       find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty search results can open the game library', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('desktop-home-search-field'),
+    );
+    await tester.tap(searchField);
+    await tester.enterText(searchField, '肯定不存在的桌游关键字');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('打开游戏库'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGamesPane), findsOneWidget);
+    expect(find.byType(DesktopHomePane), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

@@ -420,8 +420,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _openSearch();
   }
 
-  void _openSearchGame(GameInfo game) {
-    _recordSearch(_search.text);
+  void _openSearchGame(GameInfo game, String query) {
+    _recordSearch(query);
     _game(game);
   }
 
@@ -590,7 +590,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               game: widget.controller.selectedGame,
                               backTooltip: switch (_gameDetailReturnPage) {
                                 'home' => '返回首页',
-                                'favorites' => '返回我的收藏',
+                                'favorites' => '返回我的喜欢',
                                 _ => '返回游戏库',
                               },
                               onBack: () => _navigate(_gameDetailReturnPage),
@@ -615,7 +615,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   children: [
                                     Text(
                                       switch (_page) {
-                                        'favorites' => '我的收藏',
+                                        'favorites' => '我的喜欢',
                                         'community' => '社区',
                                         _ => _page,
                                       },

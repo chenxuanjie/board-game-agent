@@ -946,11 +946,11 @@ class _ProfilePanel extends StatelessWidget {
         key: const ValueKey<String>('desktop-home-ai-entry'),
       ),
       (
-        // Voting has no persisted records in the current product scope.
+        // Activity records have no persisted data in the current product scope.
         value: '0',
-        label: '我的投票',
+        label: '我的活动',
         assetPath: 'assets/desktop/home/profile_vote.png',
-        onTap: () => onUnavailable('我的投票'),
+        onTap: () => onUnavailable('我的活动'),
         key: null,
       ),
     ];

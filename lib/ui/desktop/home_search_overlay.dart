@@ -7,6 +7,8 @@ import '../../state/app_controller.dart';
 import 'content_primitives.dart';
 import 'theme.dart';
 
+typedef SearchGameSelection = void Function(GameInfo game, String query);
+
 /// Search suggestions and results backed by the active game catalog.
 class DesktopHomeSearchOverlay extends StatelessWidget {
   const DesktopHomeSearchOverlay({
@@ -35,7 +37,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
   final VoidCallback onClearHistory;
   final ValueChanged<String> onRemoveQuery;
   final VoidCallback onTapOutside;
-  final ValueChanged<GameInfo> onOpenGame;
+  final SearchGameSelection onOpenGame;
   final ValueChanged<GameInfo> onOpenRules;
   final ValueChanged<GameInfo> onAskAi;
   final VoidCallback onViewAll;
@@ -184,7 +186,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
                     child: _RecommendationCard(
                       game: game,
                       controller: controller,
-                      onTap: () => onOpenGame(game),
+                      onTap: () => onOpenGame(game, query),
                     ),
                   ),
               ],
@@ -216,13 +218,13 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
       ),
       const SizedBox(height: 8),
       if (results.isEmpty)
-        _EmptyResult(query: query, onClear: () => onSelectQuery(''))
+        _EmptyResult(query: query)
       else ...<Widget>[
         for (final GameInfo game in results.take(8))
           _SearchResultRow(
             game: game,
             controller: controller,
-            onOpen: () => onOpenGame(game),
+            onOpen: () => onOpenGame(game, query),
             onOpenRules: () => onOpenRules(game),
             onAskAi: () => onAskAi(game),
           ),
@@ -585,10 +587,9 @@ class _SearchResultRow extends StatelessWidget {
 }
 
 class _EmptyResult extends StatelessWidget {
-  const _EmptyResult({required this.query, required this.onClear});
+  const _EmptyResult({required this.query});
 
   final String query;
-  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -607,7 +608,6 @@ class _EmptyResult extends StatelessWidget {
         ),
         const SizedBox(height: 3),
         const Text('试试桌游名称、机制、作者或玩法关键词。', style: _metaStyle),
-        TextButton(onPressed: onClear, child: const Text('清空关键词')),
       ],
     ),
   );

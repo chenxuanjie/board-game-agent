@@ -276,8 +276,8 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                         children: [
                           _HeroButton(
                             label: widget.controller.isFavorite(game)
-                                ? '取消收藏'
-                                : '收藏',
+                                ? '已喜欢'
+                                : '喜欢',
                             icon: widget.controller.isFavorite(game)
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,

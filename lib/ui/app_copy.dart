@@ -268,7 +268,7 @@ class AppCopy {
   String get futureSectionTitle =>
       isChinese ? '下一步接真实 AI 时' : 'When you wire in a real AI later';
   String get homeSearchHint => isChinese ? '搜索桌游...' : 'Search games...';
-  String get favouritesOnly => isChinese ? '只看收藏' : 'Show favourites only';
+  String get favouritesOnly => isChinese ? '只看喜欢' : 'Show liked only';
   String get globalAiTitle => isChinese ? '通用 AI 助手' : 'Global AI Assistant';
   String get globalAiSubtitle => isChinese
       ? '独立 AI 入口，可切换知识库优先与智能补充'
@@ -336,18 +336,19 @@ class AppCopy {
   String get detailPageTitle => isChinese ? '桌游详情' : 'Game Details';
   String get rulesBook => isChinese ? '规则书' : 'Rulebook';
   String get faq => isChinese ? 'FAQ' : 'FAQ';
-  String get favoritesTitle => isChinese ? '我的收藏' : 'My Favorites';
+  String get favoritesTitle => isChinese ? '我的喜欢' : 'My Likes';
   String get favoritesEmptyTitle =>
-      isChinese ? '还没有收藏桌游' : 'No favorite games yet';
+      isChinese ? '还没有喜欢的桌游' : 'No liked games yet';
   String get favoritesEmptyMessage => isChinese
-      ? '在桌游库或详情页收藏喜欢的桌游，它们会显示在这里。'
-      : 'Favorite a game from the library or its detail page to see it here.';
+      ? '在桌游库或详情页点击“喜欢”，它们会显示在这里。'
+      : 'Like a game from the library or its detail page to see it here.';
   String get favoritesGoToLibrary => isChinese ? '前往桌游库' : 'Open game library';
-  String get favoriteAdded => isChinese ? '已加入我的收藏' : 'Added to favorites';
-  String get favoriteRemoved => isChinese ? '已取消收藏' : 'Removed from favorites';
+  String get favoriteAdded => isChinese ? '已喜欢' : 'Liked';
+  String get favoriteRemoved =>
+      isChinese ? '已移出喜欢列表' : 'Removed from liked games';
   String get favoriteUndo => isChinese ? '撤销' : 'Undo';
   String get favoriteSaveFailed =>
-      isChinese ? '收藏保存失败，已恢复原状态' : 'Could not save favorite; state restored';
+      isChinese ? '喜欢保存失败，已恢复原状态' : 'Could not save like; state restored';
   String documentUnavailable(String title) {
     final String normalized = _documentName(title);
     return isChinese
