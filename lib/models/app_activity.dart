@@ -9,6 +9,7 @@ enum AppActivityKind {
   aiCompleted,
   aiFailed,
   libraryUpdate,
+  libraryLoadFailed,
   info,
 }
 

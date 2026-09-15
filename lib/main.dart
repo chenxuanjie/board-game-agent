@@ -24,7 +24,8 @@ import 'state/app_controller.dart';
 import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
-import 'ui/screens/desktop_workspace_screen.dart';
+import 'ui/desktop/workspace.dart';
+import 'ui/desktop/theme.dart';
 
 const double _webDesktopMinWidth = 1000;
 const double _webDesktopMinHeight = 620;
@@ -75,8 +76,8 @@ Future<void> _configureWindowsWindow() async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
   await windowManager.ensureInitialized();
   const WindowOptions options = WindowOptions(
-    size: Size(1280, 820),
-    minimumSize: Size(900, 600),
+    size: Size(1280, 800),
+    minimumSize: Size(1100, 700),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
@@ -162,7 +163,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       navigatorKey: _navigatorKey,
       title: widget.controller.copy.appTitle,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.buildTheme(widget.controller.palette),
+      theme: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+          ? buildDesktopTheme()
+          : AppTheme.buildTheme(widget.controller.palette),
       home: FutureBuilder<void>(
         future: _initialization,
         builder: (context, snapshot) {
@@ -193,8 +196,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   width / height >= _webDesktopMinAspectRatio;
               final bool nativeWindows =
                   !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
-              if (wideWeb || nativeWindows) {
-                return DesktopWorkspaceScreen(
+              if (nativeWindows) {
+                return DesktopWorkspace(
+                  controller: widget.controller,
+                  onOpenAbout: _openAbout,
+                );
+              }
+              if (wideWeb) {
+                return DesktopWorkspace(
                   controller: widget.controller,
                   onOpenAbout: _openAbout,
                 );

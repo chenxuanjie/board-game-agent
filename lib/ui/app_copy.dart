@@ -180,6 +180,10 @@ class AppCopy {
   String activityLibraryUpdateMessage(int count) => isChinese
       ? '有 $count 项资料等待更新。'
       : '$count library items are ready to update.';
+  String get activityLibraryLoadFailedTitle =>
+      isChinese ? '资料加载失败' : 'Library loading failed';
+  String activityLibraryLoadFailedMessage(String reason) =>
+      isChinese ? '$reason。打开资料库可重试。' : '$reason. Open the library to retry.';
   String get activityJustNow => isChinese ? '刚刚' : 'Just now';
   String activityMinutesAgo(int count) =>
       isChinese ? '$count 分钟前' : '$count min ago';
@@ -526,6 +530,8 @@ class AppCopy {
         return isChinese ? '默认主题' : 'Default Theme';
       case ColorSchemeOption.sunsetCoast:
         return isChinese ? '晚霞海岸' : 'Sunset Coast';
+      case ColorSchemeOption.warmwoodStudy:
+        return isChinese ? '暖木书房' : 'Warmwood Study';
     }
   }
 }

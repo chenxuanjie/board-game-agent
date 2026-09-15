@@ -23,9 +23,8 @@ import 'package:board_game_agent/services/remote_asset_service.dart';
 import 'package:board_game_agent/services/speech_service.dart';
 import 'package:board_game_agent/services/tts_service.dart';
 import 'package:board_game_agent/state/app_controller.dart';
-import 'package:board_game_agent/theme/app_theme.dart';
-import 'package:board_game_agent/theme/palette_registry.dart';
-import 'package:board_game_agent/ui/screens/desktop_workspace_screen.dart';
+import 'package:board_game_agent/ui/desktop/theme.dart';
+import 'package:board_game_agent/ui/desktop/workspace.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -39,15 +38,15 @@ void main() {
     for (final MapEntry<Size, double> testCase in <MapEntry<Size, double>>[
       const MapEntry<Size, double>(Size(1440, 900), 340),
       const MapEntry<Size, double>(Size(823, 900), 300),
-      const MapEntry<Size, double>(Size(640, 480), 280),
+      const MapEntry<Size, double>(Size(640, 480), 300),
     ]) {
       final Size size = testCase.key;
       await tester.binding.setSurfaceSize(size);
       await tester.pumpWidget(_buildApp(controller));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('消息'), findsOneWidget, reason: 'size=$size');
-      await tester.tap(find.byTooltip('消息'));
+      expect(find.byTooltip('通知'), findsOneWidget, reason: 'size=$size');
+      await tester.tap(find.byTooltip('通知'));
       await tester.pumpAndSettle();
 
       final Finder panel = find.byKey(
@@ -86,8 +85,8 @@ void main() {
 
 Widget _buildApp(AppController controller) {
   return MaterialApp(
-    theme: AppTheme.buildTheme(PaletteRegistry.classic),
-    home: DesktopWorkspaceScreen(controller: controller, onOpenAbout: () {}),
+    theme: buildDesktopTheme(),
+    home: DesktopWorkspace(controller: controller, onOpenAbout: () {}),
   );
 }
 
