@@ -16,6 +16,7 @@ class DesktopGameDetailPane extends StatefulWidget {
     required this.onSearch,
     required this.onOpenRules,
     required this.onAskAi,
+    required this.onToggleFavorite,
   });
 
   final AppController controller;
@@ -25,6 +26,7 @@ class DesktopGameDetailPane extends StatefulWidget {
   final VoidCallback onSearch;
   final VoidCallback onOpenRules;
   final VoidCallback onAskAi;
+  final ValueChanged<GameInfo> onToggleFavorite;
 
   @override
   State<DesktopGameDetailPane> createState() => _DesktopGameDetailPaneState();
@@ -273,9 +275,13 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                         runSpacing: 8,
                         children: [
                           _HeroButton(
-                            label: '收藏 · 未开放',
-                            icon: Icons.favorite_border_rounded,
-                            onTap: () => desktopContentPending(context, '收藏'),
+                            label: widget.controller.isFavorite(game)
+                                ? '取消收藏'
+                                : '收藏',
+                            icon: widget.controller.isFavorite(game)
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            onTap: () => widget.onToggleFavorite(game),
                           ),
                           _HeroButton(
                             label: '加入想玩 · 未开放',

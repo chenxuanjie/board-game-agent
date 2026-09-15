@@ -12,11 +12,15 @@ class DesktopGamesPane extends StatefulWidget {
     required this.controller,
     required this.onNavigate,
     required this.onOpenGame,
+    required this.onToggleFavorite,
+    this.sourceGames,
     this.showPreview = true,
   });
   final AppController controller;
   final ValueChanged<String> onNavigate;
   final ValueChanged<GameInfo> onOpenGame;
+  final ValueChanged<GameInfo> onToggleFavorite;
+  final List<GameInfo>? sourceGames;
   final bool showPreview;
   @override
   State<DesktopGamesPane> createState() => _DesktopGamesPaneState();
@@ -34,7 +38,7 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
     builder: (context, _) {
       const categories = ['全部', '策略', '家庭', '聚会', '合作', '双人'];
       final games =
-          widget.controller.games
+          (widget.sourceGames ?? widget.controller.games)
               .where(
                 (g) =>
                     (_category == 0 ||
@@ -67,6 +71,7 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
           DesktopContentStatus(controller: widget.controller),
           _LibraryMain(
             games: games,
+            favoriteCount: widget.controller.favoriteCount,
             selectedCategory: _category,
             onSelectGame: (i) {
               if (!widget.showPreview ||
@@ -98,8 +103,8 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
             ? const SizedBox.shrink()
             : _GameDetailPanel(
                 game: selected,
-                favorite: false,
-                onToggleFavorite: () => desktopContentPending(context, '收藏'),
+                favorite: widget.controller.isFavorite(selected.data),
+                onToggleFavorite: () => widget.onToggleFavorite(selected.data),
                 onOpenDetail: () => widget.onOpenGame(selected.data),
                 onUnavailable: action,
               ),
@@ -242,6 +247,7 @@ enum _DesktopGameSort {
 
 class _LibraryMain extends StatelessWidget {
   final List<DesktopContentGame> games;
+  final int favoriteCount;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
   final ValueChanged<GameInfo> onOpenAssistant;
@@ -254,6 +260,7 @@ class _LibraryMain extends StatelessWidget {
 
   const _LibraryMain({
     required this.games,
+    required this.favoriteCount,
     required this.selectedCategory,
     required this.onSelectGame,
     required this.onOpenAssistant,
@@ -381,7 +388,10 @@ class _LibraryMain extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _LibraryStats(count: games.length),
+                  _LibraryStats(
+                    count: games.length,
+                    favoriteCount: favoriteCount,
+                  ),
                 ],
               );
             }
@@ -405,7 +415,12 @@ class _LibraryMain extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(child: _LibraryStats(count: games.length)),
+                Expanded(
+                  child: _LibraryStats(
+                    count: games.length,
+                    favoriteCount: favoriteCount,
+                  ),
+                ),
               ],
             );
           },
@@ -555,14 +570,15 @@ class _LibraryGameCard extends StatelessWidget {
 }
 
 class _LibraryStats extends StatelessWidget {
-  const _LibraryStats({required this.count});
+  const _LibraryStats({required this.count, required this.favoriteCount});
   final int count;
+  final int favoriteCount;
   @override
   Widget build(BuildContext context) {
     final data = [
       (Icons.casino_rounded, '$count', '当前桌游'),
       (Icons.group_rounded, '-', '桌游爱好者'),
-      (Icons.favorite_rounded, '-', '收藏总数'),
+      (Icons.favorite_rounded, '$favoriteCount', '收藏总数'),
     ];
     return Container(
       height: 45,
@@ -940,7 +956,7 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
               ),
               const SizedBox(width: 7),
               Text(
-                '收藏 · 未开放',
+                widget.favorite ? '取消收藏' : '收藏',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,

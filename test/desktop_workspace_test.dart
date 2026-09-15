@@ -35,6 +35,7 @@ import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/home_pane.dart';
 import 'package:board_game_agent/ui/desktop/games_pane.dart';
+import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 
@@ -120,7 +121,7 @@ void main() {
       ),
       findsNothing,
     );
-    for (final label in ['我的收藏', '社区']) {
+    for (final label in ['社区']) {
       await _navigate(tester, label);
       expect(find.byType(DesktopHomePane), findsNothing);
       final title = find.text(label).evaluate().where((element) {
@@ -136,6 +137,35 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     }
+  });
+
+  testWidgets('favorites page starts empty and links back to the library', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, '我的收藏');
+    expect(find.byType(DesktopFavoritesPane), findsOneWidget);
+    expect(find.text('还没有收藏桌游'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('desktop-favorites-open-library')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGamesPane), findsOneWidget);
+    expect(find.byType(DesktopFavoritesPane), findsNothing);
+  });
+
+  test('favorite state is persisted and can be toggled repeatedly', () async {
+    final game = controller.games.first;
+    expect(await controller.toggleFavorite(game), isTrue);
+    expect(controller.isFavorite(game), isTrue);
+    expect(controller.favoriteCount, 1);
+    final stored = await PreferencesService().loadFavoriteGames();
+    expect(stored, hasLength(1));
+    expect(stored.single.gameSlug, game.slug);
+    expect(stored.single.createdAt, isNotNull);
+    expect(await controller.toggleFavorite(game), isTrue);
+    expect(controller.isFavorite(game), isFalse);
+    expect(controller.favoriteCount, 0);
   });
 
   testWidgets(

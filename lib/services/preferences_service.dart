@@ -10,6 +10,7 @@ import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
 import '../models/desktop_library_resource.dart';
+import '../models/favorite_game_record.dart';
 
 class PreferencesService {
   static const _languageKey = 'app_language';
@@ -27,6 +28,7 @@ class PreferencesService {
   static const _selectedConversationKey = 'selected_conversation_id';
   static const _activitiesKey = 'app_activities';
   static const _desktopLibraryResourcesKey = 'desktop_library_resources_v1';
+  static const _favoriteGamesKey = 'favorite_games_v1';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -252,6 +254,44 @@ class PreferencesService {
         'schemaVersion': 1,
         'resources': resources
             .map((DesktopLibraryResource resource) => resource.toMap())
+            .toList(growable: false),
+      }),
+    );
+  }
+
+  Future<List<FavoriteGameRecord>> loadFavoriteGames() async {
+    final prefs = await _prefs;
+    final String? stored = prefs.getString(_favoriteGamesKey);
+    if (stored == null || stored.trim().isEmpty) {
+      return const <FavoriteGameRecord>[];
+    }
+
+    try {
+      final Object? decoded = jsonDecode(stored);
+      final Object? rawRecords = decoded is Map<String, dynamic>
+          ? decoded['records']
+          : decoded;
+      if (rawRecords is! List<Object?>) {
+        return const <FavoriteGameRecord>[];
+      }
+      return rawRecords
+          .whereType<Map<String, dynamic>>()
+          .map(FavoriteGameRecord.tryFromMap)
+          .whereType<FavoriteGameRecord>()
+          .toList(growable: false);
+    } catch (_) {
+      return const <FavoriteGameRecord>[];
+    }
+  }
+
+  Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _favoriteGamesKey,
+      jsonEncode(<String, dynamic>{
+        'schemaVersion': 1,
+        'records': records
+            .map((FavoriteGameRecord record) => record.toMap())
             .toList(growable: false),
       }),
     );

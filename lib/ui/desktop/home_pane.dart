@@ -58,7 +58,11 @@ class DesktopHomePane extends StatelessWidget {
             _MainColumn(games: games, onUnavailable: action),
           ],
         ),
-        right: _RightColumn(onUnavailable: action),
+        right: _RightColumn(
+          controller: controller,
+          onNavigate: onNavigate,
+          onUnavailable: action,
+        ),
         rightWidth: 282,
       );
     },
@@ -628,15 +632,25 @@ class _CommunityCard extends StatelessWidget {
 }
 
 class _RightColumn extends StatelessWidget {
+  final AppController controller;
+  final ValueChanged<String> onNavigate;
   final ValueChanged<String> onUnavailable;
 
-  const _RightColumn({required this.onUnavailable});
+  const _RightColumn({
+    required this.controller,
+    required this.onNavigate,
+    required this.onUnavailable,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _ProfilePanel(onUnavailable: onUnavailable),
+        _ProfilePanel(
+          controller: controller,
+          onNavigate: onNavigate,
+          onUnavailable: onUnavailable,
+        ),
         const SizedBox(height: 12),
         _MeetingPanel(onUnavailable: onUnavailable),
         const SizedBox(height: 12),
@@ -691,14 +705,25 @@ class _Panel extends StatelessWidget {
 }
 
 class _ProfilePanel extends StatelessWidget {
+  final AppController controller;
+  final ValueChanged<String> onNavigate;
   final ValueChanged<String> onUnavailable;
 
-  const _ProfilePanel({required this.onUnavailable});
+  const _ProfilePanel({
+    required this.controller,
+    required this.onNavigate,
+    required this.onUnavailable,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const stats = [
-      ('-', '我的收藏', Icons.menu_book_rounded, Color(0xFFB34DE9)),
+    final stats = [
+      (
+        '${controller.favoriteCount}',
+        '我的收藏',
+        Icons.menu_book_rounded,
+        const Color(0xFFB34DE9),
+      ),
       ('-', '心愿单', Icons.favorite_rounded, Color(0xFFFF5759)),
       ('-', '游戏记录', Icons.bar_chart_rounded, Color(0xFF19C889)),
       ('-', '想玩游戏', Icons.star_rounded, Color(0xFFFFA91C)),
@@ -737,7 +762,11 @@ class _ProfilePanel extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final s = stats[i];
                   return HoverSurface(
-                    onTap: () => onUnavailable(s.$2),
+                    key: i == 0
+                        ? const ValueKey<String>('desktop-home-favorites-entry')
+                        : null,
+                    onTap: () =>
+                        i == 0 ? onNavigate('favorites') : onUnavailable(s.$2),
                     lift: 1,
                     borderRadius: BorderRadius.circular(9),
                     child: Container(

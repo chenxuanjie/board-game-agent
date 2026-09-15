@@ -25,6 +25,7 @@ import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/desktop_library_resource.dart';
+import '../models/favorite_game_record.dart';
 import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
 import '../models/game_resource.dart';
@@ -147,6 +148,8 @@ class AppController extends ChangeNotifier {
   Future<void> _conversationSaveQueue = Future<void>.value();
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
   Future<void> _activitySaveQueue = Future<void>.value();
+  Future<void> _favoriteMutationQueue = Future<void>.value();
+  final Map<String, DateTime> _favoriteCreatedAtBySlug = <String, DateTime>{};
   final Map<String, AiConversation> _conversations = <String, AiConversation>{};
   List<AppActivity> _activities = <AppActivity>[];
   String? _selectedConversationId;
@@ -264,6 +267,26 @@ class AppController extends ChangeNotifier {
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
+  List<GameInfo> get favoriteGames {
+    final result = _games.where(isFavorite).toList(growable: true)
+      ..sort((left, right) {
+        final leftCreatedAt =
+            _favoriteCreatedAtBySlug[left.slug] ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        final rightCreatedAt =
+            _favoriteCreatedAtBySlug[right.slug] ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        return rightCreatedAt.compareTo(leftCreatedAt);
+      });
+    return List<GameInfo>.unmodifiable(result);
+  }
+
+  int get favoriteCount => _favoriteCreatedAtBySlug.length;
+  bool isFavorite(GameInfo game) {
+    final slug = game.slug.trim();
+    return slug.isNotEmpty && _favoriteCreatedAtBySlug.containsKey(slug);
+  }
+
   GameInfo get featuredGame => selectedGame;
   GameInfo get selectedGame {
     if (_games.isEmpty) {
@@ -528,6 +551,20 @@ class AppController extends ChangeNotifier {
     _selectedConversationId = await _preferencesService
         .loadSelectedConversationId();
     _activities = await _preferencesService.loadActivities();
+    try {
+      final records = await _preferencesService.loadFavoriteGames();
+      _favoriteCreatedAtBySlug
+        ..clear()
+        ..addEntries(
+          records.map(
+            (record) => MapEntry(record.gameSlug.trim(), record.createdAt),
+          ),
+        )
+        ..removeWhere((slug, _) => slug.isEmpty);
+    } catch (error) {
+      debugPrint('[favorites] load failed: $error');
+      _favoriteCreatedAtBySlug.clear();
+    }
     if (_isSaveableCustomPreset(_aiApiConfig)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
@@ -602,6 +639,44 @@ class AppController extends ChangeNotifier {
     );
     await _persistSelectedConversationId();
     notifyListeners();
+  }
+
+  Future<bool> toggleFavorite(GameInfo game) {
+    final Future<bool> operation = _favoriteMutationQueue
+        .catchError((Object _) {})
+        .then<bool>((_) => _toggleFavoriteNow(game));
+    _favoriteMutationQueue = operation.then<void>((_) {});
+    return operation;
+  }
+
+  Future<bool> _toggleFavoriteNow(GameInfo game) async {
+    final slug = game.slug.trim();
+    if (slug.isEmpty) return false;
+
+    final previous = Map<String, DateTime>.of(_favoriteCreatedAtBySlug);
+    if (_favoriteCreatedAtBySlug.containsKey(slug)) {
+      _favoriteCreatedAtBySlug.remove(slug);
+    } else {
+      _favoriteCreatedAtBySlug[slug] = DateTime.now().toUtc();
+    }
+    notifyListeners();
+
+    try {
+      await _preferencesService.saveFavoriteGames(
+        _favoriteCreatedAtBySlug.entries.map(
+          (entry) =>
+              FavoriteGameRecord(gameSlug: entry.key, createdAt: entry.value),
+        ),
+      );
+      return true;
+    } catch (error) {
+      _favoriteCreatedAtBySlug
+        ..clear()
+        ..addAll(previous);
+      notifyListeners();
+      debugPrint('[favorites] save failed: $error');
+      return false;
+    }
   }
 
   Future<void> setColorScheme(ColorSchemeOption next) async {

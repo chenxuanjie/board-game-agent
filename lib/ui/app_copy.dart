@@ -336,6 +336,18 @@ class AppCopy {
   String get detailPageTitle => isChinese ? '桌游详情' : 'Game Details';
   String get rulesBook => isChinese ? '规则书' : 'Rulebook';
   String get faq => isChinese ? 'FAQ' : 'FAQ';
+  String get favoritesTitle => isChinese ? '我的收藏' : 'My Favorites';
+  String get favoritesEmptyTitle =>
+      isChinese ? '还没有收藏桌游' : 'No favorite games yet';
+  String get favoritesEmptyMessage => isChinese
+      ? '在桌游库或详情页收藏喜欢的桌游，它们会显示在这里。'
+      : 'Favorite a game from the library or its detail page to see it here.';
+  String get favoritesGoToLibrary => isChinese ? '前往桌游库' : 'Open game library';
+  String get favoriteAdded => isChinese ? '已加入我的收藏' : 'Added to favorites';
+  String get favoriteRemoved => isChinese ? '已取消收藏' : 'Removed from favorites';
+  String get favoriteUndo => isChinese ? '撤销' : 'Undo';
+  String get favoriteSaveFailed =>
+      isChinese ? '收藏保存失败，已恢复原状态' : 'Could not save favorite; state restored';
   String documentUnavailable(String title) {
     final String normalized = _documentName(title);
     return isChinese

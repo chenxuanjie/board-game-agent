@@ -16,6 +16,7 @@ import '../screens/pdf_document_screen.dart';
 import 'business_panes.dart';
 import 'home_pane.dart';
 import 'games_pane.dart';
+import 'favorites_pane.dart';
 import 'game_detail_pane.dart';
 import 'home_search_overlay.dart';
 import 'settings_pane.dart';
@@ -143,6 +144,34 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _dismissSearch();
     if (!widget.controller.openGameAssistant(game.id)) return;
     setState(() => _page = 'assistant');
+  }
+
+  Future<void> _toggleFavorite(GameInfo game) async {
+    final saved = await widget.controller.toggleFavorite(game);
+    if (!mounted) return;
+
+    final copy = widget.controller.copy;
+    if (!saved) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(copy.favoriteSaveFailed)));
+      return;
+    }
+
+    final isFavorite = widget.controller.isFavorite(game);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(isFavorite ? copy.favoriteAdded : copy.favoriteRemoved),
+          action: isFavorite
+              ? null
+              : SnackBarAction(
+                  label: copy.favoriteUndo,
+                  onPressed: () => unawaited(_toggleFavorite(game)),
+                ),
+        ),
+      );
   }
 
   void _openRulesForResource(DesktopLibraryResource resource) {
@@ -498,19 +527,30 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               showPreview: !compact && !narrow,
                               onNavigate: _navigate,
                               onOpenGame: _game,
+                              onToggleFavorite: _toggleFavorite,
+                            ),
+                            'favorites' => DesktopFavoritesPane(
+                              controller: widget.controller,
+                              showPreview: !compact && !narrow,
+                              onNavigate: _navigate,
+                              onOpenGame: _game,
+                              onToggleFavorite: _toggleFavorite,
                             ),
                             'gameDetail' => DesktopGameDetailPane(
                               controller: widget.controller,
                               game: widget.controller.selectedGame,
-                              backTooltip: _gameDetailReturnPage == 'home'
-                                  ? '返回首页'
-                                  : '返回游戏库',
+                              backTooltip: switch (_gameDetailReturnPage) {
+                                'home' => '返回首页',
+                                'favorites' => '返回我的收藏',
+                                _ => '返回游戏库',
+                              },
                               onBack: () => _navigate(_gameDetailReturnPage),
                               onSearch: _find,
                               onOpenRules: () =>
                                   _openRules(widget.controller.selectedGame),
                               onAskAi: () =>
                                   _askAi(widget.controller.selectedGame),
+                              onToggleFavorite: _toggleFavorite,
                             ),
                             'settings' => DesktopSettingsPane(
                               controller: widget.controller,
