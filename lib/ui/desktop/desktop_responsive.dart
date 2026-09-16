@@ -126,9 +126,9 @@ abstract final class DesktopResponsive {
 
 /// Metrics shared by the desktop shell and its panes.
 ///
-/// `scale` is intentionally only applied to the wide desktop canvas. It is
-/// not a widget transform: text remains accessible and hit targets keep their
-/// normal Flutter semantics while the design dimensions grow together.
+/// `scale` controls visual dimensions only; dashboard width is allowed to
+/// follow the native desktop window. This is not a widget transform: text
+/// remains accessible and hit targets keep their normal Flutter semantics.
 class DesktopMetrics {
   const DesktopMetrics({required this.viewportSize, required this.scale});
 

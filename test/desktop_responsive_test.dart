@@ -32,7 +32,7 @@ void main() {
     expect(DesktopResponsive.detailHeroHeightFor(1100), 450);
   });
 
-  test('desktop metrics scale only the wide design canvas', () {
+  test('desktop metrics scale visual dimensions independently of width', () {
     expect(DesktopResponsive.desktopScaleFor(const Size(1100, 800)), 1);
     expect(DesktopResponsive.desktopScaleFor(const Size(1280, 800)), 1);
     expect(

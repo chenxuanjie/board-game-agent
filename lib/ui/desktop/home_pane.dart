@@ -83,8 +83,7 @@ class DesktopHomePane extends StatelessWidget {
               children: [main, const SizedBox(height: 14), right],
             );
           }
-          final rightWidth = metrics
-              .px(282)
+          final rightWidth = (constraints.maxWidth * 0.22)
               .clamp(metrics.px(282), metrics.px(340))
               .toDouble();
           return DesktopContentColumns(
@@ -151,16 +150,49 @@ class _MainColumn extends StatelessWidget {
         SizedBox(height: metrics.px(10)),
         LayoutBuilder(
           builder: (context, constraints) {
+            if (games.isEmpty) return const SizedBox.shrink();
+
             final gap = metrics.px(13);
-            final count = DesktopResponsive.homeRecommendationCountFor(
+            final minimumCardWidth = metrics.px(140);
+            final fiveCardMinimumWidth = minimumCardWidth * 5 + gap * 4;
+
+            if (constraints.maxWidth < fiveCardMinimumWidth) {
+              final visibleGames = games.take(5).toList();
+              return SingleChildScrollView(
+                key: const ValueKey<String>('desktop-home-recommendation-row'),
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < visibleGames.length; i++) ...[
+                      if (i > 0) SizedBox(width: gap),
+                      SizedBox(
+                        width: minimumCardWidth,
+                        child: _GameCard(
+                          key: ValueKey<String>(
+                            'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                          ),
+                          game: visibleGames[i],
+                          onTap: () => onUnavailable(visibleGames[i].title),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }
+
+            final desiredCount = DesktopResponsive.homeRecommendationCountFor(
               constraints.maxWidth,
-            ).clamp(1, games.length);
+            );
+            final count = desiredCount < games.length
+                ? desiredCount
+                : games.length;
             final visibleGames = games.take(count).toList();
             final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
               constraints.maxWidth,
               gap: gap,
-              minimumWidth: metrics.px(140),
-              count: visibleGames.length,
+              minimumWidth: minimumCardWidth,
+              count: count,
             );
             return Row(
               key: const ValueKey<String>('desktop-home-recommendation-row'),
@@ -710,14 +742,14 @@ class _RecentCard extends StatelessWidget {
                               SizedBox(
                                 width: slotWidth,
                                 child: _RecentGameTile(
-                                    key: ValueKey<String>(
-                                      'desktop-recent-game-${recentItems[i].game!.id}',
-                                    ),
-                                    game: recentItems[i].game!,
-                                    record: recentItems[i].record,
-                                    controller: controller,
-                                    onTap: () =>
-                                        onOpenGame(recentItems[i].game!),
+                                  key: ValueKey<String>(
+                                    'desktop-recent-game-${recentItems[i].game!.id}',
+                                  ),
+                                  game: recentItems[i].game!,
+                                  record: recentItems[i].record,
+                                  controller: controller,
+                                  onTap: () =>
+                                      onOpenGame(recentItems[i].game!),
                                 ),
                               ),
                             ],
