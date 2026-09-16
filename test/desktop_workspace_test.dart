@@ -141,6 +141,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('desktop top bar uses the enlarged baseline metrics', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey<String>('desktop-top-bar')))
+          .height,
+      104,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('desktop-home-search-shell')),
+          )
+          .height,
+      55,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('hidden and unsupported desktop routes stay unavailable', (
     tester,
   ) async {

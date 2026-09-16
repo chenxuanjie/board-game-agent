@@ -484,12 +484,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             resizeEdgeSize: 6,
             child: Stack(
               children: [
-                body,
                 Positioned(
                   left: dragLeft,
-                  right: 96,
+                  right: metrics.px(150),
                   top: 0,
-                  height: metrics.px(18),
+                  height: metrics.px(45),
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onPanStart: (_) => windowManager.startDragging(),
@@ -502,6 +501,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     },
                   ),
                 ),
+                body,
                 const Positioned(top: 0, right: 0, child: WindowControls()),
               ],
             ),
@@ -735,9 +735,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   Widget _topBar({required bool compact, required bool narrow}) {
     final metrics = DesktopMetricsScope.of(context);
     return SizedBox(
-      height: metrics.px(92),
+      key: const ValueKey<String>('desktop-top-bar'),
+      height: metrics.px(104),
       child: Padding(
-        padding: metrics.insets(const EdgeInsets.fromLTRB(20, 24, 18, 14)),
+        padding: metrics.insets(const EdgeInsets.fromLTRB(20, 30, 18, 12)),
         child: Row(
           children: [
             if (narrow) ...[
@@ -758,15 +759,16 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: metrics.px(780)),
                   child: SizedBox(
+                    key: const ValueKey<String>('desktop-home-search-shell'),
                     width: double.infinity,
-                    height: metrics.px(50),
+                    height: metrics.px(55),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 120),
                       decoration: BoxDecoration(
                         color: _searchFocus.hasFocus
                             ? DesktopColors.card
                             : const Color(0xFFF8F2EA),
-                        borderRadius: BorderRadius.circular(metrics.radius(24)),
+                        borderRadius: BorderRadius.circular(metrics.radius(26)),
                         border: Border.all(
                           color: _searchFocus.hasFocus
                               ? DesktopColors.orange
@@ -793,7 +795,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                           onTap: _openSearch,
                           onSubmitted: _submitSearch,
                           style: TextStyle(
-                            fontSize: metrics.font(18),
+                            fontSize: metrics.font(19),
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF2F2924),
                           ),
@@ -805,7 +807,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             prefixIcon: Icon(
                               Icons.search_rounded,
                               color: DesktopColors.brown,
-                              size: metrics.px(23),
+                              size: metrics.px(25),
                             ),
                             suffixIcon: _searchOpen
                                 ? IconButton(
@@ -817,7 +819,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                         : _clearSearch,
                                     icon: Icon(
                                       Icons.close_rounded,
-                                      size: metrics.px(18),
+                                      size: metrics.px(20),
                                       color: DesktopColors.secondaryText,
                                     ),
                                   )
@@ -825,11 +827,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             hintText: '搜索桌游 / 机制 / 作者 / 玩法',
                             hintStyle: TextStyle(
                               color: Color(0xFFA89C90),
-                              fontSize: metrics.font(18),
+                              fontSize: metrics.font(19),
                               fontWeight: FontWeight.w400,
                             ),
                             contentPadding: EdgeInsets.symmetric(
-                              vertical: metrics.px(13),
+                              vertical: metrics.px(14),
                             ),
                           ),
                         ),

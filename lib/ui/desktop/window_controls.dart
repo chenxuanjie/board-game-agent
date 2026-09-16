@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'desktop_responsive.dart';
+
 class WindowControls extends StatefulWidget {
   const WindowControls({super.key});
 
@@ -104,6 +106,7 @@ class _WindowButtonState extends State<_WindowButton> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     final bg = !hovering
         ? Colors.transparent
         : widget.danger
@@ -124,11 +127,11 @@ class _WindowButtonState extends State<_WindowButton> {
           onTap: () => widget.onTap(),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 100),
-            width: 32,
-            height: 20,
+            width: metrics.px(50),
+            height: metrics.px(32),
             alignment: Alignment.center,
             color: bg,
-            child: Icon(widget.icon, size: 13, color: fg),
+            child: Icon(widget.icon, size: metrics.px(15), color: fg),
           ),
         ),
       ),
