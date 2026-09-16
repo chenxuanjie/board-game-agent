@@ -27,7 +27,7 @@ class DesktopHomePane extends StatelessWidget {
     builder: (context, _) {
       final metrics = DesktopMetricsScope.of(context);
       final games = controller.games
-          .take(5)
+          .take(6)
           .map((g) => DesktopContentGame(g, controller))
           .toList();
       void action(String label) {
@@ -83,11 +83,15 @@ class DesktopHomePane extends StatelessWidget {
               children: [main, const SizedBox(height: 14), right],
             );
           }
+          final rightWidth = metrics
+              .px(282)
+              .clamp(metrics.px(282), metrics.px(340))
+              .toDouble();
           return DesktopContentColumns(
             wide: true,
             main: main,
             right: right,
-            rightWidth: metrics.px(282),
+            rightWidth: rightWidth,
             gap: metrics.px(14),
           );
         },
@@ -148,31 +152,33 @@ class _MainColumn extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final gap = metrics.px(13);
+            final count = DesktopResponsive.homeRecommendationCountFor(
+              constraints.maxWidth,
+            ).clamp(1, games.length);
+            final visibleGames = games.take(count).toList();
             final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
               constraints.maxWidth,
               gap: gap,
               minimumWidth: metrics.px(140),
+              count: visibleGames.length,
             );
-            return SingleChildScrollView(
+            return Row(
               key: const ValueKey<String>('desktop-home-recommendation-row'),
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (var i = 0; i < games.length; i++) ...[
-                    if (i > 0) SizedBox(width: gap),
-                    SizedBox(
-                      width: cardWidth,
-                      child: _GameCard(
-                        key: ValueKey<String>(
-                          'desktop-home-recommendation-card-${games[i].data.id}',
-                        ),
-                        game: games[i],
-                        onTap: () => onUnavailable(games[i].title),
+              children: [
+                for (var i = 0; i < visibleGames.length; i++) ...[
+                  if (i > 0) SizedBox(width: gap),
+                  SizedBox(
+                    width: cardWidth,
+                    child: _GameCard(
+                      key: ValueKey<String>(
+                        'desktop-home-recommendation-card-${visibleGames[i].data.id}',
                       ),
+                      game: visibleGames[i],
+                      onTap: () => onUnavailable(visibleGames[i].title),
                     ),
-                  ],
+                  ),
                 ],
-              ),
+              ],
             );
           },
         ),
@@ -205,7 +211,7 @@ class _MainColumn extends StatelessWidget {
                     onOpenGame: onOpenGame,
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: metrics.px(12)),
                 Expanded(child: _CommunityCard(onUnavailable: onUnavailable)),
               ],
             );
@@ -690,19 +696,20 @@ class _RecentCard extends StatelessWidget {
                   ? _RecentEmptyState(onTap: onMore)
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        const gap = 8.0;
-                        final slotWidth = ((constraints.maxWidth - gap * 2) / 3)
-                            .clamp(88.0, 126.0);
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (var i = 0; i < recentItems.length; i++) ...[
-                                if (i > 0) const SizedBox(width: gap),
-                                SizedBox(
-                                  width: slotWidth,
-                                  child: _RecentGameTile(
+                        final metrics = DesktopMetricsScope.of(context);
+                        final gap = metrics.px(8);
+                        final itemCount = recentItems.length;
+                        final slotWidth =
+                            (constraints.maxWidth - gap * (itemCount - 1)) /
+                            itemCount;
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (var i = 0; i < recentItems.length; i++) ...[
+                              if (i > 0) SizedBox(width: gap),
+                              SizedBox(
+                                width: slotWidth,
+                                child: _RecentGameTile(
                                     key: ValueKey<String>(
                                       'desktop-recent-game-${recentItems[i].game!.id}',
                                     ),
@@ -711,11 +718,10 @@ class _RecentCard extends StatelessWidget {
                                     controller: controller,
                                     onTap: () =>
                                         onOpenGame(recentItems[i].game!),
-                                  ),
                                 ),
-                              ],
+                              ),
                             ],
-                          ),
+                          ],
                         );
                       },
                     ),

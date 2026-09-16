@@ -454,14 +454,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             : (compact
                   ? DesktopResponsive.compactSidebarWidth
                   : DesktopResponsive.fullSidebarWidth);
-        final canvasWidth = narrow
-            ? constraints.maxWidth
-            : math.min(
-                constraints.maxWidth,
-                metrics.px(DesktopResponsive.desktopWindowDefaultSize.width),
-              );
-        final canvasLeft = (constraints.maxWidth - canvasWidth) / 2;
-        final dragLeft = narrow ? 0.0 : canvasLeft + metrics.px(sidebarWidth);
+        // The Windows shell uses the full available window width. DesktopMetrics
+        // still scale visual dimensions, but no longer cap the dashboard canvas
+        // at 1280 * scale, which previously created internal dead space.
+        final canvasWidth = constraints.maxWidth;
+        final canvasLeft = 0.0;
+        final dragLeft = narrow ? 0.0 : metrics.px(sidebarWidth);
         final canvas = SizedBox(
           width: canvasWidth,
           height: constraints.maxHeight,
@@ -583,6 +581,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                       children: [
                         DesktopResponsiveFrame(
                           maxWidth: DesktopResponsive.maxContentWidthFor(_page),
+                          fluid: DesktopResponsive.usesFluidPageWidth(_page),
                           padding: _page == 'gameDetail'
                               ? EdgeInsets.zero
                               : EdgeInsets.fromLTRB(
