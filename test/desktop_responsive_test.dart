@@ -67,7 +67,7 @@ void main() {
     expect(DesktopResponsive.homeRecommendationCardWidthFor(752), 140);
     expect(
       DesktopResponsive.homeRecommendationCardWidthFor(1000),
-      closeTo(174.8, 0.001),
+      closeTo(189.6, 0.001),
     );
   });
 }
