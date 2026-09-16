@@ -20,6 +20,8 @@ abstract final class DesktopResponsive {
 
   static const narrowBreakpoint = 760.0;
   static const fullSidebarBreakpoint = 1200.0;
+  static const fullSidebarWidth = 205.0;
+  static const compactSidebarWidth = 76.0;
 
   /// The inspector needs enough room for both the poster grid and its panel.
   /// This is intentionally independent from the sidebar breakpoint.

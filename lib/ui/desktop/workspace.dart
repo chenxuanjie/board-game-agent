@@ -447,7 +447,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 760;
         final compact = !narrow && constraints.maxWidth < 1200;
-        final sidebarWidth = narrow ? 0.0 : (compact ? 76.0 : 230.0);
+        final sidebarWidth = narrow
+            ? 0.0
+            : (compact
+                  ? DesktopResponsive.compactSidebarWidth
+                  : DesktopResponsive.fullSidebarWidth);
         Widget body = Row(
           children: [
             if (!narrow)

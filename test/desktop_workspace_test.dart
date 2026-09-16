@@ -237,6 +237,7 @@ void main() {
       final fullSidebar = find.byKey(
         const ValueKey<String>('desktop-sidebar-full'),
       );
+      expect(tester.getSize(fullSidebar).width, 205);
       final homeIcon = find.byKey(
         const ValueKey<String>('desktop-sidebar-icon-sidebar_home.png'),
       );
@@ -244,7 +245,8 @@ void main() {
         of: fullSidebar,
         matching: find.text('首页'),
       );
-      expect(tester.getSize(homeIcon), const Size.square(24));
+      final fullHomeIconRect = tester.getRect(homeIcon);
+      expect(fullHomeIconRect.size, const Size.square(28));
       expect(
         tester.getTopLeft(homeLabel).dx - tester.getTopRight(homeIcon).dx,
         closeTo(10, 0.1),
@@ -261,7 +263,12 @@ void main() {
         findsNothing,
       );
       final compactHomeIconRect = tester.getRect(homeIcon);
-      expect(compactHomeIconRect.size, const Size.square(24));
+      expect(compactHomeIconRect.size, fullHomeIconRect.size);
+      expect(
+        compactHomeIconRect.center.dx,
+        closeTo(fullHomeIconRect.center.dx, 0.5),
+      );
+      expect(compactHomeIconRect.top, closeTo(fullHomeIconRect.top, 0.5));
       expect(tester.takeException(), isNull);
 
       await tester.binding.setSurfaceSize(const Size(720, 700));
@@ -846,7 +853,7 @@ void main() {
     final sidebarArt = tester.widget<Image>(
       find.byKey(const ValueKey<String>('desktop-sidebar-art')),
     );
-    expect(sidebarArt.fit, BoxFit.contain);
+    expect(sidebarArt.fit, BoxFit.fitWidth);
     expect(sidebarArt.alignment, Alignment.bottomCenter);
     final sidebarRect = tester.getRect(
       find.byKey(const ValueKey<String>('desktop-sidebar-full')),
@@ -854,10 +861,19 @@ void main() {
     final sidebarArtRect = tester.getRect(
       find.byKey(const ValueKey<String>('desktop-sidebar-art')),
     );
+    final settingsItemRect = tester.getRect(
+      find.byKey(
+        const ValueKey<String>('desktop-sidebar-item-sidebar_settings.png'),
+      ),
+    );
     expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
     expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
-    expect(sidebarArtRect.top, closeTo(sidebarRect.top + 520, 0.1));
     expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
+    expect(settingsItemRect.bottom, lessThanOrEqualTo(sidebarArtRect.top));
+    expect(
+      sidebarArtRect.width / sidebarArtRect.height,
+      closeTo(971 / 1619, 0.005),
+    );
     for (final asset in [
       'sidebar_home.png',
       'sidebar_library.png',
@@ -868,7 +884,7 @@ void main() {
     ]) {
       final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
       expect(icon, findsOneWidget);
-      expect(tester.getSize(icon), const Size(24, 24));
+      expect(tester.getSize(icon), const Size(28, 28));
     }
     expect(tester.takeException(), isNull);
   });

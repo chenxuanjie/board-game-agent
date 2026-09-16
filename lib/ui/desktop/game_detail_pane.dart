@@ -300,13 +300,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                                 width: 108,
                               ),
                               _HeroButton(
-                                label: '加入想玩 · 未开放',
-                                icon: Icons.add_circle_outline_rounded,
-                                onTap: () =>
-                                    desktopContentPending(context, '加入想玩'),
-                                light: true,
-                              ),
-                              _HeroButton(
                                 label: '询问 AI',
                                 icon: Icons.auto_awesome_rounded,
                                 onTap: widget.onAskAi,

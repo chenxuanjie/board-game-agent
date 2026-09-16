@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'desktop_responsive.dart';
 import 'theme.dart';
 
 class DesktopSidebar extends StatelessWidget {
@@ -24,6 +25,7 @@ class DesktopSidebar extends StatelessWidget {
     (asset: 'sidebar_community.png', label: '社区'),
     (asset: 'sidebar_settings.png', label: '设置'),
   ];
+  static const double _headerHeight = 152;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +33,11 @@ class DesktopSidebar extends StatelessWidget {
       key: ValueKey<String>(
         compact ? 'desktop-sidebar-rail' : 'desktop-sidebar-full',
       ),
-      width: width ?? (compact ? 76 : 230),
+      width:
+          width ??
+          (compact
+              ? DesktopResponsive.compactSidebarWidth
+              : DesktopResponsive.fullSidebarWidth),
       height: double.infinity,
       decoration: const BoxDecoration(
         color: DesktopColors.sidebar,
@@ -40,13 +46,19 @@ class DesktopSidebar extends StatelessWidget {
       child: Stack(
         children: [
           if (!compact)
-            Positioned.fill(
-              top: 520,
-              child: Image.asset(
-                'assets/desktop/home/sidebar_castle.png',
-                key: const ValueKey<String>('desktop-sidebar-art'),
-                fit: BoxFit.contain,
-                alignment: Alignment.bottomCenter,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AspectRatio(
+                aspectRatio: 971 / 1619,
+                child: Image.asset(
+                  'assets/desktop/home/sidebar_castle.png',
+                  key: const ValueKey<String>('desktop-sidebar-art'),
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.bottomCenter,
+                ),
               ),
             ),
           Padding(
@@ -59,42 +71,67 @@ class DesktopSidebar extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: EdgeInsets.only(left: compact ? 3 : 21),
-                  child: Image.asset(
-                    'assets/desktop/home/logo.png',
-                    key: const ValueKey<String>('desktop-sidebar-logo'),
-                    width: compact ? 48 : 77,
-                    height: compact ? 48 : 72,
-                    fit: BoxFit.contain,
-                  ),
+                SizedBox(
+                  height: _headerHeight,
+                  child: compact
+                      ? Align(
+                          alignment: Alignment.topCenter,
+                          child: Image.asset(
+                            'assets/desktop/home/logo.png',
+                            key: const ValueKey<String>('desktop-sidebar-logo'),
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 21),
+                              child: Image.asset(
+                                'assets/desktop/home/logo.png',
+                                key: const ValueKey<String>(
+                                  'desktop-sidebar-logo',
+                                ),
+                                width: 77,
+                                height: 72,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.only(left: 22, top: 5),
+                              child: Text(
+                                '桌游助手',
+                                style: TextStyle(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.only(
+                                left: 22,
+                                top: 4,
+                                bottom: 16,
+                              ),
+                              child: Text(
+                                '发现更大的桌游世界',
+                                style: TextStyle(
+                                  color: DesktopColors.secondaryText,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
-                if (!compact) ...[
-                  const Padding(
-                    padding: EdgeInsets.only(left: 22, top: 5),
-                    child: Text(
-                      '桌游助手',
-                      style: TextStyle(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 22, top: 4, bottom: 16),
-                    child: Text(
-                      '发现更大的桌游世界',
-                      style: TextStyle(
-                        color: DesktopColors.secondaryText,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ] else
-                  const SizedBox(height: 25),
                 for (var i = 0; i < _items.length; i++) ...[
                   _NavTile(
+                    key: ValueKey<String>(
+                      'desktop-sidebar-item-${_items[i].asset}',
+                    ),
                     asset: _items[i].asset,
                     label: _items[i].label,
                     selected: i == selectedIndex,
@@ -120,6 +157,7 @@ class _NavTile extends StatefulWidget {
   final bool compact;
 
   const _NavTile({
+    super.key,
     required this.asset,
     required this.label,
     required this.selected,
@@ -147,7 +185,7 @@ class _NavTileState extends State<_NavTile> {
           duration: const Duration(milliseconds: 120),
           height: 44,
           margin: const EdgeInsets.only(bottom: 3),
-          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 0 : 18),
+          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 0 : 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(11),
             gradient: active
@@ -169,8 +207,8 @@ class _NavTileState extends State<_NavTile> {
                 child: Image.asset(
                   'assets/desktop/home/sidebar_icons/${widget.asset}',
                   key: ValueKey<String>('desktop-sidebar-icon-${widget.asset}'),
-                  width: 24,
-                  height: 24,
+                  width: 28,
+                  height: 28,
                   fit: BoxFit.contain,
                   filterQuality: FilterQuality.high,
                 ),
