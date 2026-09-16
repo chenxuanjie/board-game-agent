@@ -439,6 +439,8 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback onMore;
+  final FontWeight titleWeight;
+  final double? titleScaleCap;
 
   const _SectionHeader({
     super.key,
@@ -448,11 +450,17 @@ class _SectionHeader extends StatelessWidget {
     required this.title,
     this.subtitle,
     required this.onMore,
+    this.titleWeight = FontWeight.w800,
+    this.titleScaleCap,
   }) : assert(leading != null || icon != null);
 
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
+    final titleSize = titleScaleCap == null
+        ? metrics.font(19)
+        : (19 * math.min(titleScaleCap!, math.max(1, metrics.scale)))
+              .toDouble();
     return SizedBox(
       height: metrics.px(32),
       child: Row(
@@ -466,10 +474,7 @@ class _SectionHeader extends StatelessWidget {
           SizedBox(width: metrics.px(8)),
           Text(
             title,
-            style: TextStyle(
-              fontSize: metrics.font(19),
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(fontSize: titleSize, fontWeight: titleWeight),
           ),
           if (subtitle != null) ...[
             SizedBox(width: metrics.px(12)),
@@ -746,6 +751,7 @@ class _RecentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     final gamesBySlug = <String, GameInfo>{
       for (final game in controller.games) game.slug.trim().toLowerCase(): game,
     };
@@ -761,7 +767,7 @@ class _RecentCard extends StatelessWidget {
       key: const ValueKey<String>('desktop-home-recent-panel'),
       height: 171,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+        padding: metrics.insets(const EdgeInsets.fromLTRB(12, 8, 12, 8)),
         child: Column(
           children: [
             _SectionHeader(
@@ -770,20 +776,26 @@ class _RecentCard extends StatelessWidget {
               iconColor: DesktopColors.orange,
               title: '最近浏览',
               onMore: onMore,
+              titleWeight: FontWeight.w700,
+              titleScaleCap: 1.08,
             ),
-            const SizedBox(height: 7),
+            SizedBox(height: metrics.px(10)),
             Expanded(
               child: recentItems.isEmpty
                   ? _RecentEmptyState(onTap: onMore)
                   : LayoutBuilder(
                       builder: (context, constraints) {
                         final metrics = DesktopMetricsScope.of(context);
-                        final gap = metrics.px(8);
-                        final itemCount = recentItems.length;
-                        final slotWidth =
-                            ((constraints.maxWidth - gap * (itemCount - 1)) /
-                                    itemCount)
-                                .clamp(metrics.px(88), metrics.px(126));
+                        final gap = metrics.px(14);
+                        const slotCount = 3;
+                        final naturalSlotWidth =
+                            (constraints.maxWidth - gap * (slotCount - 1)) /
+                            slotCount;
+                        // Keep the preferred minimum when the panel has room,
+                        // but never overflow a narrow panel just to satisfy it.
+                        final slotWidth = naturalSlotWidth < metrics.px(118)
+                            ? naturalSlotWidth
+                            : math.min(metrics.px(150), naturalSlotWidth);
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -868,6 +880,7 @@ class _RecentGameTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     final contentGame = DesktopContentGame(game, controller);
     final imagePath = game.bannerAssetPath.trim().isNotEmpty
         ? game.bannerAssetPath
@@ -877,59 +890,65 @@ class _RecentGameTile extends StatelessWidget {
       label: '打开${contentGame.title}详情',
       child: HoverSurface(
         onTap: onTap,
-        lift: 2,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFFCF8),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0x0F8A5A3C)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(5),
-                child: AspectRatio(
-                  key: ValueKey<String>('desktop-recent-thumbnail-${game.id}'),
-                  aspectRatio: 16 / 9,
-                  child: DesktopResolvedImage(
-                    controller: controller,
-                    assetPath: imagePath,
-                    palette: controller.palette,
-                  ),
+        lift: 1,
+        addShadow: false,
+        borderRadius: BorderRadius.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(metrics.radius(6)),
+              child: AspectRatio(
+                key: ValueKey<String>('desktop-recent-thumbnail-${game.id}'),
+                aspectRatio: 1.46,
+                child: DesktopResolvedImage(
+                  controller: controller,
+                  assetPath: imagePath,
+                  palette: controller.palette,
+                  fit: BoxFit.cover,
                 ),
               ),
-              const SizedBox(height: 5),
-              Text(
-                contentGame.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  height: 1.15,
-                ),
+            ),
+            SizedBox(height: metrics.px(5)),
+            Text(
+              contentGame.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'HarmonyOS Sans SC',
+                fontFamilyFallback: const [
+                  'Microsoft YaHei UI',
+                  'Noto Sans CJK SC',
+                  'Segoe UI',
+                  'sans-serif',
+                ],
+                fontSize: _recentFontSize(metrics, 13),
+                fontWeight: FontWeight.w700,
+                height: 1.12,
+                color: const Color(0xFF1D1916),
               ),
-              const SizedBox(height: 2),
-              Text(
-                '上次浏览：${_formatRecentTime(record.viewedAt)}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  height: 1.15,
-                  color: DesktopColors.secondaryText,
-                ),
+            ),
+            SizedBox(height: metrics.px(2)),
+            Text(
+              '上次浏览：${_formatRecentTime(record.viewedAt)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: _recentFontSize(metrics, 10.5),
+                fontWeight: FontWeight.w400,
+                height: 1.12,
+                color: const Color(0xFF8A817A),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+double _recentFontSize(DesktopMetrics metrics, double value) =>
+    value * math.min(1.08, math.max(1, metrics.scale));
 
 String _formatRecentTime(DateTime viewedAt, {DateTime? now}) {
   final current = (now ?? DateTime.now()).toUtc();

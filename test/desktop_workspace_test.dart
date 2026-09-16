@@ -633,11 +633,37 @@ void main() {
     final firstThumbnail = find.byKey(
       ValueKey<String>('desktop-recent-thumbnail-${first.id}'),
     );
-    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(126.1));
+    expect(tester.getSize(firstTile).width, greaterThan(110));
+    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(150.1));
     expect(
       tester.getSize(firstThumbnail).width /
           tester.getSize(firstThumbnail).height,
-      closeTo(16 / 9, 0.01),
+      closeTo(1.46, 0.01),
+    );
+    final recentTitle = find.descendant(
+      of: firstTile,
+      matching: find.text(first.title),
+    );
+    expect(tester.widget<Text>(recentTitle).style?.fontSize, closeTo(13, 0.01));
+    expect(tester.widget<Text>(recentTitle).style?.fontWeight, FontWeight.w700);
+    final recentTime = find.descendant(
+      of: firstTile,
+      matching: find.textContaining('上次浏览：'),
+    );
+    expect(
+      tester.widget<Text>(recentTime).style?.fontSize,
+      closeTo(10.5, 0.01),
+    );
+    final recentHeader = find.byKey(
+      const ValueKey<String>('desktop-home-recent-header'),
+    );
+    final recentHeaderTitle = find.descendant(
+      of: recentHeader,
+      matching: find.text('最近浏览'),
+    );
+    expect(
+      tester.widget<Text>(recentHeaderTitle).style?.fontWeight,
+      FontWeight.w700,
     );
     expect(find.textContaining('上次浏览：'), findsNWidgets(2));
     final recentPanel = find.byKey(
