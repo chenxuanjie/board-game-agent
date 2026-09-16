@@ -547,117 +547,147 @@ class _GameCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
+    double cardFont(double value) =>
+        value * (1 + math.min(0.08, math.max(0, metrics.scale - 1)));
+
     return HoverSurface(
       onTap: onTap,
       borderRadius: BorderRadius.circular(metrics.radius(9)),
-      child: Container(
-        height: metrics.px(229),
-        padding: EdgeInsets.all(metrics.px(4)),
-        decoration: BoxDecoration(
-          color: DesktopColors.card,
-          borderRadius: BorderRadius.circular(metrics.radius(9)),
-          border: Border.all(color: const Color(0x0D8A6044)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0B7E4D2B),
-              blurRadius: metrics.px(8),
-              offset: Offset(0, metrics.px(2)),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(metrics.radius(6)),
-              child: SizedBox(
-                width: double.infinity,
-                height: metrics.px(116),
-                child: game.cover(),
+      child: AspectRatio(
+        aspectRatio: 140 / 229,
+        child: Container(
+          padding: EdgeInsets.all(metrics.px(4)),
+          decoration: BoxDecoration(
+            color: DesktopColors.card,
+            borderRadius: BorderRadius.circular(metrics.radius(9)),
+            border: Border.all(color: const Color(0x0D8A6044)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x0B7E4D2B),
+                blurRadius: metrics.px(8),
+                offset: Offset(0, metrics.px(2)),
               ),
-            ),
-            SizedBox(height: metrics.px(4)),
-            Text(
-              game.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: metrics.font(15),
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-              ),
-            ),
-            Text(
-              game.englishTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: metrics.font(8.6),
-                color: DesktopColors.secondaryText,
-                height: 1.2,
-              ),
-            ),
-            SizedBox(height: metrics.px(3)),
-            Row(
-              children: [
-                Icon(
-                  Icons.star_rounded,
-                  color: Color(0xFFFFA400),
-                  size: metrics.px(15),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(metrics.radius(6)),
+                child: AspectRatio(
+                  aspectRatio: 132 / 116,
+                  child: SizedBox(width: double.infinity, child: game.cover()),
                 ),
-                Text(
-                  game.score,
-                  style: TextStyle(
-                    fontSize: metrics.font(12),
-                    fontWeight: FontWeight.w700,
+              ),
+              SizedBox(height: metrics.px(4)),
+              Text(
+                game.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'HarmonyOS Sans SC',
+                  fontFamilyFallback: const [
+                    'Microsoft YaHei UI',
+                    'Noto Sans CJK SC',
+                    'Segoe UI',
+                    'sans-serif',
+                  ],
+                  fontSize: cardFont(15),
+                  fontWeight: FontWeight.w700,
+                  height: 1.10,
+                  color: const Color(0xFF171412),
+                ),
+              ),
+              Text(
+                game.englishTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Segoe UI',
+                  fontSize: cardFont(8.8),
+                  fontWeight: FontWeight.w400,
+                  height: 1.15,
+                  letterSpacing: 0.12,
+                  color: const Color(0xFF7D756D),
+                ),
+              ),
+              SizedBox(height: metrics.px(4)),
+              Row(
+                children: [
+                  Icon(
+                    Icons.star_rounded,
+                    color: const Color(0xFFFFA400),
+                    size: metrics.px(12.5),
                   ),
-                ),
-              ],
-            ),
-            SizedBox(height: metrics.px(3)),
-            Row(
-              children: [
-                _Tag(game.tagA),
-                SizedBox(width: metrics.px(6)),
-                _Tag(game.tagB),
-              ],
-            ),
-            const Spacer(),
-            Row(
-              children: [
-                Icon(
-                  Icons.group_rounded,
-                  size: metrics.px(11),
-                  color: Color(0xFF77706A),
-                ),
-                SizedBox(width: metrics.px(2)),
-                Text(
-                  game.players,
-                  style: TextStyle(
-                    fontSize: metrics.font(9.5),
-                    color: Color(0xFF77706A),
-                  ),
-                ),
-                const Spacer(),
-                Icon(
-                  Icons.schedule_rounded,
-                  size: metrics.px(11),
-                  color: Color(0xFF77706A),
-                ),
-                SizedBox(width: metrics.px(2)),
-                Flexible(
-                  child: Text(
-                    game.duration,
-                    overflow: TextOverflow.ellipsis,
+                  SizedBox(width: metrics.px(4)),
+                  Text(
+                    game.score,
                     style: TextStyle(
-                      fontSize: metrics.font(9.2),
-                      color: Color(0xFF77706A),
+                      fontFamily: 'Segoe UI',
+                      fontSize: cardFont(12),
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                      color: const Color(0xFF171412),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              SizedBox(height: metrics.px(5)),
+              Row(
+                children: [
+                  _Tag(game.tagA),
+                  SizedBox(width: metrics.px(6)),
+                  _Tag(game.tagB),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Icon(
+                    Icons.group_rounded,
+                    size: metrics.px(11),
+                    color: const Color(0xFF77706A),
+                  ),
+                  SizedBox(width: metrics.px(2)),
+                  Flexible(
+                    child: Text(
+                      game.players,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Segoe UI',
+                        fontSize: cardFont(9.5),
+                        fontWeight: FontWeight.w400,
+                        height: 1.0,
+                        color: const Color(0xFF77706A),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.schedule_rounded,
+                    size: metrics.px(11),
+                    color: const Color(0xFF77706A),
+                  ),
+                  SizedBox(width: metrics.px(2)),
+                  Flexible(
+                    child: Text(
+                      game.duration,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Segoe UI',
+                        fontSize: cardFont(9.2),
+                        fontWeight: FontWeight.w400,
+                        height: 1.0,
+                        color: const Color(0xFF77706A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -683,7 +713,19 @@ class _Tag extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          fontSize: metrics.font(9.5),
+          fontFamily: 'HarmonyOS Sans SC',
+          fontFamilyFallback: const [
+            'Microsoft YaHei UI',
+            'Noto Sans CJK SC',
+            'Segoe UI',
+            'sans-serif',
+          ],
+          fontSize: math.min(
+            9.72,
+            9 * (1 + math.min(0.08, math.max(0, metrics.scale - 1))),
+          ),
+          fontWeight: FontWeight.w400,
+          height: 1.0,
           color: const Color(0xFF77706A),
         ),
       ),

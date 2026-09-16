@@ -695,6 +695,31 @@ void main() {
       ];
       expect(recommendationRects, hasLength(5));
       expect(recommendationRects.map((rect) => rect.top).toSet(), hasLength(1));
+      expect(recommendationRects.first.width, closeTo(140, 0.1));
+      expect(recommendationRects.first.height, closeTo(229, 0.1));
+      expect(
+        recommendationRects.first.width / recommendationRects.first.height,
+        closeTo(140 / 229, 0.001),
+      );
+
+      final firstCard = find.byKey(
+        ValueKey<String>(
+          'desktop-home-recommendation-card-${controller.games.first.id}',
+        ),
+      );
+      final title = find.descendant(
+        of: firstCard,
+        matching: find.text(controller.games.first.title),
+      );
+      final titleStyle = tester.widget<Text>(title).style!;
+      expect(titleStyle.fontSize, 15);
+      expect(titleStyle.fontWeight, FontWeight.w700);
+      expect(titleStyle.height, 1.1);
+      final ratingIcon = find.descendant(
+        of: firstCard,
+        matching: find.byIcon(Icons.star_rounded),
+      );
+      expect(tester.widget<Icon>(ratingIcon).size, 12.5);
 
       final GameInfo game = controller.games.first;
       await tester.tap(
@@ -711,6 +736,27 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('home recommendation cards keep their ratio on wide windows', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1920, 1080));
+
+    final card = find.byKey(
+      ValueKey<String>(
+        'desktop-home-recommendation-card-${controller.games.first.id}',
+      ),
+    );
+    final rect = tester.getRect(card);
+    expect(rect.width / rect.height, closeTo(140 / 229, 0.001));
+
+    final title = find.descendant(
+      of: card,
+      matching: find.text(controller.games.first.title),
+    );
+    expect(tester.widget<Text>(title).style!.fontSize, closeTo(16.2, 0.01));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('home search handles empty results without inline clear action', (
     tester,
