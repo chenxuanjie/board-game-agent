@@ -131,22 +131,20 @@ void main() {
       ),
       findsNothing,
     );
-    for (final label in ['社区']) {
-      await _navigate(tester, label);
-      expect(find.byType(DesktopHomePane), findsNothing);
-      final title = find.text(label).evaluate().where((element) {
-        return element.findAncestorWidgetOfExactType<DesktopSidebar>() == null;
-      });
-      expect(title, hasLength(1));
-      final body = find
-          .ancestor(of: find.text(label).last, matching: find.byType(Column))
-          .first;
-      expect(
-        find.descendant(of: body, matching: find.text('未开放')),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-    }
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.text('社区'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('desktop-sidebar-icon-sidebar_community.png'),
+      ),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('favorites page starts empty and links back to the library', (
@@ -879,7 +877,6 @@ void main() {
       'sidebar_library.png',
       'sidebar_ai.png',
       'sidebar_likes.png',
-      'sidebar_community.png',
       'sidebar_settings.png',
     ]) {
       final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));

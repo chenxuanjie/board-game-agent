@@ -63,7 +63,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     'games',
     'assistant',
     'favorites',
-    'community',
     'settings',
   ];
   bool get _native =>
@@ -112,7 +111,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   int get _selectedRouteIndex {
     if (_page == 'gameDetail' || _page == 'library') return 1;
-    if (_page == 'advanced') return 6;
+    if (_page == 'advanced') return 4;
     final index = _routes.indexOf(_page);
     return index < 0 ? 0 : index;
   }
