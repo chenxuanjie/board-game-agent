@@ -25,6 +25,7 @@ class DesktopHomePane extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: controller,
     builder: (context, _) {
+      final metrics = DesktopMetricsScope.of(context);
       final games = controller.games
           .take(5)
           .map((g) => DesktopContentGame(g, controller))
@@ -86,7 +87,8 @@ class DesktopHomePane extends StatelessWidget {
             wide: true,
             main: main,
             right: right,
-            rightWidth: 282,
+            rightWidth: metrics.px(282),
+            gap: metrics.px(14),
           );
         },
       );
@@ -111,6 +113,7 @@ class _MainColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -127,26 +130,28 @@ class _MainColumn extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 11),
+        SizedBox(height: metrics.px(11)),
         _SectionHeader(
           key: const ValueKey<String>('desktop-home-recommendation-header'),
           leading: SvgPicture.asset(
             'assets/desktop/home/flame_icon_hd.svg',
             key: const ValueKey<String>('desktop-home-library-flame'),
-            width: 25,
-            height: 25,
+            width: metrics.px(25),
+            height: metrics.px(25),
             semanticsLabel: '热门桌游',
           ),
           title: '今日推荐',
           subtitle: '已收录的桌游',
           onMore: () => onUnavailable('游戏库'),
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: metrics.px(10)),
         LayoutBuilder(
           builder: (context, constraints) {
-            const gap = 13.0;
+            final gap = metrics.px(13);
             final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
               constraints.maxWidth,
+              gap: gap,
+              minimumWidth: metrics.px(140),
             );
             return SingleChildScrollView(
               key: const ValueKey<String>('desktop-home-recommendation-row'),
@@ -154,7 +159,7 @@ class _MainColumn extends StatelessWidget {
               child: Row(
                 children: [
                   for (var i = 0; i < games.length; i++) ...[
-                    if (i > 0) const SizedBox(width: gap),
+                    if (i > 0) SizedBox(width: gap),
                     SizedBox(
                       width: cardWidth,
                       child: _GameCard(
@@ -171,7 +176,7 @@ class _MainColumn extends StatelessWidget {
             );
           },
         ),
-        const SizedBox(height: 13),
+        SizedBox(height: metrics.px(13)),
         LayoutBuilder(
           builder: (context, constraints) {
             if (constraints.maxWidth < 600) {
@@ -402,28 +407,33 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return SizedBox(
-      height: 32,
+      height: metrics.px(32),
       child: Row(
         children: [
           SizedBox(
-            width: 25,
-            height: 25,
-            child: leading ?? Icon(icon, size: 25, color: iconColor),
+            width: metrics.px(25),
+            height: metrics.px(25),
+            child:
+                leading ?? Icon(icon, size: metrics.px(25), color: iconColor),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: metrics.px(8)),
           Text(
             title,
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              fontSize: metrics.font(19),
+              fontWeight: FontWeight.w800,
+            ),
           ),
           if (subtitle != null) ...[
-            const SizedBox(width: 12),
+            SizedBox(width: metrics.px(12)),
             Expanded(
               child: Text(
                 subtitle!,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
+                style: TextStyle(
+                  fontSize: metrics.font(12),
                   color: DesktopColors.secondaryText,
                 ),
               ),
@@ -452,6 +462,7 @@ class _TextLinkState extends State<_TextLink> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hover = true),
@@ -465,14 +476,14 @@ class _TextLinkState extends State<_TextLink> {
               widget.label,
               style: TextStyle(
                 color: hover ? DesktopColors.orange : const Color(0xFF6C625A),
-                fontSize: 12,
+                fontSize: metrics.font(12),
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 2),
+            SizedBox(width: metrics.px(2)),
             Icon(
               Icons.chevron_right_rounded,
-              size: 17,
+              size: metrics.px(17),
               color: hover ? DesktopColors.orange : const Color(0xFF6C625A),
             ),
           ],
@@ -490,21 +501,22 @@ class _GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return HoverSurface(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(9),
+      borderRadius: BorderRadius.circular(metrics.radius(9)),
       child: Container(
-        height: 229,
-        padding: const EdgeInsets.all(4),
+        height: metrics.px(229),
+        padding: EdgeInsets.all(metrics.px(4)),
         decoration: BoxDecoration(
           color: DesktopColors.card,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(metrics.radius(9)),
           border: Border.all(color: const Color(0x0D8A6044)),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: Color(0x0B7E4D2B),
-              blurRadius: 8,
-              offset: Offset(0, 2),
+              blurRadius: metrics.px(8),
+              offset: Offset(0, metrics.px(2)),
             ),
           ],
         ),
@@ -512,20 +524,20 @@ class _GameCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(metrics.radius(6)),
               child: SizedBox(
                 width: double.infinity,
-                height: 116,
+                height: metrics.px(116),
                 child: game.cover(),
               ),
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: metrics.px(4)),
             Text(
               game.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
+              style: TextStyle(
+                fontSize: metrics.font(15),
                 fontWeight: FontWeight.w800,
                 height: 1.1,
               ),
@@ -534,66 +546,66 @@ class _GameCard extends StatelessWidget {
               game.englishTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 8.6,
+              style: TextStyle(
+                fontSize: metrics.font(8.6),
                 color: DesktopColors.secondaryText,
                 height: 1.2,
               ),
             ),
-            const SizedBox(height: 3),
+            SizedBox(height: metrics.px(3)),
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.star_rounded,
                   color: Color(0xFFFFA400),
-                  size: 15,
+                  size: metrics.px(15),
                 ),
                 Text(
                   game.score,
-                  style: const TextStyle(
-                    fontSize: 12,
+                  style: TextStyle(
+                    fontSize: metrics.font(12),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 3),
+            SizedBox(height: metrics.px(3)),
             Row(
               children: [
                 _Tag(game.tagA),
-                const SizedBox(width: 6),
+                SizedBox(width: metrics.px(6)),
                 _Tag(game.tagB),
               ],
             ),
             const Spacer(),
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.group_rounded,
-                  size: 11,
+                  size: metrics.px(11),
                   color: Color(0xFF77706A),
                 ),
-                const SizedBox(width: 2),
+                SizedBox(width: metrics.px(2)),
                 Text(
                   game.players,
-                  style: const TextStyle(
-                    fontSize: 9.5,
+                  style: TextStyle(
+                    fontSize: metrics.font(9.5),
                     color: Color(0xFF77706A),
                   ),
                 ),
                 const Spacer(),
-                const Icon(
+                Icon(
                   Icons.schedule_rounded,
-                  size: 11,
+                  size: metrics.px(11),
                   color: Color(0xFF77706A),
                 ),
-                const SizedBox(width: 2),
+                SizedBox(width: metrics.px(2)),
                 Flexible(
                   child: Text(
                     game.duration,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 9.2,
+                    style: TextStyle(
+                      fontSize: metrics.font(9.2),
                       color: Color(0xFF77706A),
                     ),
                   ),
@@ -613,15 +625,22 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: metrics.px(7),
+        vertical: metrics.px(2),
+      ),
       decoration: BoxDecoration(
         color: const Color(0xFFF5F2EE),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(metrics.radius(8)),
       ),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 9.5, color: Color(0xFF77706A)),
+        style: TextStyle(
+          fontSize: metrics.font(9.5),
+          color: const Color(0xFF77706A),
+        ),
       ),
     );
   }
@@ -879,6 +898,7 @@ class _RightColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Column(
       children: [
         _ProfilePanel(
@@ -886,19 +906,19 @@ class _RightColumn extends StatelessWidget {
           onNavigate: onNavigate,
           onUnavailable: onUnavailable,
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: metrics.px(12)),
         _MeetingPanel(onUnavailable: onUnavailable),
-        const SizedBox(height: 12),
+        SizedBox(height: metrics.px(12)),
         _QuickPanel(onUnavailable: onUnavailable),
-        const SizedBox(height: 12),
+        SizedBox(height: metrics.px(12)),
         HoverSurface(
           onTap: () => onUnavailable('桌游寄语'),
           lift: 1,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(metrics.radius(12)),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(metrics.radius(12)),
             child: SizedBox(
-              height: 104,
+              height: metrics.px(104),
               width: double.infinity,
               child: Image.asset(
                 'assets/desktop/warmwood/promo_art.png',
@@ -920,17 +940,18 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Container(
-      height: height,
+      height: height == null ? null : metrics.px(height!),
       decoration: BoxDecoration(
         color: DesktopColors.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(metrics.radius(12)),
         border: Border.all(color: const Color(0x0E8A6044)),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: Color(0x0A855A3E),
-            blurRadius: 10,
-            offset: Offset(0, 2),
+            blurRadius: metrics.px(10),
+            offset: Offset(0, metrics.px(2)),
           ),
         ],
       ),
@@ -952,6 +973,7 @@ class _ProfilePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     final stats = [
       (
         value: '${controller.favoriteCount}',
@@ -988,31 +1010,34 @@ class _ProfilePanel extends StatelessWidget {
     return _Panel(
       height: 255,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 15, 14, 14),
+        padding: metrics.insets(const EdgeInsets.fromLTRB(14, 15, 14, 14)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '你好！',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: metrics.font(18),
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            const SizedBox(height: 6),
-            const Text(
+            SizedBox(height: metrics.px(6)),
+            Text(
               '个人中心',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: metrics.font(12),
                 color: DesktopColors.secondaryText,
               ),
             ),
-            const SizedBox(height: 13),
+            SizedBox(height: metrics.px(13)),
             Expanded(
               child: GridView.builder(
                 physics: const NeverScrollableScrollPhysics(),
                 padding: EdgeInsets.zero,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
+                  crossAxisSpacing: metrics.px(10),
+                  mainAxisSpacing: metrics.px(10),
                   childAspectRatio: 1.55,
                 ),
                 itemCount: stats.length,
@@ -1022,15 +1047,15 @@ class _ProfilePanel extends StatelessWidget {
                     key: s.key,
                     onTap: s.onTap,
                     lift: 1,
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(metrics.radius(9)),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 9,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: metrics.px(13),
+                        vertical: metrics.px(9),
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF9F5EF),
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(metrics.radius(9)),
                       ),
                       child: Row(
                         children: [
@@ -1041,16 +1066,16 @@ class _ProfilePanel extends StatelessWidget {
                               children: [
                                 Text(
                                   s.value,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w800,
-                                    fontSize: 20,
+                                    fontSize: metrics.font(20),
                                   ),
                                 ),
-                                const SizedBox(height: 3),
+                                SizedBox(height: metrics.px(3)),
                                 Text(
                                   s.label,
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
+                                  style: TextStyle(
+                                    fontSize: metrics.font(10.5),
                                     color: DesktopColors.secondaryText,
                                   ),
                                 ),
@@ -1059,8 +1084,8 @@ class _ProfilePanel extends StatelessWidget {
                           ),
                           Image.asset(
                             s.assetPath,
-                            width: 52,
-                            height: 52,
+                            width: metrics.px(52),
+                            height: metrics.px(52),
                             fit: BoxFit.contain,
                             filterQuality: FilterQuality.high,
                           ),
@@ -1082,30 +1107,33 @@ class _MeetingPanel extends StatelessWidget {
   final ValueChanged<String> onUnavailable;
   const _MeetingPanel({required this.onUnavailable});
   @override
-  Widget build(BuildContext context) => _Panel(
-    height: 157,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-      child: Column(
-        children: [
-          _SectionHeader(
-            icon: Icons.calendar_month_rounded,
-            iconColor: DesktopColors.orange,
-            title: '下次桌游聚会',
-            onMore: () => onUnavailable('下次桌游聚会'),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                '未开放',
-                style: TextStyle(color: DesktopColors.secondaryText),
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    return _Panel(
+      height: 157,
+      child: Padding(
+        padding: metrics.insets(const EdgeInsets.fromLTRB(10, 8, 10, 9)),
+        child: Column(
+          children: [
+            _SectionHeader(
+              icon: Icons.calendar_month_rounded,
+              iconColor: DesktopColors.orange,
+              title: '下次桌游聚会',
+              onMore: () => onUnavailable('下次桌游聚会'),
+            ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  '未开放',
+                  style: TextStyle(color: DesktopColors.secondaryText),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _QuickPanel extends StatelessWidget {
@@ -1115,6 +1143,7 @@ class _QuickPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     const actions = [
       ('随机推荐', '未开放', Icons.casino_rounded),
       ('找同城玩家', '未开放', Icons.group_rounded),
@@ -1124,29 +1153,36 @@ class _QuickPanel extends StatelessWidget {
     return _Panel(
       height: 169,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+        padding: metrics.insets(const EdgeInsets.all(10)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.bolt_rounded, color: Color(0xFFFF6B42), size: 23),
-                SizedBox(width: 7),
+                Icon(
+                  Icons.bolt_rounded,
+                  color: Color(0xFFFF6B42),
+                  size: metrics.px(23),
+                ),
+                SizedBox(width: metrics.px(7)),
                 Text(
                   '快捷入口',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  style: TextStyle(
+                    fontSize: metrics.font(17),
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 9),
+            SizedBox(height: metrics.px(9)),
             Expanded(
               child: GridView.builder(
                 physics: const NeverScrollableScrollPhysics(),
                 padding: EdgeInsets.zero,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  crossAxisSpacing: 9,
-                  mainAxisSpacing: 9,
+                  crossAxisSpacing: metrics.px(9),
+                  mainAxisSpacing: metrics.px(9),
                   childAspectRatio: 2.35,
                 ),
                 itemCount: actions.length,
@@ -1158,20 +1194,24 @@ class _QuickPanel extends StatelessWidget {
                         : null,
                     onTap: () => onUnavailable(a.$1),
                     lift: 1,
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(metrics.radius(9)),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 6,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: metrics.px(9),
+                        vertical: metrics.px(6),
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF9F5EF),
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(metrics.radius(9)),
                       ),
                       child: Row(
                         children: [
-                          Icon(a.$3, color: const Color(0xFFFF5B43), size: 24),
-                          const SizedBox(width: 8),
+                          Icon(
+                            a.$3,
+                            color: const Color(0xFFFF5B43),
+                            size: metrics.px(24),
+                          ),
+                          SizedBox(width: metrics.px(8)),
                           Expanded(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -1181,18 +1221,18 @@ class _QuickPanel extends StatelessWidget {
                                   a.$1,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 12,
+                                    fontSize: metrics.font(12),
                                   ),
                                 ),
                                 Text(
                                   a.$2,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: DesktopColors.secondaryText,
-                                    fontSize: 9.5,
+                                    fontSize: metrics.font(9.5),
                                   ),
                                 ),
                               ],

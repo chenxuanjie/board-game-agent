@@ -447,24 +447,42 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 760;
         final compact = !narrow && constraints.maxWidth < 1200;
+        final metrics = DesktopResponsive.metricsFor(
+          Size(constraints.maxWidth, constraints.maxHeight),
+        );
         final sidebarWidth = narrow
             ? 0.0
             : (compact
                   ? DesktopResponsive.compactSidebarWidth
                   : DesktopResponsive.fullSidebarWidth);
-        Widget body = Row(
-          children: [
-            if (!narrow)
-              DesktopSidebar(
-                compact: compact,
-                selectedIndex: _selectedRouteIndex,
-                onSelect: _selectRoute,
+        final canvasWidth = narrow
+            ? constraints.maxWidth
+            : math.min(
+                constraints.maxWidth,
+                metrics.px(DesktopResponsive.desktopWindowDefaultSize.width),
+              );
+        final canvasLeft = (constraints.maxWidth - canvasWidth) / 2;
+        final dragLeft = narrow ? 0.0 : canvasLeft + metrics.px(sidebarWidth);
+        final canvas = SizedBox(
+          width: canvasWidth,
+          height: constraints.maxHeight,
+          child: Row(
+            children: [
+              if (!narrow)
+                DesktopSidebar(
+                  compact: compact,
+                  selectedIndex: _selectedRouteIndex,
+                  onSelect: _selectRoute,
+                ),
+              Expanded(
+                child: _workspaceBody(compact: compact, narrow: narrow),
               ),
-            Expanded(
-              child: _workspaceBody(compact: compact, narrow: narrow),
-            ),
-          ],
+            ],
+          ),
         );
+        Widget body = narrow
+            ? canvas
+            : Align(alignment: Alignment.topCenter, child: canvas);
         if (_native) {
           body = DragToResizeArea(
             resizeEdgeSize: 6,
@@ -472,10 +490,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               children: [
                 body,
                 Positioned(
-                  left: sidebarWidth,
+                  left: dragLeft,
                   right: 96,
                   top: 0,
-                  height: 18,
+                  height: metrics.px(18),
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onPanStart: (_) => windowManager.startDragging(),
@@ -493,24 +511,27 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             ),
           );
         }
-        return Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: DesktopColors.background,
-          drawer: narrow
-              ? Drawer(
-                  width: 280,
-                  shape: const RoundedRectangleBorder(),
-                  child: SafeArea(
-                    child: DesktopSidebar(
-                      width: 280,
-                      selectedIndex: _selectedRouteIndex,
-                      onSelect: (index) =>
-                          _selectRoute(index, closeDrawer: true),
+        return DesktopMetricsScope(
+          metrics: metrics,
+          child: Scaffold(
+            key: _scaffoldKey,
+            backgroundColor: DesktopColors.background,
+            drawer: narrow
+                ? Drawer(
+                    width: 280,
+                    shape: const RoundedRectangleBorder(),
+                    child: SafeArea(
+                      child: DesktopSidebar(
+                        width: 280,
+                        selectedIndex: _selectedRouteIndex,
+                        onSelect: (index) =>
+                            _selectRoute(index, closeDrawer: true),
+                      ),
                     ),
-                  ),
-                )
-              : null,
-          body: body,
+                  )
+                : null,
+            body: body,
+          ),
         );
       },
     );
@@ -663,13 +684,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 ),
               if (_searchOpen)
                 Positioned(
-                  left: 18,
-                  right: 18,
+                  left: DesktopMetricsScope.of(context).px(18),
+                  right: DesktopMetricsScope.of(context).px(18),
                   top: 0,
                   child: Align(
                     alignment: Alignment.topLeft,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 780),
+                      constraints: BoxConstraints(
+                        maxWidth: DesktopMetricsScope.of(context).px(780),
+                      ),
                       child: DesktopHomeSearchOverlay(
                         key: const ValueKey<String>(
                           'desktop-home-search-overlay',
@@ -712,165 +735,171 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     ),
   );
 
-  Widget _topBar({required bool compact, required bool narrow}) => SizedBox(
-    height: 92,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 18, 14),
-      child: Row(
-        children: [
-          if (narrow) ...[
-            IconButton(
-              key: const ValueKey<String>('desktop-open-navigation'),
-              tooltip: '打开导航',
-              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-              icon: const Icon(Icons.menu_rounded, color: DesktopColors.brown),
-            ),
-            const SizedBox(width: 6),
-          ],
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 780),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    decoration: BoxDecoration(
-                      color: _searchFocus.hasFocus
-                          ? DesktopColors.card
-                          : const Color(0xFFF8F2EA),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: _searchFocus.hasFocus
-                            ? DesktopColors.orange
-                            : Colors.transparent,
-                      ),
-                      boxShadow: _searchFocus.hasFocus
-                          ? const <BoxShadow>[
-                              BoxShadow(
-                                color: Color(0x14FF6846),
-                                blurRadius: 12,
-                                offset: Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: TapRegion(
-                      groupId: _searchTapRegionGroup,
-                      child: TextField(
-                        key: const ValueKey<String>(
-                          'desktop-home-search-field',
-                        ),
-                        controller: _search,
-                        focusNode: _searchFocus,
-                        onTap: _openSearch,
-                        onSubmitted: _submitSearch,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF2F2924),
-                        ),
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          isDense: true,
-                          prefixIcon: const Icon(
-                            Icons.search_rounded,
-                            color: DesktopColors.brown,
-                            size: 23,
-                          ),
-                          suffixIcon: _searchOpen
-                              ? IconButton(
-                                  tooltip: _search.text.isEmpty
-                                      ? '关闭搜索'
-                                      : '清空搜索',
-                                  onPressed: _search.text.isEmpty
-                                      ? _closeSearch
-                                      : _clearSearch,
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                    color: DesktopColors.secondaryText,
-                                  ),
-                                )
-                              : null,
-                          hintText: '搜索桌游 / 机制 / 作者 / 玩法',
-                          hintStyle: const TextStyle(
-                            color: Color(0xFFA89C90),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          CompositedTransformTarget(
-            link: _activityLink,
-            child: Badge(
-              isLabelVisible: widget.controller.unreadActivityCount > 0,
-              child: IconButton(
-                tooltip: '通知',
+  Widget _topBar({required bool compact, required bool narrow}) {
+    final metrics = DesktopMetricsScope.of(context);
+    return SizedBox(
+      height: metrics.px(92),
+      child: Padding(
+        padding: metrics.insets(const EdgeInsets.fromLTRB(20, 24, 18, 14)),
+        child: Row(
+          children: [
+            if (narrow) ...[
+              IconButton(
+                key: const ValueKey<String>('desktop-open-navigation'),
+                tooltip: '打开导航',
+                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 icon: const Icon(
-                  Icons.notifications_none_rounded,
+                  Icons.menu_rounded,
                   color: DesktopColors.brown,
                 ),
-                onPressed: _openActivityCenter,
               ),
-            ),
-          ),
-          if (!narrow) const SizedBox(width: 11),
-          if (!narrow)
-            InkWell(
-              onTap: () => _unavailable('个人中心'),
-              borderRadius: BorderRadius.circular(22),
-              child: Row(
-                children: [
-                  ClipOval(
-                    child: Image.asset(
-                      'assets/desktop/warmwood/avatar.png',
-                      width: 44,
-                      height: 44,
-                      fit: BoxFit.cover,
+              SizedBox(width: metrics.px(6)),
+            ],
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: metrics.px(780)),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: metrics.px(50),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      decoration: BoxDecoration(
+                        color: _searchFocus.hasFocus
+                            ? DesktopColors.card
+                            : const Color(0xFFF8F2EA),
+                        borderRadius: BorderRadius.circular(metrics.radius(24)),
+                        border: Border.all(
+                          color: _searchFocus.hasFocus
+                              ? DesktopColors.orange
+                              : Colors.transparent,
+                        ),
+                        boxShadow: _searchFocus.hasFocus
+                            ? <BoxShadow>[
+                                BoxShadow(
+                                  color: Color(0x14FF6846),
+                                  blurRadius: metrics.px(12),
+                                  offset: Offset(0, metrics.px(2)),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: TapRegion(
+                        groupId: _searchTapRegionGroup,
+                        child: TextField(
+                          key: const ValueKey<String>(
+                            'desktop-home-search-field',
+                          ),
+                          controller: _search,
+                          focusNode: _searchFocus,
+                          onTap: _openSearch,
+                          onSubmitted: _submitSearch,
+                          style: TextStyle(
+                            fontSize: metrics.font(18),
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF2F2924),
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            isDense: true,
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: DesktopColors.brown,
+                              size: metrics.px(23),
+                            ),
+                            suffixIcon: _searchOpen
+                                ? IconButton(
+                                    tooltip: _search.text.isEmpty
+                                        ? '关闭搜索'
+                                        : '清空搜索',
+                                    onPressed: _search.text.isEmpty
+                                        ? _closeSearch
+                                        : _clearSearch,
+                                    icon: Icon(
+                                      Icons.close_rounded,
+                                      size: metrics.px(18),
+                                      color: DesktopColors.secondaryText,
+                                    ),
+                                  )
+                                : null,
+                            hintText: '搜索桌游 / 机制 / 作者 / 玩法',
+                            hintStyle: TextStyle(
+                              color: Color(0xFFA89C90),
+                              fontSize: metrics.font(18),
+                              fontWeight: FontWeight.w400,
+                            ),
+                            contentPadding: EdgeInsets.symmetric(
+                              vertical: metrics.px(13),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  if (!compact)
-                    const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '—',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          '未开放',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: DesktopColors.secondaryText,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
+                ),
               ),
             ),
-        ],
+            CompositedTransformTarget(
+              link: _activityLink,
+              child: Badge(
+                isLabelVisible: widget.controller.unreadActivityCount > 0,
+                child: IconButton(
+                  tooltip: '通知',
+                  icon: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: DesktopColors.brown,
+                  ),
+                  onPressed: _openActivityCenter,
+                ),
+              ),
+            ),
+            if (!narrow) SizedBox(width: metrics.px(11)),
+            if (!narrow)
+              InkWell(
+                onTap: () => _unavailable('个人中心'),
+                borderRadius: BorderRadius.circular(metrics.radius(22)),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Image.asset(
+                        'assets/desktop/warmwood/avatar.png',
+                        width: metrics.px(44),
+                        height: metrics.px(44),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    SizedBox(width: metrics.px(10)),
+                    if (!compact)
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '—',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: metrics.font(16),
+                            ),
+                          ),
+                          SizedBox(height: metrics.px(2)),
+                          Text(
+                            '未开放',
+                            style: TextStyle(
+                              fontSize: metrics.font(11),
+                              color: DesktopColors.secondaryText,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

@@ -32,7 +32,25 @@ void main() {
     expect(DesktopResponsive.detailHeroHeightFor(1100), 450);
   });
 
-  test('desktop page widths remain capped on super-wide windows', () {
+  test('desktop metrics scale only the wide design canvas', () {
+    expect(DesktopResponsive.desktopScaleFor(const Size(1100, 800)), 1);
+    expect(DesktopResponsive.desktopScaleFor(const Size(1280, 800)), 1);
+    expect(
+      DesktopResponsive.desktopScaleFor(const Size(1440, 900)),
+      closeTo(1.125, 0.001),
+    );
+    expect(
+      DesktopResponsive.desktopScaleFor(const Size(1920, 1080)),
+      closeTo(1.35, 0.001),
+    );
+    expect(DesktopResponsive.desktopScaleFor(const Size(1920, 800)), 1);
+
+    final metrics = DesktopResponsive.metricsFor(const Size(1440, 900));
+    expect(metrics.px(100), closeTo(112.5, 0.001));
+    expect(metrics.font(20), closeTo(21.875, 0.001));
+  });
+
+  test('desktop page widths scale with the wide canvas', () {
     expect(
       DesktopResponsive.maxContentWidthFor('home'),
       DesktopResponsive.homeMaxContentWidth,
@@ -45,6 +63,11 @@ void main() {
       DesktopResponsive.maxContentWidthFor('settings'),
       DesktopResponsive.settingsMaxContentWidth,
     );
-    expect(DesktopResponsive.homeHeroWidthFor(1200), 900);
+    expect(DesktopResponsive.homeHeroWidthFor(1200), 1200);
+    expect(DesktopResponsive.homeRecommendationCardWidthFor(752), 140);
+    expect(
+      DesktopResponsive.homeRecommendationCardWidthFor(1000),
+      closeTo(174.8, 0.001),
+    );
   });
 }

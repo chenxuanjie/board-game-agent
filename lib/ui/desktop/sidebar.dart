@@ -29,6 +29,7 @@ class DesktopSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Container(
       key: ValueKey<String>(
         compact ? 'desktop-sidebar-rail' : 'desktop-sidebar-full',
@@ -36,8 +37,8 @@ class DesktopSidebar extends StatelessWidget {
       width:
           width ??
           (compact
-              ? DesktopResponsive.compactSidebarWidth
-              : DesktopResponsive.fullSidebarWidth),
+              ? metrics.px(DesktopResponsive.compactSidebarWidth)
+              : metrics.px(DesktopResponsive.fullSidebarWidth)),
       height: double.infinity,
       decoration: const BoxDecoration(
         color: DesktopColors.sidebar,
@@ -63,24 +64,24 @@ class DesktopSidebar extends StatelessWidget {
             ),
           Padding(
             padding: EdgeInsets.fromLTRB(
-              compact ? 8 : 10,
-              24,
-              compact ? 8 : 10,
-              18,
+              metrics.px(compact ? 8 : 10),
+              metrics.px(24),
+              metrics.px(compact ? 8 : 10),
+              metrics.px(18),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  height: _headerHeight,
+                  height: metrics.px(_headerHeight),
                   child: compact
                       ? Align(
                           alignment: Alignment.topCenter,
                           child: Image.asset(
                             'assets/desktop/home/logo.png',
                             key: const ValueKey<String>('desktop-sidebar-logo'),
-                            width: 48,
-                            height: 48,
+                            width: metrics.px(48),
+                            height: metrics.px(48),
                             fit: BoxFit.contain,
                           ),
                         )
@@ -88,39 +89,42 @@ class DesktopSidebar extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Padding(
-                              padding: const EdgeInsets.only(left: 21),
+                              padding: EdgeInsets.only(left: metrics.px(21)),
                               child: Image.asset(
                                 'assets/desktop/home/logo.png',
                                 key: const ValueKey<String>(
                                   'desktop-sidebar-logo',
                                 ),
-                                width: 77,
-                                height: 72,
+                                width: metrics.px(77),
+                                height: metrics.px(72),
                                 fit: BoxFit.contain,
                               ),
                             ),
-                            const Padding(
-                              padding: EdgeInsets.only(left: 22, top: 5),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                left: metrics.px(22),
+                                top: metrics.px(5),
+                              ),
                               child: Text(
                                 '桌游助手',
                                 style: TextStyle(
-                                  fontSize: 25,
+                                  fontSize: metrics.font(25),
                                   fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.5,
+                                  letterSpacing: metrics.px(-0.5),
                                 ),
                               ),
                             ),
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.only(
-                                left: 22,
-                                top: 4,
-                                bottom: 16,
+                                left: metrics.px(22),
+                                top: metrics.px(4),
+                                bottom: metrics.px(16),
                               ),
                               child: Text(
                                 '发现更大的桌游世界',
                                 style: TextStyle(
                                   color: DesktopColors.secondaryText,
-                                  fontSize: 13,
+                                  fontSize: metrics.font(13),
                                 ),
                               ),
                             ),
@@ -138,7 +142,7 @@ class DesktopSidebar extends StatelessWidget {
                     compact: compact,
                     onTap: i == selectedIndex ? null : () => onSelect(i),
                   ),
-                  if (i == 5) const SizedBox(height: 7),
+                  if (i == 5) SizedBox(height: metrics.px(7)),
                 ],
               ],
             ),
@@ -174,6 +178,7 @@ class _NavTileState extends State<_NavTile> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     final active = widget.selected;
     final tile = MouseRegion(
       cursor: active ? MouseCursor.defer : SystemMouseCursors.click,
@@ -183,11 +188,13 @@ class _NavTileState extends State<_NavTile> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          height: 44,
-          margin: const EdgeInsets.only(bottom: 3),
-          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 0 : 14),
+          height: metrics.px(44),
+          margin: EdgeInsets.only(bottom: metrics.px(3)),
+          padding: EdgeInsets.symmetric(
+            horizontal: metrics.px(widget.compact ? 0 : 14),
+          ),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(metrics.radius(11)),
             gradient: active
                 ? const LinearGradient(
                     colors: [Color(0xFFFF5D45), Color(0xFFFF9D58)],
@@ -207,18 +214,18 @@ class _NavTileState extends State<_NavTile> {
                 child: Image.asset(
                   'assets/desktop/home/sidebar_icons/${widget.asset}',
                   key: ValueKey<String>('desktop-sidebar-icon-${widget.asset}'),
-                  width: 28,
-                  height: 28,
+                  width: metrics.px(28),
+                  height: metrics.px(28),
                   fit: BoxFit.contain,
                   filterQuality: FilterQuality.high,
                 ),
               ),
               if (!widget.compact) ...[
-                const SizedBox(width: 10),
+                SizedBox(width: metrics.px(10)),
                 Text(
                   widget.label,
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: metrics.font(17),
                     fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                     color: active ? Colors.white : const Color(0xFF4B4038),
                   ),

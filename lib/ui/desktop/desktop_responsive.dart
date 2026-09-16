@@ -35,7 +35,8 @@ abstract final class DesktopResponsive {
   static const gamesMaxContentWidth = 1500.0;
   static const settingsMaxContentWidth = 1400.0;
 
-  static const homeHeroMaxWidth = 900.0;
+  static const double desktopMinimumScale = 1.0;
+  static const double desktopMaximumScale = 1.35;
 
   static bool isNarrow(double width) => width < narrowBreakpoint;
 
@@ -64,11 +65,38 @@ abstract final class DesktopResponsive {
   static bool homeUsesTwoColumns(double width) =>
       width >= homeTwoColumnBreakpoint;
 
-  static double homeHeroWidthFor(double width) =>
-      math.min(width, homeHeroMaxWidth);
+  /// Wide windows can use more of the available canvas. The hero no longer
+  /// has an independent cap, so it aligns with the rest of the home column.
+  static double homeHeroWidthFor(double width) => width;
 
-  static double homeRecommendationCardWidthFor(double width) =>
-      math.min(width, 140);
+  static double homeRecommendationCardWidthFor(
+    double width, {
+    double gap = 13,
+    double minimumWidth = 140,
+  }) => math.max(minimumWidth, (width - gap * 4) / 5);
+
+  /// Returns the scale for the desktop design canvas.
+  ///
+  /// The design baseline remains unchanged below 1280x800. Those windows use
+  /// the existing compact-sidebar/drawer reflow instead of shrinking text and
+  /// hit targets. Larger windows scale from the same baseline and are capped
+  /// to keep very wide monitors from producing oversized controls.
+  static double desktopScaleFor(Size viewport) {
+    if (viewport.width < desktopWindowDefaultSize.width ||
+        viewport.height < desktopWindowDefaultSize.height) {
+      return desktopMinimumScale;
+    }
+    return math
+        .min(
+          viewport.width / desktopWindowDefaultSize.width,
+          viewport.height / desktopWindowDefaultSize.height,
+        )
+        .clamp(desktopMinimumScale, desktopMaximumScale)
+        .toDouble();
+  }
+
+  static DesktopMetrics metricsFor(Size viewport) =>
+      DesktopMetrics(viewportSize: viewport, scale: desktopScaleFor(viewport));
 
   static double detailHeroHeightFor(double width) {
     if (width < narrowBreakpoint) return 320;
@@ -83,6 +111,58 @@ abstract final class DesktopResponsive {
     'gameDetail' => gamesMaxContentWidth,
     _ => gamesMaxContentWidth,
   };
+}
+
+/// Metrics shared by the desktop shell and its panes.
+///
+/// `scale` is intentionally only applied to the wide desktop canvas. It is
+/// not a widget transform: text remains accessible and hit targets keep their
+/// normal Flutter semantics while the design dimensions grow together.
+class DesktopMetrics {
+  const DesktopMetrics({required this.viewportSize, required this.scale});
+
+  final Size viewportSize;
+  final double scale;
+
+  double px(double value) => value * scale;
+
+  double font(double value) => value * (1 + (scale - 1) * 0.75);
+
+  double radius(double value) =>
+      (value * scale).clamp(value, value * 1.2).toDouble();
+
+  EdgeInsets insets(EdgeInsets value) => EdgeInsets.fromLTRB(
+    px(value.left),
+    px(value.top),
+    px(value.right),
+    px(value.bottom),
+  );
+}
+
+class DesktopMetricsScope extends InheritedWidget {
+  const DesktopMetricsScope({
+    super.key,
+    required this.metrics,
+    required super.child,
+  });
+
+  final DesktopMetrics metrics;
+
+  static DesktopMetrics? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<DesktopMetricsScope>()
+      ?.metrics;
+
+  static DesktopMetrics of(BuildContext context) =>
+      maybeOf(context) ??
+      DesktopResponsive.metricsFor(
+        MediaQuery.maybeOf(context)?.size ??
+            DesktopResponsive.desktopWindowDefaultSize,
+      );
+
+  @override
+  bool updateShouldNotify(DesktopMetricsScope oldWidget) =>
+      oldWidget.metrics.viewportSize != metrics.viewportSize ||
+      oldWidget.metrics.scale != metrics.scale;
 }
 
 /// Centers a page at very wide sizes while preserving the existing edge
@@ -102,12 +182,13 @@ class DesktopResponsiveFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final width = math.min(constraints.maxWidth, maxWidth);
+      final metrics = DesktopMetricsScope.of(context);
+      final width = math.min(constraints.maxWidth, metrics.px(maxWidth));
       return Align(
         alignment: Alignment.topCenter,
         child: SizedBox(
           width: width,
-          child: Padding(padding: padding, child: child),
+          child: Padding(padding: metrics.insets(padding), child: child),
         ),
       );
     },
