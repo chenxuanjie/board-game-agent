@@ -447,7 +447,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 760;
         final compact = !narrow && constraints.maxWidth < 1200;
-        final sidebarWidth = narrow ? 0.0 : (compact ? 76.0 : 205.0);
+        final sidebarWidth = narrow ? 0.0 : (compact ? 76.0 : 230.0);
         Widget body = Row(
           children: [
             if (!narrow)
@@ -562,9 +562,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                           padding: _page == 'gameDetail'
                               ? EdgeInsets.zero
                               : EdgeInsets.fromLTRB(
-                                  narrow ? 10 : 15,
+                                  narrow ? 10 : (_page == 'games' ? 20 : 15),
                                   0,
-                                  narrow ? 10 : 12,
+                                  narrow ? 10 : (_page == 'games' ? 55 : 12),
                                   14,
                                 ),
                           child: switch (_page) {
@@ -665,7 +665,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   child: Align(
                     alignment: Alignment.topLeft,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
+                      constraints: const BoxConstraints(maxWidth: 780),
                       child: DesktopHomeSearchOverlay(
                         key: const ValueKey<String>(
                           'desktop-home-search-overlay',
@@ -709,9 +709,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   );
 
   Widget _topBar({required bool compact, required bool narrow}) => SizedBox(
-    height: 78,
+    height: 92,
     child: Padding(
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 10),
+      padding: const EdgeInsets.fromLTRB(20, 24, 18, 14),
       child: Row(
         children: [
           if (narrow) ...[
@@ -727,10 +727,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
+                constraints: const BoxConstraints(maxWidth: 780),
                 child: SizedBox(
                   width: double.infinity,
-                  height: 40,
+                  height: 50,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 120),
                     decoration: BoxDecoration(
@@ -763,7 +763,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         focusNode: _searchFocus,
                         onTap: _openSearch,
                         onSubmitted: _submitSearch,
-                        style: const TextStyle(fontSize: 14),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF2F2924),
+                        ),
                         decoration: InputDecoration(
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
@@ -772,7 +776,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                           prefixIcon: const Icon(
                             Icons.search_rounded,
                             color: DesktopColors.brown,
-                            size: 21,
+                            size: 23,
                           ),
                           suffixIcon: _searchOpen
                               ? IconButton(
@@ -791,11 +795,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               : null,
                           hintText: '搜索桌游 / 机制 / 作者 / 玩法',
                           hintStyle: const TextStyle(
-                            color: Color(0xFF998D83),
-                            fontSize: 14,
+                            color: Color(0xFFA89C90),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w400,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
-                            vertical: 11,
+                            vertical: 13,
                           ),
                         ),
                       ),

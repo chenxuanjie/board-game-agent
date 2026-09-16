@@ -4,7 +4,6 @@ import '../../models/game_info.dart';
 import '../../state/app_controller.dart';
 import 'poster_card.dart';
 import 'content_primitives.dart';
-import 'desktop_responsive.dart';
 import 'theme.dart';
 
 class DesktopGamesPane extends StatefulWidget {
@@ -28,11 +27,23 @@ class DesktopGamesPane extends StatefulWidget {
 }
 
 class _DesktopGamesPaneState extends State<DesktopGamesPane> {
-  String? _selectedId;
   int _category = 0;
   _DesktopGameSort _sort = _DesktopGameSort.catalog;
   String? _playerFilter;
+  String? _durationFilter;
+  final Set<String> _typeFilters = <String>{};
   String? _weightFilter;
+  double? _minScore;
+  bool _sortMenuOpen = false;
+  bool _filterMenuOpen = false;
+
+  bool get _hasFilter =>
+      _playerFilter != null ||
+      _durationFilter != null ||
+      _typeFilters.isNotEmpty ||
+      _weightFilter != null ||
+      _minScore != null;
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
@@ -45,84 +56,46 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
                     (_category == 0 ||
                         (_category == 5
                             ? g.supportedPlayers.contains(2)
-                            : '${g.categoryLine} ${g.keywords.join(' ')}'
-                                  .contains(categories[_category]))) &&
+                            : _gameSearchText(
+                                g,
+                              ).contains(categories[_category]))) &&
                     _matchesPlayer(g) &&
-                    _matchesWeight(g),
+                    _matchesDuration(g) &&
+                    _matchesType(g) &&
+                    _matchesWeight(g) &&
+                    _matchesScore(g),
               )
               .map((g) => DesktopContentGame(g, widget.controller))
               .toList()
             ..sort(_compareGames);
-      final found = games.indexWhere((g) => g.data.id == _selectedId);
-      final index = found < 0 ? 0 : found;
-      final selected = games.isEmpty ? null : games[index];
-      void action(String label) {
-        if (label == '查看规则' && selected != null) {
-          widget.onOpenGame(selected.data);
-        } else if ((label == '展开介绍' || label == '更多机制') && selected != null) {
-          widget.onOpenGame(selected.data);
-        } else {
-          desktopContentPending(context, label);
-        }
-      }
 
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final showInspector =
-              widget.showPreview &&
-              DesktopResponsive.shouldShowGamesInspector(constraints.maxWidth);
-          final posterWidth = DesktopResponsive.libraryPosterWidthFor(
-            constraints.maxWidth,
-          );
-          final main = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              DesktopContentStatus(controller: widget.controller),
-              _LibraryMain(
-                games: games,
-                posterWidth: posterWidth,
-                selectedCategory: _category,
-                onSelectGame: (i) {
-                  if (!showInspector || games[i].data.id == selected?.data.id) {
-                    widget.onOpenGame(games[i].data);
-                  } else {
-                    setState(() => _selectedId = games[i].data.id);
-                  }
-                },
-                onOpenAssistant: (game) {
-                  widget.controller.selectGame(game.id);
-                  widget.onNavigate('assistant');
-                },
-                onCategory: (i) => setState(() => _category = i),
-                sortLabel: _sort.label,
-                hasFilter: _playerFilter != null || _weightFilter != null,
-                onSort: _chooseSort,
-                onFilter: _chooseFilter,
-                onUnavailable: action,
-              ),
-            ],
-          );
-          if (!showInspector) return main;
-          return DesktopContentColumns(
-            wide: true,
-            gap: 13,
-            rightWidth: 360,
-            main: main,
-            right: selected == null
-                ? const SizedBox.shrink()
-                : _GameDetailPanel(
-                    game: selected,
-                    favorite: widget.controller.isFavorite(selected.data),
-                    onToggleFavorite: () =>
-                        widget.onToggleFavorite(selected.data),
-                    onOpenDetail: () => widget.onOpenGame(selected.data),
-                    onUnavailable: action,
-                  ),
-          );
-        },
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DesktopContentStatus(controller: widget.controller),
+          _LibraryMain(
+            games: games,
+            selectedCategory: _category,
+            onSelectGame: (i) => widget.onOpenGame(games[i].data),
+            onOpenAssistant: (game) {
+              widget.controller.selectGame(game.id);
+              widget.onNavigate('assistant');
+            },
+            onCategory: (i) => setState(() => _category = i),
+            sortLabel: _sort.label,
+            hasFilter: _hasFilter,
+            sortMenuOpen: _sortMenuOpen,
+            filterMenuOpen: _filterMenuOpen,
+            onSort: _chooseSort,
+            onFilter: _chooseFilter,
+          ),
+        ],
       );
     },
   );
+
+  String _gameSearchText(GameInfo game) =>
+      '${game.categoryLine} ${game.keywords.join(' ')} ${game.title}';
 
   int _compareGames(DesktopContentGame a, DesktopContentGame b) =>
       switch (_sort) {
@@ -139,112 +112,160 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
   bool _matchesPlayer(GameInfo game) {
     final filter = _playerFilter;
     if (filter == null) return true;
-    if (filter == '2') return game.supportedPlayers.contains(2);
-    if (filter == '3-4') {
-      return game.supportedPlayers.any((value) => value >= 3 && value <= 4);
+    if (filter == '5+') {
+      return game.supportedPlayers.any((value) => value >= 5);
     }
-    return game.supportedPlayers.any((value) => value >= 5);
+    final target = int.tryParse(filter);
+    return target == null || game.supportedPlayers.contains(target);
+  }
+
+  bool _matchesDuration(GameInfo game) {
+    final filter = _durationFilter;
+    if (filter == null) return true;
+    final values = RegExp(r'\d+')
+        .allMatches('${game.playTime} ${game.perPlayerTime}')
+        .map((match) => int.tryParse(match.group(0) ?? ''))
+        .whereType<int>()
+        .toList();
+    if (values.isEmpty) return false;
+    final low = values.reduce((a, b) => a < b ? a : b);
+    final high = values.reduce((a, b) => a > b ? a : b);
+    return switch (filter) {
+      '<30' => low < 30,
+      '30-60' => high >= 30 && low <= 60,
+      '60-120' => high >= 60 && low <= 120,
+      '>120' => high > 120,
+      _ => true,
+    };
+  }
+
+  bool _matchesType(GameInfo game) {
+    if (_typeFilters.isEmpty) return true;
+    final text = _gameSearchText(game);
+    return _typeFilters.any(text.contains);
   }
 
   bool _matchesWeight(GameInfo game) {
     final filter = _weightFilter;
     if (filter == null) return true;
     final value = '${game.complexity} ${game.learningDifficulty}';
-    if (filter == '轻度') return value.contains('轻');
-    if (filter == '重度') return value.contains('重');
-    return value.contains('中');
+    return switch (filter) {
+      '入门' => value.contains('入门') || value.contains('简单'),
+      '轻度' => value.contains('轻'),
+      '重度' => value.contains('重') || value.contains('困难'),
+      _ => value.contains('中'),
+    };
   }
 
-  Future<void> _chooseSort() async {
-    final value = await showDialog<_DesktopGameSort>(
+  bool _matchesScore(GameInfo game) =>
+      _minScore == null || _score(game) >= _minScore!;
+
+  Future<void> _chooseSort(BuildContext anchorContext) async {
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
+    setState(() => _sortMenuOpen = true);
+    final value = await showMenu<_DesktopGameSort>(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('排序'),
-        children: [
-          for (final item in _DesktopGameSort.values)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, item),
-              child: Row(
-                children: [
-                  Icon(
-                    item == _sort
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(item.label),
-                ],
-              ),
-            ),
-        ],
+      position: RelativeRect.fromLTRB(
+        origin.dx,
+        origin.dy + box.size.height + 6,
+        overlay.size.width - origin.dx - box.size.width,
+        0,
       ),
-    );
-    if (value != null && mounted) setState(() => _sort = value);
-  }
-
-  Future<void> _chooseFilter() async {
-    var player = _playerFilter;
-    var weight = _weightFilter;
-    final result = await showDialog<(String?, String?)>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('筛选'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      constraints: const BoxConstraints.tightFor(width: 335),
+      color: const Color(0xFFFFFEFC),
+      elevation: 12,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      popUpAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 180),
+        reverseDuration: Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
+      items: [
+        const PopupMenuItem<_DesktopGameSort>(
+          enabled: false,
+          height: 48,
+          child: Row(
             children: [
-              const Text('人数'),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final value in const ['2', '3-4', '5+'])
-                    ChoiceChip(
-                      label: Text(value),
-                      selected: player == value,
-                      onSelected: (_) => setDialogState(
-                        () => player = player == value ? null : value,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Text('策略重度'),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final value in const ['轻度', '中度', '重度'])
-                    ChoiceChip(
-                      label: Text(value),
-                      selected: weight == value,
-                      onSelected: (_) => setDialogState(
-                        () => weight = weight == value ? null : value,
-                      ),
-                    ),
-                ],
+              Icon(Icons.tune_rounded, size: 18, color: DesktopColors.brown),
+              SizedBox(width: 9),
+              Text(
+                '排序方式',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, (null, null)),
-              child: const Text('清除'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, (player, weight)),
-              child: const Text('应用'),
-            ),
-          ],
         ),
-      ),
+        for (final item in _DesktopGameSort.values)
+          PopupMenuItem<_DesktopGameSort>(
+            key: ValueKey<String>('desktop-library-sort-option-${item.name}'),
+            value: item,
+            height: 72,
+            child: _SortMenuRow(item: item, selected: item == _sort),
+          ),
+      ],
     );
-    if (result != null && mounted) {
-      setState(() {
-        _playerFilter = result.$1;
-        _weightFilter = result.$2;
-      });
+    if (!mounted) return;
+    setState(() {
+      _sortMenuOpen = false;
+      if (value != null) _sort = value;
+    });
+  }
+
+  Future<void> _chooseFilter(BuildContext anchorContext) async {
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
+    setState(() => _filterMenuOpen = true);
+    final result = await showMenu<_DesktopFilterResult>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        origin.dx + box.size.width - 372,
+        origin.dy + box.size.height + 6,
+        overlay.size.width - origin.dx - box.size.width,
+        0,
+      ),
+      constraints: const BoxConstraints.tightFor(width: 372),
+      color: const Color(0xFFFFFEFC),
+      elevation: 14,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      popUpAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 180),
+        reverseDuration: Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
+      items: [
+        _FilterPopupEntry(
+          player: _playerFilter,
+          duration: _durationFilter,
+          types: _typeFilters,
+          weight: _weightFilter,
+          minScore: _minScore,
+        ),
+      ],
+    );
+    if (!mounted) return;
+    if (result == null) {
+      setState(() => _filterMenuOpen = false);
+      return;
     }
+    setState(() {
+      _filterMenuOpen = false;
+      _playerFilter = result.player;
+      _durationFilter = result.duration;
+      _typeFilters
+        ..clear()
+        ..addAll(result.types);
+      _weightFilter = result.weight;
+      _minScore = result.minScore;
+    });
   }
 }
 
@@ -259,29 +280,29 @@ enum _DesktopGameSort {
 
 class _LibraryMain extends StatelessWidget {
   final List<DesktopContentGame> games;
-  final double posterWidth;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
   final ValueChanged<GameInfo> onOpenAssistant;
   final ValueChanged<int> onCategory;
   final String sortLabel;
   final bool hasFilter;
-  final VoidCallback onSort;
-  final VoidCallback onFilter;
-  final ValueChanged<String> onUnavailable;
+  final bool sortMenuOpen;
+  final bool filterMenuOpen;
+  final ValueChanged<BuildContext> onSort;
+  final ValueChanged<BuildContext> onFilter;
 
   const _LibraryMain({
     required this.games,
-    required this.posterWidth,
     required this.selectedCategory,
     required this.onSelectGame,
     required this.onOpenAssistant,
     required this.onCategory,
     required this.sortLabel,
     required this.hasFilter,
+    required this.sortMenuOpen,
+    required this.filterMenuOpen,
     required this.onSort,
     required this.onFilter,
-    required this.onUnavailable,
   });
 
   @override
@@ -297,6 +318,7 @@ class _LibraryMain extends StatelessWidget {
               children: [
                 for (var i = 0; i < categories.length; i++) ...[
                   _FilterChipButton(
+                    key: ValueKey<String>('desktop-library-category-$i'),
                     label: categories[i],
                     selected: selectedCategory == i,
                     onTap: () => onCategory(i),
@@ -308,21 +330,32 @@ class _LibraryMain extends StatelessWidget {
             final actions = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _OutlineAction(
-                  label: sortLabel,
-                  icon: Icons.keyboard_arrow_down_rounded,
-                  onTap: onSort,
+                Builder(
+                  builder: (buttonContext) => _OutlineAction(
+                    key: const ValueKey<String>('desktop-library-sort-action'),
+                    label: sortLabel,
+                    active: sortMenuOpen || sortLabel != '综合排序',
+                    expanded: sortMenuOpen,
+                    onTap: () => onSort(buttonContext),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                _OutlineAction(
-                  label: hasFilter ? '筛选 · 已启用' : '筛选',
-                  icon: Icons.filter_alt_outlined,
-                  onTap: onFilter,
+                const SizedBox(width: 10),
+                Builder(
+                  builder: (buttonContext) => _OutlineAction(
+                    key: const ValueKey<String>(
+                      'desktop-library-filter-action',
+                    ),
+                    label: '筛选',
+                    leadingIcon: Icons.filter_alt_outlined,
+                    active: filterMenuOpen || hasFilter,
+                    expanded: filterMenuOpen,
+                    onTap: () => onFilter(buttonContext),
+                  ),
                 ),
               ],
             );
 
-            if (constraints.maxWidth < 620) {
+            if (constraints.maxWidth < 720) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -330,14 +363,14 @@ class _LibraryMain extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: categoryRow,
                   ),
-                  const SizedBox(height: 7),
+                  const SizedBox(height: 9),
                   Align(alignment: Alignment.centerRight, child: actions),
                 ],
               );
             }
 
             return SizedBox(
-              height: 36,
+              height: 38,
               child: Row(
                 children: [
                   Expanded(
@@ -346,34 +379,50 @@ class _LibraryMain extends StatelessWidget {
                       child: categoryRow,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   actions,
                 ],
               ),
             );
           },
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            const posterGap = 18.0;
-            return Wrap(
-              key: const ValueKey<String>('desktop-library-posters'),
-              spacing: posterGap,
-              runSpacing: 24,
-              clipBehavior: Clip.none,
-              children: [
-                for (var index = 0; index < games.length; index++)
-                  SizedBox(
-                    width: posterWidth,
-                    height: posterWidth * 1.5,
-                    child: _LibraryGameCard(
-                      game: games[index],
-                      onTap: () => onSelectGame(index),
-                      onOpenAssistant: () => onOpenAssistant(games[index].data),
+            const gap = 20.0;
+            final columns = constraints.maxWidth >= 1130
+                ? 5
+                : constraints.maxWidth >= 860
+                ? 4
+                : constraints.maxWidth >= 640
+                ? 3
+                : 2;
+            final fittedWidth =
+                (constraints.maxWidth - gap * (columns - 1)) / columns;
+            final posterWidth =
+                (columns == 5 ? fittedWidth.clamp(198.0, 210.0) : fittedWidth)
+                    .toDouble();
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Wrap(
+                key: const ValueKey<String>('desktop-library-posters'),
+                spacing: gap,
+                runSpacing: 24,
+                clipBehavior: Clip.none,
+                children: [
+                  for (var index = 0; index < games.length; index++)
+                    SizedBox(
+                      width: posterWidth,
+                      height: posterWidth * 1.49,
+                      child: _LibraryGameCard(
+                        game: games[index],
+                        onTap: () => onSelectGame(index),
+                        onOpenAssistant: () =>
+                            onOpenAssistant(games[index].data),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             );
           },
         ),
@@ -388,6 +437,7 @@ class _FilterChipButton extends StatefulWidget {
   final VoidCallback onTap;
 
   const _FilterChipButton({
+    super.key,
     required this.label,
     required this.selected,
     required this.onTap,
@@ -395,6 +445,18 @@ class _FilterChipButton extends StatefulWidget {
 
   @override
   State<_FilterChipButton> createState() => _FilterChipButtonState();
+}
+
+TextStyle _libraryToolbarTextStyle({
+  required bool active,
+  required Color foreground,
+}) {
+  return TextStyle(
+    fontSize: 13,
+    height: 1,
+    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+    color: foreground,
+  );
 }
 
 class _FilterChipButtonState extends State<_FilterChipButton> {
@@ -410,9 +472,10 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
       child: InkWell(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: selected
@@ -423,17 +486,16 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
             color: selected
                 ? null
                 : (hover ? const Color(0xFFFFF2E9) : DesktopColors.card),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected ? Colors.transparent : const Color(0x219B5435),
             ),
           ),
           child: Text(
             widget.label,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? Colors.white : const Color(0xFF5E493B),
+            style: _libraryToolbarTextStyle(
+              active: selected,
+              foreground: selected ? Colors.white : const Color(0xFF5E493B),
             ),
           ),
         ),
@@ -444,12 +506,17 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
 
 class _OutlineAction extends StatefulWidget {
   final String label;
-  final IconData icon;
+  final IconData? leadingIcon;
+  final bool active;
+  final bool expanded;
   final VoidCallback onTap;
 
   const _OutlineAction({
+    super.key,
     required this.label,
-    required this.icon,
+    this.leadingIcon,
+    required this.active,
+    required this.expanded,
     required this.onTap,
   });
 
@@ -462,40 +529,463 @@ class _OutlineActionState extends State<_OutlineAction> {
 
   @override
   Widget build(BuildContext context) {
+    final foreground = widget.active ? Colors.white : const Color(0xFF5E493B);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hover = true),
       onExit: (_) => setState(() => hover = false),
       child: InkWell(
         onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          height: 38,
+          constraints: const BoxConstraints(minWidth: 104),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
-            color: hover ? const Color(0xFFFFF2E9) : DesktopColors.card,
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: const Color(0x219B5435)),
+            gradient: widget.active
+                ? const LinearGradient(
+                    colors: [DesktopColors.orange, DesktopColors.orange2],
+                  )
+                : null,
+            color: widget.active
+                ? null
+                : (hover ? const Color(0xFFFFF2E9) : DesktopColors.card),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: widget.active
+                  ? Colors.transparent
+                  : (hover ? const Color(0x55FF6846) : const Color(0x219B5435)),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (widget.leadingIcon != null) ...[
+                Icon(widget.leadingIcon, size: 16, color: foreground),
+                const SizedBox(width: 7),
+              ],
               Text(
                 widget.label,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF62493B),
+                style: _libraryToolbarTextStyle(
+                  active: widget.active,
+                  foreground: foreground,
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(widget.icon, size: 16, color: DesktopColors.brown),
+              const SizedBox(width: 6),
+              AnimatedRotation(
+                key: const ValueKey<String>('desktop-library-action-arrow'),
+                turns: widget.expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 17,
+                  color: foreground,
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _SortMenuRow extends StatelessWidget {
+  const _SortMenuRow({required this.item, required this.selected});
+
+  final _DesktopGameSort item;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = switch (item) {
+      _DesktopGameSort.catalog => '按相关性推荐',
+      _DesktopGameSort.name => '按游戏名称 A-Z 排序',
+      _DesktopGameSort.score => '按玩家评分从高到低',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFFFF0E8) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            selected
+                ? Icons.radio_button_checked_rounded
+                : Icons.radio_button_off_rounded,
+            color: selected ? DesktopColors.orange : const Color(0xFF8A6E62),
+            size: 25,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: selected
+                        ? const Color(0xFFB64B2F)
+                        : const Color(0xFF493D36),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: DesktopColors.secondaryText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopFilterResult {
+  const _DesktopFilterResult({
+    this.player,
+    this.duration,
+    required this.types,
+    this.weight,
+    this.minScore,
+  });
+
+  final String? player;
+  final String? duration;
+  final Set<String> types;
+  final String? weight;
+  final double? minScore;
+}
+
+class _FilterPopupEntry extends PopupMenuEntry<_DesktopFilterResult> {
+  const _FilterPopupEntry({
+    required this.player,
+    required this.duration,
+    required this.types,
+    required this.weight,
+    required this.minScore,
+  });
+
+  final String? player;
+  final String? duration;
+  final Set<String> types;
+  final String? weight;
+  final double? minScore;
+
+  @override
+  double get height => 758;
+
+  @override
+  bool represents(_DesktopFilterResult? value) => false;
+
+  @override
+  State<_FilterPopupEntry> createState() => _FilterPopupEntryState();
+}
+
+class _FilterPopupEntryState extends State<_FilterPopupEntry> {
+  String? player;
+  String? duration;
+  late Set<String> types;
+  String? weight;
+  double? minScore;
+
+  @override
+  void initState() {
+    super.initState();
+    player = widget.player;
+    duration = widget.duration;
+    types = <String>{...widget.types};
+    weight = widget.weight;
+    minScore = widget.minScore;
+  }
+
+  void _clear() => setState(() {
+    player = null;
+    duration = null;
+    types.clear();
+    weight = null;
+    minScore = null;
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const typeOptions = [
+      '策略',
+      '家庭',
+      '聚会',
+      '合作',
+      '对抗',
+      '卡牌',
+      '推理',
+      '骰子',
+      '建造',
+      '经济',
+      '冒险',
+      '主题',
+    ];
+    return SizedBox(
+      width: 372,
+      height: 758,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.filter_alt_outlined,
+                  color: DesktopColors.orange,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  '筛选条件',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _clear,
+                  child: const Text(
+                    '清除全部',
+                    style: TextStyle(color: DesktopColors.orange),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 10),
+            _FilterGridSection(
+              title: '玩家人数',
+              columns: 5,
+              children: [
+                for (final value in const ['1', '2', '3', '4', '5+'])
+                  _OptionChip(
+                    label: value,
+                    expand: true,
+                    selected: player == value,
+                    onTap: () =>
+                        setState(() => player = player == value ? null : value),
+                  ),
+              ],
+            ),
+            _FilterGridSection(
+              title: '游戏时长',
+              columns: 3,
+              children: [
+                for (final option in const [
+                  ('<30', '< 30 分钟'),
+                  ('30-60', '30-60 分钟'),
+                  ('60-120', '60-120 分钟'),
+                  ('>120', '> 120 分钟'),
+                ])
+                  _OptionChip(
+                    label: option.$2,
+                    expand: true,
+                    selected: duration == option.$1,
+                    onTap: () => setState(
+                      () => duration = duration == option.$1 ? null : option.$1,
+                    ),
+                  ),
+              ],
+            ),
+            _FilterGridSection(
+              title: '游戏类型',
+              columns: 4,
+              children: [
+                for (final value in typeOptions)
+                  _OptionChip(
+                    label: value,
+                    expand: true,
+                    selected: types.contains(value),
+                    onTap: () => setState(() {
+                      if (!types.add(value)) types.remove(value);
+                    }),
+                  ),
+              ],
+            ),
+            _FilterGridSection(
+              title: '难度',
+              columns: 4,
+              children: [
+                for (final value in const ['入门', '轻度', '中度', '重度'])
+                  _OptionChip(
+                    label: value,
+                    expand: true,
+                    selected: weight == value,
+                    onTap: () =>
+                        setState(() => weight = weight == value ? null : value),
+                  ),
+              ],
+            ),
+            _FilterGridSection(
+              title: '评分',
+              columns: 4,
+              children: [
+                _OptionChip(
+                  label: '不限',
+                  expand: true,
+                  selected: minScore == null,
+                  onTap: () => setState(() => minScore = null),
+                ),
+                for (final value in const [7.0, 8.0, 9.0])
+                  _OptionChip(
+                    label: '${value.toInt()}+',
+                    expand: true,
+                    selected: minScore == value,
+                    onTap: () => setState(() => minScore = value),
+                  ),
+              ],
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _clear,
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                      side: const BorderSide(color: Color(0xFFFFB39B)),
+                      foregroundColor: const Color(0xFFB64B2F),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                    ),
+                    child: const Text(
+                      '重置',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(
+                      context,
+                      _DesktopFilterResult(
+                        player: player,
+                        duration: duration,
+                        types: types,
+                        weight: weight,
+                        minScore: minScore,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                      backgroundColor: DesktopColors.orange,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                    ),
+                    child: const Text(
+                      '应用筛选',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterGridSection extends StatelessWidget {
+  const _FilterGridSection({
+    required this.title,
+    required this.columns,
+    required this.children,
+  });
+
+  final String title;
+  final int columns;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 7),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 8.0;
+            final width =
+                (constraints.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(
+              spacing: gap,
+              runSpacing: 8,
+              children: [
+                for (final child in children)
+                  SizedBox(width: width, child: child),
+              ],
+            );
+          },
+        ),
+      ],
+    ),
+  );
+}
+
+class _OptionChip extends StatelessWidget {
+  const _OptionChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.expand = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      height: 38,
+      width: expand ? double.infinity : null,
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: selected ? DesktopColors.orange : const Color(0xFFFFFEFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: selected ? DesktopColors.orange : const Color(0xFFE9DFD8),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: selected ? Colors.white : const Color(0xFF5F554E),
+        ),
+      ),
+    ),
+  );
 }
 
 class _LibraryGameCard extends StatelessWidget {
@@ -517,527 +1007,6 @@ class _LibraryGameCard extends StatelessWidget {
       game: game.data,
       onTap: onTap,
       onOpenAssistant: onOpenAssistant,
-    );
-  }
-}
-
-class _GameDetailPanel extends StatelessWidget {
-  final DesktopContentGame game;
-  final bool favorite;
-  final VoidCallback onToggleFavorite;
-  final VoidCallback onOpenDetail;
-  final ValueChanged<String> onUnavailable;
-
-  const _GameDetailPanel({
-    required this.game,
-    required this.favorite,
-    required this.onToggleFavorite,
-    required this.onOpenDetail,
-    required this.onUnavailable,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 648,
-      padding: const EdgeInsets.fromLTRB(13, 13, 13, 14),
-      decoration: BoxDecoration(
-        color: DesktopColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x108A6044)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0C7E4D2B),
-            blurRadius: 12,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Tooltip(
-                message: '打开完整详情页',
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: onOpenDetail,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(9),
-                      child: SizedBox(
-                        width: 160,
-                        height: 236,
-                        child: game.cover(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 5),
-                    Text(
-                      game.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w900,
-                        height: 1.05,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      game.englishTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: DesktopColors.secondaryText,
-                        letterSpacing: .2,
-                      ),
-                    ),
-                    const SizedBox(height: 13),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          color: Color(0xFFFFA400),
-                          size: 23,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          game.score,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(
-                            '(${game.reviewCount})',
-                            style: const TextStyle(
-                              fontSize: 9,
-                              color: DesktopColors.secondaryText,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 15),
-                    _FavoriteButton(
-                      key: const ValueKey<String>(
-                        'desktop-preview-favorite-button',
-                      ),
-                      favorite: favorite,
-                      onTap: onToggleFavorite,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      game.quote,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        height: 1.7,
-                        color: Color(0xFF665A52),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            height: 64,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9F5EF),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                _DetailStat(
-                  icon: Icons.group_rounded,
-                  value: game.players,
-                  label: '玩家人数',
-                ),
-                const _StatDivider(),
-                _DetailStat(
-                  icon: Icons.schedule_rounded,
-                  value: game.duration,
-                  label: '游戏时长',
-                ),
-                const _StatDivider(),
-                _DetailStat(
-                  icon: Icons.bar_chart_rounded,
-                  value: game.difficulty,
-                  label: '游戏难度',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 13),
-          Text(
-            game.description,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 11.2,
-              height: 1.58,
-              color: Color(0xFF5F554E),
-            ),
-          ),
-          const SizedBox(height: 3),
-          Align(
-            alignment: Alignment.centerRight,
-            child: InkWell(
-              onTap: () => onUnavailable('展开介绍'),
-              child: const MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '展开',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: DesktopColors.orange,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 15,
-                      color: DesktopColors.orange,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Text(
-                '游戏标签',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-              ),
-              const Spacer(),
-              InkWell(
-                onTap: () => onUnavailable('更多机制'),
-                child: const MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: Row(
-                    children: [
-                      Text(
-                        '查看更多',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: DesktopColors.orange,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: DesktopColors.orange,
-                        size: 16,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          Wrap(
-            spacing: 6,
-            runSpacing: 7,
-            children: [
-              for (final mechanism in game.mechanisms.take(6))
-                _MechanismTag(mechanism),
-            ],
-          ),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: _BottomAction(
-                  label: '查看规则',
-                  icon: Icons.menu_book_rounded,
-                  filled: false,
-                  onTap: () => onUnavailable('查看规则'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _BottomAction(
-                  label: '想玩 · 未开放',
-                  icon: Icons.play_circle_fill_rounded,
-                  filled: true,
-                  onTap: () => onUnavailable('加入想玩'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FavoriteButton extends StatefulWidget {
-  final bool favorite;
-  final VoidCallback onTap;
-
-  const _FavoriteButton({
-    super.key,
-    required this.favorite,
-    required this.onTap,
-  });
-
-  @override
-  State<_FavoriteButton> createState() => _FavoriteButtonState();
-}
-
-class _FavoriteButtonState extends State<_FavoriteButton> {
-  bool hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hover = true),
-      onExit: (_) => setState(() => hover = false),
-      child: InkWell(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 104,
-          height: 40,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            reverseDuration: const Duration(milliseconds: 150),
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeIn,
-            layoutBuilder: (currentChild, previousChildren) => Stack(
-              alignment: Alignment.center,
-              children: <Widget>[...previousChildren, ?currentChild],
-            ),
-            transitionBuilder: (child, animation) =>
-                FadeTransition(opacity: animation, child: child),
-            child: AnimatedContainer(
-              key: ValueKey<bool>(widget.favorite),
-              duration: const Duration(milliseconds: 120),
-              width: 104,
-              height: 40,
-              decoration: BoxDecoration(
-                gradient: widget.favorite
-                    ? const LinearGradient(
-                        colors: [DesktopColors.orange, DesktopColors.orange2],
-                      )
-                    : null,
-                color: widget.favorite
-                    ? null
-                    : (hover ? const Color(0xFFFFF2E9) : Colors.white),
-                borderRadius: BorderRadius.circular(10),
-                border: widget.favorite
-                    ? null
-                    : Border.all(color: const Color(0x309B5435)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    widget.favorite
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    size: 19,
-                    color: widget.favorite
-                        ? Colors.white
-                        : DesktopColors.orange,
-                  ),
-                  const SizedBox(width: 7),
-                  Text(
-                    widget.favorite ? '已喜欢' : '喜欢',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: widget.favorite
-                          ? Colors.white
-                          : DesktopColors.orange,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DetailStat extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-
-  const _DetailStat({
-    required this.icon,
-    required this.value,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 22, color: DesktopColors.orange),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 8.3,
-                    color: DesktopColors.secondaryText,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatDivider extends StatelessWidget {
-  const _StatDivider();
-  @override
-  Widget build(BuildContext context) =>
-      Container(width: 1, height: 32, color: const Color(0x128A6044));
-}
-
-class _MechanismTag extends StatelessWidget {
-  final String text;
-  const _MechanismTag(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF6F1EB),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 9.5, color: Color(0xFF695D55)),
-      ),
-    );
-  }
-}
-
-class _BottomAction extends StatefulWidget {
-  final String label;
-  final IconData icon;
-  final bool filled;
-  final VoidCallback onTap;
-
-  const _BottomAction({
-    required this.label,
-    required this.icon,
-    required this.filled,
-    required this.onTap,
-  });
-
-  @override
-  State<_BottomAction> createState() => _BottomActionState();
-}
-
-class _BottomActionState extends State<_BottomAction> {
-  bool hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hover = true),
-      onExit: (_) => setState(() => hover = false),
-      child: InkWell(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: widget.filled
-                ? const LinearGradient(
-                    colors: [DesktopColors.orange, DesktopColors.orange2],
-                  )
-                : null,
-            color: widget.filled
-                ? null
-                : (hover ? const Color(0xFFFFF2E9) : Colors.white),
-            borderRadius: BorderRadius.circular(10),
-            border: widget.filled
-                ? null
-                : Border.all(color: const Color(0x309B5435)),
-            boxShadow: widget.filled && hover
-                ? const [
-                    BoxShadow(
-                      color: Color(0x22FF6846),
-                      blurRadius: 12,
-                      offset: Offset(0, 4),
-                    ),
-                  ]
-                : const [],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                widget.icon,
-                size: 19,
-                color: widget.filled ? Colors.white : DesktopColors.brown,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: widget.filled ? Colors.white : const Color(0xFF5E493B),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

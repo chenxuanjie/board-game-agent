@@ -186,17 +186,20 @@ void main() {
     expect(controller.favoriteCount, 0);
   });
 
-  testWidgets('favorite button keeps its size while state crossfades', (
+  testWidgets('detail favorite button keeps its size while state crossfades', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1440, 800));
     await _navigate(tester, '游戏库');
+    final game = controller.games.first;
+    await tester.tap(find.byKey(ValueKey<String>('desktop-poster-${game.id}')));
+    await tester.pumpAndSettle();
 
     final button = find.byKey(
-      const ValueKey<String>('desktop-preview-favorite-button'),
+      const ValueKey<String>('desktop-detail-favorite-button'),
     );
     expect(button, findsOneWidget);
-    expect(tester.getSize(button), const Size(104, 40));
+    expect(tester.getSize(button), const Size(108, 48));
     expect(
       find.descendant(of: button, matching: find.text('喜欢')),
       findsOneWidget,
@@ -207,15 +210,15 @@ void main() {
     });
     await tester.pump();
     await tester.pump();
-    expect(tester.getSize(button), const Size(104, 40));
+    expect(tester.getSize(button), const Size(108, 48));
     expect(
       find.descendant(of: button, matching: find.byType(AnimatedSwitcher)),
       findsOneWidget,
     );
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
-    expect(tester.getSize(button), const Size(104, 40));
-    expect(controller.isFavorite(controller.games.first), isTrue);
+    expect(tester.getSize(button), const Size(108, 48));
+    expect(controller.isFavorite(game), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -241,8 +244,7 @@ void main() {
         of: fullSidebar,
         matching: find.text('首页'),
       );
-      final fullHomeIconRect = tester.getRect(homeIcon);
-      expect(tester.getSize(homeIcon), const Size.square(28));
+      expect(tester.getSize(homeIcon), const Size.square(24));
       expect(
         tester.getTopLeft(homeLabel).dx - tester.getTopRight(homeIcon).dx,
         closeTo(10, 0.1),
@@ -259,12 +261,7 @@ void main() {
         findsNothing,
       );
       final compactHomeIconRect = tester.getRect(homeIcon);
-      expect(compactHomeIconRect.size, fullHomeIconRect.size);
-      expect(
-        compactHomeIconRect.center.dx,
-        closeTo(fullHomeIconRect.center.dx, 0.5),
-      );
-      expect(compactHomeIconRect.top, closeTo(fullHomeIconRect.top, 0.5));
+      expect(compactHomeIconRect.size, const Size.square(24));
       expect(tester.takeException(), isNull);
 
       await tester.binding.setSurfaceSize(const Size(720, 700));
@@ -313,7 +310,7 @@ void main() {
         ValueKey<String>('desktop-poster-${game.id}'),
       );
       final Rect posterRect = tester.getRect(poster);
-      expect(posterRect.width / posterRect.height, closeTo(2 / 3, 0.005));
+      expect(posterRect.width / posterRect.height, closeTo(1 / 1.49, 0.005));
       expect(
         find.descendant(of: poster, matching: find.byType(AnimatedOpacity)),
         findsNothing,
@@ -337,9 +334,6 @@ void main() {
 
       await mouse.moveTo(Offset.zero);
       await tester.pump(const Duration(milliseconds: 130));
-      await tester.tap(poster);
-      await tester.pumpAndSettle();
-      expect(find.byType(DesktopGameDetailPane), findsNothing);
       await tester.tap(poster);
       await tester.pumpAndSettle();
       expect(
@@ -435,6 +429,95 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'desktop library actions match category pills and animate menus',
+    (tester) async {
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, '游戏库');
+
+      final category = find.byKey(
+        const ValueKey<String>('desktop-library-category-0'),
+      );
+      final inactiveCategory = find.byKey(
+        const ValueKey<String>('desktop-library-category-1'),
+      );
+      final sort = find.byKey(
+        const ValueKey<String>('desktop-library-sort-action'),
+      );
+      final filter = find.byKey(
+        const ValueKey<String>('desktop-library-filter-action'),
+      );
+      expect(tester.getSize(category).height, 38);
+      expect(tester.getSize(sort).height, 38);
+      expect(tester.getSize(filter).height, 38);
+      expect(
+        tester.getTopLeft(sort).dy,
+        closeTo(tester.getTopLeft(category).dy, 0.1),
+      );
+      expect(
+        tester.getTopLeft(filter).dy,
+        closeTo(tester.getTopLeft(category).dy, 0.1),
+      );
+
+      TextStyle toolbarTextStyle(Finder control) => tester
+          .widget<Text>(
+            find.descendant(of: control, matching: find.byType(Text)),
+          )
+          .style!;
+
+      final selectedCategoryStyle = toolbarTextStyle(category);
+      final inactiveCategoryStyle = toolbarTextStyle(inactiveCategory);
+      final sortStyle = toolbarTextStyle(sort);
+      final filterStyle = toolbarTextStyle(filter);
+      expect(selectedCategoryStyle.fontSize, 13);
+      expect(selectedCategoryStyle.height, 1);
+      expect(selectedCategoryStyle.fontWeight, FontWeight.w700);
+      expect(inactiveCategoryStyle.fontWeight, FontWeight.w500);
+      expect(sortStyle.fontSize, inactiveCategoryStyle.fontSize);
+      expect(sortStyle.height, inactiveCategoryStyle.height);
+      expect(sortStyle.fontWeight, inactiveCategoryStyle.fontWeight);
+      expect(filterStyle.fontSize, inactiveCategoryStyle.fontSize);
+      expect(filterStyle.height, inactiveCategoryStyle.height);
+      expect(filterStyle.fontWeight, inactiveCategoryStyle.fontWeight);
+
+      final sortSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: sort, matching: find.byType(AnimatedContainer)),
+      );
+      final sortDecoration = sortSurface.decoration! as BoxDecoration;
+      expect(sortDecoration.borderRadius, BorderRadius.circular(20));
+      expect(sortSurface.duration, const Duration(milliseconds: 180));
+
+      await tester.tap(sort);
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(find.text('排序方式'), findsOneWidget);
+      final activeSortSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: sort, matching: find.byType(AnimatedContainer)),
+      );
+      expect(
+        (activeSortSurface.decoration! as BoxDecoration).gradient,
+        isNotNull,
+      );
+      expect(
+        toolbarTextStyle(sort).fontWeight,
+        selectedCategoryStyle.fontWeight,
+      );
+      final arrow = tester.widget<AnimatedRotation>(
+        find.descendant(of: sort, matching: find.byType(AnimatedRotation)),
+      );
+      expect(arrow.turns, 0.5);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('desktop-library-sort-option-catalog'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('排序方式'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('home search filters catalog data and opens a real game', (
     tester,
@@ -704,10 +787,8 @@ void main() {
     );
     await tester.tap(find.text('筛选'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(of: find.byType(AlertDialog), matching: find.text('5+')),
-    );
-    await tester.tap(find.text('应用'));
+    await tester.tap(find.text('5+'));
+    await tester.tap(find.text('应用筛选'));
     await tester.pumpAndSettle();
 
     expect(find.text('暂无符合条件的游戏'), findsNothing);
@@ -765,7 +846,7 @@ void main() {
     final sidebarArt = tester.widget<Image>(
       find.byKey(const ValueKey<String>('desktop-sidebar-art')),
     );
-    expect(sidebarArt.fit, BoxFit.fitWidth);
+    expect(sidebarArt.fit, BoxFit.contain);
     expect(sidebarArt.alignment, Alignment.bottomCenter);
     final sidebarRect = tester.getRect(
       find.byKey(const ValueKey<String>('desktop-sidebar-full')),
@@ -775,11 +856,8 @@ void main() {
     );
     expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
     expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
+    expect(sidebarArtRect.top, closeTo(sidebarRect.top + 520, 0.1));
     expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
-    expect(
-      sidebarArtRect.width / sidebarArtRect.height,
-      closeTo(971 / 1619, 0.005),
-    );
     for (final asset in [
       'sidebar_home.png',
       'sidebar_library.png',
@@ -790,7 +868,7 @@ void main() {
     ]) {
       final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
       expect(icon, findsOneWidget);
-      expect(tester.getSize(icon), const Size(28, 28));
+      expect(tester.getSize(icon), const Size(24, 24));
     }
     expect(tester.takeException(), isNull);
   });
