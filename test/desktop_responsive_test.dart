@@ -32,7 +32,7 @@ void main() {
     expect(DesktopResponsive.detailHeroHeightFor(1100), 450);
   });
 
-  test('desktop metrics scale only the wide design canvas', () {
+  test('desktop metrics scale visual dimensions independently of width', () {
     expect(DesktopResponsive.desktopScaleFor(const Size(1100, 800)), 1);
     expect(DesktopResponsive.desktopScaleFor(const Size(1280, 800)), 1);
     expect(
@@ -64,10 +64,19 @@ void main() {
       DesktopResponsive.settingsMaxContentWidth,
     );
     expect(DesktopResponsive.homeHeroWidthFor(1200), 1200);
+    expect(DesktopResponsive.homeRecommendationCountFor(752), 5);
+    expect(DesktopResponsive.homeRecommendationCountFor(1000), 6);
     expect(DesktopResponsive.homeRecommendationCardWidthFor(752), 140);
     expect(
-      DesktopResponsive.homeRecommendationCardWidthFor(1000),
-      closeTo(189.6, 0.001),
+      DesktopResponsive.homeRecommendationCardWidthFor(
+        1200,
+        count: 6,
+      ),
+      closeTo(189.166, 0.001),
     );
+
+    expect(DesktopResponsive.usesFluidPageWidth('home'), isTrue);
+    expect(DesktopResponsive.usesFluidPageWidth('games'), isTrue);
+    expect(DesktopResponsive.usesFluidPageWidth('settings'), isFalse);
   });
 }

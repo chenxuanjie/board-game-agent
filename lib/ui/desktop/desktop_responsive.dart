@@ -69,11 +69,22 @@ abstract final class DesktopResponsive {
   /// has an independent cap, so it aligns with the rest of the home column.
   static double homeHeroWidthFor(double width) => width;
 
+  static int homeRecommendationCountFor(double width) => width >= 1000 ? 6 : 5;
+
   static double homeRecommendationCardWidthFor(
     double width, {
     double gap = 13,
     double minimumWidth = 140,
-  }) => math.max(minimumWidth, (width - gap * 4) / 5);
+    int count = 5,
+  }) => math.max(minimumWidth, (width - gap * (count - 1)) / count);
+
+  /// Dashboard/gallery pages should use the available desktop window width.
+  ///
+  /// Reading/form pages such as Settings remain centered and width-limited.
+  static bool usesFluidPageWidth(String page) => switch (page) {
+    'home' || 'games' || 'favorites' || 'gameDetail' => true,
+    _ => false,
+  };
 
   /// Returns the scale for the desktop design canvas.
   ///
@@ -115,9 +126,9 @@ abstract final class DesktopResponsive {
 
 /// Metrics shared by the desktop shell and its panes.
 ///
-/// `scale` is intentionally only applied to the wide desktop canvas. It is
-/// not a widget transform: text remains accessible and hit targets keep their
-/// normal Flutter semantics while the design dimensions grow together.
+/// `scale` controls visual dimensions only; dashboard width is allowed to
+/// follow the native desktop window. This is not a widget transform: text
+/// remains accessible and hit targets keep their normal Flutter semantics.
 class DesktopMetrics {
   const DesktopMetrics({required this.viewportSize, required this.scale});
 
@@ -173,17 +184,21 @@ class DesktopResponsiveFrame extends StatelessWidget {
     required this.maxWidth,
     required this.padding,
     required this.child,
+    this.fluid = false,
   });
 
   final double maxWidth;
   final EdgeInsets padding;
   final Widget child;
+  final bool fluid;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final metrics = DesktopMetricsScope.of(context);
-      final width = math.min(constraints.maxWidth, metrics.px(maxWidth));
+      final width = fluid
+          ? constraints.maxWidth
+          : math.min(constraints.maxWidth, metrics.px(maxWidth));
       return Align(
         alignment: Alignment.topCenter,
         child: SizedBox(
