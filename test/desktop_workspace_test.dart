@@ -120,6 +120,27 @@ void main() {
     });
   }
 
+  testWidgets('home right rail grids grow with a wider column', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    final profile = find.byKey(
+      const ValueKey<String>('desktop-home-profile-panel'),
+    );
+    final quick = find.byKey(
+      const ValueKey<String>('desktop-home-quick-panel'),
+    );
+    final baseProfileSize = tester.getSize(profile);
+    final baseQuickSize = tester.getSize(quick);
+
+    await tester.binding.setSurfaceSize(const Size(2560, 1440));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(profile).width, greaterThan(baseProfileSize.width));
+    expect(tester.getSize(profile).height, greaterThan(baseProfileSize.height));
+    expect(tester.getSize(quick).width, greaterThan(baseQuickSize.width));
+    expect(tester.getSize(quick).height, greaterThan(baseQuickSize.height));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('hidden and unsupported desktop routes stay unavailable', (
     tester,
   ) async {

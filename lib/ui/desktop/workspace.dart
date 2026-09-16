@@ -458,7 +458,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
         // still scale visual dimensions, but no longer cap the dashboard canvas
         // at 1280 * scale, which previously created internal dead space.
         final canvasWidth = constraints.maxWidth;
-        final canvasLeft = 0.0;
         final dragLeft = narrow ? 0.0 : metrics.px(sidebarWidth);
         final canvas = SizedBox(
           width: canvasWidth,

@@ -1,5 +1,6 @@
 // Body layout adapted directly from the read-only Desktop reference.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -187,12 +188,18 @@ class _MainColumn extends StatelessWidget {
             final count = desiredCount < games.length
                 ? desiredCount
                 : games.length;
-            final visibleGames = games.take(count).toList();
+            final fittedCount =
+                count > 5 &&
+                    constraints.maxWidth <
+                        minimumCardWidth * count + gap * (count - 1)
+                ? 5
+                : count;
+            final visibleGames = games.take(fittedCount).toList();
             final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
               constraints.maxWidth,
               gap: gap,
               minimumWidth: minimumCardWidth,
-              count: count,
+              count: fittedCount,
             );
             return Row(
               key: const ValueKey<String>('desktop-home-recommendation-row'),
@@ -732,8 +739,9 @@ class _RecentCard extends StatelessWidget {
                         final gap = metrics.px(8);
                         final itemCount = recentItems.length;
                         final slotWidth =
-                            (constraints.maxWidth - gap * (itemCount - 1)) /
-                            itemCount;
+                            ((constraints.maxWidth - gap * (itemCount - 1)) /
+                                    itemCount)
+                                .clamp(metrics.px(88), metrics.px(126));
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -748,8 +756,7 @@ class _RecentCard extends StatelessWidget {
                                   game: recentItems[i].game!,
                                   record: recentItems[i].record,
                                   controller: controller,
-                                  onTap: () =>
-                                      onOpenGame(recentItems[i].game!),
+                                  onTap: () => onOpenGame(recentItems[i].game!),
                                 ),
                               ),
                             ],
@@ -1045,96 +1052,101 @@ class _ProfilePanel extends StatelessWidget {
         key: null,
       ),
     ];
-    return _Panel(
-      height: 255,
-      child: Padding(
-        padding: metrics.insets(const EdgeInsets.fromLTRB(14, 15, 14, 14)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '你好！',
-              style: TextStyle(
-                fontSize: metrics.font(18),
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            SizedBox(height: metrics.px(6)),
-            Text(
-              '个人中心',
-              style: TextStyle(
-                fontSize: metrics.font(12),
-                color: DesktopColors.secondaryText,
-              ),
-            ),
-            SizedBox(height: metrics.px(13)),
-            Expanded(
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: metrics.px(10),
-                  mainAxisSpacing: metrics.px(10),
-                  childAspectRatio: 1.55,
+    return LayoutBuilder(
+      builder: (context, constraints) => _Panel(
+        key: const ValueKey<String>('desktop-home-profile-panel'),
+        height: _profilePanelHeightFor(constraints.maxWidth / metrics.scale),
+        child: Padding(
+          padding: metrics.insets(const EdgeInsets.fromLTRB(14, 15, 14, 14)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '你好！',
+                style: TextStyle(
+                  fontSize: metrics.font(18),
+                  fontWeight: FontWeight.w800,
                 ),
-                itemCount: stats.length,
-                itemBuilder: (context, i) {
-                  final s = stats[i];
-                  return HoverSurface(
-                    key: s.key,
-                    onTap: s.onTap,
-                    lift: 1,
-                    borderRadius: BorderRadius.circular(metrics.radius(9)),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: metrics.px(13),
-                        vertical: metrics.px(9),
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F5EF),
-                        borderRadius: BorderRadius.circular(metrics.radius(9)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.value,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: metrics.font(20),
-                                  ),
-                                ),
-                                SizedBox(height: metrics.px(3)),
-                                Text(
-                                  s.label,
-                                  style: TextStyle(
-                                    fontSize: metrics.font(10.5),
-                                    color: DesktopColors.secondaryText,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Image.asset(
-                            s.assetPath,
-                            width: metrics.px(52),
-                            height: metrics.px(52),
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
               ),
-            ),
-          ],
+              SizedBox(height: metrics.px(6)),
+              Text(
+                '个人中心',
+                style: TextStyle(
+                  fontSize: metrics.font(12),
+                  color: DesktopColors.secondaryText,
+                ),
+              ),
+              SizedBox(height: metrics.px(13)),
+              Expanded(
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: metrics.px(10),
+                    mainAxisSpacing: metrics.px(10),
+                    childAspectRatio: 1.55,
+                  ),
+                  itemCount: stats.length,
+                  itemBuilder: (context, i) {
+                    final s = stats[i];
+                    return HoverSurface(
+                      key: s.key,
+                      onTap: s.onTap,
+                      lift: 1,
+                      borderRadius: BorderRadius.circular(metrics.radius(9)),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: metrics.px(13),
+                          vertical: metrics.px(9),
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F5EF),
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(9),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.value,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: metrics.font(20),
+                                    ),
+                                  ),
+                                  SizedBox(height: metrics.px(3)),
+                                  Text(
+                                    s.label,
+                                    style: TextStyle(
+                                      fontSize: metrics.font(10.5),
+                                      color: DesktopColors.secondaryText,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Image.asset(
+                              s.assetPath,
+                              width: metrics.px(52),
+                              height: metrics.px(52),
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1188,104 +1200,137 @@ class _QuickPanel extends StatelessWidget {
       ('规则查询', '快速查规则', Icons.menu_book_rounded),
       ('AI助手', '桌游问题随时问', Icons.lightbulb_rounded),
     ];
-    return _Panel(
-      height: 169,
-      child: Padding(
-        padding: metrics.insets(const EdgeInsets.all(10)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.bolt_rounded,
-                  color: Color(0xFFFF6B42),
-                  size: metrics.px(23),
-                ),
-                SizedBox(width: metrics.px(7)),
-                Text(
-                  '快捷入口',
-                  style: TextStyle(
-                    fontSize: metrics.font(17),
-                    fontWeight: FontWeight.w800,
+    return LayoutBuilder(
+      builder: (context, constraints) => _Panel(
+        key: const ValueKey<String>('desktop-home-quick-panel'),
+        height: _quickPanelHeightFor(constraints.maxWidth / metrics.scale),
+        child: Padding(
+          padding: metrics.insets(const EdgeInsets.all(10)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.bolt_rounded,
+                    color: Color(0xFFFF6B42),
+                    size: metrics.px(23),
                   ),
-                ),
-              ],
-            ),
-            SizedBox(height: metrics.px(9)),
-            Expanded(
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: metrics.px(9),
-                  mainAxisSpacing: metrics.px(9),
-                  childAspectRatio: 2.35,
-                ),
-                itemCount: actions.length,
-                itemBuilder: (context, i) {
-                  final a = actions[i];
-                  return HoverSurface(
-                    key: a.$1 == '规则查询'
-                        ? const ValueKey<String>('home-quick-entry-rules')
-                        : null,
-                    onTap: () => onUnavailable(a.$1),
-                    lift: 1,
-                    borderRadius: BorderRadius.circular(metrics.radius(9)),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: metrics.px(9),
-                        vertical: metrics.px(6),
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F5EF),
-                        borderRadius: BorderRadius.circular(metrics.radius(9)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            a.$3,
-                            color: const Color(0xFFFF5B43),
-                            size: metrics.px(24),
-                          ),
-                          SizedBox(width: metrics.px(8)),
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  a.$1,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: metrics.font(12),
-                                  ),
-                                ),
-                                Text(
-                                  a.$2,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: DesktopColors.secondaryText,
-                                    fontSize: metrics.font(9.5),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                  SizedBox(width: metrics.px(7)),
+                  Text(
+                    '快捷入口',
+                    style: TextStyle(
+                      fontSize: metrics.font(17),
+                      fontWeight: FontWeight.w800,
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
-            ),
-          ],
+              SizedBox(height: metrics.px(9)),
+              Expanded(
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: metrics.px(9),
+                    mainAxisSpacing: metrics.px(9),
+                    childAspectRatio: 2.35,
+                  ),
+                  itemCount: actions.length,
+                  itemBuilder: (context, i) {
+                    final a = actions[i];
+                    return HoverSurface(
+                      key: a.$1 == '规则查询'
+                          ? const ValueKey<String>('home-quick-entry-rules')
+                          : null,
+                      onTap: () => onUnavailable(a.$1),
+                      lift: 1,
+                      borderRadius: BorderRadius.circular(metrics.radius(9)),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: metrics.px(9),
+                          vertical: metrics.px(6),
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F5EF),
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(9),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              a.$3,
+                              color: const Color(0xFFFF5B43),
+                              size: metrics.px(24),
+                            ),
+                            SizedBox(width: metrics.px(8)),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    a.$1,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: metrics.font(12),
+                                    ),
+                                  ),
+                                  Text(
+                                    a.$2,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: DesktopColors.secondaryText,
+                                      fontSize: metrics.font(9.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+double _profilePanelHeightFor(double width) {
+  const baseWidth = 282.0;
+  const baseHeight = 255.0;
+  const horizontalPadding = 28.0;
+  const gridGap = 10.0;
+  const cardAspectRatio = 1.55;
+  final cardWidth = math.max(0, (width - horizontalPadding - gridGap) / 2);
+  final gridHeight = cardWidth / cardAspectRatio * 2 + gridGap;
+  final baseCardWidth = (baseWidth - horizontalPadding - gridGap) / 2;
+  final baseGridHeight = baseCardWidth / cardAspectRatio * 2 + gridGap;
+  return math.max(baseHeight, baseHeight + gridHeight - baseGridHeight);
+}
+
+double _quickPanelHeightFor(double width) {
+  const baseHeight = 169.0;
+  const horizontalPadding = 20.0;
+  const gridGap = 9.0;
+  const headingHeight = 23.0;
+  const headingGap = 9.0;
+  const cardAspectRatio = 2.35;
+  final cardWidth = math.max(0, (width - horizontalPadding - gridGap) / 2);
+  final gridHeight = cardWidth / cardAspectRatio * 2 + gridGap;
+  return math.max(
+    baseHeight,
+    horizontalPadding + headingHeight + headingGap + gridHeight,
+  );
 }
