@@ -75,7 +75,21 @@ class DesktopContentGame {
   String get englishTitle => desktopContentValue(data.subtitle);
   String get score => desktopContentValue(data.score);
   String get reviewCount => desktopContentValue(data.scoreCountLabel);
-  List<String> get tags => data.keywords.isEmpty ? ['-'] : data.keywords;
+  List<String> get tags {
+    final List<String> categoryTags = data.categoryLine
+        .split('/')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList(growable: false);
+    if (categoryTags.isNotEmpty) return categoryTags;
+
+    final List<String> keywordTags = data.keywords
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList(growable: false);
+    return keywordTags.isEmpty ? ['-'] : keywordTags;
+  }
+
   String get tagA => tags.first;
   String get tagB => tags.length > 1 ? tags[1] : '-';
   String get players => desktopContentValue(data.playerCount);

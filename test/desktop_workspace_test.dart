@@ -741,6 +741,14 @@ void main() {
       expect(titleStyle.fontSize, 15);
       expect(titleStyle.fontWeight, FontWeight.w700);
       expect(titleStyle.height, 1.1);
+      expect(
+        find.descendant(of: firstCard, matching: find.text('竞争')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: firstCard, matching: find.text('德式')),
+        findsOneWidget,
+      );
       final ratingIcon = find.descendant(
         of: firstCard,
         matching: find.byIcon(Icons.star_rounded),
