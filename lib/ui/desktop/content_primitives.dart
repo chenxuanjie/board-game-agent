@@ -75,7 +75,21 @@ class DesktopContentGame {
   String get englishTitle => desktopContentValue(data.subtitle);
   String get score => desktopContentValue(data.score);
   String get reviewCount => desktopContentValue(data.scoreCountLabel);
-  List<String> get tags => data.keywords.isEmpty ? ['-'] : data.keywords;
+  List<String> get tags {
+    final List<String> categoryTags = data.categoryLine
+        .split('/')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList(growable: false);
+    if (categoryTags.isNotEmpty) return categoryTags;
+
+    final List<String> keywordTags = data.keywords
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList(growable: false);
+    return keywordTags.isEmpty ? ['-'] : keywordTags;
+  }
+
   String get tagA => tags.first;
   String get tagB => tags.length > 1 ? tags[1] : '-';
   String get players => desktopContentValue(data.playerCount);
@@ -104,39 +118,25 @@ class DesktopContentColumns extends StatelessWidget {
     required this.main,
     required this.right,
     required this.rightWidth,
+    required this.wide,
     this.gap = 14,
   });
   final Widget main, right;
   final double rightWidth, gap;
+  final bool wide;
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) {
-      final narrow = box.maxWidth < 900;
-      return narrow
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                main,
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: rightWidth),
-                    child: right,
-                  ),
-                ),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: main),
-                SizedBox(width: gap),
-                SizedBox(width: rightWidth, child: right),
-              ],
-            );
-    },
-  );
+  Widget build(BuildContext context) {
+    if (!wide) return main;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: main),
+        SizedBox(width: gap),
+        SizedBox(width: rightWidth, child: right),
+      ],
+    );
+  }
 }
 
 class DesktopContentStatus extends StatelessWidget {

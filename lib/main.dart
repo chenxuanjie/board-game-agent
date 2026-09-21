@@ -25,11 +25,14 @@ import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/desktop/workspace.dart';
+import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
 
-const double _webDesktopMinWidth = 1000;
-const double _webDesktopMinHeight = 620;
-const double _webDesktopMinAspectRatio = 1.28;
+const double _webDesktopMinWidth = DesktopResponsive.desktopWindowMinimumWidth;
+const double _webDesktopMinHeight =
+    DesktopResponsive.desktopWindowMinimumHeight;
+const double _webDesktopMinAspectRatio =
+    DesktopResponsive.desktopWindowMinimumAspectRatio;
 
 Future<void> main() async {
   enableInsecureAndroidCertificateTrust();
@@ -76,8 +79,8 @@ Future<void> _configureWindowsWindow() async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
   await windowManager.ensureInitialized();
   const WindowOptions options = WindowOptions(
-    size: Size(1280, 800),
-    minimumSize: Size(1100, 700),
+    size: DesktopResponsive.desktopWindowDefaultSize,
+    minimumSize: DesktopResponsive.desktopWindowMinimumSize,
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,

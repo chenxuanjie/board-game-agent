@@ -16,10 +16,12 @@ import '../screens/pdf_document_screen.dart';
 import 'business_panes.dart';
 import 'home_pane.dart';
 import 'games_pane.dart';
+import 'favorites_pane.dart';
 import 'game_detail_pane.dart';
 import 'home_search_overlay.dart';
 import 'settings_pane.dart';
 import 'sidebar.dart';
+import 'desktop_responsive.dart';
 import 'theme.dart';
 import 'window_controls.dart';
 
@@ -38,6 +40,8 @@ class DesktopWorkspace extends StatefulWidget {
 }
 
 class _DesktopWorkspaceState extends State<DesktopWorkspace> {
+  static const Duration _favoriteSnackBarDuration = Duration(seconds: 3);
+
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
   final _activityLink = LayerLink();
@@ -45,7 +49,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   final _searchFocus = FocusNode();
   final _searchTapRegionGroup = Object();
   final _scroll = ScrollController();
-  final List<String> _searchHistory = <String>[];
+  Timer? _favoriteSnackBarTimer;
   bool _searchOpen = false;
   String _page = 'home';
   String _gameDetailReturnPage = 'games';
@@ -53,13 +57,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   GameInfo? _rulesDrawerGame;
   DesktopLibraryResource? _rulesDrawerResource;
   int _rulesDrawerTab = 0;
+  DesktopLibraryResourceType? _libraryFilter;
   static const _routes = [
     'home',
     'games',
     'assistant',
-    'rankings',
     'favorites',
-    'community',
     'settings',
   ];
   bool get _native =>
@@ -85,6 +88,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.removeListener(_refresh);
     _search.removeListener(_refreshSearch);
     _searchFocus.removeListener(_handleSearchFocusChanged);
+    _favoriteSnackBarTimer?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     _scroll.dispose();
@@ -92,7 +96,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _navigate(String page) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     if (page == 'assistant' && widget.controller.selectedConversation == null) {
       widget.controller.openGlobalAssistant();
     }
@@ -100,9 +104,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
+  void _setLibraryFilter(DesktopLibraryResourceType? filter) {
+    if (_libraryFilter == filter) return;
+    setState(() => _libraryFilter = filter);
+  }
+
   int get _selectedRouteIndex {
     if (_page == 'gameDetail' || _page == 'library') return 1;
-    if (_page == 'advanced') return 6;
+    if (_page == 'advanced') return 4;
     final index = _routes.indexOf(_page);
     return index < 0 ? 0 : index;
   }
@@ -113,7 +122,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _game(GameInfo game) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
+    unawaited(widget.controller.recordRecentlyViewed(game));
     widget.controller.selectGame(game.id);
     final origin = _page == 'gameDetail' ? _gameDetailReturnPage : _page;
     setState(() {
@@ -123,7 +133,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _openRules(GameInfo game) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     widget.controller.selectGame(game.id);
     setState(() {
       _page = 'library';
@@ -135,9 +145,62 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _askAi(GameInfo game) {
-    _dismissSearch();
+    _dismissSearch(clearQuery: true);
     if (!widget.controller.openGameAssistant(game.id)) return;
     setState(() => _page = 'assistant');
+  }
+
+  void _dismissFavoriteSnackBar() {
+    _favoriteSnackBarTimer?.cancel();
+    _favoriteSnackBarTimer = null;
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+  }
+
+  void _showFavoriteSnackBar({
+    required String message,
+    SnackBarAction? action,
+  }) {
+    _favoriteSnackBarTimer?.cancel();
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: _favoriteSnackBarDuration,
+        action: action,
+      ),
+    );
+    final timer = Timer(_favoriteSnackBarDuration, controller.close);
+    _favoriteSnackBarTimer = timer;
+    unawaited(
+      controller.closed.whenComplete(() {
+        if (identical(_favoriteSnackBarTimer, timer)) {
+          _favoriteSnackBarTimer = null;
+        }
+      }),
+    );
+  }
+
+  Future<void> _toggleFavorite(GameInfo game) async {
+    _dismissFavoriteSnackBar();
+    final saved = await widget.controller.toggleFavorite(game);
+    if (!mounted) return;
+
+    final copy = widget.controller.copy;
+    if (!saved) {
+      _showFavoriteSnackBar(message: copy.favoriteSaveFailed);
+      return;
+    }
+
+    final isFavorite = widget.controller.isFavorite(game);
+    _showFavoriteSnackBar(
+      message: isFavorite ? copy.favoriteAdded : copy.favoriteRemoved,
+      action: isFavorite
+          ? null
+          : SnackBarAction(
+              label: copy.favoriteUndo,
+              onPressed: () => unawaited(_toggleFavorite(game)),
+            ),
+    );
   }
 
   void _openRulesForResource(DesktopLibraryResource resource) {
@@ -307,11 +370,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   void _closeSearch() {
     _searchFocus.unfocus();
+    _search.clear();
     if (_searchOpen) setState(() => _searchOpen = false);
   }
 
-  void _dismissSearch() {
+  void _dismissSearch({bool clearQuery = false}) {
     _searchFocus.unfocus();
+    if (clearQuery) _search.clear();
     _searchOpen = false;
   }
 
@@ -331,17 +396,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _recordSearch(String value) {
-    final query = value.trim();
-    if (query.isEmpty) return;
-    _searchHistory
-      ..remove(query)
-      ..insert(0, query);
-    if (_searchHistory.length > 5) _searchHistory.removeLast();
-    setState(() {});
+    unawaited(widget.controller.recordSearch(value));
   }
 
   void _clearSearchHistory() {
-    setState(_searchHistory.clear);
+    unawaited(widget.controller.clearSearchHistory());
+  }
+
+  void _removeSearchHistoryEntry(String value) {
+    unawaited(widget.controller.removeSearch(value));
   }
 
   void _find() {
@@ -357,37 +420,75 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _openSearch();
   }
 
+  void _openSearchGame(GameInfo game, String query) {
+    _recordSearch(query);
+    _game(game);
+  }
+
+  void _openSearchRules(GameInfo game) {
+    _recordSearch(_search.text);
+    _openRules(game);
+  }
+
+  void _openSearchAi(GameInfo game) {
+    _recordSearch(_search.text);
+    _askAi(game);
+  }
+
+  void _openAllSearchResults() {
+    _recordSearch(_search.text);
+    _navigate('games');
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 760;
         final compact = !narrow && constraints.maxWidth < 1200;
-        final sidebarWidth = narrow ? 0.0 : (compact ? 76.0 : 205.0);
-        Widget body = Row(
-          children: [
-            if (!narrow)
-              DesktopSidebar(
-                compact: compact,
-                selectedIndex: _selectedRouteIndex,
-                onSelect: _selectRoute,
-              ),
-            Expanded(
-              child: _workspaceBody(compact: compact, narrow: narrow),
-            ),
-          ],
+        final metrics = DesktopResponsive.metricsFor(
+          Size(constraints.maxWidth, constraints.maxHeight),
         );
+        final sidebarWidth = narrow
+            ? 0.0
+            : (compact
+                  ? DesktopResponsive.compactSidebarWidth
+                  : DesktopResponsive.fullSidebarWidth);
+        // The Windows shell uses the full available window width. DesktopMetrics
+        // still scale visual dimensions, but no longer cap the dashboard canvas
+        // at 1280 * scale, which previously created internal dead space.
+        final canvasWidth = constraints.maxWidth;
+        final dragLeft = narrow ? 0.0 : metrics.px(sidebarWidth);
+        final canvas = SizedBox(
+          width: canvasWidth,
+          height: constraints.maxHeight,
+          child: Row(
+            children: [
+              if (!narrow)
+                DesktopSidebar(
+                  compact: compact,
+                  selectedIndex: _selectedRouteIndex,
+                  onSelect: _selectRoute,
+                ),
+              Expanded(
+                child: _workspaceBody(compact: compact, narrow: narrow),
+              ),
+            ],
+          ),
+        );
+        Widget body = narrow
+            ? canvas
+            : Align(alignment: Alignment.topCenter, child: canvas);
         if (_native) {
           body = DragToResizeArea(
             resizeEdgeSize: 6,
             child: Stack(
               children: [
-                body,
                 Positioned(
-                  left: sidebarWidth,
-                  right: 96,
+                  left: dragLeft,
+                  right: metrics.px(150),
                   top: 0,
-                  height: 18,
+                  height: metrics.px(45),
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onPanStart: (_) => windowManager.startDragging(),
@@ -400,29 +501,33 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     },
                   ),
                 ),
+                body,
                 const Positioned(top: 0, right: 0, child: WindowControls()),
               ],
             ),
           );
         }
-        return Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: DesktopColors.background,
-          drawer: narrow
-              ? Drawer(
-                  width: 280,
-                  shape: const RoundedRectangleBorder(),
-                  child: SafeArea(
-                    child: DesktopSidebar(
-                      width: 280,
-                      selectedIndex: _selectedRouteIndex,
-                      onSelect: (index) =>
-                          _selectRoute(index, closeDrawer: true),
+        return DesktopMetricsScope(
+          metrics: metrics,
+          child: Scaffold(
+            key: _scaffoldKey,
+            backgroundColor: DesktopColors.background,
+            drawer: narrow
+                ? Drawer(
+                    width: 280,
+                    shape: const RoundedRectangleBorder(),
+                    child: SafeArea(
+                      child: DesktopSidebar(
+                        width: 280,
+                        selectedIndex: _selectedRouteIndex,
+                        onSelect: (index) =>
+                            _selectRoute(index, closeDrawer: true),
+                      ),
                     ),
-                  ),
-                )
-              : null,
-          body: body,
+                  )
+                : null,
+            body: body,
+          ),
         );
       },
     );
@@ -455,6 +560,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     ),
                     'library' => DesktopLibraryPane(
                       controller: widget.controller,
+                      filter: _libraryFilter,
+                      onFilterChanged: _setLibraryFilter,
                       onOpenRules: _openRulesForResource,
                     ),
                     'advanced' => DesktopAdvancedSettingsPane(
@@ -471,13 +578,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     controller: _scroll,
                     child: Column(
                       children: [
-                        Padding(
+                        DesktopResponsiveFrame(
+                          maxWidth: DesktopResponsive.maxContentWidthFor(_page),
+                          fluid: DesktopResponsive.usesFluidPageWidth(_page),
                           padding: _page == 'gameDetail'
                               ? EdgeInsets.zero
                               : EdgeInsets.fromLTRB(
-                                  narrow ? 10 : 15,
+                                  narrow ? 10 : (_page == 'games' ? 20 : 15),
                                   0,
-                                  narrow ? 10 : 12,
+                                  narrow ? 10 : (_page == 'games' ? 55 : 12),
                                   14,
                                 ),
                           child: switch (_page) {
@@ -488,22 +597,33 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             ),
                             'games' => DesktopGamesPane(
                               controller: widget.controller,
-                              showPreview: !compact && !narrow,
+                              showPreview: !narrow,
                               onNavigate: _navigate,
                               onOpenGame: _game,
+                              onToggleFavorite: _toggleFavorite,
+                            ),
+                            'favorites' => DesktopFavoritesPane(
+                              controller: widget.controller,
+                              showPreview: !narrow,
+                              onNavigate: _navigate,
+                              onOpenGame: _game,
+                              onToggleFavorite: _toggleFavorite,
                             ),
                             'gameDetail' => DesktopGameDetailPane(
                               controller: widget.controller,
                               game: widget.controller.selectedGame,
-                              backTooltip: _gameDetailReturnPage == 'home'
-                                  ? '返回首页'
-                                  : '返回游戏库',
+                              backTooltip: switch (_gameDetailReturnPage) {
+                                'home' => '返回首页',
+                                'favorites' => '返回我的喜欢',
+                                _ => '返回游戏库',
+                              },
                               onBack: () => _navigate(_gameDetailReturnPage),
                               onSearch: _find,
                               onOpenRules: () =>
                                   _openRules(widget.controller.selectedGame),
                               onAskAi: () =>
                                   _askAi(widget.controller.selectedGame),
+                              onToggleFavorite: _toggleFavorite,
                             ),
                             'settings' => DesktopSettingsPane(
                               controller: widget.controller,
@@ -519,8 +639,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   children: [
                                     Text(
                                       switch (_page) {
-                                        'rankings' => '排行榜',
-                                        'favorites' => '我的收藏',
+                                        'favorites' => '我的喜欢',
                                         'community' => '社区',
                                         _ => _page,
                                       },
@@ -562,13 +681,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 ),
               if (_searchOpen)
                 Positioned(
-                  left: 18,
-                  right: 18,
+                  left: DesktopMetricsScope.of(context).px(18),
+                  right: DesktopMetricsScope.of(context).px(18),
                   top: 0,
                   child: Align(
                     alignment: Alignment.topLeft,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
+                      constraints: BoxConstraints(
+                        maxWidth: DesktopMetricsScope.of(context).px(780),
+                      ),
                       child: DesktopHomeSearchOverlay(
                         key: const ValueKey<String>(
                           'desktop-home-search-overlay',
@@ -576,15 +697,18 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         query: _search.text,
                         games: widget.controller.games,
                         controller: widget.controller,
-                        recentQueries: _searchHistory,
+                        recentQueries: widget.controller.searchHistory
+                            .map((record) => record.query)
+                            .toList(growable: false),
                         tapRegionGroup: _searchTapRegionGroup,
                         onSelectQuery: _setSearchQuery,
                         onClearHistory: _clearSearchHistory,
+                        onRemoveQuery: _removeSearchHistoryEntry,
                         onTapOutside: _closeSearch,
-                        onOpenGame: _game,
-                        onOpenRules: _openRules,
-                        onAskAi: _askAi,
-                        onViewAll: () => _navigate('games'),
+                        onOpenGame: _openSearchGame,
+                        onOpenRules: _openSearchRules,
+                        onAskAi: _openSearchAi,
+                        onViewAll: _openAllSearchResults,
                       ),
                     ),
                   ),
@@ -608,160 +732,173 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     ),
   );
 
-  Widget _topBar({required bool compact, required bool narrow}) => SizedBox(
-    height: 78,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 10),
-      child: Row(
-        children: [
-          if (narrow) ...[
-            IconButton(
-              key: const ValueKey<String>('desktop-open-navigation'),
-              tooltip: '打开导航',
-              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-              icon: const Icon(Icons.menu_rounded, color: DesktopColors.brown),
-            ),
-            const SizedBox(width: 6),
-          ],
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 40,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    decoration: BoxDecoration(
-                      color: _searchFocus.hasFocus
-                          ? DesktopColors.card
-                          : const Color(0xFFF8F2EA),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: _searchFocus.hasFocus
-                            ? DesktopColors.orange
-                            : Colors.transparent,
-                      ),
-                      boxShadow: _searchFocus.hasFocus
-                          ? const <BoxShadow>[
-                              BoxShadow(
-                                color: Color(0x14FF6846),
-                                blurRadius: 12,
-                                offset: Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: TapRegion(
-                      groupId: _searchTapRegionGroup,
-                      child: TextField(
-                        key: const ValueKey<String>(
-                          'desktop-home-search-field',
-                        ),
-                        controller: _search,
-                        focusNode: _searchFocus,
-                        onTap: _openSearch,
-                        onSubmitted: _submitSearch,
-                        style: const TextStyle(fontSize: 14),
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          isDense: true,
-                          prefixIcon: const Icon(
-                            Icons.search_rounded,
-                            color: DesktopColors.brown,
-                            size: 21,
-                          ),
-                          suffixIcon: _searchOpen
-                              ? IconButton(
-                                  tooltip: _search.text.isEmpty
-                                      ? '关闭搜索'
-                                      : '清空搜索',
-                                  onPressed: _search.text.isEmpty
-                                      ? _closeSearch
-                                      : _clearSearch,
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                    color: DesktopColors.secondaryText,
-                                  ),
-                                )
-                              : null,
-                          hintText: '搜索桌游 / 机制 / 作者 / 玩法',
-                          hintStyle: const TextStyle(
-                            color: Color(0xFF998D83),
-                            fontSize: 14,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 11,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          CompositedTransformTarget(
-            link: _activityLink,
-            child: Badge(
-              isLabelVisible: widget.controller.unreadActivityCount > 0,
-              child: IconButton(
-                tooltip: '通知',
+  Widget _topBar({required bool compact, required bool narrow}) {
+    final metrics = DesktopMetricsScope.of(context);
+    return SizedBox(
+      key: const ValueKey<String>('desktop-top-bar'),
+      height: metrics.px(104),
+      child: Padding(
+        padding: metrics.insets(const EdgeInsets.fromLTRB(20, 30, 18, 12)),
+        child: Row(
+          children: [
+            if (narrow) ...[
+              IconButton(
+                key: const ValueKey<String>('desktop-open-navigation'),
+                tooltip: '打开导航',
+                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 icon: const Icon(
-                  Icons.notifications_none_rounded,
+                  Icons.menu_rounded,
                   color: DesktopColors.brown,
                 ),
-                onPressed: _openActivityCenter,
               ),
-            ),
-          ),
-          if (!narrow) const SizedBox(width: 11),
-          if (!narrow)
-            InkWell(
-              onTap: () => _unavailable('个人中心'),
-              borderRadius: BorderRadius.circular(22),
-              child: Row(
-                children: [
-                  ClipOval(
-                    child: Image.asset(
-                      'assets/desktop/warmwood/avatar.png',
-                      width: 44,
-                      height: 44,
-                      fit: BoxFit.cover,
+              SizedBox(width: metrics.px(6)),
+            ],
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: metrics.px(780)),
+                  child: SizedBox(
+                    key: const ValueKey<String>('desktop-home-search-shell'),
+                    width: double.infinity,
+                    height: metrics.px(55),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      decoration: BoxDecoration(
+                        color: _searchFocus.hasFocus
+                            ? DesktopColors.card
+                            : const Color(0xFFF8F2EA),
+                        borderRadius: BorderRadius.circular(metrics.radius(26)),
+                        border: Border.all(
+                          color: _searchFocus.hasFocus
+                              ? DesktopColors.orange
+                              : Colors.transparent,
+                        ),
+                        boxShadow: _searchFocus.hasFocus
+                            ? <BoxShadow>[
+                                BoxShadow(
+                                  color: Color(0x14FF6846),
+                                  blurRadius: metrics.px(12),
+                                  offset: Offset(0, metrics.px(2)),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: TapRegion(
+                        groupId: _searchTapRegionGroup,
+                        child: TextField(
+                          key: const ValueKey<String>(
+                            'desktop-home-search-field',
+                          ),
+                          controller: _search,
+                          focusNode: _searchFocus,
+                          onTap: _openSearch,
+                          onSubmitted: _submitSearch,
+                          style: TextStyle(
+                            fontSize: metrics.font(19),
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF2F2924),
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            isDense: true,
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: DesktopColors.brown,
+                              size: metrics.px(25),
+                            ),
+                            suffixIcon: _searchOpen
+                                ? IconButton(
+                                    tooltip: _search.text.isEmpty
+                                        ? '关闭搜索'
+                                        : '清空搜索',
+                                    onPressed: _search.text.isEmpty
+                                        ? _closeSearch
+                                        : _clearSearch,
+                                    icon: Icon(
+                                      Icons.close_rounded,
+                                      size: metrics.px(20),
+                                      color: DesktopColors.secondaryText,
+                                    ),
+                                  )
+                                : null,
+                            hintText: '搜索桌游 / 机制 / 作者 / 玩法',
+                            hintStyle: TextStyle(
+                              color: Color(0xFFA89C90),
+                              fontSize: metrics.font(19),
+                              fontWeight: FontWeight.w400,
+                            ),
+                            contentPadding: EdgeInsets.symmetric(
+                              vertical: metrics.px(14),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  if (!compact)
-                    const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '—',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          '未开放',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: DesktopColors.secondaryText,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
+                ),
               ),
             ),
-        ],
+            CompositedTransformTarget(
+              link: _activityLink,
+              child: Badge(
+                isLabelVisible: widget.controller.unreadActivityCount > 0,
+                child: IconButton(
+                  tooltip: '通知',
+                  icon: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: DesktopColors.brown,
+                  ),
+                  onPressed: _openActivityCenter,
+                ),
+              ),
+            ),
+            if (!narrow) SizedBox(width: metrics.px(11)),
+            if (!narrow)
+              InkWell(
+                onTap: () => _unavailable('个人中心'),
+                borderRadius: BorderRadius.circular(metrics.radius(22)),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Image.asset(
+                        'assets/desktop/warmwood/avatar.png',
+                        width: metrics.px(44),
+                        height: metrics.px(44),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    SizedBox(width: metrics.px(10)),
+                    if (!compact)
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '—',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: metrics.font(16),
+                            ),
+                          ),
+                          SizedBox(height: metrics.px(2)),
+                          Text(
+                            '未开放',
+                            style: TextStyle(
+                              fontSize: metrics.font(11),
+                              color: DesktopColors.secondaryText,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

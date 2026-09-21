@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../models/app_language.dart';
 import '../../state/app_controller.dart';
+import 'desktop_responsive.dart';
 
 // Scoped reference colors: tmp/board_game_assistant_v4/lib/theme/app_theme.dart.
 abstract final class _SettingsColors {
@@ -94,15 +97,21 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                 const _StorageCard(onUnavailable: null),
                 const _PreferenceCard(preferences: {}, onPreference: null),
               ];
-              final wide = constraints.maxWidth >= 1050;
-              final columnWidth = (constraints.maxWidth - 26) / 3;
-              Widget row(int start) => Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              final columns = DesktopResponsive.settingsColumnsFor(
+                constraints.maxWidth,
+              );
+              const cardGap = 13.0;
+              final columnWidth = math.max(
+                0.0,
+                (constraints.maxWidth - cardGap * (columns - 1)) / columns,
+              );
+              final cardGrid = Wrap(
+                key: const ValueKey<String>('desktop-settings-card-grid'),
+                spacing: cardGap,
+                runSpacing: cardGap,
                 children: [
-                  for (var i = start; i < start + 3; i++) ...[
-                    if (i != start) const SizedBox(width: 13),
-                    SizedBox(width: columnWidth, child: cards[i]),
-                  ],
+                  for (final card in cards)
+                    SizedBox(width: columnWidth, child: card),
                 ],
               );
               final reset = const _OutlineButton(
@@ -125,25 +134,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (wide) ...[
-                    row(0),
-                    const SizedBox(height: 13),
-                    row(3),
-                    const SizedBox(height: 13),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(width: columnWidth, child: cards[6]),
-                        const SizedBox(width: 13),
-                        Expanded(child: cards[7]),
-                      ],
-                    ),
-                  ] else ...[
-                    for (final card in cards) ...[
-                      card,
-                      const SizedBox(height: 13),
-                    ],
-                  ],
+                  cardGrid,
                   const SizedBox(height: 11),
                   if (_saving)
                     const LinearProgressIndicator(
@@ -157,7 +148,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                         fontSize: 12,
                       ),
                     ),
-                  if (wide)
+                  if (columns == 3)
                     Row(
                       children: [
                         reset,

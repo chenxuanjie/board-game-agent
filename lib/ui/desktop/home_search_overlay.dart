@@ -7,6 +7,8 @@ import '../../state/app_controller.dart';
 import 'content_primitives.dart';
 import 'theme.dart';
 
+typedef SearchGameSelection = void Function(GameInfo game, String query);
+
 /// Search suggestions and results backed by the active game catalog.
 class DesktopHomeSearchOverlay extends StatelessWidget {
   const DesktopHomeSearchOverlay({
@@ -18,6 +20,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
     required this.tapRegionGroup,
     required this.onSelectQuery,
     required this.onClearHistory,
+    required this.onRemoveQuery,
     required this.onTapOutside,
     required this.onOpenGame,
     required this.onOpenRules,
@@ -32,8 +35,9 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
   final Object tapRegionGroup;
   final ValueChanged<String> onSelectQuery;
   final VoidCallback onClearHistory;
+  final ValueChanged<String> onRemoveQuery;
   final VoidCallback onTapOutside;
-  final ValueChanged<GameInfo> onOpenGame;
+  final SearchGameSelection onOpenGame;
   final ValueChanged<GameInfo> onOpenRules;
   final ValueChanged<GameInfo> onAskAi;
   final VoidCallback onViewAll;
@@ -123,10 +127,11 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
           runSpacing: 8,
           children: <Widget>[
             for (final String value in recentQueries)
-              _QueryChip(
+              _RecentQueryChip(
                 label: value,
                 icon: Icons.schedule_rounded,
                 onPressed: () => onSelectQuery(value),
+                onDeleted: () => onRemoveQuery(value),
               ),
           ],
         ),
@@ -181,7 +186,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
                     child: _RecommendationCard(
                       game: game,
                       controller: controller,
-                      onTap: () => onOpenGame(game),
+                      onTap: () => onOpenGame(game, query),
                     ),
                   ),
               ],
@@ -204,22 +209,16 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
       _SectionHeader(
         icon: Icons.search_rounded,
         title: '搜索结果（${results.length}）',
-        trailing: TextButton.icon(
-          onPressed: onViewAll,
-          icon: const Icon(Icons.chevron_right_rounded, size: 18),
-          label: const Text('打开游戏库'),
-          style: _linkStyle,
-        ),
       ),
       const SizedBox(height: 8),
       if (results.isEmpty)
-        _EmptyResult(query: query, onClear: () => onSelectQuery(''))
+        _EmptyResult(query: query)
       else ...<Widget>[
         for (final GameInfo game in results.take(8))
           _SearchResultRow(
             game: game,
             controller: controller,
-            onOpen: () => onOpenGame(game),
+            onOpen: () => onOpenGame(game, query),
             onOpenRules: () => onOpenRules(game),
             onAskAi: () => onAskAi(game),
           ),
@@ -359,18 +358,43 @@ class _SectionHeader extends StatelessWidget {
   );
 }
 
-class _QueryChip extends StatelessWidget {
-  const _QueryChip({required this.label, required this.onPressed, this.icon});
+class _RecentQueryChip extends StatelessWidget {
+  const _RecentQueryChip({
+    required this.label,
+    required this.onPressed,
+    required this.onDeleted,
+    required this.icon,
+  });
 
   final String label;
   final VoidCallback onPressed;
-  final IconData? icon;
+  final VoidCallback onDeleted;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => InputChip(
+    avatar: Icon(icon, size: 14, color: DesktopColors.secondaryText),
+    label: Text(label),
+    onPressed: onPressed,
+    onDeleted: onDeleted,
+    deleteIcon: const Icon(Icons.close_rounded, size: 14),
+    deleteButtonTooltipMessage: '删除最近搜索',
+    labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
+    visualDensity: VisualDensity.compact,
+    side: BorderSide.none,
+    backgroundColor: DesktopColors.soft,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+  );
+}
+
+class _QueryChip extends StatelessWidget {
+  const _QueryChip({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) => ActionChip(
-    avatar: icon == null
-        ? null
-        : Icon(icon, size: 14, color: DesktopColors.secondaryText),
     label: Text(label),
     onPressed: onPressed,
     labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
@@ -557,10 +581,9 @@ class _SearchResultRow extends StatelessWidget {
 }
 
 class _EmptyResult extends StatelessWidget {
-  const _EmptyResult({required this.query, required this.onClear});
+  const _EmptyResult({required this.query});
 
   final String query;
-  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -579,7 +602,6 @@ class _EmptyResult extends StatelessWidget {
         ),
         const SizedBox(height: 3),
         const Text('试试桌游名称、机制、作者或玩法关键词。', style: _metaStyle),
-        TextButton(onPressed: onClear, child: const Text('清空关键词')),
       ],
     ),
   );

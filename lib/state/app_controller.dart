@@ -25,12 +25,15 @@ import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/desktop_library_resource.dart';
+import '../models/favorite_game_record.dart';
 import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
 import '../models/game_resource.dart';
 import '../models/remote_library_update.dart';
 import '../models/remote_asset_file.dart';
+import '../models/recent_game_record.dart';
 import '../models/resolved_document.dart';
+import '../models/search_history_record.dart';
 import '../models/evidence_chunk.dart';
 import '../models/rule_citation.dart';
 import '../services/ai_service.dart';
@@ -118,7 +121,6 @@ class AppController extends ChangeNotifier {
   List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
-  String? _lastNotifiedLibraryLoadFailure;
   Future<void>? _libraryRefreshFuture;
   Future<void>? _libraryCacheLoadFuture;
   bool _libraryCacheLoadAttempted = false;
@@ -147,8 +149,16 @@ class AppController extends ChangeNotifier {
   Future<void> _conversationSaveQueue = Future<void>.value();
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
   Future<void> _activitySaveQueue = Future<void>.value();
+  Future<void> _favoriteMutationQueue = Future<void>.value();
+  Future<void> _searchHistoryMutationQueue = Future<void>.value();
+  Future<void> _recentGamesMutationQueue = Future<void>.value();
+  int _searchHistoryStateVersion = 0;
+  int _recentGamesStateVersion = 0;
+  final Map<String, DateTime> _favoriteCreatedAtBySlug = <String, DateTime>{};
   final Map<String, AiConversation> _conversations = <String, AiConversation>{};
   List<AppActivity> _activities = <AppActivity>[];
+  List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
+  List<RecentGameRecord> _recentGameRecords = <RecentGameRecord>[];
   String? _selectedConversationId;
   final Map<String, _ChatGenerationState> _generationStates =
       <String, _ChatGenerationState>{};
@@ -264,6 +274,45 @@ class AppController extends ChangeNotifier {
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
+  List<GameInfo> get favoriteGames {
+    final result = _games.where(isFavorite).toList(growable: true)
+      ..sort((left, right) {
+        final leftCreatedAt =
+            _favoriteCreatedAtBySlug[left.slug] ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        final rightCreatedAt =
+            _favoriteCreatedAtBySlug[right.slug] ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        return rightCreatedAt.compareTo(leftCreatedAt);
+      });
+    return List<GameInfo>.unmodifiable(result);
+  }
+
+  int get favoriteCount => _favoriteCreatedAtBySlug.length;
+  List<SearchHistoryRecord> get searchHistory =>
+      List<SearchHistoryRecord>.unmodifiable(_searchHistory);
+
+  List<RecentGameRecord> get recentGameRecords =>
+      List<RecentGameRecord>.unmodifiable(_recentGameRecords);
+
+  List<GameInfo> get recentlyViewedGames {
+    final gamesBySlug = <String, GameInfo>{
+      for (final game in _games) game.slug.trim().toLowerCase(): game,
+    };
+    return List<GameInfo>.unmodifiable(
+      _recentGameRecords
+          .map((record) => gamesBySlug[record.normalizedGameSlug])
+          .whereType<GameInfo>(),
+    );
+  }
+
+  int get recentlyViewedCount => _recentGameRecords.length;
+
+  bool isFavorite(GameInfo game) {
+    final slug = game.slug.trim();
+    return slug.isNotEmpty && _favoriteCreatedAtBySlug.containsKey(slug);
+  }
+
   GameInfo get featuredGame => selectedGame;
   GameInfo get selectedGame {
     if (_games.isEmpty) {
@@ -308,29 +357,34 @@ class AppController extends ChangeNotifier {
     String? conversationId,
     String? messageId,
   }) {
+    final DateTime occurredAt = createdAt ?? DateTime.now();
+    final AppActivity? existing = _activities
+        .where((AppActivity activity) => activity.kind == kind)
+        .cast<AppActivity?>()
+        .firstWhere(
+          (AppActivity? activity) => activity != null,
+          orElse: () => null,
+        );
     final AppActivity activity = AppActivity(
-      id: 'activity-${DateTime.now().microsecondsSinceEpoch}',
+      id: existing?.id ?? 'activity-${DateTime.now().microsecondsSinceEpoch}',
       kind: kind,
       title: title,
       message: message,
-      createdAt: createdAt ?? DateTime.now(),
+      createdAt: occurredAt,
       conversationId: conversationId,
       messageId: messageId,
     );
-    _activities = <AppActivity>[activity, ..._activities];
-    if (_activities.length > _maxActivities) {
-      _activities = _activities.sublist(0, _maxActivities);
-    }
+    _activities = latestActivitiesByKind(<AppActivity>[
+      activity,
+      ..._activities,
+    ], maxEntries: _maxActivities);
     _queueActivitySave();
     notifyListeners();
   }
 
   void _recordLibraryLoadFailure(String message) {
     final String normalized = message.trim();
-    if (normalized.isEmpty || normalized == _lastNotifiedLibraryLoadFailure) {
-      return;
-    }
-    _lastNotifiedLibraryLoadFailure = normalized;
+    if (normalized.isEmpty) return;
     _recordActivity(
       kind: AppActivityKind.libraryLoadFailed,
       title: copy.activityLibraryLoadFailedTitle,
@@ -527,7 +581,41 @@ class AppController extends ChangeNotifier {
     _aiApiConfig = await _preferencesService.loadAiApiConfig();
     _selectedConversationId = await _preferencesService
         .loadSelectedConversationId();
-    _activities = await _preferencesService.loadActivities();
+    final List<AppActivity> storedActivities = await _preferencesService
+        .loadActivities();
+    _activities = latestActivitiesByKind(
+      storedActivities,
+      maxEntries: _maxActivities,
+    );
+    if (_activities.length != storedActivities.length) {
+      _queueActivitySave();
+    }
+    try {
+      final records = await _preferencesService.loadFavoriteGames();
+      _favoriteCreatedAtBySlug
+        ..clear()
+        ..addEntries(
+          records.map(
+            (record) => MapEntry(record.gameSlug.trim(), record.createdAt),
+          ),
+        )
+        ..removeWhere((slug, _) => slug.isEmpty);
+    } catch (error) {
+      debugPrint('[favorites] load failed: $error');
+      _favoriteCreatedAtBySlug.clear();
+    }
+    try {
+      _searchHistory = await _preferencesService.loadSearchHistory();
+    } catch (error) {
+      debugPrint('[search-history] load failed: $error');
+      _searchHistory = <SearchHistoryRecord>[];
+    }
+    try {
+      _recentGameRecords = await _preferencesService.loadRecentGames();
+    } catch (error) {
+      debugPrint('[recent-games] load failed: $error');
+      _recentGameRecords = <RecentGameRecord>[];
+    }
     if (_isSaveableCustomPreset(_aiApiConfig)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
@@ -602,6 +690,188 @@ class AppController extends ChangeNotifier {
     );
     await _persistSelectedConversationId();
     notifyListeners();
+  }
+
+  Future<bool> toggleFavorite(GameInfo game) {
+    final Future<bool> operation = _favoriteMutationQueue
+        .catchError((Object _) {})
+        .then<bool>((_) => _toggleFavoriteNow(game));
+    _favoriteMutationQueue = operation.then<void>((_) {});
+    return operation;
+  }
+
+  Future<bool> _toggleFavoriteNow(GameInfo game) async {
+    final slug = game.slug.trim();
+    if (slug.isEmpty) return false;
+
+    final previous = Map<String, DateTime>.of(_favoriteCreatedAtBySlug);
+    if (_favoriteCreatedAtBySlug.containsKey(slug)) {
+      _favoriteCreatedAtBySlug.remove(slug);
+    } else {
+      _favoriteCreatedAtBySlug[slug] = DateTime.now().toUtc();
+    }
+    notifyListeners();
+
+    try {
+      await _preferencesService.saveFavoriteGames(
+        _favoriteCreatedAtBySlug.entries.map(
+          (entry) =>
+              FavoriteGameRecord(gameSlug: entry.key, createdAt: entry.value),
+        ),
+      );
+      return true;
+    } catch (error) {
+      _favoriteCreatedAtBySlug
+        ..clear()
+        ..addAll(previous);
+      notifyListeners();
+      debugPrint('[favorites] save failed: $error');
+      return false;
+    }
+  }
+
+  Future<bool> recordSearch(String value) {
+    final query = value.trim();
+    if (query.isEmpty) return Future<bool>.value(false);
+
+    final previous = List<SearchHistoryRecord>.from(_searchHistory);
+    final normalized = query.toLowerCase();
+    _searchHistory = <SearchHistoryRecord>[
+      SearchHistoryRecord(query: query, searchedAt: DateTime.now().toUtc()),
+      ..._searchHistory.where((record) => record.normalizedQuery != normalized),
+    ].take(PreferencesService.recentSearchesLimit).toList(growable: false);
+    final int stateVersion = ++_searchHistoryStateVersion;
+    notifyListeners();
+    return _queueSearchHistorySave(
+      snapshot: _searchHistory,
+      previous: previous,
+      stateVersion: stateVersion,
+    );
+  }
+
+  Future<bool> removeSearch(String query) {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) return Future<bool>.value(false);
+
+    final previous = List<SearchHistoryRecord>.from(_searchHistory);
+    _searchHistory = _searchHistory
+        .where((record) => record.normalizedQuery != normalized)
+        .toList(growable: false);
+    final int stateVersion = ++_searchHistoryStateVersion;
+    notifyListeners();
+    return _queueSearchHistorySave(
+      snapshot: _searchHistory,
+      previous: previous,
+      stateVersion: stateVersion,
+    );
+  }
+
+  Future<bool> clearSearchHistory() {
+    final previous = List<SearchHistoryRecord>.from(_searchHistory);
+    _searchHistory = <SearchHistoryRecord>[];
+    final int stateVersion = ++_searchHistoryStateVersion;
+    notifyListeners();
+    return _queueSearchHistorySave(
+      snapshot: _searchHistory,
+      previous: previous,
+      stateVersion: stateVersion,
+    );
+  }
+
+  Future<bool> _queueSearchHistorySave({
+    required List<SearchHistoryRecord> snapshot,
+    required List<SearchHistoryRecord> previous,
+    required int stateVersion,
+  }) {
+    final Future<void> write = _searchHistoryMutationQueue.then<void>(
+      (_) => _preferencesService.saveSearchHistory(snapshot),
+    );
+    final Future<bool> result = write.then<bool>(
+      (_) => true,
+      onError: (Object error, StackTrace stackTrace) {
+        if (_searchHistoryStateVersion == stateVersion) {
+          _searchHistory = previous;
+          notifyListeners();
+        }
+        debugPrint('[search-history] save failed: $error');
+        return false;
+      },
+    );
+    _searchHistoryMutationQueue = result.then<void>((_) {});
+    return result;
+  }
+
+  Future<bool> recordRecentlyViewed(GameInfo game) {
+    final slug = game.slug.trim();
+    if (slug.isEmpty) return Future<bool>.value(false);
+
+    final previous = List<RecentGameRecord>.from(_recentGameRecords);
+    final normalized = slug.toLowerCase();
+    _recentGameRecords = <RecentGameRecord>[
+      RecentGameRecord(gameSlug: slug, viewedAt: DateTime.now().toUtc()),
+      ..._recentGameRecords.where(
+        (record) => record.normalizedGameSlug != normalized,
+      ),
+    ].take(PreferencesService.recentGamesLimit).toList(growable: false);
+    final int stateVersion = ++_recentGamesStateVersion;
+    notifyListeners();
+    return _queueRecentGamesSave(
+      snapshot: _recentGameRecords,
+      previous: previous,
+      stateVersion: stateVersion,
+    );
+  }
+
+  Future<bool> removeRecentlyViewed(GameInfo game) {
+    final normalized = game.slug.trim().toLowerCase();
+    if (normalized.isEmpty) return Future<bool>.value(false);
+
+    final previous = List<RecentGameRecord>.from(_recentGameRecords);
+    _recentGameRecords = _recentGameRecords
+        .where((record) => record.normalizedGameSlug != normalized)
+        .toList(growable: false);
+    final int stateVersion = ++_recentGamesStateVersion;
+    notifyListeners();
+    return _queueRecentGamesSave(
+      snapshot: _recentGameRecords,
+      previous: previous,
+      stateVersion: stateVersion,
+    );
+  }
+
+  Future<bool> clearRecentlyViewed() {
+    final previous = List<RecentGameRecord>.from(_recentGameRecords);
+    _recentGameRecords = <RecentGameRecord>[];
+    final int stateVersion = ++_recentGamesStateVersion;
+    notifyListeners();
+    return _queueRecentGamesSave(
+      snapshot: _recentGameRecords,
+      previous: previous,
+      stateVersion: stateVersion,
+    );
+  }
+
+  Future<bool> _queueRecentGamesSave({
+    required List<RecentGameRecord> snapshot,
+    required List<RecentGameRecord> previous,
+    required int stateVersion,
+  }) {
+    final Future<void> write = _recentGamesMutationQueue.then<void>(
+      (_) => _preferencesService.saveRecentGames(snapshot),
+    );
+    final Future<bool> result = write.then<bool>(
+      (_) => true,
+      onError: (Object error, StackTrace stackTrace) {
+        if (_recentGamesStateVersion == stateVersion) {
+          _recentGameRecords = previous;
+          notifyListeners();
+        }
+        debugPrint('[recent-games] save failed: $error');
+        return false;
+      },
+    );
+    _recentGamesMutationQueue = result.then<void>((_) {});
+    return result;
   }
 
   Future<void> setColorScheme(ColorSchemeOption next) async {
@@ -1492,6 +1762,8 @@ class AppController extends ChangeNotifier {
     await _conversationSaveQueue;
     await _selectedConversationSaveQueue;
     await _activitySaveQueue;
+    await _searchHistoryMutationQueue;
+    await _recentGamesMutationQueue;
     await _speechService.cancelListening();
     await _ttsService.stop();
     _aiService.dispose();
@@ -2095,8 +2367,6 @@ class AppController extends ChangeNotifier {
       _libraryLoadError = index.warning;
       if (index.failedSlugs.isNotEmpty && index.warning != null) {
         _recordLibraryLoadFailure(index.warning!);
-      } else if (index.failedSlugs.isEmpty) {
-        _lastNotifiedLibraryLoadFailure = null;
       }
     } catch (error) {
       if (generation != _libraryRefreshGeneration) {

@@ -206,23 +206,10 @@ class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
                       boxShadow: <BoxShadow>[
                         BoxShadow(
                           color: _hovered
-                              ? const Color(0xE6000000)
-                              : const Color(0xA6000000),
-                          blurRadius: _hovered ? 42 : 14,
-                          offset: Offset(0, _hovered ? 22 : 4),
-                        ),
-                        BoxShadow(
-                          color: _hovered
-                              ? const Color(0x8C000000)
-                              : Colors.transparent,
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                        BoxShadow(
-                          color: _hovered
-                              ? const Color(0x4066C0F4)
-                              : Colors.transparent,
-                          blurRadius: 20,
+                              ? const Color(0x36000000)
+                              : const Color(0x1C000000),
+                          blurRadius: _hovered ? 18 : 8,
+                          offset: Offset(0, _hovered ? 8 : 3),
                         ),
                       ],
                     ),
@@ -269,12 +256,11 @@ class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: <Color>[
-                                      Color(0x14FFFFFF),
+                                      Color(0x0FFFFFFF),
                                       Colors.transparent,
-                                      Color(0x26000000),
-                                      Color(0x99000000),
+                                      Color(0x10000000),
                                     ],
-                                    stops: <double>[0, 0.4, 0.75, 1.0],
+                                    stops: <double>[0, 0.72, 1.0],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),

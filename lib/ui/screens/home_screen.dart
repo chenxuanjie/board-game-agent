@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -54,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool showAssetsLoadingBanner = controller.homeAssetsLoading;
     final query = _searchController.text.trim().toLowerCase();
     final games = controller.games.where((game) {
-      if (_favouritesOnly && game.id != 'puerto-rico') {
+      if (_favouritesOnly && !controller.isFavorite(game)) {
         return false;
       }
       if (query.isEmpty) {
@@ -179,6 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         game: game,
                         palette: palette,
                         onTap: () {
+                          unawaited(controller.recordRecentlyViewed(game));
                           controller.selectGame(game.id);
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -343,6 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) {
       return;
     }
+    setState(() {});
     final RemoteLibraryUpdate? next = widget.controller.pendingLibraryUpdate;
     if (next != null && !identical(next, _lastSeenUpdate)) {
       _lastSeenUpdate = next;

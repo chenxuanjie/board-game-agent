@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart';
@@ -19,8 +20,12 @@ import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/color_scheme_option.dart';
+import 'package:board_game_agent/models/desktop_library_resource.dart';
+import 'package:board_game_agent/models/favorite_game_record.dart';
 import 'package:board_game_agent/models/game_info.dart';
 import 'package:board_game_agent/models/remote_asset_file.dart';
+import 'package:board_game_agent/models/recent_game_record.dart';
+import 'package:board_game_agent/models/search_history_record.dart';
 import 'package:board_game_agent/services/ai_service.dart';
 import 'package:board_game_agent/services/game_manifest_service.dart';
 import 'package:board_game_agent/services/preferences_service.dart';
@@ -35,15 +40,18 @@ import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/home_pane.dart';
 import 'package:board_game_agent/ui/desktop/games_pane.dart';
+import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late AppController controller;
+  late _InMemoryPreferencesService preferences;
 
   setUp(() async {
-    controller = await _createController();
+    preferences = _InMemoryPreferencesService();
+    controller = await _createController(preferencesService: preferences);
     controller.selectGame('puerto-rico');
   });
   tearDown(() {
@@ -82,6 +90,9 @@ void main() {
       await _navigate(tester, '游戏库');
       expect(find.byType(DesktopGamesPane), findsOneWidget);
       expect(find.byType(DesktopHomePane), findsNothing);
+      expect(find.text('当前桌游'), findsNothing);
+      expect(find.text('桌游爱好者'), findsNothing);
+      expect(find.text('收藏总数'), findsNothing);
       for (final game in controller.games) {
         expect(
           find.byKey(ValueKey('desktop-poster-${game.id}')),
@@ -109,26 +120,147 @@ void main() {
     });
   }
 
-  testWidgets('unsupported sidebar routes display their own unavailable body', (
+  testWidgets('home right rail grids grow with a wider column', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    final profile = find.byKey(
+      const ValueKey<String>('desktop-home-profile-panel'),
+    );
+    final quick = find.byKey(
+      const ValueKey<String>('desktop-home-quick-panel'),
+    );
+    final baseProfileSize = tester.getSize(profile);
+    final baseQuickSize = tester.getSize(quick);
+
+    await tester.binding.setSurfaceSize(const Size(2560, 1440));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(profile).width, greaterThan(baseProfileSize.width));
+    expect(tester.getSize(profile).height, greaterThan(baseProfileSize.height));
+    expect(tester.getSize(quick).width, greaterThan(baseQuickSize.width));
+    expect(tester.getSize(quick).height, greaterThan(baseQuickSize.height));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('desktop top bar uses the enlarged baseline metrics', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
-    for (final label in ['排行榜', '我的收藏', '社区']) {
-      await _navigate(tester, label);
-      expect(find.byType(DesktopHomePane), findsNothing);
-      final title = find.text(label).evaluate().where((element) {
-        return element.findAncestorWidgetOfExactType<DesktopSidebar>() == null;
-      });
-      expect(title, hasLength(1));
-      final body = find
-          .ancestor(of: find.text(label).last, matching: find.byType(Column))
-          .first;
-      expect(
-        find.descendant(of: body, matching: find.text('未开放')),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-    }
+
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey<String>('desktop-top-bar')))
+          .height,
+      104,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('desktop-home-search-shell')),
+          )
+          .height,
+      55,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('hidden and unsupported desktop routes stay unavailable', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.text('排行榜'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.text('社区'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('desktop-sidebar-icon-sidebar_community.png'),
+      ),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('favorites page starts empty and links back to the library', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, '我的喜欢');
+    expect(find.byType(DesktopFavoritesPane), findsOneWidget);
+    expect(find.text('还没有喜欢的桌游'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('desktop-favorites-open-library')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGamesPane), findsOneWidget);
+    expect(find.byType(DesktopFavoritesPane), findsNothing);
+  });
+
+  testWidgets('home uses likes and activity terminology', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    expect(find.text('我的喜欢'), findsWidgets);
+    expect(find.text('我的活动'), findsOneWidget);
+    expect(find.text('我的投票'), findsNothing);
+    expect(find.text('我的收藏'), findsNothing);
+  });
+
+  test('favorite state is persisted and can be toggled repeatedly', () async {
+    final game = controller.games.first;
+    expect(await controller.toggleFavorite(game), isTrue);
+    expect(controller.isFavorite(game), isTrue);
+    expect(controller.favoriteCount, 1);
+    final stored = await preferences.loadFavoriteGames();
+    expect(stored, hasLength(1));
+    expect(stored.single.gameSlug, game.slug);
+    expect(stored.single.createdAt, isNotNull);
+    expect(await controller.toggleFavorite(game), isTrue);
+    expect(controller.isFavorite(game), isFalse);
+    expect(controller.favoriteCount, 0);
+  });
+
+  testWidgets('detail favorite button keeps its size while state crossfades', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1440, 800));
+    await _navigate(tester, '游戏库');
+    final game = controller.games.first;
+    await tester.tap(find.byKey(ValueKey<String>('desktop-poster-${game.id}')));
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(
+      const ValueKey<String>('desktop-detail-favorite-button'),
+    );
+    expect(button, findsOneWidget);
+    expect(tester.getSize(button), const Size(108, 48));
+    expect(
+      find.descendant(of: button, matching: find.text('喜欢')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      expect(await controller.toggleFavorite(controller.games.first), isTrue);
+    });
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getSize(button), const Size(108, 48));
+    expect(
+      find.descendant(of: button, matching: find.byType(AnimatedSwitcher)),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(tester.getSize(button), const Size(108, 48));
+    expect(controller.isFavorite(game), isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -143,6 +275,23 @@ void main() {
         find.byKey(const ValueKey<String>('desktop-sidebar-rail')),
         findsNothing,
       );
+      final fullSidebar = find.byKey(
+        const ValueKey<String>('desktop-sidebar-full'),
+      );
+      expect(tester.getSize(fullSidebar).width, 205);
+      final homeIcon = find.byKey(
+        const ValueKey<String>('desktop-sidebar-icon-sidebar_home.png'),
+      );
+      final homeLabel = find.descendant(
+        of: fullSidebar,
+        matching: find.text('首页'),
+      );
+      final fullHomeIconRect = tester.getRect(homeIcon);
+      expect(fullHomeIconRect.size, const Size.square(28));
+      expect(
+        tester.getTopLeft(homeLabel).dx - tester.getTopRight(homeIcon).dx,
+        closeTo(10, 0.1),
+      );
 
       await tester.binding.setSurfaceSize(const Size(1100, 700));
       await tester.pumpAndSettle();
@@ -150,6 +299,17 @@ void main() {
         find.byKey(const ValueKey<String>('desktop-sidebar-rail')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+        findsNothing,
+      );
+      final compactHomeIconRect = tester.getRect(homeIcon);
+      expect(compactHomeIconRect.size, fullHomeIconRect.size);
+      expect(
+        compactHomeIconRect.center.dx,
+        closeTo(fullHomeIconRect.center.dx, 0.5),
+      );
+      expect(compactHomeIconRect.top, closeTo(fullHomeIconRect.top, 0.5));
       expect(tester.takeException(), isNull);
 
       await tester.binding.setSurfaceSize(const Size(720, 700));
@@ -191,14 +351,14 @@ void main() {
   testWidgets(
     'library posters match legacy proportion and hover preview, then open Desktop details',
     (tester) async {
-      await _mount(tester, controller, const Size(1280, 800));
+      await _mount(tester, controller, const Size(1440, 800));
       await _navigate(tester, '游戏库');
       final GameInfo game = controller.games[1];
       final Finder poster = find.byKey(
         ValueKey<String>('desktop-poster-${game.id}'),
       );
       final Rect posterRect = tester.getRect(poster);
-      expect(posterRect.width / posterRect.height, closeTo(2 / 3, 0.005));
+      expect(posterRect.width / posterRect.height, closeTo(1 / 1.49, 0.005));
       expect(
         find.descendant(of: poster, matching: find.byType(AnimatedOpacity)),
         findsNothing,
@@ -222,9 +382,6 @@ void main() {
 
       await mouse.moveTo(Offset.zero);
       await tester.pump(const Duration(milliseconds: 130));
-      await tester.tap(poster);
-      await tester.pumpAndSettle();
-      expect(find.byType(DesktopGameDetailPane), findsNothing);
       await tester.tap(poster);
       await tester.pumpAndSettle();
       expect(
@@ -265,17 +422,163 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('library filter tabs update the selected state', (tester) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-quick-entry-rules')),
+    );
+    await tester.pumpAndSettle();
+
+    final allButton = find.widgetWithText(
+      TextButton,
+      controller.copy.desktopAll,
+    );
+    final faqButton = find.widgetWithText(
+      TextButton,
+      controller.copy.desktopFaq,
+    );
+    expect(allButton, findsOneWidget);
+    expect(faqButton, findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(allButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(faqButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNull,
+    );
+
+    await tester.tap(faqButton);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<TextButton>(allButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(faqButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNotNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'desktop library actions match category pills and animate menus',
+    (tester) async {
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, '游戏库');
+
+      final category = find.byKey(
+        const ValueKey<String>('desktop-library-category-0'),
+      );
+      final inactiveCategory = find.byKey(
+        const ValueKey<String>('desktop-library-category-1'),
+      );
+      final sort = find.byKey(
+        const ValueKey<String>('desktop-library-sort-action'),
+      );
+      final filter = find.byKey(
+        const ValueKey<String>('desktop-library-filter-action'),
+      );
+      expect(tester.getSize(category).height, 38);
+      expect(tester.getSize(sort).height, 38);
+      expect(tester.getSize(filter).height, 38);
+      expect(
+        tester.getTopLeft(sort).dy,
+        closeTo(tester.getTopLeft(category).dy, 0.1),
+      );
+      expect(
+        tester.getTopLeft(filter).dy,
+        closeTo(tester.getTopLeft(category).dy, 0.1),
+      );
+
+      TextStyle toolbarTextStyle(Finder control) => tester
+          .widget<Text>(
+            find.descendant(of: control, matching: find.byType(Text)),
+          )
+          .style!;
+
+      final selectedCategoryStyle = toolbarTextStyle(category);
+      final inactiveCategoryStyle = toolbarTextStyle(inactiveCategory);
+      final sortStyle = toolbarTextStyle(sort);
+      final filterStyle = toolbarTextStyle(filter);
+      expect(selectedCategoryStyle.fontSize, 13);
+      expect(selectedCategoryStyle.height, 1);
+      expect(selectedCategoryStyle.fontWeight, FontWeight.w700);
+      expect(inactiveCategoryStyle.fontWeight, FontWeight.w500);
+      expect(sortStyle.fontSize, inactiveCategoryStyle.fontSize);
+      expect(sortStyle.height, inactiveCategoryStyle.height);
+      expect(sortStyle.fontWeight, inactiveCategoryStyle.fontWeight);
+      expect(filterStyle.fontSize, inactiveCategoryStyle.fontSize);
+      expect(filterStyle.height, inactiveCategoryStyle.height);
+      expect(filterStyle.fontWeight, inactiveCategoryStyle.fontWeight);
+
+      final sortSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: sort, matching: find.byType(AnimatedContainer)),
+      );
+      final sortDecoration = sortSurface.decoration! as BoxDecoration;
+      expect(sortDecoration.borderRadius, BorderRadius.circular(20));
+      expect(sortSurface.duration, const Duration(milliseconds: 180));
+
+      await tester.tap(sort);
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(find.text('排序方式'), findsOneWidget);
+      final activeSortSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: sort, matching: find.byType(AnimatedContainer)),
+      );
+      expect(
+        (activeSortSurface.decoration! as BoxDecoration).gradient,
+        isNotNull,
+      );
+      expect(
+        toolbarTextStyle(sort).fontWeight,
+        selectedCategoryStyle.fontWeight,
+      );
+      final arrow = tester.widget<AnimatedRotation>(
+        find.descendant(of: sort, matching: find.byType(AnimatedRotation)),
+      );
+      expect(arrow.turns, 0.5);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('desktop-library-sort-option-catalog'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('排序方式'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('home search filters catalog data and opens a real game', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
     final GameInfo game = controller.games.first;
+    final String query = game.title.substring(0, 2);
     final Finder searchField = find.byKey(
       const ValueKey<String>('desktop-home-search-field'),
     );
 
     await tester.tap(searchField);
-    await tester.enterText(searchField, game.title);
+    await tester.enterText(searchField, query);
     await tester.pumpAndSettle();
 
     expect(
@@ -294,6 +597,92 @@ void main() {
       find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
       findsNothing,
     );
+    await tester.tap(find.byTooltip('返回首页'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
+    await tester.tap(searchField);
+    await tester.pumpAndSettle();
+    expect(find.text('最近搜索'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, query), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recently viewed games are shown on home and deduplicated', (
+    tester,
+  ) async {
+    final GameInfo first = controller.games[0];
+    final GameInfo second = controller.games[1];
+
+    unawaited(controller.recordRecentlyViewed(first));
+    unawaited(controller.recordRecentlyViewed(second));
+    unawaited(controller.recordRecentlyViewed(first));
+    await _mount(tester, controller, const Size(1280, 800), settle: false);
+    await tester.pump();
+
+    expect(controller.recentlyViewedGames.map((game) => game.slug), <String>[
+      first.slug,
+      second.slug,
+    ]);
+    expect(
+      find.byKey(ValueKey<String>('desktop-recent-game-${first.id}')),
+      findsOneWidget,
+    );
+    final firstTile = find.byKey(
+      ValueKey<String>('desktop-recent-game-${first.id}'),
+    );
+    final firstThumbnail = find.byKey(
+      ValueKey<String>('desktop-recent-thumbnail-${first.id}'),
+    );
+    expect(tester.getSize(firstTile).width, greaterThan(110));
+    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(150.1));
+    expect(
+      tester.getSize(firstThumbnail).width /
+          tester.getSize(firstThumbnail).height,
+      closeTo(1.46, 0.01),
+    );
+    final recentTitle = find.descendant(
+      of: firstTile,
+      matching: find.text(first.title),
+    );
+    expect(tester.widget<Text>(recentTitle).style?.fontSize, closeTo(13, 0.01));
+    expect(tester.widget<Text>(recentTitle).style?.fontWeight, FontWeight.w700);
+    final recentTime = find.descendant(
+      of: firstTile,
+      matching: find.textContaining('上次浏览：'),
+    );
+    expect(
+      tester.widget<Text>(recentTime).style?.fontSize,
+      closeTo(10.5, 0.01),
+    );
+    final recentHeader = find.byKey(
+      const ValueKey<String>('desktop-home-recent-header'),
+    );
+    final recentHeaderTitle = find.descendant(
+      of: recentHeader,
+      matching: find.text('最近浏览'),
+    );
+    expect(
+      tester.widget<Text>(recentHeaderTitle).style?.fontWeight,
+      FontWeight.w700,
+    );
+    expect(find.textContaining('上次浏览：'), findsNWidgets(2));
+    final recentPanel = find.byKey(
+      const ValueKey<String>('desktop-home-recent-panel'),
+    );
+    expect(
+      find.descendant(of: recentPanel, matching: find.text('未开放')),
+      findsNothing,
+    );
+
+    final secondTile = find.byKey(
+      ValueKey<String>('desktop-recent-game-${second.id}'),
+    );
+    await tester.ensureVisible(secondTile);
+    await tester.tap(secondTile);
+    await tester.pump();
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    expect(controller.recentlyViewedGames.first.slug, second.slug);
+    expect(find.byTooltip('返回首页'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -322,6 +711,50 @@ void main() {
         lessThan(1),
       );
 
+      final recommendationRects = [
+        for (final game in controller.games.take(5))
+          tester.getRect(
+            find.byKey(
+              ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+            ),
+          ),
+      ];
+      expect(recommendationRects, hasLength(5));
+      expect(recommendationRects.map((rect) => rect.top).toSet(), hasLength(1));
+      expect(recommendationRects.first.width, closeTo(140, 0.1));
+      expect(recommendationRects.first.height, closeTo(229, 0.1));
+      expect(
+        recommendationRects.first.width / recommendationRects.first.height,
+        closeTo(140 / 229, 0.001),
+      );
+
+      final firstCard = find.byKey(
+        ValueKey<String>(
+          'desktop-home-recommendation-card-${controller.games.first.id}',
+        ),
+      );
+      final title = find.descendant(
+        of: firstCard,
+        matching: find.text(controller.games.first.title),
+      );
+      final titleStyle = tester.widget<Text>(title).style!;
+      expect(titleStyle.fontSize, 15);
+      expect(titleStyle.fontWeight, FontWeight.w700);
+      expect(titleStyle.height, 1.1);
+      expect(
+        find.descendant(of: firstCard, matching: find.text('竞争')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: firstCard, matching: find.text('德式')),
+        findsOneWidget,
+      );
+      final ratingIcon = find.descendant(
+        of: firstCard,
+        matching: find.byIcon(Icons.star_rounded),
+      );
+      expect(tester.widget<Icon>(ratingIcon).size, 12.5);
+
       final GameInfo game = controller.games.first;
       await tester.tap(
         find.descendant(of: home, matching: find.text(game.title)).first,
@@ -338,7 +771,28 @@ void main() {
     },
   );
 
-  testWidgets('home search handles empty results and clears the query', (
+  testWidgets('home recommendation cards keep their ratio on wide windows', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1920, 1080));
+
+    final card = find.byKey(
+      ValueKey<String>(
+        'desktop-home-recommendation-card-${controller.games.first.id}',
+      ),
+    );
+    final rect = tester.getRect(card);
+    expect(rect.width / rect.height, closeTo(140 / 229, 0.001));
+
+    final title = find.descendant(
+      of: card,
+      matching: find.text(controller.games.first.title),
+    );
+    expect(tester.widget<Text>(title).style!.fontSize, closeTo(16.2, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home search handles empty results without inline clear action', (
     tester,
   ) async {
     await _mount(tester, controller, const Size(1280, 800));
@@ -350,9 +804,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('没有找到'), findsOneWidget);
+    expect(find.text('清空关键词'), findsNothing);
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('清空关键词'));
+    await tester.tap(find.byTooltip('清空搜索'));
     await tester.pumpAndSettle();
     expect(find.textContaining('没有找到'), findsNothing);
     expect(find.text('最近搜索'), findsOneWidget);
@@ -366,6 +821,22 @@ void main() {
       find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty search results do not show a game library action', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('desktop-home-search-field'),
+    );
+    await tester.tap(searchField);
+    await tester.enterText(searchField, '肯定不存在的桌游关键字');
+    await tester.pumpAndSettle();
+
+    expect(find.text('没有找到“肯定不存在的桌游关键字”'), findsOneWidget);
+    expect(find.text('打开游戏库'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -444,10 +915,8 @@ void main() {
     );
     await tester.tap(find.text('筛选'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(of: find.byType(AlertDialog), matching: find.text('5+')),
-    );
-    await tester.tap(find.text('应用'));
+    await tester.tap(find.text('5+'));
+    await tester.tap(find.text('应用筛选'));
     await tester.pumpAndSettle();
 
     expect(find.text('暂无符合条件的游戏'), findsNothing);
@@ -502,6 +971,41 @@ void main() {
       find.byKey(const ValueKey<String>('desktop-sidebar-art')),
       findsOneWidget,
     );
+    final sidebarArt = tester.widget<Image>(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+    );
+    expect(sidebarArt.fit, BoxFit.fitWidth);
+    expect(sidebarArt.alignment, Alignment.bottomCenter);
+    final sidebarRect = tester.getRect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-full')),
+    );
+    final sidebarArtRect = tester.getRect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+    );
+    final settingsItemRect = tester.getRect(
+      find.byKey(
+        const ValueKey<String>('desktop-sidebar-item-sidebar_settings.png'),
+      ),
+    );
+    expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
+    expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
+    expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
+    expect(settingsItemRect.bottom, lessThanOrEqualTo(sidebarArtRect.top));
+    expect(
+      sidebarArtRect.width / sidebarArtRect.height,
+      closeTo(971 / 1619, 0.005),
+    );
+    for (final asset in [
+      'sidebar_home.png',
+      'sidebar_library.png',
+      'sidebar_ai.png',
+      'sidebar_likes.png',
+      'sidebar_settings.png',
+    ]) {
+      final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
+      expect(icon, findsOneWidget);
+      expect(tester.getSize(icon), const Size(28, 28));
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -611,6 +1115,7 @@ Future<void> _mount(
   AppController controller,
   Size size, {
   VoidCallback? onOpenAbout,
+  bool settle = true,
 }) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.binding.setSurfaceSize(size);
@@ -624,7 +1129,11 @@ Future<void> _mount(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 500));
+  }
 }
 
 Future<void> _navigate(WidgetTester tester, String label) async {
@@ -646,10 +1155,14 @@ Future<void> _navigate(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-Future<AppController> _createController() async {
-  SharedPreferences.setMockInitialValues(<String, Object>{});
+Future<AppController> _createController({
+  PreferencesService? preferencesService,
+}) async {
+  if (preferencesService == null) {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  }
   final AppController controller = AppController(
-    preferencesService: PreferencesService(),
+    preferencesService: preferencesService ?? PreferencesService(),
     aiService: _FakeAiService(),
     gameManifestService: GameManifestService(),
     remoteAssetService: _NoNetworkAssetService(),
@@ -658,6 +1171,78 @@ Future<AppController> _createController() async {
   );
   await controller.reloadGames();
   return controller;
+}
+
+class _InMemoryPreferencesService extends PreferencesService {
+  Map<String, DateTime> _favoriteGames = <String, DateTime>{};
+  List<DesktopLibraryResource> _desktopLibraryResources =
+      <DesktopLibraryResource>[];
+  List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
+  List<RecentGameRecord> _recentGames = <RecentGameRecord>[];
+
+  @override
+  Future<void> clearSelectedConversationId() async {}
+
+  @override
+  Future<void> saveSelectedConversationId(String conversationId) async {}
+
+  @override
+  Future<List<FavoriteGameRecord>> loadFavoriteGames() async => _favoriteGames
+      .entries
+      .map(
+        (entry) =>
+            FavoriteGameRecord(gameSlug: entry.key, createdAt: entry.value),
+      )
+      .toList(growable: false);
+
+  @override
+  Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
+    _favoriteGames = <String, DateTime>{
+      for (final record in records) record.gameSlug: record.createdAt,
+    };
+  }
+
+  @override
+  Future<List<DesktopLibraryResource>> loadDesktopLibraryResources() async =>
+      List<DesktopLibraryResource>.unmodifiable(_desktopLibraryResources);
+
+  @override
+  Future<void> saveDesktopLibraryResources(
+    Iterable<DesktopLibraryResource> resources,
+  ) async {
+    _desktopLibraryResources = List<DesktopLibraryResource>.from(resources);
+  }
+
+  @override
+  Future<List<RecentGameRecord>> loadRecentGames() async =>
+      List<RecentGameRecord>.unmodifiable(_recentGames);
+
+  @override
+  Future<void> saveRecentGames(Iterable<RecentGameRecord> records) {
+    _recentGames = List<RecentGameRecord>.from(records);
+    return Future<void>.value();
+  }
+
+  @override
+  Future<List<SearchHistoryRecord>> loadSearchHistory() async =>
+      const <SearchHistoryRecord>[];
+
+  @override
+  Future<void> saveSearchHistory(Iterable<SearchHistoryRecord> records) async {
+    _searchHistory = List<SearchHistoryRecord>.from(records);
+  }
+
+  @override
+  Future<List<String>> loadRecentSearches() async =>
+      _searchHistory.map((record) => record.query).toList(growable: false);
+
+  @override
+  Future<void> saveRecentSearches(Iterable<String> queries) async {
+    final now = DateTime.now().toUtc();
+    _searchHistory = queries
+        .map((query) => SearchHistoryRecord(query: query, searchedAt: now))
+        .toList(growable: false);
+  }
 }
 
 class _NoNetworkAssetService extends RemoteAssetService {

@@ -1,11 +1,15 @@
 // Body layout adapted directly from the read-only Desktop reference.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../models/game_info.dart';
+import '../../models/recent_game_record.dart';
 import '../../state/app_controller.dart';
+import '../widgets/desktop_resolved_image.dart';
 import 'content_primitives.dart';
+import 'desktop_responsive.dart';
 import 'theme.dart';
 
 class DesktopHomePane extends StatelessWidget {
@@ -22,8 +26,9 @@ class DesktopHomePane extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: controller,
     builder: (context, _) {
+      final metrics = DesktopMetricsScope.of(context);
       final games = controller.games
-          .take(5)
+          .take(6)
           .map((g) => DesktopContentGame(g, controller))
           .toList();
       void action(String label) {
@@ -46,72 +51,169 @@ class DesktopHomePane extends StatelessWidget {
         }
       }
 
-      return DesktopContentColumns(
-        main: Column(
-          children: [
-            DesktopContentStatus(controller: controller),
-            if (!controller.hasGames)
-              TextButton(
-                onPressed: () => onNavigate('library'),
-                child: const Text('打开资料库'),
-              ),
-            _MainColumn(games: games, onUnavailable: action),
-          ],
-        ),
-        right: _RightColumn(onUnavailable: action),
-        rightWidth: 282,
+      final main = Column(
+        children: [
+          DesktopContentStatus(controller: controller),
+          if (!controller.hasGames)
+            TextButton(
+              onPressed: () => onNavigate('library'),
+              child: const Text('打开资料库'),
+            ),
+          _MainColumn(
+            controller: controller,
+            games: games,
+            onNavigate: onNavigate,
+            onOpenGame: onOpenGame,
+            onUnavailable: action,
+          ),
+        ],
+      );
+      final right = _RightColumn(
+        controller: controller,
+        onNavigate: onNavigate,
+        onUnavailable: action,
+      );
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = DesktopResponsive.homeUsesTwoColumns(
+            constraints.maxWidth,
+          );
+          if (!wide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [main, const SizedBox(height: 14), right],
+            );
+          }
+          final rightWidth = (constraints.maxWidth * 0.22)
+              .clamp(metrics.px(282), metrics.px(340))
+              .toDouble();
+          return DesktopContentColumns(
+            wide: true,
+            main: main,
+            right: right,
+            rightWidth: rightWidth,
+            gap: metrics.px(14),
+          );
+        },
       );
     },
   );
 }
 
 class _MainColumn extends StatelessWidget {
+  final AppController controller;
   final ValueChanged<String> onUnavailable;
+  final ValueChanged<String> onNavigate;
+  final ValueChanged<GameInfo> onOpenGame;
 
   final List<DesktopContentGame> games;
-  const _MainColumn({required this.onUnavailable, required this.games});
+  const _MainColumn({
+    required this.controller,
+    required this.onUnavailable,
+    required this.onNavigate,
+    required this.onOpenGame,
+    required this.games,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _HeroBanner(
-          onExplore: () => onUnavailable('开始探索'),
-          onPending: () => onUnavailable('即将开放'),
-          onOpenAssistant: () => onUnavailable('AI助手'),
+        LayoutBuilder(
+          builder: (context, constraints) => Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: DesktopResponsive.homeHeroWidthFor(constraints.maxWidth),
+              child: _HeroBanner(
+                onExplore: () => onUnavailable('开始探索'),
+                onPending: () => onUnavailable('即将开放'),
+                onOpenAssistant: () => onUnavailable('AI助手'),
+              ),
+            ),
+          ),
         ),
-        const SizedBox(height: 11),
+        SizedBox(height: metrics.px(11)),
         _SectionHeader(
           key: const ValueKey<String>('desktop-home-recommendation-header'),
           leading: SvgPicture.asset(
             'assets/desktop/home/flame_icon_hd.svg',
             key: const ValueKey<String>('desktop-home-library-flame'),
-            width: 25,
-            height: 25,
+            width: metrics.px(25),
+            height: metrics.px(25),
             semanticsLabel: '热门桌游',
           ),
           title: '今日推荐',
           subtitle: '已收录的桌游',
           onMore: () => onUnavailable('游戏库'),
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: metrics.px(10)),
         LayoutBuilder(
           builder: (context, constraints) {
-            const gap = 13.0;
-            final columns = (constraints.maxWidth / 145).floor().clamp(1, 5);
-            final cardWidth =
-                (constraints.maxWidth - gap * (columns - 1)) / columns;
-            return Wrap(
-              spacing: gap,
-              runSpacing: 13,
+            if (games.isEmpty) return const SizedBox.shrink();
+
+            final gap = metrics.px(13);
+            final minimumCardWidth = metrics.px(140);
+            final fiveCardMinimumWidth = minimumCardWidth * 5 + gap * 4;
+
+            if (constraints.maxWidth < fiveCardMinimumWidth) {
+              final visibleGames = games.take(5).toList();
+              return SingleChildScrollView(
+                key: const ValueKey<String>('desktop-home-recommendation-row'),
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < visibleGames.length; i++) ...[
+                      if (i > 0) SizedBox(width: gap),
+                      SizedBox(
+                        width: minimumCardWidth,
+                        child: _GameCard(
+                          key: ValueKey<String>(
+                            'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                          ),
+                          game: visibleGames[i],
+                          onTap: () => onUnavailable(visibleGames[i].title),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }
+
+            final desiredCount = DesktopResponsive.homeRecommendationCountFor(
+              constraints.maxWidth,
+            );
+            final count = desiredCount < games.length
+                ? desiredCount
+                : games.length;
+            final fittedCount =
+                count > 5 &&
+                    constraints.maxWidth <
+                        minimumCardWidth * count + gap * (count - 1)
+                ? 5
+                : count;
+            final visibleGames = games.take(fittedCount).toList();
+            final cardWidth = DesktopResponsive.homeRecommendationCardWidthFor(
+              constraints.maxWidth,
+              gap: gap,
+              minimumWidth: minimumCardWidth,
+              count: fittedCount,
+            );
+            return Row(
+              key: const ValueKey<String>('desktop-home-recommendation-row'),
               children: [
-                for (var i = 0; i < games.length; i++) ...[
+                for (var i = 0; i < visibleGames.length; i++) ...[
+                  if (i > 0) SizedBox(width: gap),
                   SizedBox(
                     width: cardWidth,
                     child: _GameCard(
-                      game: games[i],
-                      onTap: () => onUnavailable(games[i].title),
+                      key: ValueKey<String>(
+                        'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                      ),
+                      game: visibleGames[i],
+                      onTap: () => onUnavailable(visibleGames[i].title),
                     ),
                   ),
                 ],
@@ -119,14 +221,18 @@ class _MainColumn extends StatelessWidget {
             );
           },
         ),
-        const SizedBox(height: 13),
+        SizedBox(height: metrics.px(13)),
         LayoutBuilder(
           builder: (context, constraints) {
             if (constraints.maxWidth < 600) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _RecentCard(onUnavailable: onUnavailable),
+                  _RecentCard(
+                    controller: controller,
+                    onMore: () => onNavigate('games'),
+                    onOpenGame: onOpenGame,
+                  ),
                   const SizedBox(height: 12),
                   _CommunityCard(onUnavailable: onUnavailable),
                 ],
@@ -138,9 +244,13 @@ class _MainColumn extends StatelessWidget {
               children: [
                 SizedBox(
                   width: leftWidth,
-                  child: _RecentCard(onUnavailable: onUnavailable),
+                  child: _RecentCard(
+                    controller: controller,
+                    onMore: () => onNavigate('games'),
+                    onOpenGame: onOpenGame,
+                  ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: metrics.px(12)),
                 Expanded(child: _CommunityCard(onUnavailable: onUnavailable)),
               ],
             );
@@ -329,6 +439,8 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback onMore;
+  final FontWeight titleWeight;
+  final double? titleScaleCap;
 
   const _SectionHeader({
     super.key,
@@ -338,32 +450,40 @@ class _SectionHeader extends StatelessWidget {
     required this.title,
     this.subtitle,
     required this.onMore,
+    this.titleWeight = FontWeight.w800,
+    this.titleScaleCap,
   }) : assert(leading != null || icon != null);
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    final titleSize = titleScaleCap == null
+        ? metrics.font(19)
+        : (19 * math.min(titleScaleCap!, math.max(1, metrics.scale)))
+              .toDouble();
     return SizedBox(
-      height: 32,
+      height: metrics.px(32),
       child: Row(
         children: [
           SizedBox(
-            width: 25,
-            height: 25,
-            child: leading ?? Icon(icon, size: 25, color: iconColor),
+            width: metrics.px(25),
+            height: metrics.px(25),
+            child:
+                leading ?? Icon(icon, size: metrics.px(25), color: iconColor),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: metrics.px(8)),
           Text(
             title,
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+            style: TextStyle(fontSize: titleSize, fontWeight: titleWeight),
           ),
           if (subtitle != null) ...[
-            const SizedBox(width: 12),
+            SizedBox(width: metrics.px(12)),
             Expanded(
               child: Text(
                 subtitle!,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
+                style: TextStyle(
+                  fontSize: metrics.font(12),
                   color: DesktopColors.secondaryText,
                 ),
               ),
@@ -392,6 +512,7 @@ class _TextLinkState extends State<_TextLink> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hover = true),
@@ -405,14 +526,14 @@ class _TextLinkState extends State<_TextLink> {
               widget.label,
               style: TextStyle(
                 color: hover ? DesktopColors.orange : const Color(0xFF6C625A),
-                fontSize: 12,
+                fontSize: metrics.font(12),
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 2),
+            SizedBox(width: metrics.px(2)),
             Icon(
               Icons.chevron_right_rounded,
-              size: 17,
+              size: metrics.px(17),
               color: hover ? DesktopColors.orange : const Color(0xFF6C625A),
             ),
           ],
@@ -426,121 +547,152 @@ class _GameCard extends StatelessWidget {
   final DesktopContentGame game;
   final VoidCallback onTap;
 
-  const _GameCard({required this.game, required this.onTap});
+  const _GameCard({super.key, required this.game, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    double cardFont(double value) =>
+        value * (1 + math.min(0.08, math.max(0, metrics.scale - 1)));
+
     return HoverSurface(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(9),
-      child: Container(
-        height: 229,
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: DesktopColors.card,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: const Color(0x0D8A6044)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0B7E4D2B),
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: double.infinity,
-                height: 116,
-                child: game.cover(),
+      borderRadius: BorderRadius.circular(metrics.radius(9)),
+      child: AspectRatio(
+        aspectRatio: 140 / 229,
+        child: Container(
+          padding: EdgeInsets.all(metrics.px(4)),
+          decoration: BoxDecoration(
+            color: DesktopColors.card,
+            borderRadius: BorderRadius.circular(metrics.radius(9)),
+            border: Border.all(color: const Color(0x0D8A6044)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x0B7E4D2B),
+                blurRadius: metrics.px(8),
+                offset: Offset(0, metrics.px(2)),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              game.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-              ),
-            ),
-            Text(
-              game.englishTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 8.6,
-                color: DesktopColors.secondaryText,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Row(
-              children: [
-                const Icon(
-                  Icons.star_rounded,
-                  color: Color(0xFFFFA400),
-                  size: 15,
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(metrics.radius(6)),
+                child: AspectRatio(
+                  aspectRatio: 132 / 116,
+                  child: SizedBox(width: double.infinity, child: game.cover()),
                 ),
-                Text(
-                  game.score,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+              ),
+              SizedBox(height: metrics.px(4)),
+              Text(
+                game.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'HarmonyOS Sans SC',
+                  fontFamilyFallback: const [
+                    'Microsoft YaHei UI',
+                    'Noto Sans CJK SC',
+                    'Segoe UI',
+                    'sans-serif',
+                  ],
+                  fontSize: cardFont(15),
+                  fontWeight: FontWeight.w700,
+                  height: 1.10,
+                  color: const Color(0xFF171412),
+                ),
+              ),
+              Text(
+                game.englishTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Segoe UI',
+                  fontSize: cardFont(8.8),
+                  fontWeight: FontWeight.w400,
+                  height: 1.15,
+                  letterSpacing: 0.12,
+                  color: const Color(0xFF7D756D),
+                ),
+              ),
+              SizedBox(height: metrics.px(4)),
+              Row(
+                children: [
+                  Icon(
+                    Icons.star_rounded,
+                    color: const Color(0xFFFFA400),
+                    size: metrics.px(12.5),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Row(
-              children: [
-                _Tag(game.tagA),
-                const SizedBox(width: 6),
-                _Tag(game.tagB),
-              ],
-            ),
-            const Spacer(),
-            Row(
-              children: [
-                const Icon(
-                  Icons.group_rounded,
-                  size: 11,
-                  color: Color(0xFF77706A),
-                ),
-                const SizedBox(width: 2),
-                Text(
-                  game.players,
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    color: Color(0xFF77706A),
-                  ),
-                ),
-                const Spacer(),
-                const Icon(
-                  Icons.schedule_rounded,
-                  size: 11,
-                  color: Color(0xFF77706A),
-                ),
-                const SizedBox(width: 2),
-                Flexible(
-                  child: Text(
-                    game.duration,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 9.2,
-                      color: Color(0xFF77706A),
+                  SizedBox(width: metrics.px(4)),
+                  Text(
+                    game.score,
+                    style: TextStyle(
+                      fontFamily: 'Segoe UI',
+                      fontSize: cardFont(12),
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                      color: const Color(0xFF171412),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              SizedBox(height: metrics.px(5)),
+              Row(
+                children: [
+                  _Tag(game.tagA),
+                  SizedBox(width: metrics.px(6)),
+                  _Tag(game.tagB),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Icon(
+                    Icons.group_rounded,
+                    size: metrics.px(11),
+                    color: const Color(0xFF77706A),
+                  ),
+                  SizedBox(width: metrics.px(2)),
+                  Flexible(
+                    child: Text(
+                      game.players,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Segoe UI',
+                        fontSize: cardFont(9.5),
+                        fontWeight: FontWeight.w400,
+                        height: 1.0,
+                        color: const Color(0xFF77706A),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.schedule_rounded,
+                    size: metrics.px(11),
+                    color: const Color(0xFF77706A),
+                  ),
+                  SizedBox(width: metrics.px(2)),
+                  Flexible(
+                    child: Text(
+                      game.duration,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Segoe UI',
+                        fontSize: cardFont(9.2),
+                        fontWeight: FontWeight.w400,
+                        height: 1.0,
+                        color: const Color(0xFF77706A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -553,48 +705,260 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: metrics.px(7),
+        vertical: metrics.px(2),
+      ),
       decoration: BoxDecoration(
         color: const Color(0xFFF5F2EE),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(metrics.radius(8)),
       ),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 9.5, color: Color(0xFF77706A)),
+        style: TextStyle(
+          fontFamily: 'HarmonyOS Sans SC',
+          fontFamilyFallback: const [
+            'Microsoft YaHei UI',
+            'Noto Sans CJK SC',
+            'Segoe UI',
+            'sans-serif',
+          ],
+          fontSize: math.min(
+            9.72,
+            9 * (1 + math.min(0.08, math.max(0, metrics.scale - 1))),
+          ),
+          fontWeight: FontWeight.w400,
+          height: 1.0,
+          color: const Color(0xFF77706A),
+        ),
       ),
     );
   }
 }
 
 class _RecentCard extends StatelessWidget {
-  final ValueChanged<String> onUnavailable;
-  const _RecentCard({required this.onUnavailable});
+  final AppController controller;
+  final VoidCallback onMore;
+  final ValueChanged<GameInfo> onOpenGame;
+
+  const _RecentCard({
+    required this.controller,
+    required this.onMore,
+    required this.onOpenGame,
+  });
+
   @override
-  Widget build(BuildContext context) => _Panel(
-    height: 171,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-      child: Column(
-        children: [
-          _SectionHeader(
-            icon: Icons.history_rounded,
-            iconColor: DesktopColors.orange,
-            title: '最近浏览',
-            onMore: () => onUnavailable('最近浏览'),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                '未开放',
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    final gamesBySlug = <String, GameInfo>{
+      for (final game in controller.games) game.slug.trim().toLowerCase(): game,
+    };
+    final recentItems = controller.recentGameRecords
+        .map(
+          (record) =>
+              (game: gamesBySlug[record.normalizedGameSlug], record: record),
+        )
+        .where((item) => item.game != null)
+        .take(3)
+        .toList();
+    return _Panel(
+      key: const ValueKey<String>('desktop-home-recent-panel'),
+      height: 171,
+      child: Padding(
+        padding: metrics.insets(const EdgeInsets.fromLTRB(12, 8, 12, 8)),
+        child: Column(
+          children: [
+            _SectionHeader(
+              key: const ValueKey<String>('desktop-home-recent-header'),
+              icon: Icons.history_rounded,
+              iconColor: DesktopColors.orange,
+              title: '最近浏览',
+              onMore: onMore,
+              titleWeight: FontWeight.w700,
+              titleScaleCap: 1.08,
+            ),
+            SizedBox(height: metrics.px(10)),
+            Expanded(
+              child: recentItems.isEmpty
+                  ? _RecentEmptyState(onTap: onMore)
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final metrics = DesktopMetricsScope.of(context);
+                        final gap = metrics.px(14);
+                        const slotCount = 3;
+                        final naturalSlotWidth =
+                            (constraints.maxWidth - gap * (slotCount - 1)) /
+                            slotCount;
+                        // Keep the preferred minimum when the panel has room,
+                        // but never overflow a narrow panel just to satisfy it.
+                        final slotWidth = naturalSlotWidth < metrics.px(118)
+                            ? naturalSlotWidth
+                            : math.min(metrics.px(150), naturalSlotWidth);
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (var i = 0; i < recentItems.length; i++) ...[
+                              if (i > 0) SizedBox(width: gap),
+                              SizedBox(
+                                width: slotWidth,
+                                child: _RecentGameTile(
+                                  key: ValueKey<String>(
+                                    'desktop-recent-game-${recentItems[i].game!.id}',
+                                  ),
+                                  game: recentItems[i].game!,
+                                  record: recentItems[i].record,
+                                  controller: controller,
+                                  onTap: () => onOpenGame(recentItems[i].game!),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentEmptyState extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _RecentEmptyState({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: InkWell(
+        key: const ValueKey<String>('desktop-home-recent-empty'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '还没有浏览记录',
                 style: TextStyle(color: DesktopColors.secondaryText),
               ),
-            ),
+              SizedBox(height: 4),
+              Text(
+                '去游戏库看看 →',
+                style: TextStyle(
+                  color: DesktopColors.orange,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _RecentGameTile extends StatelessWidget {
+  final GameInfo game;
+  final RecentGameRecord record;
+  final AppController controller;
+  final VoidCallback onTap;
+
+  const _RecentGameTile({
+    super.key,
+    required this.game,
+    required this.record,
+    required this.controller,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    final contentGame = DesktopContentGame(game, controller);
+    final imagePath = game.bannerAssetPath.trim().isNotEmpty
+        ? game.bannerAssetPath
+        : game.coverAssetPath;
+    return Semantics(
+      button: true,
+      label: '打开${contentGame.title}详情',
+      child: HoverSurface(
+        onTap: onTap,
+        lift: 1,
+        addShadow: false,
+        borderRadius: BorderRadius.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(metrics.radius(6)),
+              child: AspectRatio(
+                key: ValueKey<String>('desktop-recent-thumbnail-${game.id}'),
+                aspectRatio: 1.46,
+                child: DesktopResolvedImage(
+                  controller: controller,
+                  assetPath: imagePath,
+                  palette: controller.palette,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            SizedBox(height: metrics.px(5)),
+            Text(
+              contentGame.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'HarmonyOS Sans SC',
+                fontFamilyFallback: const [
+                  'Microsoft YaHei UI',
+                  'Noto Sans CJK SC',
+                  'Segoe UI',
+                  'sans-serif',
+                ],
+                fontSize: _recentFontSize(metrics, 13),
+                fontWeight: FontWeight.w700,
+                height: 1.12,
+                color: const Color(0xFF1D1916),
+              ),
+            ),
+            SizedBox(height: metrics.px(2)),
+            Text(
+              '上次浏览：${_formatRecentTime(record.viewedAt)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: _recentFontSize(metrics, 10.5),
+                fontWeight: FontWeight.w400,
+                height: 1.12,
+                color: const Color(0xFF8A817A),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+double _recentFontSize(DesktopMetrics metrics, double value) =>
+    value * math.min(1.08, math.max(1, metrics.scale));
+
+String _formatRecentTime(DateTime viewedAt, {DateTime? now}) {
+  final current = (now ?? DateTime.now()).toUtc();
+  final elapsed = current.difference(viewedAt.toUtc());
+  if (elapsed.isNegative || elapsed.inMinutes < 1) return '刚刚';
+  if (elapsed.inHours < 1) return '${elapsed.inMinutes} 分钟前';
+  if (elapsed.inDays < 1) return '${elapsed.inHours} 小时前';
+  if (elapsed.inDays < 30) return '${elapsed.inDays} 天前';
+  final localDate = viewedAt.toLocal();
+  return '${localDate.month} 月 ${localDate.day} 日';
 }
 
 class _CommunityCard extends StatelessWidget {
@@ -628,28 +992,39 @@ class _CommunityCard extends StatelessWidget {
 }
 
 class _RightColumn extends StatelessWidget {
+  final AppController controller;
+  final ValueChanged<String> onNavigate;
   final ValueChanged<String> onUnavailable;
 
-  const _RightColumn({required this.onUnavailable});
+  const _RightColumn({
+    required this.controller,
+    required this.onNavigate,
+    required this.onUnavailable,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Column(
       children: [
-        _ProfilePanel(onUnavailable: onUnavailable),
-        const SizedBox(height: 12),
+        _ProfilePanel(
+          controller: controller,
+          onNavigate: onNavigate,
+          onUnavailable: onUnavailable,
+        ),
+        SizedBox(height: metrics.px(12)),
         _MeetingPanel(onUnavailable: onUnavailable),
-        const SizedBox(height: 12),
+        SizedBox(height: metrics.px(12)),
         _QuickPanel(onUnavailable: onUnavailable),
-        const SizedBox(height: 12),
+        SizedBox(height: metrics.px(12)),
         HoverSurface(
           onTap: () => onUnavailable('桌游寄语'),
           lift: 1,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(metrics.radius(12)),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(metrics.radius(12)),
             child: SizedBox(
-              height: 104,
+              height: metrics.px(104),
               width: double.infinity,
               child: Image.asset(
                 'assets/desktop/warmwood/promo_art.png',
@@ -667,21 +1042,22 @@ class _Panel extends StatelessWidget {
   final Widget child;
   final double? height;
 
-  const _Panel({required this.child, this.height});
+  const _Panel({super.key, required this.child, this.height});
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     return Container(
-      height: height,
+      height: height == null ? null : metrics.px(height!),
       decoration: BoxDecoration(
         color: DesktopColors.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(metrics.radius(12)),
         border: Border.all(color: const Color(0x0E8A6044)),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: Color(0x0A855A3E),
-            blurRadius: 10,
-            offset: Offset(0, 2),
+            blurRadius: metrics.px(10),
+            offset: Offset(0, metrics.px(2)),
           ),
         ],
       ),
@@ -691,98 +1067,147 @@ class _Panel extends StatelessWidget {
 }
 
 class _ProfilePanel extends StatelessWidget {
+  final AppController controller;
+  final ValueChanged<String> onNavigate;
   final ValueChanged<String> onUnavailable;
 
-  const _ProfilePanel({required this.onUnavailable});
+  const _ProfilePanel({
+    required this.controller,
+    required this.onNavigate,
+    required this.onUnavailable,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const stats = [
-      ('-', '我的收藏', Icons.menu_book_rounded, Color(0xFFB34DE9)),
-      ('-', '心愿单', Icons.favorite_rounded, Color(0xFFFF5759)),
-      ('-', '游戏记录', Icons.bar_chart_rounded, Color(0xFF19C889)),
-      ('-', '想玩游戏', Icons.star_rounded, Color(0xFFFFA91C)),
+    final metrics = DesktopMetricsScope.of(context);
+    final stats = [
+      (
+        value: '${controller.favoriteCount}',
+        label: '我的喜欢',
+        assetPath: 'assets/desktop/home/profile_favorite.png',
+        onTap: () => onNavigate('favorites'),
+        key: const ValueKey<String>('desktop-home-favorites-entry'),
+      ),
+      (
+        // The wishlist data layer is not available yet, so show its real
+        // empty count instead of a placeholder value.
+        value: '0',
+        label: '想玩游戏',
+        assetPath: 'assets/desktop/home/profile_wishlist.png',
+        onTap: () => onUnavailable('想玩游戏'),
+        key: null,
+      ),
+      (
+        value: '${controller.conversations.length}',
+        label: 'AI对话',
+        assetPath: 'assets/desktop/home/profile_ai_chat.png',
+        onTap: () => onNavigate('assistant'),
+        key: const ValueKey<String>('desktop-home-ai-entry'),
+      ),
+      (
+        // Activity records have no persisted data in the current product scope.
+        value: '0',
+        label: '我的活动',
+        assetPath: 'assets/desktop/home/profile_vote.png',
+        onTap: () => onUnavailable('我的活动'),
+        key: null,
+      ),
     ];
-    return _Panel(
-      height: 255,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 15, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '你好！',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '个人中心 · 未开放',
-              style: TextStyle(
-                fontSize: 12,
-                color: DesktopColors.secondaryText,
-              ),
-            ),
-            const SizedBox(height: 13),
-            Expanded(
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 1.55,
+    return LayoutBuilder(
+      builder: (context, constraints) => _Panel(
+        key: const ValueKey<String>('desktop-home-profile-panel'),
+        height: _profilePanelHeightFor(constraints.maxWidth / metrics.scale),
+        child: Padding(
+          padding: metrics.insets(const EdgeInsets.fromLTRB(14, 15, 14, 14)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '你好！',
+                style: TextStyle(
+                  fontSize: metrics.font(18),
+                  fontWeight: FontWeight.w800,
                 ),
-                itemCount: stats.length,
-                itemBuilder: (context, i) {
-                  final s = stats[i];
-                  return HoverSurface(
-                    onTap: () => onUnavailable(s.$2),
-                    lift: 1,
-                    borderRadius: BorderRadius.circular(9),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F5EF),
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.$1,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 20,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  s.$2,
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    color: DesktopColors.secondaryText,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(s.$3, color: s.$4, size: 25),
-                        ],
-                      ),
-                    ),
-                  );
-                },
               ),
-            ),
-          ],
+              SizedBox(height: metrics.px(6)),
+              Text(
+                '个人中心',
+                style: TextStyle(
+                  fontSize: metrics.font(12),
+                  color: DesktopColors.secondaryText,
+                ),
+              ),
+              SizedBox(height: metrics.px(13)),
+              Expanded(
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: metrics.px(10),
+                    mainAxisSpacing: metrics.px(10),
+                    childAspectRatio: 1.55,
+                  ),
+                  itemCount: stats.length,
+                  itemBuilder: (context, i) {
+                    final s = stats[i];
+                    return HoverSurface(
+                      key: s.key,
+                      onTap: s.onTap,
+                      lift: 1,
+                      borderRadius: BorderRadius.circular(metrics.radius(9)),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: metrics.px(13),
+                          vertical: metrics.px(9),
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F5EF),
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(9),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.value,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: metrics.font(20),
+                                    ),
+                                  ),
+                                  SizedBox(height: metrics.px(3)),
+                                  Text(
+                                    s.label,
+                                    style: TextStyle(
+                                      fontSize: metrics.font(10.5),
+                                      color: DesktopColors.secondaryText,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Image.asset(
+                              s.assetPath,
+                              width: metrics.px(52),
+                              height: metrics.px(52),
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -793,30 +1218,33 @@ class _MeetingPanel extends StatelessWidget {
   final ValueChanged<String> onUnavailable;
   const _MeetingPanel({required this.onUnavailable});
   @override
-  Widget build(BuildContext context) => _Panel(
-    height: 157,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-      child: Column(
-        children: [
-          _SectionHeader(
-            icon: Icons.calendar_month_rounded,
-            iconColor: DesktopColors.orange,
-            title: '下次桌游聚会',
-            onMore: () => onUnavailable('下次桌游聚会'),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                '未开放',
-                style: TextStyle(color: DesktopColors.secondaryText),
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    return _Panel(
+      height: 157,
+      child: Padding(
+        padding: metrics.insets(const EdgeInsets.fromLTRB(10, 8, 10, 9)),
+        child: Column(
+          children: [
+            _SectionHeader(
+              icon: Icons.calendar_month_rounded,
+              iconColor: DesktopColors.orange,
+              title: '下次桌游聚会',
+              onMore: () => onUnavailable('下次桌游聚会'),
+            ),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  '未开放',
+                  style: TextStyle(color: DesktopColors.secondaryText),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _QuickPanel extends StatelessWidget {
@@ -826,99 +1254,144 @@ class _QuickPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     const actions = [
       ('随机推荐', '未开放', Icons.casino_rounded),
       ('找同城玩家', '未开放', Icons.group_rounded),
       ('规则查询', '快速查规则', Icons.menu_book_rounded),
       ('AI助手', '桌游问题随时问', Icons.lightbulb_rounded),
     ];
-    return _Panel(
-      height: 169,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.bolt_rounded, color: Color(0xFFFF6B42), size: 23),
-                SizedBox(width: 7),
-                Text(
-                  '快捷入口',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-            const SizedBox(height: 9),
-            Expanded(
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 9,
-                  mainAxisSpacing: 9,
-                  childAspectRatio: 2.35,
-                ),
-                itemCount: actions.length,
-                itemBuilder: (context, i) {
-                  final a = actions[i];
-                  return HoverSurface(
-                    key: a.$1 == '规则查询'
-                        ? const ValueKey<String>('home-quick-entry-rules')
-                        : null,
-                    onTap: () => onUnavailable(a.$1),
-                    lift: 1,
-                    borderRadius: BorderRadius.circular(9),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F5EF),
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(a.$3, color: const Color(0xFFFF5B43), size: 24),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  a.$1,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  a.$2,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: DesktopColors.secondaryText,
-                                    fontSize: 9.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+    return LayoutBuilder(
+      builder: (context, constraints) => _Panel(
+        key: const ValueKey<String>('desktop-home-quick-panel'),
+        height: _quickPanelHeightFor(constraints.maxWidth / metrics.scale),
+        child: Padding(
+          padding: metrics.insets(const EdgeInsets.all(10)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.bolt_rounded,
+                    color: Color(0xFFFF6B42),
+                    size: metrics.px(23),
+                  ),
+                  SizedBox(width: metrics.px(7)),
+                  Text(
+                    '快捷入口',
+                    style: TextStyle(
+                      fontSize: metrics.font(17),
+                      fontWeight: FontWeight.w800,
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
-            ),
-          ],
+              SizedBox(height: metrics.px(9)),
+              Expanded(
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: metrics.px(9),
+                    mainAxisSpacing: metrics.px(9),
+                    childAspectRatio: 2.35,
+                  ),
+                  itemCount: actions.length,
+                  itemBuilder: (context, i) {
+                    final a = actions[i];
+                    return HoverSurface(
+                      key: a.$1 == '规则查询'
+                          ? const ValueKey<String>('home-quick-entry-rules')
+                          : null,
+                      onTap: () => onUnavailable(a.$1),
+                      lift: 1,
+                      borderRadius: BorderRadius.circular(metrics.radius(9)),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: metrics.px(9),
+                          vertical: metrics.px(6),
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F5EF),
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(9),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              a.$3,
+                              color: const Color(0xFFFF5B43),
+                              size: metrics.px(24),
+                            ),
+                            SizedBox(width: metrics.px(8)),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    a.$1,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: metrics.font(12),
+                                    ),
+                                  ),
+                                  Text(
+                                    a.$2,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: DesktopColors.secondaryText,
+                                      fontSize: metrics.font(9.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+double _profilePanelHeightFor(double width) {
+  const baseWidth = 282.0;
+  const baseHeight = 255.0;
+  const horizontalPadding = 28.0;
+  const gridGap = 10.0;
+  const cardAspectRatio = 1.55;
+  final cardWidth = math.max(0, (width - horizontalPadding - gridGap) / 2);
+  final gridHeight = cardWidth / cardAspectRatio * 2 + gridGap;
+  final baseCardWidth = (baseWidth - horizontalPadding - gridGap) / 2;
+  final baseGridHeight = baseCardWidth / cardAspectRatio * 2 + gridGap;
+  return math.max(baseHeight, baseHeight + gridHeight - baseGridHeight);
+}
+
+double _quickPanelHeightFor(double width) {
+  const baseHeight = 169.0;
+  const horizontalPadding = 20.0;
+  const gridGap = 9.0;
+  const headingHeight = 23.0;
+  const headingGap = 9.0;
+  const cardAspectRatio = 2.35;
+  final cardWidth = math.max(0, (width - horizontalPadding - gridGap) / 2);
+  final gridHeight = cardWidth / cardAspectRatio * 2 + gridGap;
+  return math.max(
+    baseHeight,
+    horizontalPadding + headingHeight + headingGap + gridHeight,
+  );
 }

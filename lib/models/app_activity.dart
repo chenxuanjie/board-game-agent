@@ -2,8 +2,8 @@
 ///
 /// Activities are intentionally separate from live connectivity state. A
 /// connectivity status answers “what is true now?”, while an activity records
-/// “what happened and when?” so a refresh or completed AI answer does not get
-/// confused with a button that starts another refresh.
+/// the latest occurrence of one user-visible event type. Repeated occurrences
+/// update that row instead of growing an unbounded notification history.
 enum AppActivityKind {
   serviceRefresh,
   aiCompleted,
@@ -11,6 +11,34 @@ enum AppActivityKind {
   libraryUpdate,
   libraryLoadFailed,
   info,
+}
+
+/// Keeps the newest notification for each activity kind, ordered newest first.
+///
+/// This is also the migration boundary for notification lists saved by older
+/// versions, which could contain many rows of the same kind.
+List<AppActivity> latestActivitiesByKind(
+  Iterable<AppActivity> activities, {
+  int maxEntries = 50,
+}) {
+  if (maxEntries <= 0) return const <AppActivity>[];
+
+  final Map<AppActivityKind, AppActivity> latest =
+      <AppActivityKind, AppActivity>{};
+  for (final AppActivity activity in activities) {
+    final AppActivity? current = latest[activity.kind];
+    if (current == null || activity.createdAt.isAfter(current.createdAt)) {
+      latest[activity.kind] = activity;
+    }
+  }
+
+  final List<AppActivity> result = latest.values.toList(growable: false)
+    ..sort(
+      (AppActivity left, AppActivity right) =>
+          right.createdAt.compareTo(left.createdAt),
+    );
+  if (result.length <= maxEntries) return result;
+  return result.sublist(0, maxEntries);
 }
 
 class AppActivity {
