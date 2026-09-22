@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 
@@ -8,21 +9,23 @@ class DesktopSidebar extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final bool compact;
   final double? width;
+  final AppCopy copy;
 
   const DesktopSidebar({
     super.key,
     required this.selectedIndex,
     required this.onSelect,
+    required this.copy,
     this.compact = false,
     this.width,
   });
 
-  static const _items = <({String asset, String label})>[
-    (asset: 'sidebar_home.png', label: '首页'),
-    (asset: 'sidebar_library.png', label: '游戏库'),
-    (asset: 'sidebar_ai.png', label: 'AI助手'),
-    (asset: 'sidebar_likes.png', label: '我的喜欢'),
-    (asset: 'sidebar_settings.png', label: '设置'),
+  static const _items = <({String asset, String zh, String en})>[
+    (asset: 'sidebar_home.png', zh: '首页', en: 'Home'),
+    (asset: 'sidebar_library.png', zh: '游戏库', en: 'Game Library'),
+    (asset: 'sidebar_ai.png', zh: 'AI助手', en: 'AI Assistant'),
+    (asset: 'sidebar_likes.png', zh: '我的喜欢', en: 'My Likes'),
+    (asset: 'sidebar_settings.png', zh: '设置', en: 'Settings'),
   ];
   static const double _headerHeight = 152;
 
@@ -105,7 +108,7 @@ class DesktopSidebar extends StatelessWidget {
                                 top: metrics.px(5),
                               ),
                               child: Text(
-                                '桌游助手',
+                                copy.localized('桌游助手', 'Board Game Agent'),
                                 style: TextStyle(
                                   fontSize: metrics.font(25),
                                   fontWeight: FontWeight.w800,
@@ -120,7 +123,10 @@ class DesktopSidebar extends StatelessWidget {
                                 bottom: metrics.px(16),
                               ),
                               child: Text(
-                                '发现更大的桌游世界',
+                                copy.localized(
+                                  '发现更大的桌游世界',
+                                  'Discover more board games',
+                                ),
                                 style: TextStyle(
                                   color: DesktopColors.secondaryText,
                                   fontSize: metrics.font(13),
@@ -136,7 +142,7 @@ class DesktopSidebar extends StatelessWidget {
                       'desktop-sidebar-item-${_items[i].asset}',
                     ),
                     asset: _items[i].asset,
-                    label: _items[i].label,
+                    label: copy.localized(_items[i].zh, _items[i].en),
                     selected: i == selectedIndex,
                     compact: compact,
                     onTap: i == selectedIndex ? null : () => onSelect(i),

@@ -186,7 +186,7 @@ void main() {
         gamesDirectory.listSync().whereType<Directory>().toList()
           ..sort((a, b) => a.path.compareTo(b.path));
 
-    expect(gameDirectories.length, 21);
+    expect(gameDirectories.length, 22);
     for (final Directory directory in gameDirectories) {
       final String gameJson = File(
         '${directory.path}${Platform.pathSeparator}game.json',

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_about/app_about.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -21,6 +22,7 @@ import 'services/responses_compaction_store.dart';
 import 'services/ai_run_telemetry.dart';
 import 'services/responses_rules_workflow.dart';
 import 'state/app_controller.dart';
+import 'models/app_language.dart';
 import 'models/color_scheme_option.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
@@ -61,7 +63,9 @@ Future<void> main() async {
       ),
     ),
     gameManifestService: GameManifestService(),
-    remoteAssetService: RemoteAssetService(),
+    remoteAssetService: RemoteAssetService(
+      settingsProvider: () => updateSettingsController.saved,
+    ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
@@ -166,6 +170,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       navigatorKey: _navigatorKey,
       title: widget.controller.copy.appTitle,
       debugShowCheckedModeBanner: false,
+      locale: widget.controller.language == AppLanguage.en
+          ? const Locale('en')
+          : const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+      supportedLocales: const <Locale>[
+        Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+        Locale('en'),
+      ],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
           ? buildDesktopTheme()
           : AppTheme.buildTheme(widget.controller.palette),
@@ -202,12 +214,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
               if (nativeWindows) {
                 return DesktopWorkspace(
                   controller: widget.controller,
+                  webDavSettingsController: widget.updateSettingsController,
                   onOpenAbout: _openAbout,
                 );
               }
               if (wideWeb) {
                 return DesktopWorkspace(
                   controller: widget.controller,
+                  webDavSettingsController: widget.updateSettingsController,
                   onOpenAbout: _openAbout,
                 );
               }

@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   app_about:
     path: ../shared_packages/app_about
   app_ai_client:
@@ -19,6 +21,7 @@ dependencies:
   flutter_tts: ^4.2.3
   google_fonts: ^6.2.1
   http: ^1.6.0
+  package_info_plus: ^8.3.0
   flutter_markdown: ^0.7.7+1
   pdfrx: ^2.3.2
   path_provider: ^2.1.5
