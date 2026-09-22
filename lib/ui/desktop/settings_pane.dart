@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:webdav_settings/webdav_settings.dart';
 
 import '../../models/ai_api_config.dart';
 import '../../models/app_language.dart';
@@ -10,6 +11,7 @@ import '../../models/asset_source_config.dart';
 import '../../models/color_scheme_option.dart';
 import '../../models/connectivity_status.dart';
 import '../../services/desktop_ai_settings_service.dart';
+import '../../services/board_game_remote_layout.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/palette_registry.dart';
@@ -22,10 +24,12 @@ class DesktopSettingsPane extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.webDavSettingsController,
   });
 
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final WebDavSettingsController? webDavSettingsController;
 
   @override
   State<DesktopSettingsPane> createState() => _DesktopSettingsPaneState();
@@ -38,10 +42,16 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   late final TextEditingController _aiModel;
   late final TextEditingController _aiApiKey;
   late final TextEditingController _aiBaseUrl;
+  late final TextEditingController _webDavUrl;
+  late final TextEditingController _webDavUsername;
+  late final TextEditingController _webDavPassword;
   late String _aiProviderOptionId;
   bool _saving = false;
   bool _savingAi = false;
   bool _checkingSources = false;
+  bool _showWebDavPassword = false;
+  String? _webDavFeedback;
+  bool? _webDavFeedbackSucceeded;
   bool _showApiKey = false;
   String? _failure;
   String? _aiFeedback;
@@ -56,6 +66,11 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     _aiModel = TextEditingController(text: config.model);
     _aiApiKey = TextEditingController(text: config.apiKey);
     _aiBaseUrl = TextEditingController(text: config.baseUrl);
+    final WebDavSettings webDav =
+        widget.webDavSettingsController?.draft ?? const WebDavSettings();
+    _webDavUrl = TextEditingController(text: webDav.baseUrl);
+    _webDavUsername = TextEditingController(text: webDav.username);
+    _webDavPassword = TextEditingController(text: webDav.password);
     _aiProviderOptionId = _providerOptionId(config);
   }
 
@@ -65,6 +80,9 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     _aiModel.dispose();
     _aiApiKey.dispose();
     _aiBaseUrl.dispose();
+    _webDavUrl.dispose();
+    _webDavUsername.dispose();
+    _webDavPassword.dispose();
     super.dispose();
   }
 
@@ -117,6 +135,71 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _checkingSources = false);
+    }
+  }
+
+  Future<void> _saveAndCheckWebDav() async {
+    final WebDavSettingsController? settingsController =
+        widget.webDavSettingsController;
+    if (_checkingSources || settingsController == null) return;
+    setState(() {
+      _checkingSources = true;
+      _failure = null;
+      _webDavFeedback = null;
+      _webDavFeedbackSucceeded = null;
+    });
+    try {
+      final WebDavSettings draft = BoardGameRemoteLayout.normalizeSettings(
+        WebDavSettings(
+          mode: ExternalStorageMode.webDav,
+          baseUrl: _webDavUrl.text.trim(),
+          username: _webDavUsername.text.trim(),
+          password: _webDavPassword.text,
+        ),
+      );
+      settingsController.updateDraft(draft);
+      final WebDavConnectionTestResult testResult = await settingsController
+          .testConnection();
+      if (!testResult.isSuccess) {
+        if (!mounted) return;
+        setState(() {
+          _webDavFeedback = testResult.message;
+          _webDavFeedbackSucceeded = false;
+        });
+        return;
+      }
+      final WebDavSettings saved = await settingsController.enableWebDav();
+      final AssetSourceConfig source = AssetSourceConfig.normalize(
+        AssetSourceConfig(
+          id: 'configured_webdav',
+          name: 'WebDAV',
+          address: saved.baseUrl,
+          testUrl: saved.baseUrl,
+        ),
+      );
+      await widget.controller.saveAssetSourceConfigs(<AssetSourceConfig>[
+        source,
+      ]);
+      if (!mounted) return;
+      _webDavUrl.text = saved.baseUrl;
+      setState(() {
+        _webDavFeedback = widget.controller.copy.localized(
+          '连接成功，WebDAV 地址已保存。',
+          'Connected. The WebDAV address has been saved.',
+        );
+        _webDavFeedbackSucceeded = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _webDavFeedback = widget.controller.copy.localized(
+          'WebDAV 配置保存失败：$error',
+          'Could not save the WebDAV configuration: $error',
+        );
+        _webDavFeedbackSucceeded = false;
+      });
     } finally {
       if (mounted) setState(() => _checkingSources = false);
     }
@@ -304,8 +387,19 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
         _NotificationsCard(copy: widget.controller.copy),
         _SyncBackupCard(
           controller: widget.controller,
+          settingsController: widget.webDavSettingsController,
+          urlController: _webDavUrl,
+          usernameController: _webDavUsername,
+          passwordController: _webDavPassword,
           checking: _checkingSources,
-          onCheckSources: _checkResourceSources,
+          showPassword: _showWebDavPassword,
+          feedback: _webDavFeedback,
+          feedbackSucceeded: _webDavFeedbackSucceeded,
+          onTogglePassword: () =>
+              setState(() => _showWebDavPassword = !_showWebDavPassword),
+          onSaveAndCheck: widget.webDavSettingsController == null
+              ? _checkResourceSources
+              : _saveAndCheckWebDav,
         ),
         _AboutUpdatesCard(
           controller: widget.controller,
@@ -1136,13 +1230,29 @@ class _NotificationsCard extends StatelessWidget {
 class _SyncBackupCard extends StatelessWidget {
   const _SyncBackupCard({
     required this.controller,
+    required this.settingsController,
+    required this.urlController,
+    required this.usernameController,
+    required this.passwordController,
     required this.checking,
-    required this.onCheckSources,
+    required this.showPassword,
+    required this.feedback,
+    required this.feedbackSucceeded,
+    required this.onTogglePassword,
+    required this.onSaveAndCheck,
   });
 
   final AppController controller;
+  final WebDavSettingsController? settingsController;
+  final TextEditingController urlController;
+  final TextEditingController usernameController;
+  final TextEditingController passwordController;
   final bool checking;
-  final VoidCallback onCheckSources;
+  final bool showPassword;
+  final String? feedback;
+  final bool? feedbackSucceeded;
+  final VoidCallback onTogglePassword;
+  final VoidCallback onSaveAndCheck;
 
   @override
   Widget build(BuildContext context) {
@@ -1229,13 +1339,75 @@ class _SyncBackupCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: _px(context, 8)),
+          if (settingsController != null) ...<Widget>[
+            _EditableValueField(
+              fieldKey: const ValueKey<String>('desktop-settings-webdav-url'),
+              label: copy.localized('WebDAV 地址', 'WebDAV URL'),
+              controller: urlController,
+              enabled: !checking,
+            ),
+            SizedBox(height: _px(context, 8)),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _EditableValueField(
+                    fieldKey: const ValueKey<String>(
+                      'desktop-settings-webdav-username',
+                    ),
+                    label: copy.localized('账号', 'Username'),
+                    controller: usernameController,
+                    enabled: !checking,
+                  ),
+                ),
+                SizedBox(width: _px(context, 8)),
+                Expanded(
+                  child: _EditableValueField(
+                    fieldKey: const ValueKey<String>(
+                      'desktop-settings-webdav-password',
+                    ),
+                    label: copy.localized('密码', 'Password'),
+                    controller: passwordController,
+                    enabled: !checking,
+                    obscureText: !showPassword,
+                    trailing: IconButton(
+                      tooltip: showPassword
+                          ? copy.localized('隐藏密码', 'Hide password')
+                          : copy.localized('显示密码', 'Show password'),
+                      onPressed: checking ? null : onTogglePassword,
+                      icon: Icon(
+                        showPassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        size: _px(context, 18),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (feedback != null) ...<Widget>[
+              SizedBox(height: _px(context, 8)),
+              Text(
+                feedback!,
+                key: const ValueKey<String>('desktop-settings-webdav-feedback'),
+                style: TextStyle(
+                  fontSize: _font(context, 11),
+                  height: 1.3,
+                  color: feedbackSucceeded == true
+                      ? const Color(0xFF497461)
+                      : const Color(0xFF9F4D5D),
+                ),
+              ),
+            ],
+            SizedBox(height: _px(context, 8)),
+          ],
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
               key: const ValueKey<String>(
                 'desktop-settings-check-resource-sources',
               ),
-              onPressed: checking ? null : onCheckSources,
+              onPressed: checking ? null : onSaveAndCheck,
               icon: checking
                   ? SizedBox.square(
                       dimension: _px(context, 15),
@@ -1247,7 +1419,9 @@ class _SyncBackupCard extends StatelessWidget {
               label: Text(
                 checking
                     ? copy.localized('正在检测', 'Checking')
-                    : copy.localized('检测资料源', 'Check sources'),
+                    : settingsController == null
+                    ? copy.localized('检测资料源', 'Check sources')
+                    : copy.localized('保存并检测', 'Save & Test'),
               ),
               style: OutlinedButton.styleFrom(
                 minimumSize: Size(0, _px(context, 36)),

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/models/ai_answer_mode.dart';
 import 'package:board_game_agent/models/ai_api_config.dart';
@@ -1279,6 +1280,72 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('desktop WebDAV settings save into the shared backend', (
+    tester,
+  ) async {
+    final _MemoryWebDavSettingsStore store = _MemoryWebDavSettingsStore(
+      const WebDavSettings(
+        mode: ExternalStorageMode.webDav,
+        baseUrl: 'https://old.example.com/friend/',
+        username: 'old-user',
+        password: 'old-password',
+      ),
+    );
+    final WebDavSettingsController webDav = WebDavSettingsController(
+      store: store,
+      connectionTester: const _SuccessfulWebDavConnectionTester(),
+    );
+    await webDav.load();
+    addTearDown(webDav.dispose);
+
+    await _mount(
+      tester,
+      controller,
+      const Size(1280, 800),
+      webDavSettingsController: webDav,
+    );
+    await _navigate(tester, '设置');
+
+    final Finder saveButton = find.byKey(
+      const ValueKey<String>('desktop-settings-check-resource-sources'),
+    );
+    await tester.ensureVisible(saveButton);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('desktop-settings-webdav-url')),
+      'https://dav.example.com/friend/',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('desktop-settings-webdav-username')),
+      'desktop-user',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('desktop-settings-webdav-password')),
+      'desktop-password',
+    );
+    await tester.tap(saveButton);
+    await tester.pump();
+    for (
+      int attempt = 0;
+      attempt < 20 &&
+          find
+              .byKey(const ValueKey<String>('desktop-settings-webdav-feedback'))
+              .evaluate()
+              .isEmpty;
+      attempt++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    expect(store.value?.baseUrl, 'https://dav.example.com/friend/');
+    expect(store.value?.username, 'desktop-user');
+    expect(store.value?.password, 'desktop-password');
+    expect(controller.assetSourceConfigs, hasLength(1));
+    expect(
+      controller.assetSourceConfigs.single.testUrl,
+      'https://dav.example.com/friend/',
+    );
+  });
+
   test(
     'desktop AI settings service persists and checks all card fields',
     () async {
@@ -1358,6 +1425,7 @@ Future<void> _mount(
   Size size, {
   VoidCallback? onOpenAbout,
   bool settle = true,
+  WebDavSettingsController? webDavSettingsController,
 }) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.binding.setSurfaceSize(size);
@@ -1366,6 +1434,7 @@ Future<void> _mount(
       theme: buildDesktopTheme(),
       home: DesktopWorkspace(
         controller: controller,
+        webDavSettingsController: webDavSettingsController,
         onOpenAbout: onOpenAbout ?? () {},
         enableNativeWindowControls: false,
       ),
@@ -1376,6 +1445,28 @@ Future<void> _mount(
   } else {
     await tester.pump(const Duration(milliseconds: 500));
   }
+}
+
+class _MemoryWebDavSettingsStore implements WebDavSettingsStore {
+  _MemoryWebDavSettingsStore(this.value);
+
+  WebDavSettings? value;
+
+  @override
+  Future<WebDavSettings?> load() async => value;
+
+  @override
+  Future<void> save(WebDavSettings settings) async {
+    value = settings;
+  }
+}
+
+class _SuccessfulWebDavConnectionTester implements WebDavConnectionTester {
+  const _SuccessfulWebDavConnectionTester();
+
+  @override
+  Future<WebDavConnectionTestResult> test(WebDavSettings settings) async =>
+      const WebDavConnectionTestResult.success();
 }
 
 Future<void> _navigate(WidgetTester tester, String label) async {

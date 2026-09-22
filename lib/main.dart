@@ -63,7 +63,9 @@ Future<void> main() async {
       ),
     ),
     gameManifestService: GameManifestService(),
-    remoteAssetService: RemoteAssetService(),
+    remoteAssetService: RemoteAssetService(
+      settingsProvider: () => updateSettingsController.saved,
+    ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
@@ -212,12 +214,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
               if (nativeWindows) {
                 return DesktopWorkspace(
                   controller: widget.controller,
+                  webDavSettingsController: widget.updateSettingsController,
                   onOpenAbout: _openAbout,
                 );
               }
               if (wideWeb) {
                 return DesktopWorkspace(
                   controller: widget.controller,
+                  webDavSettingsController: widget.updateSettingsController,
                   onOpenAbout: _openAbout,
                 );
               }

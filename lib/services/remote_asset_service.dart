@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_storage/webdav_storage.dart';
+import 'package:webdav_settings/webdav_settings.dart';
 
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
@@ -17,18 +18,22 @@ import 'board_game_remote_layout.dart';
 import 'board_game_remote_credentials.dart';
 
 class RemoteAssetService {
-  RemoteAssetService({http.Client? client})
-    : _client =
-          client ??
-          (kIsWeb
-              ? http.Client()
-              : IOClient(
-                  HttpClient()
-                    ..badCertificateCallback =
-                        (X509Certificate cert, String host, int port) => true,
-                ));
+  RemoteAssetService({
+    http.Client? client,
+    WebDavSettings Function()? settingsProvider,
+  }) : _settingsProvider = settingsProvider,
+       _client =
+           client ??
+           (kIsWeb
+               ? http.Client()
+               : IOClient(
+                   HttpClient()
+                     ..badCertificateCallback =
+                         (X509Certificate cert, String host, int port) => true,
+                 ));
 
   final http.Client _client;
+  final WebDavSettings Function()? _settingsProvider;
 
   static const String _versionManifestFileName = '_asset_versions.json';
 
@@ -325,11 +330,13 @@ class RemoteAssetService {
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
       throw ArgumentError.value(source.testUrl, 'source.testUrl');
     }
+    final WebDavSettings credentials = _webDavSettings();
+    final String username = credentials.username.trim();
     final WebDavStorageClient storage = WebDavStorageClient(
       config: WebDavConfig(
         baseUri: BoardGameRemoteLayout.normalizeBaseUri(parsed),
-        username: BoardGameRemoteCredentials.username,
-        password: BoardGameRemoteCredentials.password,
+        username: username.isEmpty ? null : username,
+        password: username.isEmpty ? null : credentials.password,
         timeout: const Duration(seconds: 8),
       ),
       httpClient: _client,
@@ -539,11 +546,22 @@ class RemoteAssetService {
         !isOtherStoragePath(normalized);
   }
 
+  WebDavSettings _webDavSettings() {
+    final WebDavSettings? configured = _settingsProvider?.call();
+    if (configured != null && configured.isComplete) return configured;
+    return const WebDavSettings(
+      username: BoardGameRemoteCredentials.username,
+      password: BoardGameRemoteCredentials.password,
+    );
+  }
+
   Future<Map<String, String>> _headers() async {
+    final WebDavSettings settings = _webDavSettings();
+    if (settings.username.trim().isEmpty || settings.password.isEmpty) {
+      return const <String, String>{};
+    }
     final String encoded = base64Encode(
-      utf8.encode(
-        '${BoardGameRemoteCredentials.username}:${BoardGameRemoteCredentials.password}',
-      ),
+      utf8.encode('${settings.username.trim()}:${settings.password}'),
     );
     return <String, String>{'Authorization': 'Basic $encoded'};
   }

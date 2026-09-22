@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:webdav_settings/webdav_settings.dart';
 import '../../models/ai_conversation.dart';
 import '../../models/app_activity.dart';
 import '../../models/desktop_library_resource.dart';
@@ -30,10 +31,12 @@ class DesktopWorkspace extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.webDavSettingsController,
     this.enableNativeWindowControls = true,
   });
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final WebDavSettingsController? webDavSettingsController;
   final bool enableNativeWindowControls;
   @override
   State<DesktopWorkspace> createState() => _DesktopWorkspaceState();
@@ -633,6 +636,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             ),
                             'settings' => DesktopSettingsPane(
                               controller: widget.controller,
+                              webDavSettingsController:
+                                  widget.webDavSettingsController,
                               onOpenAbout: widget.onOpenAbout,
                             ),
                             _ => SizedBox(
