@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -8,6 +9,7 @@ import '../../models/app_language.dart';
 import '../../models/asset_source_config.dart';
 import '../../models/color_scheme_option.dart';
 import '../../models/connectivity_status.dart';
+import '../../services/desktop_ai_settings_service.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/palette_registry.dart';
@@ -19,12 +21,10 @@ class DesktopSettingsPane extends StatefulWidget {
   const DesktopSettingsPane({
     super.key,
     required this.controller,
-    required this.onOpenExistingSettings,
     required this.onOpenAbout,
   });
 
   final AppController controller;
-  final VoidCallback onOpenExistingSettings;
   final VoidCallback onOpenAbout;
 
   @override
@@ -33,10 +33,40 @@ class DesktopSettingsPane extends StatefulWidget {
 
 class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   late final Future<String> _version = _loadVersion();
+  late final DesktopAiSettingsService _desktopAiSettings;
+  late final TextEditingController _aiProvider;
+  late final TextEditingController _aiModel;
+  late final TextEditingController _aiApiKey;
+  late final TextEditingController _aiBaseUrl;
+  late String _aiProviderOptionId;
   bool _saving = false;
+  bool _savingAi = false;
   bool _checkingSources = false;
   bool _showApiKey = false;
   String? _failure;
+  String? _aiFeedback;
+  bool? _aiFeedbackSucceeded;
+
+  @override
+  void initState() {
+    super.initState();
+    _desktopAiSettings = DesktopAiSettingsService(widget.controller);
+    final AiApiConfig config = widget.controller.aiApiConfig;
+    _aiProvider = TextEditingController(text: config.name);
+    _aiModel = TextEditingController(text: config.model);
+    _aiApiKey = TextEditingController(text: config.apiKey);
+    _aiBaseUrl = TextEditingController(text: config.baseUrl);
+    _aiProviderOptionId = _providerOptionId(config);
+  }
+
+  @override
+  void dispose() {
+    _aiProvider.dispose();
+    _aiModel.dispose();
+    _aiApiKey.dispose();
+    _aiBaseUrl.dispose();
+    super.dispose();
+  }
 
   Future<String> _loadVersion() async {
     try {
@@ -92,6 +122,143 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     }
   }
 
+  Future<void> _saveAndCheckAi() async {
+    if (_savingAi) return;
+    setState(() {
+      _savingAi = true;
+      _aiFeedback = null;
+      _aiFeedbackSucceeded = null;
+    });
+    try {
+      final DesktopAiSettingsResult result = await _desktopAiSettings
+          .saveAndCheck(
+            DesktopAiSettingsDraft(
+              provider: _aiProvider.text,
+              model: _aiModel.text,
+              apiKey: _aiApiKey.text,
+              baseUrl: _aiBaseUrl.text,
+            ),
+          );
+      if (!mounted) return;
+      _aiModel.text = result.config.model;
+      setState(() {
+        _aiProviderOptionId = _providerOptionId(result.config);
+        _aiFeedback = result.message;
+        _aiFeedbackSucceeded = result.succeeded;
+      });
+    } on DesktopAiSettingsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _aiFeedback = error.message;
+        _aiFeedbackSucceeded = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _aiFeedback = widget.controller.copy.localized(
+          'AI 配置未能保存，请重试。',
+          'Could not save the AI configuration. Please try again.',
+        );
+        _aiFeedbackSucceeded = false;
+      });
+    } finally {
+      if (mounted) setState(() => _savingAi = false);
+    }
+  }
+
+  String _providerOptionId(AiApiConfig config) =>
+      switch (config.providerPreset) {
+        AiProviderPreset.openAi => 'builtin:openai',
+        AiProviderPreset.deepSeek => 'builtin:deepseek',
+        AiProviderPreset.custom =>
+          config.normalizedName.isEmpty
+              ? 'custom:new'
+              : 'custom:${config.normalizedName}',
+      };
+
+  List<_DesktopAiProviderOption> _providerOptions() {
+    final AppCopy copy = widget.controller.copy;
+    final List<AiApiConfig> custom = <AiApiConfig>[
+      ...widget.controller.customAiPresets,
+    ];
+    final AiApiConfig current = widget.controller.aiApiConfig;
+    if (current.providerPreset == AiProviderPreset.custom &&
+        current.normalizedName.isNotEmpty &&
+        custom.every(
+          (AiApiConfig item) => item.normalizedName != current.normalizedName,
+        )) {
+      custom.insert(0, current);
+    }
+    return <_DesktopAiProviderOption>[
+      _DesktopAiProviderOption(
+        id: 'builtin:openai',
+        label: copy.aiProviderPresetName(AiProviderPreset.openAi),
+        config: AiApiConfig.defaultOpenAi,
+      ),
+      _DesktopAiProviderOption(
+        id: 'builtin:deepseek',
+        label: copy.aiProviderPresetName(AiProviderPreset.deepSeek),
+        config: AiApiConfig.defaultDeepSeek,
+      ),
+      ...custom
+          .where(
+            (AiApiConfig config) =>
+                !AiApiConfig.isBuiltInProviderName(config.name),
+          )
+          .map(
+            (AiApiConfig config) => _DesktopAiProviderOption(
+              id: 'custom:${config.normalizedName}',
+              label: config.name,
+              config: config,
+            ),
+          ),
+      _DesktopAiProviderOption(
+        id: 'custom:new',
+        label: copy.aiProviderPresetName(AiProviderPreset.custom),
+        config: AiApiConfig.defaultCustom,
+        isNewCustom: true,
+      ),
+    ];
+  }
+
+  void _selectAiProvider(String? id) {
+    if (id == null || id == _aiProviderOptionId) return;
+    final _DesktopAiProviderOption option = _providerOptions().firstWhere(
+      (_DesktopAiProviderOption item) => item.id == id,
+    );
+    setState(() {
+      _aiProviderOptionId = option.id;
+      _aiProvider.text = option.isNewCustom ? '' : option.config.name;
+      _aiModel.text = option.config.model;
+      _aiApiKey.text = option.isNewCustom ? '' : option.config.apiKey;
+      _aiBaseUrl.text = option.isNewCustom ? '' : option.config.baseUrl;
+      _aiFeedback = null;
+      _aiFeedbackSucceeded = null;
+    });
+    widget.controller.invalidateAiModels();
+  }
+
+  void _invalidateAiDiscovery(String _) {
+    widget.controller.invalidateAiModels();
+    if (_aiModel.text.isNotEmpty) {
+      _aiModel.clear();
+    }
+    if (_aiFeedback != null || _aiFeedbackSucceeded != null) {
+      setState(() {
+        _aiFeedback = null;
+        _aiFeedbackSucceeded = null;
+      });
+    }
+  }
+
+  void _selectAiModel(String? model) {
+    setState(() {
+      _aiModel.text = model ?? '';
+      _aiFeedback = null;
+      _aiFeedbackSucceeded = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.controller,
@@ -112,9 +279,21 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
         ),
         _AiServiceCard(
           controller: widget.controller,
+          providerOptions: _providerOptions(),
+          selectedProviderId: _aiProviderOptionId,
+          providerController: _aiProvider,
+          modelController: _aiModel,
+          apiKeyController: _aiApiKey,
+          baseUrlController: _aiBaseUrl,
           showApiKey: _showApiKey,
+          saving: _savingAi,
+          feedback: _aiFeedback,
+          feedbackSucceeded: _aiFeedbackSucceeded,
+          onProviderChanged: _selectAiProvider,
+          onAiFieldChanged: _invalidateAiDiscovery,
+          onModelChanged: _selectAiModel,
           onToggleApiKey: () => setState(() => _showApiKey = !_showApiKey),
-          onOpenDetails: widget.onOpenExistingSettings,
+          onSaveAndCheck: () => unawaited(_saveAndCheckAi()),
         ),
         _AppearanceCard(
           controller: widget.controller,
@@ -411,29 +590,44 @@ class _GeneralCard extends StatelessWidget {
 class _AiServiceCard extends StatelessWidget {
   const _AiServiceCard({
     required this.controller,
+    required this.providerOptions,
+    required this.selectedProviderId,
+    required this.providerController,
+    required this.modelController,
+    required this.apiKeyController,
+    required this.baseUrlController,
     required this.showApiKey,
+    required this.saving,
+    required this.feedback,
+    required this.feedbackSucceeded,
+    required this.onProviderChanged,
+    required this.onAiFieldChanged,
+    required this.onModelChanged,
     required this.onToggleApiKey,
-    required this.onOpenDetails,
+    required this.onSaveAndCheck,
   });
 
   final AppController controller;
+  final List<_DesktopAiProviderOption> providerOptions;
+  final String selectedProviderId;
+  final TextEditingController providerController;
+  final TextEditingController modelController;
+  final TextEditingController apiKeyController;
+  final TextEditingController baseUrlController;
   final bool showApiKey;
+  final bool saving;
+  final String? feedback;
+  final bool? feedbackSucceeded;
+  final ValueChanged<String?> onProviderChanged;
+  final ValueChanged<String> onAiFieldChanged;
+  final ValueChanged<String?> onModelChanged;
   final VoidCallback onToggleApiKey;
-  final VoidCallback onOpenDetails;
+  final VoidCallback onSaveAndCheck;
 
   @override
   Widget build(BuildContext context) {
     final AppCopy copy = controller.copy;
-    final AiApiConfig config = controller.aiApiConfig;
-    final bool hasKey = config.apiKey.trim().isNotEmpty;
-    final String keyValue = !hasKey
-        ? copy.localized('未配置', 'Not configured')
-        : showApiKey
-        ? config.apiKey
-        : '••••••••';
-    final String endpoint = config.baseUrl.trim().isEmpty
-        ? copy.localized('未配置', 'Not configured')
-        : config.baseUrl.trim();
+    final bool hasKey = apiKeyController.text.trim().isNotEmpty;
 
     return _SettingsCard(
       icon: Icons.auto_awesome_rounded,
@@ -444,48 +638,73 @@ class _AiServiceCard extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: _ValueField(
+                child: _AiProviderDropdownField(
+                  fieldKey: const ValueKey<String>(
+                    'desktop-settings-ai-provider',
+                  ),
                   label: copy.localized('供应商', 'Provider'),
-                  value: config.name.trim().isEmpty
-                      ? copy.localized('未配置', 'Not configured')
-                      : config.name,
+                  options: providerOptions,
+                  selectedId: selectedProviderId,
+                  enabled: !saving,
+                  onChanged: onProviderChanged,
                 ),
               ),
               SizedBox(width: _px(context, 9)),
               Expanded(
-                child: _ValueField(
+                child: _AiModelDropdownField(
+                  fieldKey: const ValueKey<String>('desktop-settings-ai-model'),
                   label: copy.localized('模型', 'Model'),
-                  value: config.model.trim().isEmpty
-                      ? copy.localized('未选择', 'Not selected')
-                      : config.model,
+                  models: controller.availableAiModels,
+                  selectedModel: modelController.text,
+                  loadState: controller.aiModelLoadState,
+                  enabled: !saving,
+                  copy: copy,
+                  onChanged: onModelChanged,
                 ),
               ),
             ],
           ),
+          if (selectedProviderId == 'custom:new') ...<Widget>[
+            SizedBox(height: _px(context, 8)),
+            _EditableValueField(
+              fieldKey: const ValueKey<String>(
+                'desktop-settings-ai-custom-provider',
+              ),
+              label: copy.aiApiProviderNameLabel,
+              controller: providerController,
+              enabled: !saving,
+              onChanged: onAiFieldChanged,
+            ),
+          ],
           SizedBox(height: _px(context, 8)),
-          _ValueField(
+          _EditableValueField(
+            fieldKey: const ValueKey<String>('desktop-settings-ai-api-key'),
             label: 'API Key',
-            value: keyValue,
-            trailing: hasKey
-                ? IconButton(
-                    tooltip: showApiKey
-                        ? copy.localized('隐藏 API Key', 'Hide API Key')
-                        : copy.localized('显示 API Key', 'Show API Key'),
-                    onPressed: onToggleApiKey,
-                    icon: Icon(
-                      showApiKey
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      size: _px(context, 18),
-                    ),
-                    visualDensity: VisualDensity.compact,
-                  )
-                : null,
+            controller: apiKeyController,
+            enabled: !saving,
+            obscureText: !showApiKey,
+            onChanged: onAiFieldChanged,
+            trailing: IconButton(
+              tooltip: showApiKey
+                  ? copy.localized('隐藏 API Key', 'Hide API Key')
+                  : copy.localized('显示 API Key', 'Show API Key'),
+              onPressed: saving ? null : onToggleApiKey,
+              icon: Icon(
+                showApiKey
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                size: _px(context, 18),
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
           ),
           SizedBox(height: _px(context, 8)),
-          _ValueField(
+          _EditableValueField(
+            fieldKey: const ValueKey<String>('desktop-settings-ai-base-url'),
             label: copy.localized('接口地址', 'Base URL'),
-            value: endpoint,
+            controller: baseUrlController,
+            enabled: !saving,
+            onChanged: onAiFieldChanged,
           ),
           SizedBox(height: _px(context, 10)),
           _AiStatusLabel(
@@ -496,25 +715,50 @@ class _AiServiceCard extends StatelessWidget {
           SizedBox(height: _px(context, 8)),
           Align(
             alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              key: const ValueKey<String>('desktop-settings-ai-details'),
-              onPressed: onOpenDetails,
-              icon: Icon(
-                Icons.settings_suggest_outlined,
-                size: _px(context, 17),
+            child: FilledButton.icon(
+              key: const ValueKey<String>('desktop-settings-ai-save-check'),
+              onPressed: saving ? null : onSaveAndCheck,
+              icon: saving
+                  ? SizedBox.square(
+                      dimension: _px(context, 15),
+                      child: CircularProgressIndicator(
+                        strokeWidth: _px(context, 1.8),
+                        color: Colors.white,
+                      ),
+                    )
+                  : Icon(Icons.sync_rounded, size: _px(context, 17)),
+              label: Text(
+                saving
+                    ? copy.localized('检测中', 'Checking')
+                    : copy.localized('保存并检测', 'Save & check'),
               ),
-              label: Text(copy.localized('详细设置', 'Advanced settings')),
-              style: OutlinedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 minimumSize: Size(0, _px(context, 38)),
                 padding: EdgeInsets.symmetric(horizontal: _px(context, 11)),
-                foregroundColor: DesktopColors.brown,
-                side: const BorderSide(color: Color(0x1FA76D48)),
+                backgroundColor: DesktopColors.orange,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(_px(context, 9)),
                 ),
               ),
             ),
           ),
+          if (feedback != null) ...<Widget>[
+            SizedBox(height: _px(context, 7)),
+            Text(
+              feedback!,
+              key: const ValueKey<String>('desktop-settings-ai-feedback'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: _font(context, 11),
+                height: 1.25,
+                color: feedbackSucceeded == true
+                    ? const Color(0xFF497461)
+                    : const Color(0xFF9F4D5D),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1259,12 +1503,36 @@ class _AiStatusLabel extends StatelessWidget {
   }
 }
 
-class _ValueField extends StatelessWidget {
-  const _ValueField({required this.label, required this.value, this.trailing});
+class _DesktopAiProviderOption {
+  const _DesktopAiProviderOption({
+    required this.id,
+    required this.label,
+    required this.config,
+    this.isNewCustom = false,
+  });
 
+  final String id;
   final String label;
-  final String value;
-  final Widget? trailing;
+  final AiApiConfig config;
+  final bool isNewCustom;
+}
+
+class _AiProviderDropdownField extends StatelessWidget {
+  const _AiProviderDropdownField({
+    required this.fieldKey,
+    required this.label,
+    required this.options,
+    required this.selectedId,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final Key fieldKey;
+  final String label;
+  final List<_DesktopAiProviderOption> options;
+  final String selectedId;
+  final bool enabled;
+  final ValueChanged<String?> onChanged;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -1272,37 +1540,186 @@ class _ValueField extends StatelessWidget {
     children: <Widget>[
       _FieldLabel(label: label),
       SizedBox(height: _px(context, 4)),
-      Container(
+      SizedBox(
         height: _px(context, 39),
-        padding: EdgeInsets.only(left: _px(context, 10)),
-        decoration: BoxDecoration(
-          color: DesktopColors.soft,
-          borderRadius: BorderRadius.circular(_px(context, 8)),
-          border: Border.all(color: const Color(0x10A76D48)),
-        ),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: _font(context, 12),
-                  color:
-                      value == '未配置' ||
-                          value == '未选择' ||
-                          value == 'Not configured' ||
-                          value == 'Not selected'
-                      ? DesktopColors.secondaryText
-                      : DesktopColors.text,
-                  fontWeight: FontWeight.w500,
-                ),
+        child: KeyedSubtree(
+          key: fieldKey,
+          child: DropdownButtonFormField<String>(
+            key: ValueKey<String>('provider-$selectedId'),
+            initialValue: selectedId,
+            isExpanded: true,
+            icon: Icon(Icons.expand_more_rounded, size: _px(context, 18)),
+            style: TextStyle(
+              fontSize: _font(context, 12),
+              color: DesktopColors.text,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: _fieldDecoration(context).copyWith(
+              contentPadding: EdgeInsets.only(
+                left: _px(context, 10),
+                right: _px(context, 6),
               ),
             ),
-            ?trailing,
-            SizedBox(width: _px(context, 4)),
-          ],
+            items: options
+                .map(
+                  (_DesktopAiProviderOption option) => DropdownMenuItem<String>(
+                    value: option.id,
+                    child: Text(
+                      option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: enabled ? onChanged : null,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _AiModelDropdownField extends StatelessWidget {
+  const _AiModelDropdownField({
+    required this.fieldKey,
+    required this.label,
+    required this.models,
+    required this.selectedModel,
+    required this.loadState,
+    required this.enabled,
+    required this.copy,
+    required this.onChanged,
+  });
+
+  final Key fieldKey;
+  final String label;
+  final List<AiModel> models;
+  final String selectedModel;
+  final AiModelLoadState loadState;
+  final bool enabled;
+  final AppCopy copy;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final String normalizedSelection = selectedModel.trim();
+    final bool selectionAvailable = models.any(
+      (AiModel model) => model.id == normalizedSelection,
+    );
+    final String hint = switch (loadState) {
+      AiModelLoadState.loading => copy.localized('正在获取…', 'Loading…'),
+      AiModelLoadState.failure => copy.localized('获取失败', 'Load failed'),
+      AiModelLoadState.empty => copy.localized('没有可用模型', 'No models'),
+      _ => copy.localized('保存并检测后选择', 'Save & check first'),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _FieldLabel(label: label),
+        SizedBox(height: _px(context, 4)),
+        SizedBox(
+          height: _px(context, 39),
+          child: KeyedSubtree(
+            key: fieldKey,
+            child: DropdownButtonFormField<String>(
+              key: ValueKey<String>(
+                'model-${loadState.name}-$normalizedSelection-${models.length}',
+              ),
+              initialValue: selectionAvailable ? normalizedSelection : null,
+              isExpanded: true,
+              hint: Text(hint, overflow: TextOverflow.ellipsis),
+              icon: loadState == AiModelLoadState.loading
+                  ? SizedBox.square(
+                      dimension: _px(context, 14),
+                      child: CircularProgressIndicator(
+                        strokeWidth: _px(context, 1.6),
+                      ),
+                    )
+                  : Icon(Icons.expand_more_rounded, size: _px(context, 18)),
+              style: TextStyle(
+                fontSize: _font(context, 12),
+                color: DesktopColors.text,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: _fieldDecoration(context).copyWith(
+                contentPadding: EdgeInsets.only(
+                  left: _px(context, 10),
+                  right: _px(context, 6),
+                ),
+              ),
+              items: models
+                  .map(
+                    (AiModel model) => DropdownMenuItem<String>(
+                      value: model.id,
+                      child: Text(
+                        model.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: enabled && models.isNotEmpty ? onChanged : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditableValueField extends StatelessWidget {
+  const _EditableValueField({
+    required this.fieldKey,
+    required this.label,
+    required this.controller,
+    required this.enabled,
+    this.obscureText = false,
+    this.trailing,
+    this.onChanged,
+  });
+
+  final Key fieldKey;
+  final String label;
+  final TextEditingController controller;
+  final bool enabled;
+  final bool obscureText;
+  final Widget? trailing;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      _FieldLabel(label: label),
+      SizedBox(height: _px(context, 4)),
+      SizedBox(
+        height: _px(context, 39),
+        child: TextField(
+          key: fieldKey,
+          controller: controller,
+          enabled: enabled,
+          obscureText: obscureText,
+          obscuringCharacter: '•',
+          maxLines: 1,
+          onChanged: onChanged,
+          style: TextStyle(
+            fontSize: _font(context, 12),
+            color: DesktopColors.text,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: _fieldDecoration(context).copyWith(
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: _px(context, 10),
+              vertical: _px(context, 9),
+            ),
+            suffixIcon: trailing,
+            suffixIconConstraints: BoxConstraints(
+              minWidth: _px(context, 38),
+              minHeight: _px(context, 38),
+            ),
+          ),
         ),
       ),
     ],

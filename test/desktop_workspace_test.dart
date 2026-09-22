@@ -20,6 +20,7 @@ import 'package:board_game_agent/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/models/cached_asset.dart';
 import 'package:board_game_agent/models/chat_message.dart';
 import 'package:board_game_agent/models/color_scheme_option.dart';
+import 'package:board_game_agent/models/connectivity_status.dart';
 import 'package:board_game_agent/models/desktop_library_resource.dart';
 import 'package:board_game_agent/models/favorite_game_record.dart';
 import 'package:board_game_agent/models/game_info.dart';
@@ -27,6 +28,7 @@ import 'package:board_game_agent/models/remote_asset_file.dart';
 import 'package:board_game_agent/models/recent_game_record.dart';
 import 'package:board_game_agent/models/search_history_record.dart';
 import 'package:board_game_agent/services/ai_service.dart';
+import 'package:board_game_agent/services/desktop_ai_settings_service.dart';
 import 'package:board_game_agent/services/game_manifest_service.dart';
 import 'package:board_game_agent/services/preferences_service.dart';
 import 'package:board_game_agent/services/remote_asset_service.dart';
@@ -148,9 +150,16 @@ void main() {
         }
       }
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('详细设置'));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('desktop-settings-ai-save-check')),
+      );
       await tester.pumpAndSettle();
-      expect(find.text('详细设置').hitTestable(), findsOneWidget);
+      expect(
+        find
+            .byKey(const ValueKey<String>('desktop-settings-ai-save-check'))
+            .hitTestable(),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       await _navigate(tester, '首页');
       expect(find.byType(DesktopHomePane), findsOneWidget);
@@ -440,14 +449,11 @@ void main() {
     expect(find.byType(DesktopAssistantPane), findsOneWidget);
     await _navigate(tester, '设置');
     expect(find.byType(DesktopSettingsPane), findsOneWidget);
-    await tester.ensureVisible(find.text('详细设置'));
-    await tester.tap(find.text('详细设置'));
-    await tester.pumpAndSettle();
-    expect(find.byType(DesktopAdvancedSettingsPane), findsOneWidget);
-    expect(find.text('高级配置'), findsOneWidget);
-    expect(find.text('AI 与资料源'), findsOneWidget);
-    expect(find.text('语音朗读'), findsNothing);
-    expect(find.text('启动时检查更新'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-provider')),
+      findsOneWidget,
+    );
+    expect(find.text('详细设置'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -1128,32 +1134,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'settings opens existing advanced configuration and invokes About',
-    (tester) async {
-      var aboutCalls = 0;
-      await _mount(
-        tester,
-        controller,
-        const Size(1280, 800),
-        onOpenAbout: () => aboutCalls++,
-      );
-      await _navigate(tester, '设置');
-      await tester.ensureVisible(find.text('关于应用'));
-      await tester.tap(find.text('关于应用'));
-      await tester.pumpAndSettle();
-      expect(aboutCalls, 1);
-      await tester.ensureVisible(find.text('详细设置'));
-      await tester.tap(find.text('详细设置'));
-      await tester.pumpAndSettle();
-      expect(find.byType(DesktopSettingsPane), findsNothing);
-      expect(find.byType(DesktopAdvancedSettingsPane), findsOneWidget);
-      expect(find.text('AI 与资料源'), findsOneWidget);
-      expect(find.text('外观'), findsNothing);
-      expect(find.text('行为'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('settings keeps AI configuration inline and invokes About', (
+    tester,
+  ) async {
+    var aboutCalls = 0;
+    await _mount(
+      tester,
+      controller,
+      const Size(1280, 800),
+      onOpenAbout: () => aboutCalls++,
+    );
+    await _navigate(tester, '设置');
+    await tester.ensureVisible(find.text('关于应用'));
+    await tester.tap(find.text('关于应用'));
+    await tester.pumpAndSettle();
+    expect(aboutCalls, 1);
+    expect(find.byType(DesktopSettingsPane), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-save-check')),
+      findsOneWidget,
+    );
+    expect(find.text('详细设置'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'settings controls reflect real state and disable unsupported actions',
@@ -1168,11 +1171,17 @@ void main() {
       await _mount(tester, controller, const Size(1280, 800));
       await _navigate(tester, '设置');
 
-      expect(find.text('••••••••'), findsOneWidget);
-      expect(find.text('test-secret-key'), findsNothing);
+      final Finder apiKeyField = find.byKey(
+        const ValueKey<String>('desktop-settings-ai-api-key'),
+      );
+      expect(tester.widget<TextField>(apiKeyField).obscureText, isTrue);
       await tester.tap(find.byTooltip('显示 API Key'));
       await tester.pumpAndSettle();
-      expect(find.text('test-secret-key'), findsOneWidget);
+      expect(tester.widget<TextField>(apiKeyField).obscureText, isFalse);
+      expect(
+        tester.widget<TextField>(apiKeyField).controller?.text,
+        'test-secret-key',
+      );
 
       final Finder updateSwitchRow = find.byKey(
         const ValueKey<String>('desktop-settings-startup-update-check'),
@@ -1233,6 +1242,83 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('desktop AI card exposes provider and discovered-model menus', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, '设置');
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('desktop-settings-ai-provider')),
+        matching: find.byType(DropdownButtonFormField<String>),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('desktop-settings-ai-model')),
+        matching: find.byType(DropdownButtonFormField<String>),
+      ),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-api-key')),
+      'desktop-secret',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-base-url')),
+      'https://desktop.example/v1',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-save-check')),
+      findsOneWidget,
+    );
+    expect(find.text('详细设置'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test(
+    'desktop AI settings service persists and checks all card fields',
+    () async {
+      final DesktopAiSettingsResult result =
+          await DesktopAiSettingsService(controller).saveAndCheck(
+            const DesktopAiSettingsDraft(
+              provider: 'Desktop Provider',
+              model: 'desktop-model',
+              apiKey: 'desktop-secret',
+              baseUrl: 'https://desktop.example/v1',
+            ),
+          );
+
+      expect(result.connected, isTrue);
+      expect(controller.aiApiConfig.name, 'Desktop Provider');
+      expect(controller.aiApiConfig.model, 'desktop-model');
+      expect(controller.aiApiConfig.apiKey, 'desktop-secret');
+      expect(controller.aiApiConfig.baseUrl, 'https://desktop.example/v1');
+      expect(preferences._aiApiConfig?.name, 'Desktop Provider');
+      expect(controller.aiConnectivityStatus.state, ConnectivityState.success);
+    },
+  );
+
+  test('desktop AI settings discovers models before one is selected', () async {
+    final DesktopAiSettingsResult result =
+        await DesktopAiSettingsService(controller).saveAndCheck(
+          const DesktopAiSettingsDraft(
+            provider: 'Desktop Provider',
+            model: '',
+            apiKey: 'desktop-secret',
+            baseUrl: 'https://desktop.example/v1',
+          ),
+        );
+
+    expect(result.connected, isFalse);
+    expect(result.modelCount, 1);
+    expect(controller.availableAiModels.single.id, 'desktop-model');
+    expect(controller.aiApiConfig.model, isEmpty);
+    expect(controller.aiConnectivityStatus.state, ConnectivityState.warning);
+  });
 
   testWidgets('switching to English updates the desktop settings shell', (
     tester,
@@ -1337,6 +1423,7 @@ class _UnavailableTtsService extends TtsService {
 
 class _InMemoryPreferencesService extends PreferencesService {
   AiApiConfig? _aiApiConfig;
+  List<AiApiConfig> _aiCustomPresets = <AiApiConfig>[];
   ColorSchemeOption? _colorScheme;
   bool? _checkForUpdates;
   Map<String, DateTime> _favoriteGames = <String, DateTime>{};
@@ -1352,6 +1439,15 @@ class _InMemoryPreferencesService extends PreferencesService {
   Future<void> saveAiApiConfig(AiApiConfig config) async {
     _aiApiConfig = config;
   }
+
+  @override
+  Future<void> saveAiCustomPresets(Iterable<AiApiConfig> configs) async {
+    _aiCustomPresets = List<AiApiConfig>.from(configs);
+  }
+
+  @override
+  Future<List<AiApiConfig>> loadAiCustomPresets() async =>
+      List<AiApiConfig>.unmodifiable(_aiCustomPresets);
 
   @override
   Future<void> saveColorScheme(ColorSchemeOption scheme) async {
@@ -1472,7 +1568,7 @@ class _NoopHttpClient extends http.BaseClient {
 class _FakeAiService implements AiService {
   @override
   Future<List<AiModel>> listModels(AiApiConfig config) async {
-    return const <AiModel>[];
+    return const <AiModel>[AiModel(id: 'desktop-model')];
   }
 
   @override

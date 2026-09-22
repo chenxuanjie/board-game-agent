@@ -503,7 +503,6 @@ class AppCopy {
   String get desktopBehavior => isChinese ? '行为' : 'Behavior';
   String get desktopProvider => isChinese ? '供应商' : 'Provider';
   String get desktopModel => isChinese ? '模型' : 'Model';
-  String get desktopDetails => isChinese ? '详细设置' : 'Details';
   String get desktopAboutApp => isChinese ? '关于桌游导师' : 'About Board Game Agent';
   String get desktopLibraryIndex => isChinese ? '资料索引' : 'Resource index';
   String get desktopLibraryReference => isChinese ? '规则参考' : 'Rules reference';

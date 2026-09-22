@@ -69,7 +69,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       widget.enableNativeWindowControls &&
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.windows;
-  bool get _featurePage => ['assistant', 'library', 'advanced'].contains(_page);
+  bool get _featurePage => ['assistant', 'library'].contains(_page);
 
   @override
   void initState() {
@@ -111,7 +111,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   int get _selectedRouteIndex {
     if (_page == 'gameDetail' || _page == 'library') return 1;
-    if (_page == 'advanced') return 4;
     final index = _routes.indexOf(_page);
     return index < 0 ? 0 : index;
   }
@@ -566,10 +565,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                       onFilterChanged: _setLibraryFilter,
                       onOpenRules: _openRulesForResource,
                     ),
-                    'advanced' => DesktopAdvancedSettingsPane(
-                      controller: widget.controller,
-                      onOpenAbout: widget.onOpenAbout,
-                    ),
                     _ => const SizedBox.shrink(),
                   },
                 ),
@@ -638,8 +633,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             ),
                             'settings' => DesktopSettingsPane(
                               controller: widget.controller,
-                              onOpenExistingSettings: () =>
-                                  _navigate('advanced'),
                               onOpenAbout: widget.onOpenAbout,
                             ),
                             _ => SizedBox(

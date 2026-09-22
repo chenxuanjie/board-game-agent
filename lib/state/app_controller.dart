@@ -139,6 +139,7 @@ class AppController extends ChangeNotifier {
   Timer? _assetStatusTimer;
   Future<void>? _assetStatusRefreshFuture;
   Future<void>? _serviceStatusRefreshFuture;
+  Future<void>? _aiServiceStatusRefreshFuture;
   RemoteLibraryUpdate? _pendingLibraryUpdate;
   bool _checkingLibraryUpdate = false;
   bool _applyingLibraryUpdate = false;
@@ -1930,7 +1931,7 @@ class AppController extends ChangeNotifier {
 
     try {
       await Future.wait<void>(<Future<void>>[
-        _refreshAiServiceStatus(),
+        refreshAiServiceStatus(),
         refreshAssetAccessStatus(),
       ]);
       _recordActivity(
@@ -1949,6 +1950,34 @@ class AppController extends ChangeNotifier {
       );
       rethrow;
     }
+  }
+
+  /// Refreshes the AI endpoint without also probing resource sources.
+  ///
+  /// This is the shared settings boundary for `/models` discovery and the
+  /// optional chat-path health check. Platform-specific settings UIs should
+  /// call this method instead of rebuilding the provider protocol themselves.
+  Future<void> refreshAiServiceStatus() {
+    final Future<void>? active = _aiServiceStatusRefreshFuture;
+    if (active != null) {
+      return active;
+    }
+    _aiConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.loading,
+      message: '正在检查 AI 服务',
+      checkedAt: DateTime.now(),
+    );
+    notifyListeners();
+    final Future<void> future = _refreshAiServiceStatus();
+    _aiServiceStatusRefreshFuture = future;
+    future
+        .whenComplete(() {
+          if (identical(_aiServiceStatusRefreshFuture, future)) {
+            _aiServiceStatusRefreshFuture = null;
+          }
+        })
+        .catchError((Object _) {});
+    return future;
   }
 
   Future<void> _refreshAiServiceStatus() async {
