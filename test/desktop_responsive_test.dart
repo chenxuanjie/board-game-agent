@@ -18,10 +18,10 @@ void main() {
     expect(DesktopResponsive.libraryPosterWidthFor(1199), 184);
     expect(DesktopResponsive.libraryPosterWidthFor(1200), 192);
 
-    expect(DesktopResponsive.settingsColumnsFor(699), 1);
-    expect(DesktopResponsive.settingsColumnsFor(700), 2);
-    expect(DesktopResponsive.settingsColumnsFor(1099), 2);
-    expect(DesktopResponsive.settingsColumnsFor(1100), 3);
+    expect(DesktopResponsive.settingsColumnsFor(649), 1);
+    expect(DesktopResponsive.settingsColumnsFor(650), 2);
+    expect(DesktopResponsive.settingsColumnsFor(959), 2);
+    expect(DesktopResponsive.settingsColumnsFor(960), 3);
 
     expect(DesktopResponsive.shouldShowGamesInspector(1146), isFalse);
     expect(DesktopResponsive.shouldShowGamesInspector(1147), isTrue);
@@ -68,10 +68,7 @@ void main() {
     expect(DesktopResponsive.homeRecommendationCountFor(1000), 6);
     expect(DesktopResponsive.homeRecommendationCardWidthFor(752), 140);
     expect(
-      DesktopResponsive.homeRecommendationCardWidthFor(
-        1200,
-        count: 6,
-      ),
+      DesktopResponsive.homeRecommendationCardWidthFor(1200, count: 6),
       closeTo(189.166, 0.001),
     );
 

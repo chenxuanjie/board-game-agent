@@ -43,6 +43,7 @@ import 'package:board_game_agent/ui/desktop/games_pane.dart';
 import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
+import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +52,10 @@ void main() {
 
   setUp(() async {
     preferences = _InMemoryPreferencesService();
-    controller = await _createController(preferencesService: preferences);
+    controller = await _createController(
+      preferencesService: preferences,
+      ttsService: _UnavailableTtsService(),
+    );
     controller.selectGame('puerto-rico');
   });
   tearDown(() {
@@ -69,8 +73,9 @@ void main() {
 
   for (final size in const [
     Size(1280, 800),
-    Size(1100, 700),
+    Size(1100, 800),
     Size(720, 700),
+    Size(1440, 900),
     Size(1920, 1080),
   ]) {
     testWidgets('home, games and settings navigate without overflow at $size', (
@@ -107,11 +112,45 @@ void main() {
       expect(tester.takeException(), isNull);
       await _navigate(tester, '设置');
       expect(find.byType(DesktopSettingsPane), findsOneWidget);
-      expect(find.text('语言设置'), findsOneWidget);
+      expect(find.text('通用'), findsOneWidget);
+      expect(find.text('AI 服务'), findsOneWidget);
+      expect(find.text('外观与主题'), findsOneWidget);
+      expect(find.text('通知设置'), findsOneWidget);
+      expect(find.text('同步与备份'), findsOneWidget);
+      expect(find.text('关于与更新'), findsOneWidget);
+      final Finder settingsPane = find.byType(DesktopSettingsPane);
+      final int columns = DesktopResponsive.settingsColumnsFor(
+        tester.getSize(settingsPane).width,
+      );
+      const List<String> cardTitles = <String>[
+        '通用',
+        'AI 服务',
+        '外观与主题',
+        '通知设置',
+        '同步与备份',
+        '关于与更新',
+      ];
+      for (int start = 0; start < cardTitles.length; start += columns) {
+        final int end = (start + columns).clamp(0, cardTitles.length);
+        final List<Rect> rowRects = <Rect>[
+          for (int index = start; index < end; index++)
+            tester.getRect(
+              find.byKey(
+                ValueKey<String>('desktop-settings-card-${cardTitles[index]}'),
+              ),
+            ),
+        ];
+        for (final Rect rect in rowRects.skip(1)) {
+          expect(rect.top, closeTo(rowRects.first.top, 0.1));
+        }
+        for (int index = 1; index < rowRects.length; index++) {
+          expect(rowRects[index].left, greaterThan(rowRects[index - 1].right));
+        }
+      }
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('完整设置'));
+      await tester.ensureVisible(find.text('详细设置'));
       await tester.pumpAndSettle();
-      expect(find.text('完整设置').hitTestable(), findsOneWidget);
+      expect(find.text('详细设置').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _navigate(tester, '首页');
       expect(find.byType(DesktopHomePane), findsOneWidget);
@@ -401,10 +440,14 @@ void main() {
     expect(find.byType(DesktopAssistantPane), findsOneWidget);
     await _navigate(tester, '设置');
     expect(find.byType(DesktopSettingsPane), findsOneWidget);
-    await tester.ensureVisible(find.text('完整设置'));
-    await tester.tap(find.text('完整设置'));
+    await tester.ensureVisible(find.text('详细设置'));
+    await tester.tap(find.text('详细设置'));
     await tester.pumpAndSettle();
     expect(find.byType(DesktopAdvancedSettingsPane), findsOneWidget);
+    expect(find.text('高级配置'), findsOneWidget);
+    expect(find.text('AI 与资料源'), findsOneWidget);
+    expect(find.text('语音朗读'), findsNothing);
+    expect(find.text('启动时检查更新'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -1096,15 +1139,97 @@ void main() {
         onOpenAbout: () => aboutCalls++,
       );
       await _navigate(tester, '设置');
-      await tester.ensureVisible(find.text('关于'));
-      await tester.tap(find.text('关于'));
+      await tester.ensureVisible(find.text('关于应用'));
+      await tester.tap(find.text('关于应用'));
       await tester.pumpAndSettle();
       expect(aboutCalls, 1);
-      await tester.ensureVisible(find.text('完整设置'));
-      await tester.tap(find.text('完整设置'));
+      await tester.ensureVisible(find.text('详细设置'));
+      await tester.tap(find.text('详细设置'));
       await tester.pumpAndSettle();
       expect(find.byType(DesktopSettingsPane), findsNothing);
       expect(find.byType(DesktopAdvancedSettingsPane), findsOneWidget);
+      expect(find.text('AI 与资料源'), findsOneWidget);
+      expect(find.text('外观'), findsNothing);
+      expect(find.text('行为'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'settings controls reflect real state and disable unsupported actions',
+    (tester) async {
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(
+          apiKey: 'test-secret-key',
+          model: 'test-model',
+        ),
+      );
+      expect(preferences._aiApiConfig?.apiKey, 'test-secret-key');
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, '设置');
+
+      expect(find.text('••••••••'), findsOneWidget);
+      expect(find.text('test-secret-key'), findsNothing);
+      await tester.tap(find.byTooltip('显示 API Key'));
+      await tester.pumpAndSettle();
+      expect(find.text('test-secret-key'), findsOneWidget);
+
+      final Finder updateSwitchRow = find.byKey(
+        const ValueKey<String>('desktop-settings-startup-update-check'),
+      );
+      final Switch updateSwitch = tester.widget<Switch>(
+        find.descendant(of: updateSwitchRow, matching: find.byType(Switch)),
+      );
+      expect(updateSwitch.onChanged, isNotNull);
+      await tester.tap(
+        find.descendant(of: updateSwitchRow, matching: find.byType(Switch)),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.checkForUpdates, isFalse);
+      expect(preferences._checkForUpdates, isFalse);
+
+      final Finder voiceSwitchRow = find.byKey(
+        const ValueKey<String>('desktop-settings-voice-reply'),
+      );
+      final Switch voiceSwitch = tester.widget<Switch>(
+        find.descendant(of: voiceSwitchRow, matching: find.byType(Switch)),
+      );
+      expect(voiceSwitch.onChanged, isNull);
+
+      final Finder warmwoodTheme = find.byKey(
+        ValueKey<String>(
+          'desktop-settings-theme-${ColorSchemeOption.warmwoodStudy.code}',
+        ),
+      );
+      await tester.tap(warmwoodTheme);
+      await tester.pumpAndSettle();
+      expect(controller.colorScheme, ColorSchemeOption.warmwoodStudy);
+      expect(preferences._colorScheme, ColorSchemeOption.warmwoodStudy);
+
+      expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNull);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey<String>('desktop-settings-sync-disabled'),
+                ),
+                matching: find.byType(OutlinedButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(
+                const ValueKey<String>('desktop-settings-restore-defaults'),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -1157,6 +1282,7 @@ Future<void> _navigate(WidgetTester tester, String label) async {
 
 Future<AppController> _createController({
   PreferencesService? preferencesService,
+  TtsService? ttsService,
 }) async {
   if (preferencesService == null) {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -1167,13 +1293,21 @@ Future<AppController> _createController({
     gameManifestService: GameManifestService(),
     remoteAssetService: _NoNetworkAssetService(),
     speechService: SpeechService(),
-    ttsService: TtsService(),
+    ttsService: ttsService ?? TtsService(),
   );
   await controller.reloadGames();
   return controller;
 }
 
+class _UnavailableTtsService extends TtsService {
+  @override
+  bool get isAvailable => false;
+}
+
 class _InMemoryPreferencesService extends PreferencesService {
+  AiApiConfig? _aiApiConfig;
+  ColorSchemeOption? _colorScheme;
+  bool? _checkForUpdates;
   Map<String, DateTime> _favoriteGames = <String, DateTime>{};
   List<DesktopLibraryResource> _desktopLibraryResources =
       <DesktopLibraryResource>[];
@@ -1182,6 +1316,21 @@ class _InMemoryPreferencesService extends PreferencesService {
 
   @override
   Future<void> clearSelectedConversationId() async {}
+
+  @override
+  Future<void> saveAiApiConfig(AiApiConfig config) async {
+    _aiApiConfig = config;
+  }
+
+  @override
+  Future<void> saveColorScheme(ColorSchemeOption scheme) async {
+    _colorScheme = scheme;
+  }
+
+  @override
+  Future<void> saveCheckForUpdates(bool enabled) async {
+    _checkForUpdates = enabled;
+  }
 
   @override
   Future<void> saveSelectedConversationId(String conversationId) async {}

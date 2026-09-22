@@ -28,8 +28,8 @@ abstract final class DesktopResponsive {
   static const gamesInspectorBreakpoint = 1147.0;
 
   static const homeTwoColumnBreakpoint = 900.0;
-  static const settingsTwoColumnBreakpoint = 700.0;
-  static const settingsThreeColumnBreakpoint = 1100.0;
+  static const settingsTwoColumnBreakpoint = 650.0;
+  static const settingsThreeColumnBreakpoint = 960.0;
 
   static const homeMaxContentWidth = 1480.0;
   static const gamesMaxContentWidth = 1500.0;

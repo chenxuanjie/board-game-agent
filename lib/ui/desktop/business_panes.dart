@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../models/app_activity.dart';
-import '../../models/app_language.dart';
 import '../../models/ai_api_config.dart';
 import '../../models/ai_conversation.dart';
 import '../../models/ai_run.dart';
@@ -3273,56 +3272,38 @@ class DesktopAdvancedSettingsPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String provider = controller.aiApiConfig.name.trim().isEmpty
+        ? '未配置'
+        : controller.aiApiConfig.name;
+    final String model = controller.hasSelectedAiModel
+        ? controller.aiApiConfig.model
+        : '未选择';
+    final int sourceCount = controller.assetSourceConfigs.length;
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 28),
       children: <Widget>[
         Text(
-          '偏好',
+          '高级配置',
           style: Theme.of(context).textTheme.displaySmall?.copyWith(
             color: AppPalette.of(context).textPrimary,
             fontWeight: FontWeight.w700,
           ),
         ),
+        const SizedBox(height: 6),
+        Text(
+          '管理 AI 接口与桌游资料源',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: AppPalette.of(context).textSecondary,
+          ),
+        ),
         const SizedBox(height: 18),
         _DesktopSettingsCard(
-          title: '外观',
-          icon: Icons.palette_outlined,
+          title: 'AI 与资料源',
+          icon: Icons.tune_rounded,
           children: <Widget>[
-            _DesktopSettingDropdown<ColorSchemeOption>(
-              label: '主题',
-              value: controller.colorScheme,
-              values: ColorSchemeOption.values,
-              labelBuilder: controller.copy.colorSchemeName,
-              onChanged: (ColorSchemeOption? value) {
-                if (value != null) controller.setColorScheme(value);
-              },
-            ),
-            _DesktopSettingDropdown<AppLanguageValue>(
-              label: '语言',
-              value: _appLanguageValueFrom(controller.language),
-              values: AppLanguageValue.values,
-              labelBuilder: (AppLanguageValue value) => value.label,
-              onChanged: (AppLanguageValue? value) {
-                if (value != null) controller.setLanguage(value.language);
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _DesktopSettingsCard(
-          title: 'AI 服务',
-          icon: Icons.smart_toy_outlined,
-          children: <Widget>[
-            _DesktopSettingInfo(
-              label: '供应商',
-              value: controller.aiApiConfig.name,
-            ),
-            _DesktopSettingInfo(
-              label: '模型',
-              value: controller.hasSelectedAiModel
-                  ? controller.aiApiConfig.model
-                  : '未选择',
-            ),
+            _DesktopSettingInfo(label: 'AI 供应商', value: provider),
+            _DesktopSettingInfo(label: '模型', value: model),
+            _DesktopSettingInfo(label: '桌游资料源', value: '$sourceCount 个'),
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
@@ -3336,37 +3317,10 @@ class DesktopAdvancedSettingsPane extends StatelessWidget {
                   ),
                 ),
                 icon: const Icon(Icons.tune_rounded),
-                label: const Text('详细设置'),
+                label: const Text('配置 AI 与资料源'),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-        _DesktopSettingsCard(
-          title: '行为',
-          icon: Icons.tune_rounded,
-          children: <Widget>[
-            _DesktopSettingSwitch(
-              label: '语音朗读',
-              value: controller.voiceReplyEnabled,
-              enabled: controller.voiceReplyAvailable,
-              onChanged: controller.setVoiceReplyEnabled,
-            ),
-            _DesktopSettingSwitch(
-              label: '启动时检查更新',
-              value: controller.checkForUpdates,
-              onChanged: controller.setCheckForUpdates,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: onOpenAbout,
-            icon: const Icon(Icons.info_outline_rounded),
-            label: const Text('关于桌游导师'),
-          ),
         ),
       ],
     );
@@ -3435,82 +3389,4 @@ class _DesktopSettingInfo extends StatelessWidget {
       ),
     );
   }
-}
-
-class _DesktopSettingDropdown<T> extends StatelessWidget {
-  const _DesktopSettingDropdown({
-    required this.label,
-    required this.value,
-    required this.values,
-    required this.labelBuilder,
-    required this.onChanged,
-  });
-
-  final String label;
-  final T value;
-  final List<T> values;
-  final String Function(T value) labelBuilder;
-  final ValueChanged<T?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(label),
-      trailing: DropdownButton<T>(
-        value: value,
-        underline: const SizedBox.shrink(),
-        items: values
-            .map(
-              (T item) => DropdownMenuItem<T>(
-                value: item,
-                child: Text(labelBuilder(item)),
-              ),
-            )
-            .toList(growable: false),
-        onChanged: onChanged,
-      ),
-    );
-  }
-}
-
-class _DesktopSettingSwitch extends StatelessWidget {
-  const _DesktopSettingSwitch({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-    this.enabled = true,
-  });
-
-  final String label;
-  final bool value;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SwitchListTile.adaptive(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(label),
-      value: value,
-      onChanged: enabled ? onChanged : null,
-    );
-  }
-}
-
-enum AppLanguageValue { chinese, english }
-
-extension on AppLanguageValue {
-  String get label => this == AppLanguageValue.chinese ? '简体中文' : 'English';
-
-  AppLanguage get language =>
-      this == AppLanguageValue.chinese ? AppLanguage.zhHans : AppLanguage.en;
-}
-
-AppLanguageValue _appLanguageValueFrom(AppLanguage language) {
-  return language == AppLanguage.en
-      ? AppLanguageValue.english
-      : AppLanguageValue.chinese;
 }
