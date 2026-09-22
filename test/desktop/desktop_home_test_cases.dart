@@ -1,0 +1,650 @@
+part of '../desktop_workspace_test.dart';
+
+void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  testWidgets('home rules query shortcut navigates to the shared library', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-quick-entry-rules')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGamesPane), findsNothing);
+    expect(find.byType(DesktopHomePane), findsNothing);
+    expect(find.byType(DesktopLibraryPane), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('library filter tabs update the selected state', (tester) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-quick-entry-rules')),
+    );
+    await tester.pumpAndSettle();
+
+    final allButton = find.widgetWithText(
+      TextButton,
+      context.controller.copy.desktopAll,
+    );
+    final faqButton = find.widgetWithText(
+      TextButton,
+      context.controller.copy.desktopFaq,
+    );
+    expect(allButton, findsOneWidget);
+    expect(faqButton, findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(allButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(faqButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNull,
+    );
+
+    await tester.tap(faqButton);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<TextButton>(allButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(faqButton)
+          .style
+          ?.backgroundColor
+          ?.resolve(<WidgetState>{}),
+      isNotNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'desktop library actions match category pills and animate menus',
+    (tester) async {
+      await _mount(tester, context.controller, const Size(1280, 800));
+      await _navigate(tester, '游戏库');
+
+      final category = find.byKey(
+        const ValueKey<String>('desktop-library-category-0'),
+      );
+      final inactiveCategory = find.byKey(
+        const ValueKey<String>('desktop-library-category-1'),
+      );
+      final sort = find.byKey(
+        const ValueKey<String>('desktop-library-sort-action'),
+      );
+      final filter = find.byKey(
+        const ValueKey<String>('desktop-library-filter-action'),
+      );
+      expect(tester.getSize(category).height, 38);
+      expect(tester.getSize(sort).height, 38);
+      expect(tester.getSize(filter).height, 38);
+      expect(
+        tester.getTopLeft(sort).dy,
+        closeTo(tester.getTopLeft(category).dy, 0.1),
+      );
+      expect(
+        tester.getTopLeft(filter).dy,
+        closeTo(tester.getTopLeft(category).dy, 0.1),
+      );
+
+      TextStyle toolbarTextStyle(Finder control) => tester
+          .widget<Text>(
+            find.descendant(of: control, matching: find.byType(Text)),
+          )
+          .style!;
+
+      final selectedCategoryStyle = toolbarTextStyle(category);
+      final inactiveCategoryStyle = toolbarTextStyle(inactiveCategory);
+      final sortStyle = toolbarTextStyle(sort);
+      final filterStyle = toolbarTextStyle(filter);
+      expect(selectedCategoryStyle.fontSize, 13);
+      expect(selectedCategoryStyle.height, 1);
+      expect(selectedCategoryStyle.fontWeight, FontWeight.w700);
+      expect(inactiveCategoryStyle.fontWeight, FontWeight.w500);
+      expect(sortStyle.fontSize, inactiveCategoryStyle.fontSize);
+      expect(sortStyle.height, inactiveCategoryStyle.height);
+      expect(sortStyle.fontWeight, inactiveCategoryStyle.fontWeight);
+      expect(filterStyle.fontSize, inactiveCategoryStyle.fontSize);
+      expect(filterStyle.height, inactiveCategoryStyle.height);
+      expect(filterStyle.fontWeight, inactiveCategoryStyle.fontWeight);
+
+      final sortSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: sort, matching: find.byType(AnimatedContainer)),
+      );
+      final sortDecoration = sortSurface.decoration! as BoxDecoration;
+      expect(sortDecoration.borderRadius, BorderRadius.circular(20));
+      expect(sortSurface.duration, const Duration(milliseconds: 180));
+
+      await tester.tap(sort);
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(find.text('排序方式'), findsOneWidget);
+      final activeSortSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: sort, matching: find.byType(AnimatedContainer)),
+      );
+      expect(
+        (activeSortSurface.decoration! as BoxDecoration).gradient,
+        isNotNull,
+      );
+      expect(
+        toolbarTextStyle(sort).fontWeight,
+        selectedCategoryStyle.fontWeight,
+      );
+      final arrow = tester.widget<AnimatedRotation>(
+        find.descendant(of: sort, matching: find.byType(AnimatedRotation)),
+      );
+      expect(arrow.turns, 0.5);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('desktop-library-sort-option-catalog'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('排序方式'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('home search filters catalog data and opens a real game', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final GameInfo game = context.controller.games.first;
+    final String query = game.title.substring(0, 2);
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('desktop-home-search-field'),
+    );
+
+    await tester.tap(searchField);
+    await tester.enterText(searchField, query);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey<String>('desktop-search-result-${game.id}')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(
+      find.byKey(ValueKey<String>('desktop-search-result-${game.id}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    expect(context.controller.selectedGame.id, game.id);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
+      findsNothing,
+    );
+    await tester.tap(find.byTooltip('返回首页'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
+    await tester.tap(searchField);
+    await tester.pumpAndSettle();
+    expect(find.text('最近搜索'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, query), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recently viewed games are shown on home and deduplicated', (
+    tester,
+  ) async {
+    final GameInfo first = context.controller.games[0];
+    final GameInfo second = context.controller.games[1];
+
+    unawaited(context.controller.recordRecentlyViewed(first));
+    unawaited(context.controller.recordRecentlyViewed(second));
+    unawaited(context.controller.recordRecentlyViewed(first));
+    await _mount(
+      tester,
+      context.controller,
+      const Size(1280, 800),
+      settle: false,
+    );
+    await tester.pump();
+
+    expect(
+      context.controller.recentlyViewedGames.map((game) => game.slug),
+      <String>[first.slug, second.slug],
+    );
+    expect(
+      find.byKey(ValueKey<String>('desktop-recent-game-${first.id}')),
+      findsOneWidget,
+    );
+    final firstTile = find.byKey(
+      ValueKey<String>('desktop-recent-game-${first.id}'),
+    );
+    final firstThumbnail = find.byKey(
+      ValueKey<String>('desktop-recent-thumbnail-${first.id}'),
+    );
+    expect(tester.getSize(firstTile).width, greaterThan(110));
+    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(150.1));
+    expect(
+      tester.getSize(firstThumbnail).width /
+          tester.getSize(firstThumbnail).height,
+      closeTo(1.46, 0.01),
+    );
+    final recentTitle = find.descendant(
+      of: firstTile,
+      matching: find.text(first.title),
+    );
+    expect(tester.widget<Text>(recentTitle).style?.fontSize, closeTo(13, 0.01));
+    expect(tester.widget<Text>(recentTitle).style?.fontWeight, FontWeight.w700);
+    final recentTime = find.descendant(
+      of: firstTile,
+      matching: find.textContaining('上次浏览：'),
+    );
+    expect(
+      tester.widget<Text>(recentTime).style?.fontSize,
+      closeTo(10.5, 0.01),
+    );
+    final recentHeader = find.byKey(
+      const ValueKey<String>('desktop-home-recent-header'),
+    );
+    final recentHeaderTitle = find.descendant(
+      of: recentHeader,
+      matching: find.text('最近浏览'),
+    );
+    expect(
+      tester.widget<Text>(recentHeaderTitle).style?.fontWeight,
+      FontWeight.w700,
+    );
+    expect(find.textContaining('上次浏览：'), findsNWidgets(2));
+    final recentPanel = find.byKey(
+      const ValueKey<String>('desktop-home-recent-panel'),
+    );
+    expect(
+      find.descendant(of: recentPanel, matching: find.text('未开放')),
+      findsNothing,
+    );
+
+    final secondTile = find.byKey(
+      ValueKey<String>('desktop-recent-game-${second.id}'),
+    );
+    await tester.ensureVisible(secondTile);
+    await tester.tap(secondTile);
+    await tester.pump();
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    expect(context.controller.recentlyViewedGames.first.slug, second.slug);
+    expect(find.byTooltip('返回首页'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home recommendation header aligns more action and returns home', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final Finder home = find.byType(DesktopHomePane);
+    final Finder header = find.byKey(
+      const ValueKey<String>('desktop-home-recommendation-header'),
+    );
+    final Finder moreText = find.descendant(
+      of: header,
+      matching: find.text('查看更多'),
+    );
+    final Finder moreAction = find
+        .ancestor(of: moreText, matching: find.byType(InkWell))
+        .first;
+
+    expect(
+      find.descendant(of: home, matching: find.text('今日推荐')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getRect(header).right - tester.getRect(moreAction).right,
+      lessThan(1),
+    );
+
+    final recommendationRects = [
+      for (final game in context.controller.games.take(5))
+        tester.getRect(
+          find.byKey(
+            ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+          ),
+        ),
+    ];
+    expect(recommendationRects, hasLength(5));
+    expect(recommendationRects.map((rect) => rect.top).toSet(), hasLength(1));
+    expect(recommendationRects.first.width, closeTo(140, 0.1));
+    expect(recommendationRects.first.height, closeTo(229, 0.1));
+    expect(
+      recommendationRects.first.width / recommendationRects.first.height,
+      closeTo(140 / 229, 0.001),
+    );
+
+    final firstCard = find.byKey(
+      ValueKey<String>(
+        'desktop-home-recommendation-card-${context.controller.games.first.id}',
+      ),
+    );
+    final title = find.descendant(
+      of: firstCard,
+      matching: find.text(context.controller.games.first.title),
+    );
+    final titleStyle = tester.widget<Text>(title).style!;
+    expect(titleStyle.fontSize, 15);
+    expect(titleStyle.fontWeight, FontWeight.w700);
+    expect(titleStyle.height, 1.1);
+    expect(
+      find.descendant(of: firstCard, matching: find.text('竞争')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: firstCard, matching: find.text('德式')),
+      findsOneWidget,
+    );
+    final ratingIcon = find.descendant(
+      of: firstCard,
+      matching: find.byIcon(Icons.star_rounded),
+    );
+    expect(tester.widget<Icon>(ratingIcon).size, 12.5);
+
+    final GameInfo game = context.controller.games.first;
+    await tester.tap(
+      find.descendant(of: home, matching: find.text(game.title)).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    expect(find.byTooltip('返回首页'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('返回首页'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopHomePane), findsOneWidget);
+    expect(find.byType(DesktopGameDetailPane), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home recommendation cards keep their ratio on wide windows', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1920, 1080));
+
+    final card = find.byKey(
+      ValueKey<String>(
+        'desktop-home-recommendation-card-${context.controller.games.first.id}',
+      ),
+    );
+    final rect = tester.getRect(card);
+    expect(rect.width / rect.height, closeTo(140 / 229, 0.001));
+
+    final title = find.descendant(
+      of: card,
+      matching: find.text(context.controller.games.first.title),
+    );
+    expect(tester.widget<Text>(title).style!.fontSize, closeTo(16.2, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home search handles empty results without inline clear action', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('desktop-home-search-field'),
+    );
+    await tester.tap(searchField);
+    await tester.enterText(searchField, '肯定不存在的桌游关键字');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('没有找到'), findsOneWidget);
+    expect(find.text('清空关键词'), findsNothing);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('清空搜索'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('没有找到'), findsNothing);
+    expect(find.text('最近搜索'), findsOneWidget);
+    expect(find.text('肯定不存在的桌游关键字'), findsOneWidget);
+    await tester.tap(find.text('清空记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无最近搜索'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty search results do not show a game library action', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('desktop-home-search-field'),
+    );
+    await tester.tap(searchField);
+    await tester.enterText(searchField, '肯定不存在的桌游关键字');
+    await tester.pumpAndSettle();
+
+    expect(find.text('没有找到“肯定不存在的桌游关键字”'), findsOneWidget);
+    expect(find.text('打开游戏库'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final Size size in const <Size>[
+    Size(1280, 800),
+    Size(720, 700),
+    Size(600, 700),
+  ]) {
+    testWidgets('home search panel fits the workspace at $size', (
+      tester,
+    ) async {
+      await _mount(tester, context.controller, size);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('desktop-home-search-field')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('desktop-home-search-overlay')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'home library load failures are shown in notifications, not inline',
+    (tester) async {
+      await context.controller.refreshLibraryResources();
+      expect(context.controller.libraryLoadError, isNotNull);
+      expect(
+        context.controller.activities.any(
+          (activity) => activity.kind == AppActivityKind.libraryLoadFailed,
+        ),
+        isTrue,
+      );
+
+      await _mount(tester, context.controller, const Size(1995, 1248));
+      expect(find.text('资料加载失败，请在资料库重试。'), findsNothing);
+      expect(find.text('打开资料库'), findsNothing);
+
+      await tester.tap(find.byTooltip('通知').hitTestable());
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('desktop-activity-popup')),
+        findsOneWidget,
+      );
+      expect(find.text('资料加载失败'), findsOneWidget);
+      expect(find.textContaining('打开资料库可重试'), findsOneWidget);
+
+      await tester.tap(find.text('资料加载失败'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DesktopLibraryPane), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('empty game filters do not insert an empty-state panel', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    await _navigate(tester, '游戏库');
+    expect(
+      context.controller.games.where(
+        (game) =>
+            '${game.categoryLine} ${game.keywords.join(' ')}'.contains('合作') &&
+            game.supportedPlayers.any((players) => players >= 5),
+      ),
+      isEmpty,
+    );
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(DesktopGamesPane),
+        matching: find.text('合作'),
+      ),
+    );
+    await tester.tap(find.text('筛选'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('5+'));
+    await tester.tap(find.text('应用筛选'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无符合条件的游戏'), findsNothing);
+    expect(find.text('请选择游戏'), findsNothing);
+    expect(find.text('暂无游戏，请在资料库检查资源。'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home hero exposes three manually selectable carousel pages', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final frame = find.byKey(const ValueKey<String>('home-hero-frame'));
+    final initialFrame = tester.getRect(frame);
+    expect(
+      initialFrame.width / initialFrame.height,
+      closeTo(2169 / 725, 0.005),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-hero-carousel')),
+      findsOneWidget,
+    );
+    for (var index = 0; index < 3; index++) {
+      expect(
+        find.byKey(ValueKey<String>('home-hero-dot-$index')),
+        findsOneWidget,
+      );
+    }
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-1')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('home-hero-page-1')),
+      findsOneWidget,
+    );
+    expect(tester.getRect(frame), initialFrame);
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-2')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('home-hero-page-2')),
+      findsOneWidget,
+    );
+    expect(tester.getRect(frame), initialFrame);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-home-library-flame')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-logo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+      findsOneWidget,
+    );
+    final sidebarArt = tester.widget<Image>(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+    );
+    expect(sidebarArt.fit, BoxFit.fitWidth);
+    expect(sidebarArt.alignment, Alignment.bottomCenter);
+    final sidebarRect = tester.getRect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-full')),
+    );
+    final sidebarArtRect = tester.getRect(
+      find.byKey(const ValueKey<String>('desktop-sidebar-art')),
+    );
+    final settingsItemRect = tester.getRect(
+      find.byKey(
+        const ValueKey<String>('desktop-sidebar-item-sidebar_settings.png'),
+      ),
+    );
+    expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
+    expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
+    expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
+    expect(settingsItemRect.bottom, lessThanOrEqualTo(sidebarArtRect.top));
+    expect(
+      sidebarArtRect.width / sidebarArtRect.height,
+      closeTo(971 / 1619, 0.005),
+    );
+    for (final asset in [
+      'sidebar_home.png',
+      'sidebar_library.png',
+      'sidebar_ai.png',
+      'sidebar_likes.png',
+      'sidebar_settings.png',
+    ]) {
+      final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
+      expect(icon, findsOneWidget);
+      expect(tester.getSize(icon), const Size(28, 28));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in const [
+    Size(1280, 800),
+    Size(1100, 700),
+    Size(720, 700),
+    Size(600, 700),
+  ]) {
+    testWidgets('V5 game detail opens with real data at $size', (tester) async {
+      await _mount(tester, context.controller, size);
+      await _navigate(tester, '游戏库');
+      final game = context.controller.games.first;
+      final poster = find.byKey(ValueKey<String>('desktop-poster-${game.id}'));
+      expect(poster, findsOneWidget);
+      await tester.tap(poster);
+      await tester.pumpAndSettle();
+      expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('desktop-game-detail')),
+        findsOneWidget,
+      );
+      expect(find.text(game.title), findsWidgets);
+      expect(find.text(game.subtitle), findsWidgets);
+      expect(find.text('询问 AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('detail-tab-2')),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('detail-tab-2')));
+      await tester.pumpAndSettle();
+      expect(find.text('玩家评价'), findsWidgets);
+      expect(find.text('未开放'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(find.byTooltip('返回游戏库'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('返回游戏库'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DesktopGamesPane), findsOneWidget);
+      expect(find.byType(DesktopGameDetailPane), findsNothing);
+    });
+  }
+}
