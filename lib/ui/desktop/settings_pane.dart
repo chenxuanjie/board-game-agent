@@ -11,6 +11,7 @@ import '../../models/connectivity_status.dart';
 import '../../state/app_controller.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/palette_registry.dart';
+import '../app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 
@@ -43,7 +44,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       final String build = info.buildNumber.trim();
       return build.isEmpty ? info.version : '${info.version} ($build)';
     } catch (_) {
-      return '暂不可读取';
+      return widget.controller.copy.localized('暂不可读取', 'Unavailable');
     }
   }
 
@@ -56,7 +57,14 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     try {
       await operation();
     } catch (_) {
-      if (mounted) setState(() => _failure = '设置未能保存，请重试。');
+      if (mounted) {
+        setState(
+          () => _failure = widget.controller.copy.localized(
+            '设置未能保存，请重试。',
+            'Could not save the setting. Please try again.',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -71,7 +79,14 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     try {
       await widget.controller.refreshAssetAccessStatus();
     } catch (_) {
-      if (mounted) setState(() => _failure = '资料源检测失败，请稍后重试。');
+      if (mounted) {
+        setState(
+          () => _failure = widget.controller.copy.localized(
+            '资料源检测失败，请稍后重试。',
+            'Could not check resource sources. Please try again later.',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _checkingSources = false);
     }
@@ -107,7 +122,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           onSelectTheme: (ColorSchemeOption scheme) =>
               unawaited(_save(() => widget.controller.setColorScheme(scheme))),
         ),
-        const _NotificationsCard(),
+        _NotificationsCard(copy: widget.controller.copy),
         _SyncBackupCard(
           controller: widget.controller,
           checking: _checkingSources,
@@ -158,7 +173,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Text(
-                            '设置',
+                            widget.controller.copy.localized('设置', 'Settings'),
                             style: TextStyle(
                               fontSize: metrics.font(28),
                               height: 1.1,
@@ -168,7 +183,10 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                           ),
                           SizedBox(height: metrics.px(5)),
                           Text(
-                            '应用偏好与服务',
+                            widget.controller.copy.localized(
+                              '应用偏好与服务',
+                              'App preferences and services',
+                            ),
                             style: TextStyle(
                               fontSize: metrics.font(13),
                               color: DesktopColors.secondaryText,
@@ -209,7 +227,12 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                       ),
                       onPressed: null,
                       icon: const Icon(Icons.restart_alt_rounded),
-                      label: const Text('恢复默认设置'),
+                      label: Text(
+                        widget.controller.copy.localized(
+                          '恢复默认设置',
+                          'Restore defaults',
+                        ),
+                      ),
                       style: OutlinedButton.styleFrom(
                         minimumSize: Size(0, metrics.px(40)),
                         padding: EdgeInsets.symmetric(
@@ -224,7 +247,10 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                     ),
                     const Spacer(),
                     Text(
-                      '大多数设置会自动保存',
+                      widget.controller.copy.localized(
+                        '大多数设置会自动保存',
+                        'Most settings save automatically',
+                      ),
                       style: TextStyle(
                         fontSize: metrics.font(12),
                         color: DesktopColors.secondaryText,
@@ -316,13 +342,14 @@ class _GeneralCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppCopy copy = controller.copy;
     return _SettingsCard(
       icon: Icons.tune_rounded,
-      title: '通用',
+      title: copy.localized('通用', 'General'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _FieldLabel(label: '语言'),
+          _FieldLabel(label: copy.localized('语言', 'Language')),
           SizedBox(height: _px(context, 5)),
           SizedBox(
             height: _px(context, 42),
@@ -355,16 +382,21 @@ class _GeneralCard extends StatelessWidget {
             key: const ValueKey<String>(
               'desktop-settings-startup-update-check',
             ),
-            title: '启动时检查更新',
-            subtitle: '当前更新源仅支持 Android APK',
+            title: copy.localized('启动时检查更新', 'Check for updates on startup'),
+            subtitle: copy.localized(
+              '当前更新源仅支持 Android APK',
+              'The current update source supports Android APK only',
+            ),
             value: controller.checkForUpdates,
             onChanged: saving ? null : onStartupUpdates,
           ),
           SizedBox(height: _px(context, 4)),
           _SettingSwitchRow(
             key: const ValueKey<String>('desktop-settings-voice-reply'),
-            title: '语音朗读',
-            subtitle: controller.voiceReplyAvailable ? '可按设备能力启用' : '当前设备不可用',
+            title: copy.localized('语音朗读', 'Voice output'),
+            subtitle: controller.voiceReplyAvailable
+                ? copy.localized('可按设备能力启用', 'Available on this device')
+                : copy.localized('当前设备不可用', 'Unavailable on this device'),
             value: controller.voiceReplyEnabled,
             onChanged: !saving && controller.voiceReplyAvailable
                 ? onVoiceReply
@@ -391,20 +423,21 @@ class _AiServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppCopy copy = controller.copy;
     final AiApiConfig config = controller.aiApiConfig;
     final bool hasKey = config.apiKey.trim().isNotEmpty;
     final String keyValue = !hasKey
-        ? '未配置'
+        ? copy.localized('未配置', 'Not configured')
         : showApiKey
         ? config.apiKey
         : '••••••••';
     final String endpoint = config.baseUrl.trim().isEmpty
-        ? '未配置'
+        ? copy.localized('未配置', 'Not configured')
         : config.baseUrl.trim();
 
     return _SettingsCard(
       icon: Icons.auto_awesome_rounded,
-      title: 'AI 服务',
+      title: copy.localized('AI 服务', 'AI Service'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -412,15 +445,19 @@ class _AiServiceCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: _ValueField(
-                  label: '供应商',
-                  value: config.name.trim().isEmpty ? '未配置' : config.name,
+                  label: copy.localized('供应商', 'Provider'),
+                  value: config.name.trim().isEmpty
+                      ? copy.localized('未配置', 'Not configured')
+                      : config.name,
                 ),
               ),
               SizedBox(width: _px(context, 9)),
               Expanded(
                 child: _ValueField(
-                  label: '模型',
-                  value: config.model.trim().isEmpty ? '未选择' : config.model,
+                  label: copy.localized('模型', 'Model'),
+                  value: config.model.trim().isEmpty
+                      ? copy.localized('未选择', 'Not selected')
+                      : config.model,
                 ),
               ),
             ],
@@ -431,7 +468,9 @@ class _AiServiceCard extends StatelessWidget {
             value: keyValue,
             trailing: hasKey
                 ? IconButton(
-                    tooltip: showApiKey ? '隐藏 API Key' : '显示 API Key',
+                    tooltip: showApiKey
+                        ? copy.localized('隐藏 API Key', 'Hide API Key')
+                        : copy.localized('显示 API Key', 'Show API Key'),
                     onPressed: onToggleApiKey,
                     icon: Icon(
                       showApiKey
@@ -444,36 +483,37 @@ class _AiServiceCard extends StatelessWidget {
                 : null,
           ),
           SizedBox(height: _px(context, 8)),
-          _ValueField(label: '接口地址', value: endpoint),
+          _ValueField(
+            label: copy.localized('接口地址', 'Base URL'),
+            value: endpoint,
+          ),
           SizedBox(height: _px(context, 10)),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _AiStatusLabel(
-                  status: controller.aiConnectivityStatus,
-                  hasKey: hasKey,
+          _AiStatusLabel(
+            status: controller.aiConnectivityStatus,
+            hasKey: hasKey,
+            copy: copy,
+          ),
+          SizedBox(height: _px(context, 8)),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              key: const ValueKey<String>('desktop-settings-ai-details'),
+              onPressed: onOpenDetails,
+              icon: Icon(
+                Icons.settings_suggest_outlined,
+                size: _px(context, 17),
+              ),
+              label: Text(copy.localized('详细设置', 'Advanced settings')),
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size(0, _px(context, 38)),
+                padding: EdgeInsets.symmetric(horizontal: _px(context, 11)),
+                foregroundColor: DesktopColors.brown,
+                side: const BorderSide(color: Color(0x1FA76D48)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(_px(context, 9)),
                 ),
               ),
-              SizedBox(width: _px(context, 8)),
-              OutlinedButton.icon(
-                key: const ValueKey<String>('desktop-settings-ai-details'),
-                onPressed: onOpenDetails,
-                icon: Icon(
-                  Icons.settings_suggest_outlined,
-                  size: _px(context, 17),
-                ),
-                label: const Text('详细设置'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: Size(0, _px(context, 38)),
-                  padding: EdgeInsets.symmetric(horizontal: _px(context, 11)),
-                  foregroundColor: DesktopColors.brown,
-                  side: const BorderSide(color: Color(0x1FA76D48)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(_px(context, 9)),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -495,9 +535,10 @@ class _AppearanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const List<ColorSchemeOption> schemes = ColorSchemeOption.values;
+    final AppCopy copy = controller.copy;
     return _SettingsCard(
       icon: Icons.palette_outlined,
-      title: '外观与主题',
+      title: copy.localized('外观与主题', 'Appearance & Theme'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -520,16 +561,30 @@ class _AppearanceCard extends StatelessWidget {
           SizedBox(height: _px(context, 12)),
           Row(
             children: <Widget>[
-              Expanded(child: _FieldLabel(label: '主题色')),
-              const _UnavailableLabel(label: '当前版本不可调整'),
+              Expanded(
+                child: _FieldLabel(
+                  label: copy.localized('主题色', 'Accent color'),
+                ),
+              ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _UnavailableLabel(
+                    label: copy.localized(
+                      '当前版本不可调整',
+                      'Not adjustable in this version',
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           SizedBox(height: _px(context, 6)),
-          const _DisabledAccentColors(),
+          _DisabledAccentColors(copy: copy),
           SizedBox(height: _px(context, 8)),
           Row(
             children: <Widget>[
-              _FieldLabel(label: '界面缩放'),
+              _FieldLabel(label: copy.localized('界面缩放', 'Interface scale')),
               SizedBox(width: _px(context, 8)),
               Text(
                 '100%',
@@ -539,8 +594,18 @@ class _AppearanceCard extends StatelessWidget {
                   color: DesktopColors.secondaryText,
                 ),
               ),
-              const Spacer(),
-              const _UnavailableLabel(label: '当前版本不可调整'),
+              SizedBox(width: _px(context, 8)),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _UnavailableLabel(
+                    label: copy.localized(
+                      '当前版本不可调整',
+                      'Not adjustable in this version',
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           SizedBox(
@@ -730,7 +795,9 @@ class _ThemeMiniature extends StatelessWidget {
 }
 
 class _DisabledAccentColors extends StatelessWidget {
-  const _DisabledAccentColors();
+  const _DisabledAccentColors({required this.copy});
+
+  final AppCopy copy;
 
   static const List<Color> _colors = <Color>[
     Color(0xFFFF6846),
@@ -743,10 +810,13 @@ class _DisabledAccentColors extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Tooltip(
-    message: '当前版本不可调整',
+    message: copy.localized('当前版本不可调整', 'Not adjustable in this version'),
     child: Semantics(
       enabled: false,
-      label: '主题色，当前版本不可调整',
+      label: copy.localized(
+        '主题色，当前版本不可调整',
+        'Accent color, not adjustable in this version',
+      ),
       child: IgnorePointer(
         child: MouseRegion(
           cursor: SystemMouseCursors.basic,
@@ -775,8 +845,6 @@ class _DisabledAccentColors extends StatelessWidget {
                     ),
                   ),
                 ],
-                SizedBox(width: _px(context, 8)),
-                const _UnavailableLabel(label: '当前版本不可调整'),
               ],
             ),
           ),
@@ -787,24 +855,34 @@ class _DisabledAccentColors extends StatelessWidget {
 }
 
 class _NotificationsCard extends StatelessWidget {
-  const _NotificationsCard();
+  const _NotificationsCard({required this.copy});
+
+  final AppCopy copy;
 
   @override
-  Widget build(BuildContext context) => const _SettingsCard(
+  Widget build(BuildContext context) => _SettingsCard(
     icon: Icons.notifications_none_rounded,
-    title: '通知设置',
+    title: copy.localized('通知设置', 'Notification Settings'),
     child: Column(
       children: <Widget>[
         _UnavailableSettingRow(
           icon: Icons.new_releases_outlined,
-          title: '游戏上新通知',
-          subtitle: '关注的桌游有新内容时提醒',
+          title: copy.localized('游戏上新通知', 'New Game Notifications'),
+          subtitle: copy.localized(
+            '关注的桌游有新内容时提醒',
+            'Notify me when followed games get new content',
+          ),
+          unavailableLabel: copy.localized('暂不可用', 'Unavailable'),
         ),
-        _SettingsDivider(),
+        const _SettingsDivider(),
         _UnavailableSettingRow(
           icon: Icons.article_outlined,
-          title: '桌游资讯推送',
-          subtitle: '精选桌游文章、测评和资讯',
+          title: copy.localized('桌游资讯推送', 'Board Game News'),
+          subtitle: copy.localized(
+            '精选桌游文章、测评和资讯',
+            'Curated articles, reviews, and news',
+          ),
+          unavailableLabel: copy.localized('暂不可用', 'Unavailable'),
         ),
       ],
     ),
@@ -824,6 +902,7 @@ class _SyncBackupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppCopy copy = controller.copy;
     final List<AssetSourceConfig> sources = controller.assetSourceConfigs;
     final Map<String, ConnectivityStatus> statuses =
         controller.assetSourceStatuses;
@@ -838,29 +917,32 @@ class _SyncBackupCard extends StatelessWidget {
     final String stateLabel;
     final Color stateColor;
     if (sources.isEmpty) {
-      stateLabel = '未配置';
+      stateLabel = copy.localized('未配置', 'Not configured');
       stateColor = DesktopColors.secondaryText;
     } else if (isLoading) {
-      stateLabel = '检测中';
+      stateLabel = copy.localized('检测中', 'Checking');
       stateColor = DesktopColors.brown;
     } else if (connected > 0) {
-      stateLabel = '已连接 $connected/${sources.length}';
+      stateLabel = copy.localized(
+        '已连接 $connected/${sources.length}',
+        'Connected $connected/${sources.length}',
+      );
       stateColor = const Color(0xFF497461);
     } else if (statuses.isEmpty ||
         sources.every((source) {
           return statuses[source.id] == null ||
               statuses[source.id]?.state == ConnectivityState.unknown;
         })) {
-      stateLabel = '尚未检测';
+      stateLabel = copy.localized('尚未检测', 'Not checked');
       stateColor = DesktopColors.secondaryText;
     } else {
-      stateLabel = '连接失败';
+      stateLabel = copy.localized('连接失败', 'Connection failed');
       stateColor = const Color(0xFF9F4D5D);
     }
 
     return _SettingsCard(
       icon: Icons.cloud_outlined,
-      title: '同步与备份',
+      title: copy.localized('同步与备份', 'Sync & Backup'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -871,7 +953,10 @@ class _SyncBackupCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      '桌游资料 WebDAV',
+                      copy.localized(
+                        '桌游资料 WebDAV',
+                        'Board Game Resources via WebDAV',
+                      ),
                       style: TextStyle(
                         fontSize: _font(context, 13),
                         fontWeight: FontWeight.w600,
@@ -880,7 +965,10 @@ class _SyncBackupCard extends StatelessWidget {
                     ),
                     SizedBox(height: _px(context, 3)),
                     Text(
-                      '${sources.length} 个资料源；只用于游戏资源，不同步个人数据',
+                      copy.localized(
+                        '${sources.length} 个资料源；只用于游戏资源，不同步个人数据',
+                        '${sources.length} resource sources; game resources only, personal data is not synced',
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -912,7 +1000,11 @@ class _SyncBackupCard extends StatelessWidget {
                       ),
                     )
                   : Icon(Icons.network_check_rounded, size: _px(context, 17)),
-              label: Text(checking ? '正在检测' : '检测资料源'),
+              label: Text(
+                checking
+                    ? copy.localized('正在检测', 'Checking')
+                    : copy.localized('检测资料源', 'Check sources'),
+              ),
               style: OutlinedButton.styleFrom(
                 minimumSize: Size(0, _px(context, 36)),
                 padding: EdgeInsets.symmetric(horizontal: _px(context, 10)),
@@ -928,8 +1020,12 @@ class _SyncBackupCard extends StatelessWidget {
           _SettingsDivider(height: _px(context, 9)),
           _UnavailableSettingRow(
             icon: Icons.sync_rounded,
-            title: '个人数据自动同步',
-            subtitle: '当前版本不包含个人数据同步',
+            title: copy.localized('个人数据自动同步', 'Automatic Personal Data Sync'),
+            subtitle: copy.localized(
+              '当前版本不包含个人数据同步',
+              'Personal data sync is not included in this version',
+            ),
+            unavailableLabel: copy.localized('暂不可用', 'Unavailable'),
             compact: true,
           ),
           SizedBox(height: _px(context, 6)),
@@ -937,23 +1033,35 @@ class _SyncBackupCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: _DisabledButton(
-                  label: '立即同步',
+                  label: copy.localized('立即同步', 'Sync now'),
                   icon: Icons.sync_rounded,
+                  unavailableMessage: copy.localized(
+                    '当前版本不可用',
+                    'Unavailable in this version',
+                  ),
                   key: const ValueKey<String>('desktop-settings-sync-disabled'),
                 ),
               ),
               SizedBox(width: _px(context, 8)),
               Expanded(
                 child: _DisabledButton(
-                  label: '导入备份',
+                  label: copy.localized('导入备份', 'Import backup'),
                   icon: Icons.file_download_outlined,
+                  unavailableMessage: copy.localized(
+                    '当前版本不可用',
+                    'Unavailable in this version',
+                  ),
                 ),
               ),
               SizedBox(width: _px(context, 8)),
               Expanded(
                 child: _DisabledButton(
-                  label: '导出备份',
+                  label: copy.localized('导出备份', 'Export backup'),
                   icon: Icons.file_upload_outlined,
+                  unavailableMessage: copy.localized(
+                    '当前版本不可用',
+                    'Unavailable in this version',
+                  ),
                 ),
               ),
             ],
@@ -976,135 +1084,153 @@ class _AboutUpdatesCard extends StatelessWidget {
   final VoidCallback onOpenAbout;
 
   @override
-  Widget build(BuildContext context) => _SettingsCard(
-    icon: Icons.info_outline_rounded,
-    title: '关于与更新',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(child: _FieldLabel(label: '当前版本')),
-            FutureBuilder<String>(
-              future: version,
-              builder: (context, snapshot) => Text(
-                snapshot.data ?? '读取中…',
-                key: const ValueKey<String>('desktop-settings-app-version'),
-                style: TextStyle(
-                  fontSize: _font(context, 13),
-                  fontWeight: FontWeight.w600,
-                  color: DesktopColors.text,
+  Widget build(BuildContext context) {
+    final AppCopy copy = controller.copy;
+    return _SettingsCard(
+      icon: Icons.info_outline_rounded,
+      title: copy.localized('关于与更新', 'About & Updates'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _FieldLabel(
+                  label: copy.localized('当前版本', 'Current version'),
                 ),
               ),
-            ),
-          ],
-        ),
-        SizedBox(height: _px(context, 8)),
-        Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: _px(context, 11),
-            vertical: _px(context, 9),
-          ),
-          decoration: BoxDecoration(
-            color: DesktopColors.soft,
-            borderRadius: BorderRadius.circular(_px(context, 8)),
-          ),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                controller.checkForUpdates
-                    ? Icons.update_rounded
-                    : Icons.update_disabled_rounded,
-                size: _px(context, 18),
-                color: DesktopColors.orange,
-              ),
-              SizedBox(width: _px(context, 8)),
-              Expanded(
-                child: Text(
-                  controller.checkForUpdates
-                      ? '启动检查已开启（更新源仅支持 Android APK）'
-                      : '启动检查已关闭',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+              FutureBuilder<String>(
+                future: version,
+                builder: (context, snapshot) => Text(
+                  snapshot.data ?? copy.localized('读取中…', 'Loading…'),
+                  key: const ValueKey<String>('desktop-settings-app-version'),
                   style: TextStyle(
-                    fontSize: _font(context, 11.5),
-                    height: 1.25,
-                    color: DesktopColors.secondaryText,
+                    fontSize: _font(context, 13),
+                    fontWeight: FontWeight.w600,
+                    color: DesktopColors.text,
                   ),
                 ),
               ),
             ],
           ),
-        ),
-        SizedBox(height: _px(context, 11)),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: OutlinedButton.icon(
-                key: const ValueKey<String>('desktop-settings-check-updates'),
-                onPressed: onOpenAbout,
-                icon: Icon(
-                  Icons.system_update_alt_rounded,
-                  size: _px(context, 17),
-                ),
-                label: const Text('检查更新'),
-                style: _settingsButtonStyle(context),
-              ),
+          SizedBox(height: _px(context, 8)),
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: _px(context, 11),
+              vertical: _px(context, 9),
             ),
-            SizedBox(width: _px(context, 9)),
-            Expanded(
-              child: FilledButton.icon(
-                key: const ValueKey<String>('desktop-settings-open-about'),
-                onPressed: onOpenAbout,
-                icon: Icon(Icons.open_in_new_rounded, size: _px(context, 17)),
-                label: const Text('关于应用'),
-                style: FilledButton.styleFrom(
-                  minimumSize: Size(0, _px(context, 39)),
-                  backgroundColor: DesktopColors.orange,
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(horizontal: _px(context, 8)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(_px(context, 9)),
+            decoration: BoxDecoration(
+              color: DesktopColors.soft,
+              borderRadius: BorderRadius.circular(_px(context, 8)),
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  controller.checkForUpdates
+                      ? Icons.update_rounded
+                      : Icons.update_disabled_rounded,
+                  size: _px(context, 18),
+                  color: DesktopColors.orange,
+                ),
+                SizedBox(width: _px(context, 8)),
+                Expanded(
+                  child: Text(
+                    controller.checkForUpdates
+                        ? copy.localized(
+                            '启动检查已开启（更新源仅支持 Android APK）',
+                            'Startup checks are enabled (the update source supports Android APK only)',
+                          )
+                        : copy.localized(
+                            '启动检查已关闭',
+                            'Startup checks are disabled',
+                          ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: _font(context, 11.5),
+                      height: 1.25,
+                      color: DesktopColors.secondaryText,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: _px(context, 11)),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const ValueKey<String>('desktop-settings-check-updates'),
+                  onPressed: onOpenAbout,
+                  icon: Icon(
+                    Icons.system_update_alt_rounded,
+                    size: _px(context, 17),
+                  ),
+                  label: Text(copy.localized('检查更新', 'Check for updates')),
+                  style: _settingsButtonStyle(context),
+                ),
+              ),
+              SizedBox(width: _px(context, 9)),
+              Expanded(
+                child: FilledButton.icon(
+                  key: const ValueKey<String>('desktop-settings-open-about'),
+                  onPressed: onOpenAbout,
+                  icon: Icon(Icons.open_in_new_rounded, size: _px(context, 17)),
+                  label: Text(copy.localized('关于应用', 'About app')),
+                  style: FilledButton.styleFrom(
+                    minimumSize: Size(0, _px(context, 39)),
+                    backgroundColor: DesktopColors.orange,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: _px(context, 8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(_px(context, 9)),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AiStatusLabel extends StatelessWidget {
-  const _AiStatusLabel({required this.status, required this.hasKey});
+  const _AiStatusLabel({
+    required this.status,
+    required this.hasKey,
+    required this.copy,
+  });
 
   final ConnectivityStatus status;
   final bool hasKey;
+  final AppCopy copy;
 
   @override
   Widget build(BuildContext context) {
     final String label;
     final Color color;
     if (!hasKey) {
-      label = '未配置';
+      label = copy.localized('未配置', 'Not configured');
       color = DesktopColors.secondaryText;
     } else {
       switch (status.state) {
         case ConnectivityState.success:
-          label = '连接正常';
+          label = copy.localized('连接正常', 'Connection ready');
           color = const Color(0xFF497461);
         case ConnectivityState.loading:
-          label = '检测中';
+          label = copy.localized('检测中', 'Checking');
           color = DesktopColors.brown;
         case ConnectivityState.warning:
-          label = '需要留意';
+          label = copy.localized('需要留意', 'Needs attention');
           color = const Color(0xFF945D31);
         case ConnectivityState.failure:
-          label = '连接失败';
+          label = copy.localized('连接失败', 'Connection failed');
           color = const Color(0xFF9F4D5D);
         case ConnectivityState.unknown:
-          label = '尚未检测';
+          label = copy.localized('尚未检测', 'Not checked');
           color = DesktopColors.secondaryText;
       }
     }
@@ -1118,7 +1244,7 @@ class _AiStatusLabel extends StatelessWidget {
         SizedBox(width: _px(context, 6)),
         Flexible(
           child: Text(
-            'AI 服务 · $label',
+            '${copy.localized('AI 服务', 'AI Service')} · $label',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -1163,7 +1289,11 @@ class _ValueField extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: _font(context, 12),
-                  color: value == '未配置' || value == '未选择'
+                  color:
+                      value == '未配置' ||
+                          value == '未选择' ||
+                          value == 'Not configured' ||
+                          value == 'Not selected'
                       ? DesktopColors.secondaryText
                       : DesktopColors.text,
                   fontWeight: FontWeight.w500,
@@ -1257,12 +1387,14 @@ class _UnavailableSettingRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.unavailableLabel,
     this.compact = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final String unavailableLabel;
   final bool compact;
 
   @override
@@ -1303,7 +1435,7 @@ class _UnavailableSettingRow extends StatelessWidget {
               ),
             ),
             SizedBox(width: _px(context, 8)),
-            const _UnavailableLabel(label: '暂不可用'),
+            _UnavailableLabel(label: unavailableLabel),
           ],
         ),
       ),
@@ -1370,14 +1502,20 @@ class _StatusPill extends StatelessWidget {
 }
 
 class _DisabledButton extends StatelessWidget {
-  const _DisabledButton({super.key, required this.label, required this.icon});
+  const _DisabledButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.unavailableMessage,
+  });
 
   final String label;
   final IconData icon;
+  final String unavailableMessage;
 
   @override
   Widget build(BuildContext context) => Tooltip(
-    message: '当前版本不可用',
+    message: unavailableMessage,
     child: OutlinedButton.icon(
       onPressed: null,
       icon: Icon(icon, size: _px(context, 15)),

@@ -1233,6 +1233,37 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('switching to English updates the desktop settings shell', (
+    tester,
+  ) async {
+    await _mount(tester, controller, const Size(1280, 800));
+    await _navigate(tester, '设置');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('desktop-settings-language')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('English').last);
+    for (int attempt = 0; attempt < 30; attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('App preferences and services').evaluate().isNotEmpty) {
+        break;
+      }
+    }
+
+    expect(controller.language, AppLanguage.en);
+    expect(find.text('App preferences and services'), findsOneWidget);
+    expect(find.text('General'), findsOneWidget);
+    expect(find.text('AI Service'), findsOneWidget);
+    expect(find.text('Appearance & Theme'), findsOneWidget);
+    expect(find.text('Notification Settings'), findsOneWidget);
+    expect(find.text('Sync & Backup'), findsOneWidget);
+    expect(find.text('About & Updates'), findsOneWidget);
+    expect(find.text('应用偏好与服务'), findsNothing);
+    expect(find.text('通知设置'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _mount(

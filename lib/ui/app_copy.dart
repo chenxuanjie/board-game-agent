@@ -10,6 +10,9 @@ class AppCopy {
 
   bool get isChinese => language == AppLanguage.zhHans;
 
+  String localized(String chinese, String english) =>
+      isChinese ? chinese : english;
+
   String get appTitle => isChinese ? '桌游导师' : 'Board Game Agent';
   String get startupDataUnavailable => isChinese
       ? '暂时无法加载桌游资料，请稍后重试。'

@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   app_about:
     path: ../shared_packages/app_about
   app_ai_client:

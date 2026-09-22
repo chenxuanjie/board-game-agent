@@ -343,11 +343,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: const Text('未开放'),
+        content: Text(widget.controller.copy.localized('未开放', 'Coming soon')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('知道了'),
+            child: Text(widget.controller.copy.localized('知道了', 'OK')),
           ),
         ],
       ),
@@ -466,6 +466,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             children: [
               if (!narrow)
                 DesktopSidebar(
+                  copy: widget.controller.copy,
                   compact: compact,
                   selectedIndex: _selectedRouteIndex,
                   onSelect: _selectRoute,
@@ -518,6 +519,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     shape: const RoundedRectangleBorder(),
                     child: SafeArea(
                       child: DesktopSidebar(
+                        copy: widget.controller.copy,
                         width: 280,
                         selectedIndex: _selectedRouteIndex,
                         onSelect: (index) =>
@@ -613,9 +615,18 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               controller: widget.controller,
                               game: widget.controller.selectedGame,
                               backTooltip: switch (_gameDetailReturnPage) {
-                                'home' => '返回首页',
-                                'favorites' => '返回我的喜欢',
-                                _ => '返回游戏库',
+                                'home' => widget.controller.copy.localized(
+                                  '返回首页',
+                                  'Back to Home',
+                                ),
+                                'favorites' => widget.controller.copy.localized(
+                                  '返回我的喜欢',
+                                  'Back to My Likes',
+                                ),
+                                _ => widget.controller.copy.localized(
+                                  '返回游戏库',
+                                  'Back to Game Library',
+                                ),
                               },
                               onBack: () => _navigate(_gameDetailReturnPage),
                               onSearch: _find,
@@ -639,8 +650,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   children: [
                                     Text(
                                       switch (_page) {
-                                        'favorites' => '我的喜欢',
-                                        'community' => '社区',
+                                        'favorites' =>
+                                          widget.controller.copy.favoritesTitle,
+                                        'community' =>
+                                          widget.controller.copy.localized(
+                                            '社区',
+                                            'Community',
+                                          ),
                                         _ => _page,
                                       },
                                       style: Theme.of(
@@ -648,9 +664,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                       ).textTheme.headlineSmall,
                                     ),
                                     const SizedBox(height: 12),
-                                    const Text(
-                                      '未开放',
-                                      style: TextStyle(
+                                    Text(
+                                      widget.controller.copy.localized(
+                                        '未开放',
+                                        'Coming soon',
+                                      ),
+                                      style: const TextStyle(
                                         color: DesktopColors.secondaryText,
                                       ),
                                     ),
@@ -670,7 +689,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   top: 12,
                   child: IconButton(
                     key: const ValueKey<String>('desktop-open-navigation'),
-                    tooltip: '打开导航',
+                    tooltip: widget.controller.copy.localized(
+                      '打开导航',
+                      'Open navigation',
+                    ),
                     onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                     style: IconButton.styleFrom(
                       backgroundColor: const Color(0xCC5A4B42),
@@ -744,7 +766,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             if (narrow) ...[
               IconButton(
                 key: const ValueKey<String>('desktop-open-navigation'),
-                tooltip: '打开导航',
+                tooltip: widget.controller.copy.localized(
+                  '打开导航',
+                  'Open navigation',
+                ),
                 onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 icon: const Icon(
                   Icons.menu_rounded,
@@ -812,8 +837,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             suffixIcon: _searchOpen
                                 ? IconButton(
                                     tooltip: _search.text.isEmpty
-                                        ? '关闭搜索'
-                                        : '清空搜索',
+                                        ? widget.controller.copy.localized(
+                                            '关闭搜索',
+                                            'Close search',
+                                          )
+                                        : widget.controller.copy.localized(
+                                            '清空搜索',
+                                            'Clear search',
+                                          ),
                                     onPressed: _search.text.isEmpty
                                         ? _closeSearch
                                         : _clearSearch,
@@ -824,7 +855,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                     ),
                                   )
                                 : null,
-                            hintText: '搜索桌游 / 机制 / 作者 / 玩法',
+                            hintText: widget.controller.copy.localized(
+                              '搜索桌游 / 机制 / 作者 / 玩法',
+                              'Search games / mechanics / designers / rules',
+                            ),
                             hintStyle: TextStyle(
                               color: Color(0xFFA89C90),
                               fontSize: metrics.font(19),
@@ -846,7 +880,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               child: Badge(
                 isLabelVisible: widget.controller.unreadActivityCount > 0,
                 child: IconButton(
-                  tooltip: '通知',
+                  tooltip: widget.controller.copy.localized(
+                    '通知',
+                    'Notifications',
+                  ),
                   icon: const Icon(
                     Icons.notifications_none_rounded,
                     color: DesktopColors.brown,
@@ -858,7 +895,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             if (!narrow) SizedBox(width: metrics.px(11)),
             if (!narrow)
               InkWell(
-                onTap: () => _unavailable('个人中心'),
+                onTap: () => _unavailable(
+                  widget.controller.copy.localized('个人中心', 'Profile'),
+                ),
                 borderRadius: BorderRadius.circular(metrics.radius(22)),
                 child: Row(
                   children: [
@@ -885,7 +924,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                           ),
                           SizedBox(height: metrics.px(2)),
                           Text(
-                            '未开放',
+                            widget.controller.copy.localized(
+                              '未开放',
+                              'Coming soon',
+                            ),
                             style: TextStyle(
                               fontSize: metrics.font(11),
                               color: DesktopColors.secondaryText,
