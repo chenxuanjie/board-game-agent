@@ -162,6 +162,45 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('related games open another detail and preserve home return', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final source = context.controller.dailyRecommendedGames.first;
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('desktop-home-recommendation-card-${source.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final relatedSection = find.byKey(
+      const ValueKey<String>('desktop-related-games-section'),
+    );
+    expect(relatedSection, findsOneWidget);
+    expect(
+      find.descendant(of: relatedSection, matching: find.text('相关游戏')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('detail-tab-1')));
+    await tester.pumpAndSettle();
+    expect(relatedSection, findsOneWidget);
+
+    final results = find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith('related-game-'),
+    );
+    expect(results, findsWidgets);
+    await tester.ensureVisible(results.first);
+    await tester.pumpAndSettle();
+    await tester.tap(results.first);
+    await tester.pumpAndSettle();
+    expect(context.controller.selectedGame.id, isNot(source.id));
+    expect(find.byTooltip('返回首页'), findsOneWidget);
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'library posters match legacy proportion and hover preview, then open Desktop details',
     (tester) async {

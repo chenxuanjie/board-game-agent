@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/game_info.dart';
+import '../../services/related_game_recommender.dart';
 import '../../state/app_controller.dart';
 import '../widgets/desktop_resolved_image.dart';
 import 'content_primitives.dart';
@@ -18,6 +19,7 @@ class DesktopGameDetailPane extends StatefulWidget {
     required this.onOpenRules,
     required this.onAskAi,
     required this.onToggleFavorite,
+    required this.onOpenGame,
   });
 
   final AppController controller;
@@ -28,6 +30,7 @@ class DesktopGameDetailPane extends StatefulWidget {
   final VoidCallback onOpenRules;
   final VoidCallback onAskAi;
   final ValueChanged<GameInfo> onToggleFavorite;
+  final ValueChanged<GameInfo> onOpenGame;
 
   @override
   State<DesktopGameDetailPane> createState() => _DesktopGameDetailPaneState();
@@ -36,7 +39,13 @@ class DesktopGameDetailPane extends StatefulWidget {
 class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
 
-  static const _tabs = ['游戏介绍', '规则摘要', '玩家评价', '相关扩展', '讨论区'];
+  static const _tabs = ['游戏介绍', '规则摘要', '玩家评价', '讨论区'];
+
+  @override
+  void didUpdateWidget(covariant DesktopGameDetailPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.game.id != widget.game.id) _tab = 0;
+  }
 
   GameInfo get game => widget.game;
   String value(String text) => desktopContentValue(text);
@@ -77,6 +86,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             ],
           ),
         ),
+        _relatedSection(),
         const SizedBox(height: 16),
       ],
     );
@@ -413,6 +423,130 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     0 => _introduction(),
     1 => _rules(),
     _ => _UnavailableTab(title: _tabs[_tab]),
+  };
+
+  Widget _relatedSection() => Container(
+    key: const ValueKey<String>('desktop-related-games-section'),
+    margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: DesktopColors.card,
+      borderRadius: BorderRadius.circular(13),
+      border: Border.all(color: DesktopColors.line),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '相关游戏',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 14),
+        _relatedGames(),
+      ],
+    ),
+  );
+
+  Widget _relatedGames() {
+    final results = const RelatedGameRecommender().recommend(
+      source: game,
+      catalog: widget.controller.games,
+    );
+    if (results.isEmpty) {
+      return const SizedBox(height: 120, child: Center(child: Text('暂无其他游戏')));
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 900
+            ? 3
+            : constraints.maxWidth >= 560
+            ? 2
+            : 1;
+        final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final result in results)
+              SizedBox(
+                width: width,
+                child: InkWell(
+                  key: ValueKey<String>('related-game-${result.game.id}'),
+                  onTap: () => widget.onOpenGame(result.game),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFCF9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: DesktopColors.line),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: SizedBox(
+                            width: 62,
+                            height: 82,
+                            child: DesktopResolvedImage(
+                              controller: widget.controller,
+                              assetPath: result.game.coverAssetPath,
+                              palette: widget.controller.palette,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                result.game.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                _relatedReason(result.reason),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: DesktopColors.secondaryText,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                result.game.score,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: DesktopColors.orange,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _relatedReason(String reason) => switch (reason) {
+    'players' => '适合相近人数',
+    'difficulty' => '难度相近',
+    'rating' => '按评分推荐',
+    _ => '共同特色：$reason',
   };
 
   Widget _introduction() => LayoutBuilder(

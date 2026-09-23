@@ -132,6 +132,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       _gameDetailReturnPage = origin == 'gameDetail' ? 'games' : origin;
       _page = 'gameDetail';
     });
+    if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
   void _openRules(GameInfo game) {
@@ -633,6 +634,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               onAskAi: () =>
                                   _askAi(widget.controller.selectedGame),
                               onToggleFavorite: _toggleFavorite,
+                              onOpenGame: _game,
                             ),
                             'settings' => DesktopSettingsPane(
                               controller: widget.controller,
