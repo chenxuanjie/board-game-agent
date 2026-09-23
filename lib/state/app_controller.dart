@@ -23,6 +23,7 @@ import '../models/cached_asset.dart';
 import '../models/connectivity_status.dart';
 import '../models/color_scheme_option.dart';
 import '../models/desktop_library_resource.dart';
+import '../models/daily_recommendation_record.dart';
 import '../models/favorite_game_record.dart';
 import '../models/game_info.dart';
 import '../models/game_catalog_manifest.dart';
@@ -36,6 +37,7 @@ import '../models/evidence_chunk.dart';
 import '../models/rule_citation.dart';
 import '../services/ai_service.dart';
 import '../services/preferences_service.dart';
+import '../services/daily_game_recommender.dart';
 import '../services/game_manifest_service.dart';
 import '../services/remote_asset_service.dart';
 import '../services/speech_service.dart';
@@ -168,6 +170,9 @@ class AppController extends ChangeNotifier {
   List<AppActivity> _activities = <AppActivity>[];
   List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
   List<RecentGameRecord> _recentGameRecords = <RecentGameRecord>[];
+  List<DailyRecommendationRecord> _dailyRecommendationHistory =
+      <DailyRecommendationRecord>[];
+  Future<void> _dailyRecommendationSaveQueue = Future<void>.value();
   String? _selectedConversationId;
   final Map<String, _ChatGenerationState> _generationStates =
       <String, _ChatGenerationState>{};
@@ -278,6 +283,37 @@ class AppController extends ChangeNotifier {
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
+  List<GameInfo> get dailyRecommendedGames {
+    final today = DailyGameRecommender.localDateKey(DateTime.now());
+    final before = _dailyRecommendationHistory
+        .where((record) => record.date == today)
+        .firstOrNull;
+    final next = const DailyGameRecommender().update(
+      now: DateTime.now(),
+      games: _games,
+      history: _dailyRecommendationHistory,
+      favoriteSlugs: _favoriteCreatedAtBySlug.keys.toSet(),
+      recentlyViewed: _recentGameRecords,
+    );
+    final current = next.where((record) => record.date == today).firstOrNull;
+    if (current != null &&
+        (before == null || !listEquals(before.gameIds, current.gameIds))) {
+      _dailyRecommendationHistory = next;
+      _dailyRecommendationSaveQueue = _dailyRecommendationSaveQueue
+          .then((_) => _preferencesService.saveDailyRecommendations(next))
+          .catchError((Object error) {
+            debugPrint('[recommendations] save failed: $error');
+          });
+    }
+    final gamesById = <String, GameInfo>{
+      for (final game in _games) game.id: game,
+    };
+    return List<GameInfo>.unmodifiable(
+      current?.gameIds.map((id) => gamesById[id]).whereType<GameInfo>() ??
+          const <GameInfo>[],
+    );
+  }
+
   List<GameInfo> get favoriteGames {
     final result = _games.where(isFavorite).toList(growable: true)
       ..sort((left, right) {
@@ -619,6 +655,13 @@ class AppController extends ChangeNotifier {
     } catch (error) {
       debugPrint('[recent-games] load failed: $error');
       _recentGameRecords = <RecentGameRecord>[];
+    }
+    try {
+      _dailyRecommendationHistory = await _preferencesService
+          .loadDailyRecommendations();
+    } catch (error) {
+      debugPrint('[recommendations] load failed: $error');
+      _dailyRecommendationHistory = <DailyRecommendationRecord>[];
     }
     if (_isSaveableCustomPreset(_aiApiConfig)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);

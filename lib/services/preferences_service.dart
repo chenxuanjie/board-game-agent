@@ -10,6 +10,7 @@ import '../models/asset_source_config.dart';
 import '../models/app_language.dart';
 import '../models/color_scheme_option.dart';
 import '../models/desktop_library_resource.dart';
+import '../models/daily_recommendation_record.dart';
 import '../models/favorite_game_record.dart';
 import '../models/recent_game_record.dart';
 import '../models/search_history_record.dart';
@@ -33,6 +34,7 @@ class PreferencesService {
   static const _favoriteGamesKey = 'favorite_games_v1';
   static const _recentSearchesKey = 'recent_searches_v1';
   static const _recentGamesKey = 'recent_games_v1';
+  static const _dailyRecommendationsKey = 'daily_recommendations_v1';
   static const int recentSearchesLimit = 8;
   static const int recentGamesLimit = 20;
 
@@ -398,6 +400,36 @@ class PreferencesService {
           records,
         ).map((record) => record.toMap()).toList(growable: false),
       }),
+    );
+  }
+
+  Future<List<DailyRecommendationRecord>> loadDailyRecommendations() async {
+    final prefs = await _prefs;
+    final stored = prefs.getString(_dailyRecommendationsKey);
+    if (stored == null || stored.isEmpty) {
+      return const <DailyRecommendationRecord>[];
+    }
+    try {
+      final decoded = jsonDecode(stored);
+      if (decoded is! List) return const <DailyRecommendationRecord>[];
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(DailyRecommendationRecord.tryFromMap)
+          .whereType<DailyRecommendationRecord>()
+          .take(30)
+          .toList(growable: false);
+    } catch (_) {
+      return const <DailyRecommendationRecord>[];
+    }
+  }
+
+  Future<void> saveDailyRecommendations(
+    List<DailyRecommendationRecord> records,
+  ) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _dailyRecommendationsKey,
+      jsonEncode(records.map((record) => record.toMap()).toList()),
     );
   }
 

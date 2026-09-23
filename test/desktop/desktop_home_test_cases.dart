@@ -310,7 +310,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     );
 
     final recommendationRects = [
-      for (final game in context.controller.games.take(5))
+      for (final game in context.controller.dailyRecommendedGames.take(5))
         tester.getRect(
           find.byKey(
             ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
@@ -328,32 +328,43 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
 
     final firstCard = find.byKey(
       ValueKey<String>(
-        'desktop-home-recommendation-card-${context.controller.games.first.id}',
+        'desktop-home-recommendation-card-${context.controller.dailyRecommendedGames.first.id}',
       ),
     );
     final title = find.descendant(
       of: firstCard,
-      matching: find.text(context.controller.games.first.title),
+      matching: find.text(context.controller.dailyRecommendedGames.first.title),
     );
     final titleStyle = tester.widget<Text>(title).style!;
     expect(titleStyle.fontSize, 15);
     expect(titleStyle.fontWeight, FontWeight.w700);
     expect(titleStyle.height, 1.1);
-    expect(
-      find.descendant(of: firstCard, matching: find.text('竞争')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: firstCard, matching: find.text('德式')),
-      findsOneWidget,
-    );
+    final categoryTags = context
+        .controller
+        .dailyRecommendedGames
+        .first
+        .categoryLine
+        .split('/')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList();
+    if (categoryTags.length >= 2) {
+      expect(
+        find.descendant(of: firstCard, matching: find.text(categoryTags.first)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: firstCard, matching: find.text(categoryTags[1])),
+        findsOneWidget,
+      );
+    }
     final ratingIcon = find.descendant(
       of: firstCard,
       matching: find.byIcon(Icons.star_rounded),
     );
     expect(tester.widget<Icon>(ratingIcon).size, 12.5);
 
-    final GameInfo game = context.controller.games.first;
+    final GameInfo game = context.controller.dailyRecommendedGames.first;
     await tester.tap(
       find.descendant(of: home, matching: find.text(game.title)).first,
     );
@@ -375,7 +386,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
 
     final card = find.byKey(
       ValueKey<String>(
-        'desktop-home-recommendation-card-${context.controller.games.first.id}',
+        'desktop-home-recommendation-card-${context.controller.dailyRecommendedGames.first.id}',
       ),
     );
     final rect = tester.getRect(card);
@@ -383,7 +394,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
 
     final title = find.descendant(
       of: card,
-      matching: find.text(context.controller.games.first.title),
+      matching: find.text(context.controller.dailyRecommendedGames.first.title),
     );
     expect(tester.widget<Text>(title).style!.fontSize, closeTo(16.2, 0.01));
     expect(tester.takeException(), isNull);

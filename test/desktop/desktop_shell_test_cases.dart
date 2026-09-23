@@ -24,7 +24,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.byType(DesktopHomePane), findsOneWidget);
       final home = find.byType(DesktopHomePane);
       expect(context.controller.games, isNotEmpty);
-      for (final game in context.controller.games.take(5)) {
+      for (final game in context.controller.dailyRecommendedGames.take(5)) {
         expect(
           find.descendant(of: home, matching: find.text(game.title)),
           findsWidgets,

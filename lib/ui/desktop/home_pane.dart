@@ -12,7 +12,7 @@ import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 
-class DesktopHomePane extends StatelessWidget {
+class DesktopHomePane extends StatefulWidget {
   const DesktopHomePane({
     super.key,
     required this.controller,
@@ -22,19 +22,49 @@ class DesktopHomePane extends StatelessWidget {
   final AppController controller;
   final ValueChanged<String> onNavigate;
   final ValueChanged<GameInfo> onOpenGame;
+
+  @override
+  State<DesktopHomePane> createState() => _DesktopHomePaneState();
+}
+
+class _DesktopHomePaneState extends State<DesktopHomePane> {
+  Timer? _nextDayTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleNextDay();
+  }
+
+  void _scheduleNextDay() {
+    _nextDayTimer?.cancel();
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    _nextDayTimer = Timer(tomorrow.difference(now), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleNextDay();
+    });
+  }
+
+  @override
+  void dispose() {
+    _nextDayTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: controller,
+    animation: widget.controller,
     builder: (context, _) {
       final metrics = DesktopMetricsScope.of(context);
-      final games = controller.games
-          .take(6)
-          .map((g) => DesktopContentGame(g, controller))
+      final games = widget.controller.dailyRecommendedGames
+          .map((g) => DesktopContentGame(g, widget.controller))
           .toList();
       void action(String label) {
         for (final g in games) {
           if (g.title == label) {
-            onOpenGame(g.data);
+            widget.onOpenGame(g.data);
             return;
           }
         }
@@ -45,7 +75,7 @@ class DesktopHomePane extends StatelessWidget {
           'AI助手': 'assistant',
         }[label];
         if (route != null) {
-          onNavigate(route);
+          widget.onNavigate(route);
         } else {
           desktopContentPending(context, label);
         }
@@ -53,24 +83,24 @@ class DesktopHomePane extends StatelessWidget {
 
       final main = Column(
         children: [
-          DesktopContentStatus(controller: controller),
-          if (!controller.hasGames)
+          DesktopContentStatus(controller: widget.controller),
+          if (!widget.controller.hasGames)
             TextButton(
-              onPressed: () => onNavigate('library'),
+              onPressed: () => widget.onNavigate('library'),
               child: const Text('打开资料库'),
             ),
           _MainColumn(
-            controller: controller,
+            controller: widget.controller,
             games: games,
-            onNavigate: onNavigate,
-            onOpenGame: onOpenGame,
+            onNavigate: widget.onNavigate,
+            onOpenGame: widget.onOpenGame,
             onUnavailable: action,
           ),
         ],
       );
       final right = _RightColumn(
-        controller: controller,
-        onNavigate: onNavigate,
+        controller: widget.controller,
+        onNavigate: widget.onNavigate,
         onUnavailable: action,
       );
       return LayoutBuilder(
@@ -173,7 +203,7 @@ class _MainColumn extends StatelessWidget {
                             'desktop-home-recommendation-card-${visibleGames[i].data.id}',
                           ),
                           game: visibleGames[i],
-                          onTap: () => onUnavailable(visibleGames[i].title),
+                          onTap: () => onOpenGame(visibleGames[i].data),
                         ),
                       ),
                     ],
@@ -213,7 +243,7 @@ class _MainColumn extends StatelessWidget {
                         'desktop-home-recommendation-card-${visibleGames[i].data.id}',
                       ),
                       game: visibleGames[i],
-                      onTap: () => onUnavailable(visibleGames[i].title),
+                      onTap: () => onOpenGame(visibleGames[i].data),
                     ),
                   ),
                 ],
@@ -640,9 +670,9 @@ class _GameCard extends StatelessWidget {
               SizedBox(height: metrics.px(5)),
               Row(
                 children: [
-                  _Tag(game.tagA),
+                  Flexible(child: _Tag(game.tagA)),
                   SizedBox(width: metrics.px(6)),
-                  _Tag(game.tagB),
+                  Flexible(child: _Tag(game.tagB)),
                 ],
               ),
               const Spacer(),
@@ -717,6 +747,8 @@ class _Tag extends StatelessWidget {
       ),
       child: Text(
         text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontFamily: 'HarmonyOS Sans SC',
           fontFamilyFallback: const [

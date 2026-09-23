@@ -2,10 +2,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:board_game_agent/models/recent_game_record.dart';
+import 'package:board_game_agent/models/daily_recommendation_record.dart';
 import 'package:board_game_agent/models/search_history_record.dart';
 import 'package:board_game_agent/services/preferences_service.dart';
 
 void main() {
+  test('daily recommendation slate survives a preferences reload', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final service = PreferencesService();
+    const slate = DailyRecommendationRecord(
+      date: '2026-09-23',
+      gameIds: <String>['game-1', 'game-2'],
+    );
+    await service.saveDailyRecommendations(const <DailyRecommendationRecord>[
+      slate,
+    ]);
+
+    final loaded = await PreferencesService().loadDailyRecommendations();
+    expect(loaded.single.toMap(), slate.toMap());
+  });
+
   test('recent searches are normalized, deduplicated, and capped', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'recent_searches_v1': <String>[
