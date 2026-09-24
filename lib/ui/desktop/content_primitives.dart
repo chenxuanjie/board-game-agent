@@ -1,8 +1,8 @@
 // Body primitives adapted from the read-only Desktop reference layout.
 import 'package:flutter/material.dart';
-import '../../models/game_info.dart';
-import '../../state/app_controller.dart';
-import '../widgets/desktop_resolved_image.dart';
+import '../../features/games/models/game_info.dart';
+import '../../app/state/app_controller.dart';
+import 'desktop_resolved_image.dart';
 
 class HoverSurface extends StatefulWidget {
   final Widget child;

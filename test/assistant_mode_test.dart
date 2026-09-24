@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:board_game_agent/models/assistant_mode.dart';
+import 'package:board_game_agent/features/assistant/models/assistant_mode.dart';
 
 void main() {
   test('assistant modes have stable preference codes', () {

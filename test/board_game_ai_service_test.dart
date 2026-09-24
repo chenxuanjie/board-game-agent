@@ -1,18 +1,18 @@
 import 'dart:convert';
 
 import 'package:app_ai_client/app_ai_client.dart';
-import 'package:board_game_agent/models/ai_api_config.dart';
-import 'package:board_game_agent/models/ai_answer_mode.dart';
-import 'package:board_game_agent/models/answer_source.dart';
-import 'package:board_game_agent/models/app_language.dart';
-import 'package:board_game_agent/models/board_game_ai_answer.dart';
-import 'package:board_game_agent/models/asset_source_config.dart';
-import 'package:board_game_agent/models/chat_message.dart';
-import 'package:board_game_agent/models/game_info.dart';
-import 'package:board_game_agent/services/board_game_ai_service.dart';
-import 'package:board_game_agent/services/ai_service.dart';
-import 'package:board_game_agent/services/remote_asset_service.dart';
-import 'package:board_game_agent/services/responses_rules_workflow.dart';
+import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
+import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
+import 'package:board_game_agent/features/assistant/models/answer_source.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
+import 'package:board_game_agent/features/library/models/asset_source_config.dart';
+import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/games/models/game_info.dart';
+import 'package:board_game_agent/features/assistant/services/board_game_ai_service.dart';
+import 'package:board_game_agent/features/assistant/services/ai_service.dart';
+import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
+import 'package:board_game_agent/features/assistant/services/responses_rules_workflow.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 

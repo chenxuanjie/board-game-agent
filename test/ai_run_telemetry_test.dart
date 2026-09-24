@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:board_game_agent/models/ai_run.dart';
-import 'package:board_game_agent/services/ai_run_telemetry.dart';
+import 'package:board_game_agent/features/assistant/models/ai_run.dart';
+import 'package:board_game_agent/features/assistant/services/ai_run_telemetry.dart';
 
 void main() {
   test('persists a bounded secret-free run ledger', () async {

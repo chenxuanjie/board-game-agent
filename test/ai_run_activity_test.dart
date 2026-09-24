@@ -1,9 +1,9 @@
-import 'package:board_game_agent/models/ai_run.dart';
-import 'package:board_game_agent/models/app_language.dart';
-import 'package:board_game_agent/models/rule_citation.dart';
-import 'package:board_game_agent/ui/app_copy.dart';
-import 'package:board_game_agent/ui/widgets/ai_run_activity.dart';
-import 'package:board_game_agent/theme/palette_registry.dart';
+import 'package:board_game_agent/features/assistant/models/ai_run.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/features/assistant/models/rule_citation.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
+import 'package:board_game_agent/ui/shared/assistant/ai_run_activity.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

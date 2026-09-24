@@ -1,4 +1,4 @@
-import 'package:board_game_agent/models/remote_library_update.dart';
+import 'package:board_game_agent/features/library/models/remote_library_update.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

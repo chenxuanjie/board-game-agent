@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:board_game_agent/models/app_language.dart';
-import 'package:board_game_agent/services/ai_error_presenter.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/features/assistant/services/ai_error_presenter.dart';
 
 void main() {
   test('maps provider status codes to readable Chinese categories', () {

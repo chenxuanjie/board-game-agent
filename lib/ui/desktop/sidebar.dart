@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../app_copy.dart';
+import '../../core/localization/app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 

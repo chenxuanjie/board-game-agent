@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_palette.dart';
-import '../../theme/palette_registry.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/palette_registry.dart';
 
 /// Design tokens for the Warmwood Study desktop theme.
 abstract final class DesktopColors {

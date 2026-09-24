@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:board_game_agent/services/ai_service.dart';
-import 'package:board_game_agent/models/asset_source_config.dart';
-import 'package:board_game_agent/models/cached_asset.dart';
-import 'package:board_game_agent/services/game_manifest_service.dart';
-import 'package:board_game_agent/services/preferences_service.dart';
-import 'package:board_game_agent/services/remote_asset_service.dart';
-import 'package:board_game_agent/services/speech_service.dart';
-import 'package:board_game_agent/services/tts_service.dart';
-import 'package:board_game_agent/state/app_controller.dart';
-import 'package:board_game_agent/theme/app_theme.dart';
-import 'package:board_game_agent/ui/screens/home_screen.dart';
-import 'package:board_game_agent/ui/screens/mobile_game_search_screen.dart';
+import 'package:board_game_agent/features/assistant/services/ai_service.dart';
+import 'package:board_game_agent/features/library/models/asset_source_config.dart';
+import 'package:board_game_agent/features/library/models/cached_asset.dart';
+import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
+import 'package:board_game_agent/features/settings/services/preferences_service.dart';
+import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
+import 'package:board_game_agent/features/assistant/services/speech_service.dart';
+import 'package:board_game_agent/features/assistant/services/tts_service.dart';
+import 'package:board_game_agent/app/state/app_controller.dart';
+import 'package:board_game_agent/core/theme/app_theme.dart';
+import 'package:board_game_agent/ui/mobile/home_screen.dart';
+import 'package:board_game_agent/ui/mobile/game_search_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

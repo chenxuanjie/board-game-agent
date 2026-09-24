@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:board_game_agent/models/app_language.dart';
-import 'package:board_game_agent/models/game_catalog_manifest.dart';
-import 'package:board_game_agent/models/game_info.dart';
-import 'package:board_game_agent/models/game_resource.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/features/games/models/game_catalog_manifest.dart';
+import 'package:board_game_agent/features/games/models/game_info.dart';
+import 'package:board_game_agent/features/library/models/game_resource.dart';
 
 void main() {
   test('companion manifest prefers the official PDF for the rulebook', () {

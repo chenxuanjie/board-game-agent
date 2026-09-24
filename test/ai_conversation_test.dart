@@ -1,7 +1,7 @@
-import 'package:board_game_agent/models/ai_conversation.dart';
-import 'package:board_game_agent/models/ai_run.dart';
-import 'package:board_game_agent/models/chat_message.dart';
-import 'package:board_game_agent/models/rule_citation.dart';
+import 'package:board_game_agent/features/assistant/models/ai_conversation.dart';
+import 'package:board_game_agent/features/assistant/models/ai_run.dart';
+import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/rule_citation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

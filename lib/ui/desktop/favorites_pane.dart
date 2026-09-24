@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../models/game_info.dart';
-import '../../state/app_controller.dart';
-import '../app_copy.dart';
+import '../../features/games/models/game_info.dart';
+import '../../app/state/app_controller.dart';
+import '../../core/localization/app_copy.dart';
 import 'games_pane.dart';
 import 'theme.dart';
 

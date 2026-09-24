@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:board_game_agent/models/daily_recommendation_record.dart';
-import 'package:board_game_agent/models/game_info.dart';
-import 'package:board_game_agent/services/daily_game_recommender.dart';
+import 'package:board_game_agent/features/games/models/daily_recommendation_record.dart';
+import 'package:board_game_agent/features/games/models/game_info.dart';
+import 'package:board_game_agent/features/games/services/daily_game_recommender.dart';
 
 void main() {
   const recommender = DailyGameRecommender();

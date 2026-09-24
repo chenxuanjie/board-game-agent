@@ -1,4 +1,4 @@
-import 'package:board_game_agent/models/ai_api_config.dart';
+import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

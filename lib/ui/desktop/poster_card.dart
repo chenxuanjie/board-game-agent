@@ -3,11 +3,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../models/desktop_library_resource.dart';
-import '../../models/game_info.dart';
-import '../../state/app_controller.dart';
-import '../../theme/app_palette.dart';
-import '../widgets/desktop_resolved_image.dart';
+import '../../features/library/models/desktop_library_resource.dart';
+import '../../features/games/models/game_info.dart';
+import '../../app/state/app_controller.dart';
+import '../../core/theme/app_palette.dart';
+import 'desktop_resolved_image.dart';
 
 class DesktopLibraryPosterCard extends StatefulWidget {
   const DesktopLibraryPosterCard({

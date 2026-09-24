@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
-import 'package:board_game_agent/models/asset_source_config.dart';
-import 'package:board_game_agent/services/board_game_remote_layout.dart';
+import 'package:board_game_agent/features/library/models/asset_source_config.dart';
+import 'package:board_game_agent/features/library/services/board_game_remote_layout.dart';
 
 void main() {
   test('uses the shared friend root and app-owned library prefix', () {

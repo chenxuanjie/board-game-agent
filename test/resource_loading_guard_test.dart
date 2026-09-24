@@ -1,7 +1,7 @@
-import 'package:board_game_agent/models/app_language.dart';
-import 'package:board_game_agent/models/asset_source_config.dart';
-import 'package:board_game_agent/services/remote_asset_service.dart';
-import 'package:board_game_agent/ui/app_copy.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/features/library/models/asset_source_config.dart';
+import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 

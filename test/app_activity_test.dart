@@ -1,4 +1,4 @@
-import 'package:board_game_agent/models/app_activity.dart';
+import 'package:board_game_agent/core/models/app_activity.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

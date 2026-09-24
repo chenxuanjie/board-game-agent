@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../models/game_info.dart';
-import '../../services/related_game_recommender.dart';
-import '../../state/app_controller.dart';
-import '../widgets/desktop_resolved_image.dart';
+import '../../features/games/models/game_info.dart';
+import '../../features/games/services/related_game_recommender.dart';
+import '../../app/state/app_controller.dart';
+import 'desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';

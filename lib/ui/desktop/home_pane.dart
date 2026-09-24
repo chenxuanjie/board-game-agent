@@ -4,10 +4,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../../models/game_info.dart';
-import '../../models/recent_game_record.dart';
-import '../../state/app_controller.dart';
-import '../widgets/desktop_resolved_image.dart';
+import '../../features/games/models/game_info.dart';
+import '../../features/games/models/recent_game_record.dart';
+import '../../app/state/app_controller.dart';
+import 'desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';

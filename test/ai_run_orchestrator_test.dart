@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app_ai_client/app_ai_client.dart';
 
-import 'package:board_game_agent/models/ai_run.dart';
-import 'package:board_game_agent/models/board_game_ai_answer.dart';
-import 'package:board_game_agent/models/answer_source.dart';
-import 'package:board_game_agent/services/ai_run_orchestrator.dart';
+import 'package:board_game_agent/features/assistant/models/ai_run.dart';
+import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
+import 'package:board_game_agent/features/assistant/models/answer_source.dart';
+import 'package:board_game_agent/features/assistant/services/ai_run_orchestrator.dart';
 
 void main() {
   test(

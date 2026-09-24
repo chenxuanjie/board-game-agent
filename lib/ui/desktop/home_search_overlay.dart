@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../models/game_info.dart';
-import '../../state/app_controller.dart';
+import '../../features/games/models/game_info.dart';
+import '../../app/state/app_controller.dart';
 import 'content_primitives.dart';
 import 'theme.dart';
 

@@ -2,11 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:board_game_agent/models/color_scheme_option.dart';
-import 'package:board_game_agent/services/preferences_service.dart';
-import 'package:board_game_agent/theme/app_palette.dart';
-import 'package:board_game_agent/theme/app_theme.dart';
-import 'package:board_game_agent/theme/palette_registry.dart';
+import 'package:board_game_agent/core/theme/color_scheme_option.dart';
+import 'package:board_game_agent/features/settings/services/preferences_service.dart';
+import 'package:board_game_agent/core/theme/app_palette.dart';
+import 'package:board_game_agent/core/theme/app_theme.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
 
 void main() {
   test('all skins expose the same semantic palette contract', () {

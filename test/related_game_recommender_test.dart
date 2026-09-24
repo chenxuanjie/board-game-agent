@@ -1,5 +1,5 @@
-import 'package:board_game_agent/models/game_info.dart';
-import 'package:board_game_agent/services/related_game_recommender.dart';
+import 'package:board_game_agent/features/games/models/game_info.dart';
+import 'package:board_game_agent/features/games/services/related_game_recommender.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:board_game_agent/models/game_info.dart';
-import 'package:board_game_agent/services/board_game_question_router.dart';
+import 'package:board_game_agent/features/games/models/game_info.dart';
+import 'package:board_game_agent/features/assistant/services/board_game_question_router.dart';
 
 void main() {
   const BoardGameQuestionRouter router = BoardGameQuestionRouter();

@@ -5,17 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
-import '../../models/ai_api_config.dart';
-import '../../models/app_language.dart';
-import '../../models/asset_source_config.dart';
-import '../../models/color_scheme_option.dart';
-import '../../models/connectivity_status.dart';
-import '../../services/desktop_ai_settings_service.dart';
-import '../../services/board_game_remote_layout.dart';
-import '../../state/app_controller.dart';
-import '../../theme/app_palette.dart';
-import '../../theme/palette_registry.dart';
-import '../app_copy.dart';
+import '../../features/assistant/models/ai_api_config.dart';
+import '../../core/localization/app_language.dart';
+import '../../features/library/models/asset_source_config.dart';
+import '../../core/theme/color_scheme_option.dart';
+import '../../core/models/connectivity_status.dart';
+import '../../features/settings/services/desktop_ai_settings_service.dart';
+import '../../features/library/services/board_game_remote_layout.dart';
+import '../../app/state/app_controller.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/palette_registry.dart';
+import '../../core/localization/app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 

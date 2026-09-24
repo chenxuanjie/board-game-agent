@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:board_game_agent/models/recent_game_record.dart';
-import 'package:board_game_agent/models/daily_recommendation_record.dart';
-import 'package:board_game_agent/models/search_history_record.dart';
-import 'package:board_game_agent/services/preferences_service.dart';
+import 'package:board_game_agent/features/games/models/recent_game_record.dart';
+import 'package:board_game_agent/features/games/models/daily_recommendation_record.dart';
+import 'package:board_game_agent/features/games/models/search_history_record.dart';
+import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 
 void main() {
   test('daily recommendation slate survives a preferences reload', () async {

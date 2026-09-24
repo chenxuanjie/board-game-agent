@@ -4,6 +4,8 @@
 
 当前版本已经不再是早期的单桌游原型，而是一个以 `catalog + game.json + manifest.json + 远端资源缓存` 为核心的数据驱动应用。现在目录中已接入 `21` 款桌游，并支持按资源源优先级从远端拉取图片、文档和桌游元数据。
 
+代码目录及各层职责见 [工程目录说明](docs/architecture.md)。
+
 ## 当前功能
 
 - 默认简体中文，同时支持英文界面切换
@@ -69,13 +71,13 @@
 | 程序部分 | 当前实现 | 参考来源 |
 | --- | --- | --- |
 | Responses 传输层 | `shared_packages/app_ai_client` 中的 `OpenAiDartResponsesAiClient` | OpenAI Responses API 官方请求/流式规范 |
-| 问题路由 | `lib/services/board_game_question_router.dart` | 应用层本地规则；不是 OpenAI 自动提供的能力 |
-| 模糊问题分类 | `lib/services/board_game_question_classifier.dart` | Responses Structured Outputs；分类结果只用于选路，不展示给用户 |
-| AI 流程编排 | `lib/services/responses_rules_workflow.dart` | Agents SDK 的生命周期思想、LibreChat 的产品级流程 |
-| 规则资料检索 | `lib/services/rule_knowledge_retriever.dart`、`lib/services/remote_asset_service.dart` | Open WebUI 的知识库/RAG 分层思想 |
-| 流式状态与最终答案 | `lib/services/ai_service.dart`、`lib/state/app_controller.dart` | Responses 流式事件边界、Agents SDK 运行状态、Vercel AI SDK 的 UI 数据分离 |
+| 问题路由 | `lib/features/assistant/services/board_game_question_router.dart` | 应用层本地规则；不是 OpenAI 自动提供的能力 |
+| 模糊问题分类 | `lib/features/assistant/services/board_game_question_classifier.dart` | Responses Structured Outputs；分类结果只用于选路，不展示给用户 |
+| AI 流程编排 | `lib/features/assistant/services/responses_rules_workflow.dart` | Agents SDK 的生命周期思想、LibreChat 的产品级流程 |
+| 规则资料检索 | `lib/features/assistant/services/rule_knowledge_retriever.dart`、`lib/features/library/services/remote_asset_service.dart` | Open WebUI 的知识库/RAG 分层思想 |
+| 流式状态与最终答案 | `lib/features/assistant/services/ai_service.dart`、`lib/app/state/app_controller.dart` | Responses 流式事件边界、Agents SDK 运行状态、Vercel AI SDK 的 UI 数据分离 |
 | 引用与来源 | `RuleCitation`、官方/社区/Web 阶段解析逻辑 | OpenAI Web Search 引用要求、LibreChat/Open WebUI 的来源展示方式 |
-| 上下文与 Compaction | `lib/services/responses_compaction_store.dart`、`ResponsesRulesWorkflow` | Responses API 的服务端上下文管理；本地保存负责跨重启恢复 |
+| 上下文与 Compaction | `lib/features/assistant/services/responses_compaction_store.dart`、`ResponsesRulesWorkflow` | Responses API 的服务端上下文管理；本地保存负责跨重启恢复 |
 
 ### 当前 AI 问答流程
 
