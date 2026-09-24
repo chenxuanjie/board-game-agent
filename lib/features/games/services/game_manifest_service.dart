@@ -58,6 +58,7 @@ class GameManifestService {
         final GameManifest manifest = GameManifest.fromJson(
           jsonDecode(gameSource) as Map<String, dynamic>,
           resourceManifest: resourceManifest,
+          browseCategories: entry.browseCategories,
         );
         manifests.add(manifest);
       } catch (error) {
@@ -175,7 +176,15 @@ class GameManifestService {
     };
 
     for (final GameCatalogEntry entry in overlay.games) {
-      merged[entry.slug] = entry;
+      final GameCatalogEntry? bundled = merged[entry.slug];
+      merged[entry.slug] = GameCatalogEntry(
+        slug: entry.slug,
+        order: entry.order,
+        enabled: entry.enabled,
+        browseCategories: entry.browseCategories.isNotEmpty
+            ? entry.browseCategories
+            : bundled?.browseCategories ?? const <String>[],
+      );
     }
 
     return GameCatalogManifest(

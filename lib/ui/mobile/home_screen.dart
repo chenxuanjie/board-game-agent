@@ -76,14 +76,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 onFavorites: () => _openSearch(favoritesOnly: true),
                 onSettings: _openSettings,
                 onActivities: _openActivities,
-                onRules: () => _openSearch(),
+                onRules: () => _openSearch(rulesOnly: true),
+                onRecentAll: () => _openSearch(recentOnly: true),
               )
             : _tab == 1
             ? MobileLibraryContent(
                 controller: widget.controller,
                 onOpenGame: _openGame,
                 onActivities: _openActivities,
-                onProfile: () => setState(() => _tab = 3),
+                onProfile: _openSettings,
               )
             : _tab == 3
             ? MobileMineContent(
@@ -189,13 +190,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openSearch({bool favoritesOnly = false, bool recentOnly = false}) {
+  void _openSearch({
+    bool favoritesOnly = false,
+    bool recentOnly = false,
+    bool rulesOnly = false,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MobileGameSearchScreen(
           controller: widget.controller,
           favoritesOnly: favoritesOnly,
           recentOnly: recentOnly,
+          rulesOnly: rulesOnly,
           onOpenGame: _openGame,
         ),
       ),

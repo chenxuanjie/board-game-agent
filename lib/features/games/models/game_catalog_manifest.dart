@@ -27,17 +27,20 @@ class GameCatalogEntry {
     required this.slug,
     required this.order,
     required this.enabled,
-  });
+    List<String> browseCategories = const <String>[],
+  }) : browseCategories = List<String>.unmodifiable(browseCategories);
 
   final String slug;
   final int order;
   final bool enabled;
+  final List<String> browseCategories;
 
   factory GameCatalogEntry.fromJson(Map<String, dynamic> json) {
     return GameCatalogEntry(
       slug: json['slug'] as String,
       order: json['order'] as int? ?? 0,
       enabled: json['enabled'] as bool? ?? false,
+      browseCategories: GameManifest._stringList(json['browseCategories']),
     );
   }
 }
@@ -62,6 +65,7 @@ class GameManifest {
     required this.faqPaths,
     required this.knowledgePaths,
     required this.resources,
+    this.browseCategories = const <String>[],
     required this.locales,
   });
 
@@ -83,11 +87,13 @@ class GameManifest {
   final Map<String, String> faqPaths;
   final Map<String, List<String>> knowledgePaths;
   final List<GameResource> resources;
+  final List<String> browseCategories;
   final Map<String, GameLocaleContent> locales;
 
   factory GameManifest.fromJson(
     Map<String, dynamic> json, {
     GameResourceManifest? resourceManifest,
+    List<String> browseCategories = const <String>[],
   }) {
     final Map<String, dynamic> documents =
         json['documents'] as Map<String, dynamic>? ?? <String, dynamic>{};
@@ -120,6 +126,7 @@ class GameManifest {
               slug: json['slug'] as String? ?? '',
               documents: documents,
             ),
+      browseCategories: browseCategories,
       locales: locales.map(
         (key, value) => MapEntry(
           key,
@@ -187,6 +194,7 @@ class GameManifest {
       cardAccent: cardAccent,
       score: score,
       scoreCountLabel: content.scoreCountLabel,
+      browseCategories: browseCategories,
       releaseYear: content.releaseYear,
       categoryLine: content.categoryLine,
       learningDifficulty: content.learningDifficulty,

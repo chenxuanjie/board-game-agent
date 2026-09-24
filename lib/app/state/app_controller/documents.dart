@@ -38,6 +38,42 @@ extension AppDocumentController on AppController {
     return cached.localPath;
   }
 
+  Future<List<int>?> loadDocumentBytes(String remotePath) async {
+    if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
+      return null;
+    }
+    try {
+      final bytes = await _remoteAssetService.loadBytes(
+        sources: _assetSourceConfigs,
+        remotePath: remotePath,
+      );
+      if (bytes == null || bytes.isEmpty) {
+        _assetConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.failure,
+          message: '文档暂时不可用',
+          checkedAt: DateTime.now(),
+        );
+        _notifyListeners();
+        return null;
+      }
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.success,
+        message: '文档已加载',
+        checkedAt: DateTime.now(),
+      );
+      _notifyListeners();
+      return bytes;
+    } catch (_) {
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: '文档暂时不可用',
+        checkedAt: DateTime.now(),
+      );
+      _notifyListeners();
+      return null;
+    }
+  }
+
   Future<String?> loadMarkdownDocument(String remotePath) async {
     return loadLibraryResourceText(remotePath);
   }
@@ -120,6 +156,33 @@ extension AppDocumentController on AppController {
       baseName: baseName,
     );
     if (candidates.isEmpty) {
+      _assetConnectivityStatus = ConnectivityStatus(
+        state: ConnectivityState.failure,
+        message: '文档暂时不可用',
+        checkedAt: DateTime.now(),
+      );
+      _notifyListeners();
+      return null;
+    }
+
+    if (kIsWeb) {
+      for (final candidate in candidates) {
+        try {
+          final bytes = await _remoteAssetService.loadBytes(
+            sources: _assetSourceConfigs,
+            remotePath: candidate,
+          );
+          if (bytes != null && bytes.isNotEmpty) {
+            return ResolvedDocument(
+              remotePath: candidate,
+              renderType: _documentRenderTypeForPath(candidate),
+              label: fallbackLabel,
+            );
+          }
+        } catch (_) {
+          continue;
+        }
+      }
       _assetConnectivityStatus = ConnectivityStatus(
         state: ConnectivityState.failure,
         message: '文档暂时不可用',

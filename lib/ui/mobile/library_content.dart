@@ -31,12 +31,12 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
   int _category = 0;
 
   static const _categories = [
-    ('全部', 'All'),
-    ('策略', 'Strategy'),
-    ('家庭', 'Family'),
-    ('聚会', 'Party'),
-    ('合作', 'Co-op'),
-    ('双人', 'Two-player'),
+    ('all', '全部', 'All'),
+    ('strategy', '策略', 'Strategy'),
+    ('family', '家庭', 'Family'),
+    ('party', '聚会', 'Party'),
+    ('cooperative', '合作', 'Co-op'),
+    ('two_player', '双人', 'Two-player'),
   ];
 
   @override
@@ -68,19 +68,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
   bool _matchesCategory(GameInfo game) {
     if (_category == 0) return true;
     if (_category == 5) return game.supportedPlayers.contains(2);
-    final terms = <String>[
-      game.categoryLine,
-      ...game.keywords,
-      ...game.rankBadges,
-    ].join(' ').toLowerCase();
-    final needles = switch (_category) {
-      1 => ['策略', 'strategy', 'strategic'],
-      2 => ['家庭', 'family'],
-      3 => ['聚会', 'party'],
-      4 => ['合作', 'cooperative', 'co-op'],
-      _ => <String>[],
-    };
-    return needles.any(terms.contains);
+    return game.browseCategories.contains(_categories[_category].$1);
   }
 
   @override
@@ -237,8 +225,8 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                     key: ValueKey('mobile-library-category-$index'),
                     label: Text(
                       copy.localized(
-                        _categories[index].$1,
                         _categories[index].$2,
+                        _categories[index].$3,
                       ),
                     ),
                     selected: selected,

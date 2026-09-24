@@ -17,6 +17,7 @@ class GameInfo {
       cardAccent: 0xFF607D8B,
       score: '—',
       scoreCountLabel: '',
+      browseCategories: const <String>[],
       releaseYear: '',
       categoryLine: '',
       learningDifficulty: '',
@@ -58,6 +59,7 @@ class GameInfo {
     required this.cardAccent,
     required this.score,
     required this.scoreCountLabel,
+    List<String>? browseCategories,
     required this.releaseYear,
     required this.categoryLine,
     required this.learningDifficulty,
@@ -85,6 +87,9 @@ class GameInfo {
        designers = List<String>.unmodifiable(designers ?? const <String>[]),
        publishers = List<String>.unmodifiable(publishers ?? const <String>[]),
        keywords = List<String>.unmodifiable(keywords ?? const <String>[]),
+       browseCategories = List<String>.unmodifiable(
+         browseCategories ?? const <String>[],
+       ),
        galleryAssetPaths = List<String>.unmodifiable(
          (galleryAssetPaths ?? <String>[coverAssetPath, bannerAssetPath]).where(
            (path) => path.trim().isNotEmpty,
@@ -113,6 +118,9 @@ class GameInfo {
   final int cardAccent;
   final String score;
   final String scoreCountLabel;
+
+  /// Curated, language-independent categories used by mobile library filters.
+  final List<String> browseCategories;
   final String releaseYear;
   final String categoryLine;
   final String learningDifficulty;

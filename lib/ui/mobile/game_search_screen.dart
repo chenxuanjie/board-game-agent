@@ -11,12 +11,14 @@ class MobileGameSearchScreen extends StatefulWidget {
     required this.onOpenGame,
     this.favoritesOnly = false,
     this.recentOnly = false,
+    this.rulesOnly = false,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
   final bool favoritesOnly;
   final bool recentOnly;
+  final bool rulesOnly;
 
   @override
   State<MobileGameSearchScreen> createState() => _MobileGameSearchScreenState();
@@ -51,6 +53,21 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
     if (mounted) setState(() {});
   }
 
+  bool _hasRuleMaterial(GameInfo game) {
+    if (game.rulebookAssetPath.trim().isNotEmpty ||
+        game.faqAssetPath.trim().isNotEmpty) {
+      return true;
+    }
+    return game.resources.any(
+      (resource) =>
+          resource.enabled &&
+          resource.isAvailable &&
+          (resource.documentType == 'rulebook' ||
+              resource.documentType == 'how_to_play' ||
+              resource.documentType == 'faq'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final copy = widget.controller.copy;
@@ -61,6 +78,7 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
                 : widget.recentOnly
                 ? widget.controller.recentlyViewedGames
                 : widget.controller.games)
+            .where((game) => !widget.rulesOnly || _hasRuleMaterial(game))
             .where(
               (game) =>
                   query.isEmpty ||
@@ -85,11 +103,15 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
                 ? '我的喜欢'
                 : widget.recentOnly
                 ? '最近浏览'
+                : widget.rulesOnly
+                ? '规则资料'
                 : '搜索游戏',
             widget.favoritesOnly
                 ? 'My likes'
                 : widget.recentOnly
                 ? 'Recently viewed'
+                : widget.rulesOnly
+                ? 'Rule materials'
                 : 'Search games',
           ),
         ),
@@ -102,7 +124,10 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
               child: TextField(
                 key: const ValueKey('mobile-game-query'),
                 controller: _queryController,
-                autofocus: !widget.favoritesOnly,
+                autofocus:
+                    !widget.favoritesOnly &&
+                    !widget.recentOnly &&
+                    !widget.rulesOnly,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: copy.localized(

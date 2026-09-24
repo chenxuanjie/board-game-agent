@@ -282,7 +282,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                 ),
                               ],
                             ),
-                            if (game.scoreCountLabel.trim().isNotEmpty)
+                            if (_isRatingCountLabel(game.scoreCountLabel))
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: Text(
@@ -697,6 +697,13 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         });
       }
     }
+  }
+
+  bool _isRatingCountLabel(String value) {
+    return RegExp(
+      r'^\d[\d,.]*(?:\s*(?:万|亿|[kKmM]))?\s*(?:人打分|人评分|评分人数|ratings?|votes?)$',
+      caseSensitive: false,
+    ).hasMatch(value.trim());
   }
 
   void _documentUnavailable(String title, VoidCallback retry) {

@@ -22,6 +22,7 @@ class MobileHomeContent extends StatefulWidget {
     required this.onSettings,
     required this.onActivities,
     required this.onRules,
+    required this.onRecentAll,
   });
 
   final AppController controller;
@@ -32,6 +33,7 @@ class MobileHomeContent extends StatefulWidget {
   final VoidCallback onSettings;
   final VoidCallback onActivities;
   final VoidCallback onRules;
+  final VoidCallback onRecentAll;
 
   @override
   State<MobileHomeContent> createState() => _MobileHomeContentState();
@@ -91,7 +93,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
               icon: Icons.history_rounded,
               title: copy.localized('继续游玩', 'Continue playing'),
               action: recent.isEmpty ? null : copy.localized('查看更多', 'See all'),
-              onAction: recent.isEmpty ? null : widget.onSearch,
+              onAction: recent.isEmpty ? null : widget.onRecentAll,
             ),
             const SizedBox(height: 12),
             if (recent.isEmpty)

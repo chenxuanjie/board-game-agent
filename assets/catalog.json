@@ -1,110 +1,131 @@
 {
-  "version": 1,
+  "version": 2,
   "games": [
     {
       "slug": "puerto_rico",
       "order": 10,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy"]
     },
     {
       "slug": "arkham_horror_lcg",
       "order": 20,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["cooperative"]
     },
     {
       "slug": "startups",
       "order": 30,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family", "party"]
     },
     {
       "slug": "cabo",
       "order": 40,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["family", "party"]
     },
     {
       "slug": "carcassonne_3",
       "order": 50,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "harmonies",
       "order": 60,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "war_chest",
       "order": 70,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy"]
     },
     {
       "slug": "decrypto",
       "order": 80,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["party"]
     },
     {
       "slug": "seven_wonders_duel",
       "order": 90,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "splendor",
       "order": 100,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "splendor_duel",
       "order": 110,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "exploding_kittens",
       "order": 120,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["family", "party"]
     },
     {
       "slug": "castles_of_burgundy_2019",
       "order": 135,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy"]
     },
     {
       "slug": "citadels",
       "order": 140,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family", "party"]
     },
     {
       "slug": "in_a_grove",
       "order": 150,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["family", "party"]
     },
     {
       "slug": "wriggle_roulette",
       "order": 160,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["family", "party"]
     },
     {
       "slug": "manila",
       "order": 170,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "night_of_the_ninja",
       "order": 180,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["party"]
     },
     {
       "slug": "patchwork_10th_anniversary",
       "order": 190,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "family"]
     },
     {
       "slug": "scout",
       "order": 200,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["family", "party"]
     },
     {
       "slug": "slay_the_spire",
       "order": 210,
-      "enabled": true
+      "enabled": true,
+      "browseCategories": ["strategy", "cooperative"]
     }
   ]
 }
