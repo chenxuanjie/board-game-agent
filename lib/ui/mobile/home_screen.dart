@@ -10,6 +10,7 @@ import 'language_sheet.dart';
 import 'game_detail_screen.dart';
 import 'game_search_screen.dart';
 import 'home_content.dart';
+import 'library_content.dart';
 import 'mine_content.dart';
 import 'universal_ai_screen.dart';
 
@@ -77,6 +78,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 onActivities: _openActivities,
                 onRules: () => _openSearch(),
               )
+            : _tab == 1
+            ? MobileLibraryContent(
+                controller: widget.controller,
+                onOpenGame: _openGame,
+                onActivities: _openActivities,
+                onProfile: () => setState(() => _tab = 3),
+              )
             : _tab == 3
             ? MobileMineContent(
                 controller: widget.controller,
@@ -134,12 +142,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _reservedPage(AppCopy copy) {
     final (icon, title, action, callback) = switch (_tab) {
-      1 => (
-        Icons.casino_rounded,
-        copy.localized('桌游库', 'Game library'),
-        copy.localized('搜索现有桌游', 'Search existing games'),
-        () => _openSearch(),
-      ),
       2 => (
         Icons.smart_toy_rounded,
         copy.localized('AI助手', 'AI helper'),

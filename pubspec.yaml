@@ -50,6 +50,7 @@ flutter:
   assets:
     - assets/mobile/home/
     - assets/mobile/mine/
+    - assets/mobile/detail/
     - assets/desktop/home/
     - assets/desktop/home/sidebar_icons/
     - assets/desktop/warmwood/

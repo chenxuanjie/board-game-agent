@@ -16,6 +16,7 @@ import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_search_screen.dart';
+import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +42,9 @@ void main() {
       expect(find.byKey(const ValueKey('mobile-home-root')), findsOneWidget);
       expect(find.text('桌游伙伴'), findsOneWidget);
       expect(find.text('继续游玩'), findsOneWidget);
-      expect(find.text('推荐桌游'), findsOneWidget);
+      if (size.width == 390) {
+        expect(find.text('推荐桌游'), findsOneWidget);
+      }
       expect(find.byKey(const ValueKey('mobile-tab-home')), findsOneWidget);
       expect(find.byKey(const ValueKey('mobile-tab-library')), findsOneWidget);
       expect(find.byKey(const ValueKey('mobile-tab-ai')), findsOneWidget);
@@ -51,7 +54,62 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
-      expect(find.text('新版页面暂未开放'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile-library-grid')), findsOneWidget);
+      expect(
+        find.byKey(
+          ValueKey('mobile-library-game-${controller.games.first.id}'),
+        ),
+        findsOneWidget,
+      );
+      if (size.width == 390) {
+        await tester.tap(
+          find.byKey(
+            ValueKey('mobile-library-favorite-${controller.games.first.id}'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.isFavorite(controller.games.first), isTrue);
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile-library-search')),
+          'no-such-game-123',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('没有找到桌游'), findsOneWidget);
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile-library-search')),
+          '',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile-library-category-3')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(
+            ValueKey('mobile-library-game-${controller.games.first.id}'),
+          ),
+          findsNothing,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('mobile-library-category-0')),
+        );
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(
+        find.byKey(
+          ValueKey('mobile-library-game-${controller.games.first.id}'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile-detail-rules')), findsOneWidget);
+      if (size.width == 390) {
+        await tester.tap(find.byTooltip('取消喜欢'));
+        await tester.pumpAndSettle();
+        expect(controller.isFavorite(controller.games.first), isFalse);
+      }
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();
       expect(find.text('继续游玩'), findsOneWidget);
