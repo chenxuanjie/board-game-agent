@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/game_info.dart';
@@ -44,11 +45,23 @@ class _MobileGameCoverState extends State<MobileGameCover> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<String?>(
+  Widget build(BuildContext context) {
+    final assetPath = widget.game.coverAssetPath;
+    if (assetPath.isEmpty) return _cachedOrPlaceholder();
+    return Image.asset(
+      assetPath,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (_, _, _) => _cachedOrPlaceholder(),
+    );
+  }
+
+  Widget _cachedOrPlaceholder() => FutureBuilder<String?>(
     future: _resolvedPath,
     builder: (context, snapshot) {
       final path = snapshot.data;
-      if (path == null || path.isEmpty) return _placeholder();
+      if (kIsWeb || path == null || path.isEmpty) return _placeholder();
       return Image.file(
         File(path),
         fit: BoxFit.cover,

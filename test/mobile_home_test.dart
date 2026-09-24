@@ -55,6 +55,18 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();
       expect(find.text('继续游玩'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('mobile-mine-profile')), findsOneWidget);
+      expect(find.text('${controller.favoriteCount}'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('我的服务'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('我的服务'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     }
     await tester.tap(find.byKey(const ValueKey('mobile-home-search')));

@@ -10,6 +10,7 @@ import '../widgets/language_sheet.dart';
 import 'game_detail_screen.dart';
 import 'mobile_game_search_screen.dart';
 import 'mobile_home_content.dart';
+import 'mobile_mine_content.dart';
 import 'universal_ai_screen.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
@@ -75,6 +76,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 onSettings: _openSettings,
                 onActivities: _openActivities,
                 onRules: () => _openSearch(),
+              )
+            : _tab == 3
+            ? MobileMineContent(
+                controller: widget.controller,
+                onOpenGame: _openGame,
+                onFavorites: () => _openSearch(favoritesOnly: true),
+                onRecentAll: () => _openSearch(recentOnly: true),
+                onExplore: _openSearch,
+                onActivities: _openActivities,
+                onSettings: _openSettings,
               )
             : _reservedPage(copy),
       ),
@@ -176,12 +187,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openSearch({bool favoritesOnly = false}) {
+  void _openSearch({bool favoritesOnly = false, bool recentOnly = false}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MobileGameSearchScreen(
           controller: widget.controller,
           favoritesOnly: favoritesOnly,
+          recentOnly: recentOnly,
           onOpenGame: _openGame,
         ),
       ),

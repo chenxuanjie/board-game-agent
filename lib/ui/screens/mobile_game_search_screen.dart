@@ -10,11 +10,13 @@ class MobileGameSearchScreen extends StatefulWidget {
     required this.controller,
     required this.onOpenGame,
     this.favoritesOnly = false,
+    this.recentOnly = false,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
   final bool favoritesOnly;
+  final bool recentOnly;
 
   @override
   State<MobileGameSearchScreen> createState() => _MobileGameSearchScreenState();
@@ -56,6 +58,8 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
     final games =
         (widget.favoritesOnly
                 ? widget.controller.favoriteGames
+                : widget.recentOnly
+                ? widget.controller.recentlyViewedGames
                 : widget.controller.games)
             .where(
               (game) =>
@@ -77,8 +81,16 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
         backgroundColor: const Color(0xFFFFFBF7),
         title: Text(
           copy.localized(
-            widget.favoritesOnly ? '我的喜欢' : '搜索游戏',
-            widget.favoritesOnly ? 'My likes' : 'Search games',
+            widget.favoritesOnly
+                ? '我的喜欢'
+                : widget.recentOnly
+                ? '最近浏览'
+                : '搜索游戏',
+            widget.favoritesOnly
+                ? 'My likes'
+                : widget.recentOnly
+                ? 'Recently viewed'
+                : 'Search games',
           ),
         ),
       ),
@@ -114,9 +126,13 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
                         copy.localized(
                           widget.favoritesOnly && query.isEmpty
                               ? '还没有喜欢的桌游'
+                              : widget.recentOnly && query.isEmpty
+                              ? '还没有浏览记录'
                               : '没有找到桌游',
                           widget.favoritesOnly && query.isEmpty
                               ? 'No liked games yet'
+                              : widget.recentOnly && query.isEmpty
+                              ? 'No recently viewed games'
                               : 'No games found',
                         ),
                       ),

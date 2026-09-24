@@ -49,6 +49,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/mobile/home/
+    - assets/mobile/mine/
     - assets/desktop/home/
     - assets/desktop/home/sidebar_icons/
     - assets/desktop/warmwood/

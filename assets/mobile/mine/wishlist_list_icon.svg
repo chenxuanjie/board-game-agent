@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="cardGrad" x1="28" y1="20" x2="101" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8CA57"/>
+      <stop offset="1" stop-color="#F4B430"/>
+    </linearGradient>
+    <linearGradient id="tabGrad" x1="88" y1="30" x2="110" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F9CF68"/>
+      <stop offset="1" stop-color="#EFB33E"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="19" width="72" height="90" rx="10" fill="url(#cardGrad)"/>
+  <path d="M96 35H106C108.2 35 110 36.8 110 39V99C110 101.2 108.2 103 106 103H96V35Z" fill="url(#tabGrad)"/>
+  <rect x="40" y="39" width="34" height="10" rx="4.5" fill="#FFF7EA"/>
+  <rect x="40" y="59" width="34" height="10" rx="4.5" fill="#FFF7EA"/>
+  <rect x="40" y="79" width="22" height="10" rx="4.5" fill="#FFF7EA"/>
+</svg>

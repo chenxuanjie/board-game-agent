@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="heartGrad" x1="28" y1="24" x2="100" y2="106" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF8C80"/>
+      <stop offset="0.48" stop-color="#FF6759"/>
+      <stop offset="1" stop-color="#FF4D43"/>
+    </linearGradient>
+    <radialGradient id="heartGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(49 40) rotate(45) scale(17 10)">
+      <stop offset="0" stop-color="#FFD4D0" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#FFD4D0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M64 108
+           C60 104.5 53.8 99.6 46.9 94
+           C27.7 78.4 14 66.8 14 46.8
+           C14 31.8 25.5 21 40.6 21
+           C50 21 57.7 25.8 64 33.1
+           C70.3 25.8 78 21 87.4 21
+           C102.5 21 114 31.8 114 46.8
+           C114 66.8 100.3 78.4 81.1 94
+           C74.2 99.6 68 104.5 64 108Z"
+        fill="url(#heartGrad)"/>
+  <ellipse cx="47.5" cy="40" rx="11.5" ry="7.5" transform="rotate(-35 47.5 40)" fill="url(#heartGlow)"/>
+</svg>
