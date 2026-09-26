@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +18,7 @@ import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_search_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
+import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +53,30 @@ void main() {
       expect(find.byKey(const ValueKey('mobile-tab-mine')), findsOneWidget);
       expect(find.text('社区'), findsNothing);
       expect(tester.takeException(), isNull);
+
+      if (size.width == 390) {
+        await tester.tap(find.text('规则资料'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileRuleMaterialsScreen), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('mobile-rule-materials-root')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(ValueKey('mobile-rule-game-${controller.games.first.id}')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(
+            const ValueKey(
+              'mobile-rule-document-assets/games/puerto_rico/docs/official/rules/rulebook_en.pdf',
+            ),
+          ),
+          findsOneWidget,
+        );
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+      }
 
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
@@ -103,11 +129,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GameDetailScreen), findsOneWidget);
       expect(find.byKey(const ValueKey('mobile-detail-rules')), findsOneWidget);
-      if (size.width == 390) {
-        await tester.tap(find.byTooltip('取消喜欢'));
-        await tester.pumpAndSettle();
-        expect(controller.isFavorite(controller.games.first), isFalse);
-      }
       await tester.tap(find.byTooltip('返回'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
@@ -126,6 +147,31 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+    }
+    await tester.binding.setSurfaceSize(const Size(720, 844));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: HomeScreen(controller: controller, onOpenAbout: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile-home-scroll'))).width,
+      kIsWeb ? 720 : 560,
+    );
+    if (kIsWeb && controller.dailyRecommendedGames.isNotEmpty) {
+      final firstRecommendation = controller.dailyRecommendedGames.first;
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                ValueKey('mobile-recommendation-${firstRecommendation.id}'),
+              ),
+            )
+            .width,
+        closeTo((720 - 32 - 20) / 3, 1),
+      );
     }
     await tester.tap(find.byKey(const ValueKey('mobile-home-search')));
     await tester.pumpAndSettle();

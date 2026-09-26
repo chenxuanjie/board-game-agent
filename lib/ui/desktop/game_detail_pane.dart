@@ -38,17 +38,34 @@ class DesktopGameDetailPane extends StatefulWidget {
 
 class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
+  int _galleryIndex = 0;
 
   static const _tabs = ['游戏介绍', '规则摘要', '玩家评价', '讨论区'];
 
   @override
   void didUpdateWidget(covariant DesktopGameDetailPane oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.game.id != widget.game.id) _tab = 0;
+    if (oldWidget.game.id != widget.game.id) {
+      _tab = 0;
+      _galleryIndex = 0;
+    }
   }
 
   GameInfo get game => widget.game;
   String value(String text) => desktopContentValue(text);
+
+  void _selectGalleryImage(int index, int count) {
+    if (count <= 0 || index < 0 || index >= count || index == _galleryIndex) {
+      return;
+    }
+    setState(() => _galleryIndex = index);
+  }
+
+  void _stepGallery(int delta, int count) {
+    if (count <= 1) return;
+    final next = (_galleryIndex + delta + count) % count;
+    _selectGalleryImage(next, count);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,9 +110,11 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   }
 
   Widget _hero() {
-    final heroPath = game.bannerAssetPath.trim().isNotEmpty
-        ? game.bannerAssetPath
-        : game.coverAssetPath;
+    final paths = _galleryPaths();
+    final galleryIndex = paths.isEmpty
+        ? 0
+        : _galleryIndex.clamp(0, paths.length - 1).toInt();
+    final heroPath = paths.isEmpty ? '' : paths[galleryIndex];
     return LayoutBuilder(
       builder: (context, constraints) {
         final condensed = constraints.maxWidth < 1100;
@@ -105,6 +124,9 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             fit: StackFit.expand,
             children: [
               DesktopResolvedImage(
+                key: ValueKey<String>(
+                  'desktop-detail-gallery-image-$galleryIndex',
+                ),
                 controller: widget.controller,
                 assetPath: heroPath,
                 palette: widget.controller.palette,
@@ -136,6 +158,38 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                   ),
                 ),
               ),
+              if (paths.length > 1) ...[
+                Positioned(
+                  left: 16,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _GalleryArrow(
+                      key: const ValueKey<String>(
+                        'desktop-detail-gallery-previous',
+                      ),
+                      tooltip: '上一张图片',
+                      icon: Icons.chevron_left_rounded,
+                      onTap: () => _stepGallery(-1, paths.length),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 16,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _GalleryArrow(
+                      key: const ValueKey<String>(
+                        'desktop-detail-gallery-next',
+                      ),
+                      tooltip: '下一张图片',
+                      icon: Icons.chevron_right_rounded,
+                      onTap: () => _stepGallery(1, paths.length),
+                    ),
+                  ),
+                ),
+              ],
               Padding(
                 padding: condensed
                     ? const EdgeInsets.fromLTRB(20, 16, 20, 16)
@@ -338,11 +392,14 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   }
 
   List<String> _galleryPaths() {
-    final paths = <String>{
-      ...game.galleryAssetPaths.where((path) => path.trim().isNotEmpty),
-      if (game.bannerAssetPath.trim().isNotEmpty) game.bannerAssetPath,
-      if (game.coverAssetPath.trim().isNotEmpty) game.coverAssetPath,
-    };
+    final paths = <String>{};
+    if (game.bannerAssetPath.trim().isNotEmpty) {
+      paths.add(game.bannerAssetPath);
+    }
+    paths.addAll(
+      game.galleryAssetPaths.where((path) => path.trim().isNotEmpty),
+    );
+    if (game.coverAssetPath.trim().isNotEmpty) paths.add(game.coverAssetPath);
     return paths.toList();
   }
 
@@ -367,14 +424,42 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
         scrollDirection: Axis.horizontal,
         itemCount: paths.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) => ClipRRect(
-          borderRadius: BorderRadius.circular(9),
-          child: SizedBox(
-            width: 146,
-            child: DesktopResolvedImage(
-              controller: widget.controller,
-              assetPath: paths[index],
-              palette: widget.controller.palette,
+        itemBuilder: (context, index) => Tooltip(
+          message: '查看第 ${index + 1} 张图片',
+          child: Semantics(
+            button: true,
+            selected: index == _galleryIndex,
+            label: '第 ${index + 1} 张图片',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                key: ValueKey<String>(
+                  'desktop-detail-gallery-thumbnail-$index',
+                ),
+                onTap: () => _selectGalleryImage(index, paths.length),
+                borderRadius: BorderRadius.circular(9),
+                child: Container(
+                  width: 146,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: index == _galleryIndex
+                          ? DesktopColors.orange
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: DesktopResolvedImage(
+                      controller: widget.controller,
+                      assetPath: paths[index],
+                      palette: widget.controller.palette,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -989,6 +1074,35 @@ class _RoundIcon extends StatelessWidget {
         foregroundColor: Colors.white,
       ),
       icon: Icon(icon),
+    ),
+  );
+}
+
+class _GalleryArrow extends StatelessWidget {
+  const _GalleryArrow({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: IconButton(
+      onPressed: onTap,
+      icon: Icon(icon, size: 30),
+      color: Colors.white,
+      style: IconButton.styleFrom(
+        backgroundColor: const Color(0x99000000),
+        minimumSize: const Size.square(48),
+        maximumSize: const Size.square(48),
+        padding: EdgeInsets.zero,
+      ),
     ),
   );
 }

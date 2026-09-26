@@ -16,6 +16,13 @@ import '../../games/models/recent_game_record.dart';
 import '../../games/models/search_history_record.dart';
 
 class PreferencesService {
+  PreferencesService({this.missingColorSchemeDefault});
+
+  /// Platform-specific visual default used only when no theme was saved.
+  /// Native Windows currently launches with Warmwood Study, so its settings
+  /// selection should match that appearance for existing installations too.
+  final ColorSchemeOption? missingColorSchemeDefault;
+
   static const _languageKey = 'app_language';
   static const _voiceReplyKey = 'voice_reply_enabled';
   static const _colorSchemeKey = 'color_scheme';
@@ -63,6 +70,9 @@ class PreferencesService {
   Future<ColorSchemeOption> loadColorScheme() async {
     final prefs = await _prefs;
     if (!prefs.containsKey(_colorSchemeKey)) {
+      if (missingColorSchemeDefault != null) {
+        return missingColorSchemeDefault!;
+      }
       // A completely empty preference store is a fresh install. If another
       // legacy setting already exists, keep the old classic default instead
       // of silently changing an existing user's appearance.

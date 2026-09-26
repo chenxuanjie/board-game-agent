@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../features/games/models/game_info.dart';
@@ -70,6 +71,16 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     final copy = widget.controller.copy;
     final recent = widget.controller.recentlyViewedGames.take(8).toList();
     final recommended = widget.controller.dailyRecommendedGames;
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    final contentWidth =
+        viewportWidth.clamp(0.0, kIsWeb ? 1200.0 : 560.0).toDouble() - 32;
+    final visibleRecommendations = kIsWeb && contentWidth >= 600
+        ? (contentWidth / 210).floor().clamp(3, 5)
+        : 2;
+    final recommendationWidth = kIsWeb && contentWidth >= 600
+        ? (contentWidth - 10 * (visibleRecommendations - 1)) /
+              visibleRecommendations
+        : ((contentWidth - 10) / 2).clamp(154.0, 220.0).toDouble();
     final ordered = recommended.isEmpty
         ? const <GameInfo>[]
         : <GameInfo>[
@@ -78,7 +89,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           ];
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: BoxConstraints(maxWidth: kIsWeb ? 1200 : 560),
         child: ListView(
           key: const ValueKey('mobile-home-scroll'),
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
@@ -128,10 +139,8 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                   scrollDirection: Axis.horizontal,
                   itemCount: ordered.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, index) => _recommendationCard(
-                    ordered[index],
-                    MediaQuery.sizeOf(context).width,
-                  ),
+                  itemBuilder: (context, index) =>
+                      _recommendationCard(ordered[index], recommendationWidth),
                 ),
               ),
             if (widget.controller.activities.isNotEmpty) ...[
@@ -206,6 +215,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   );
 
   Widget _carousel(AppCopy copy) {
+    final bool wideWeb = kIsWeb && MediaQuery.sizeOf(context).width >= 600;
     const pages = [
       ('assets/mobile/home/gathering_banner.png', '让每一次\n相聚都有好游戏', '发现桌游的更多乐趣'),
       (
@@ -233,74 +243,91 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                     fit: BoxFit.cover,
                     alignment: Alignment.centerRight,
                   ),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Color(0xF9FFF8EE),
-                          Color(0xD7FFF4E6),
-                          Color(0x00FFF4E6),
-                        ],
-                        stops: [0, .47, .82],
+                  if (!wideWeb || index == 0)
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xF9FFF8EE),
+                            Color(0xD7FFF4E6),
+                            Color(0x00FFF4E6),
+                          ],
+                          stops: [0, .47, .82],
+                        ),
                       ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 16, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          copy.localized(
-                            pages[index].$2,
-                            index == 2
-                                ? 'Ask AI about\nthe rules'
-                                : 'Better games\ntogether',
-                          ),
-                          style: const TextStyle(
-                            fontSize: 24,
-                            height: 1.2,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF5D2419),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          copy.localized(
-                            pages[index].$3,
-                            'Discover your next favorite',
-                          ),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF945C45),
-                          ),
-                        ),
-                        const Spacer(),
-                        FilledButton.icon(
-                          onPressed: index == 2
-                              ? widget.onOpenAi
-                              : widget.onSearch,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _orange,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            minimumSize: const Size(0, 39),
-                          ),
-                          icon: const Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 17,
-                          ),
-                          iconAlignment: IconAlignment.end,
-                          label: Text(
+                  if (!wideWeb || index == 0)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 16, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
                             copy.localized(
-                              index == 2 ? '立即提问' : '开始探索',
-                              index == 2 ? 'Ask now' : 'Explore',
+                              pages[index].$2,
+                              index == 2
+                                  ? 'Ask AI about\nthe rules'
+                                  : 'Better games\ntogether',
+                            ),
+                            style: const TextStyle(
+                              fontSize: 24,
+                              height: 1.2,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF5D2419),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            copy.localized(
+                              pages[index].$3,
+                              'Discover your next favorite',
+                            ),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF945C45),
+                            ),
+                          ),
+                          const Spacer(),
+                          FilledButton.icon(
+                            onPressed: index == 2
+                                ? widget.onOpenAi
+                                : widget.onSearch,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _orange,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              minimumSize: const Size(0, 39),
+                            ),
+                            icon: const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 17,
+                            ),
+                            iconAlignment: IconAlignment.end,
+                            label: Text(
+                              copy.localized(
+                                index == 2 ? '立即提问' : '开始探索',
+                                index == 2 ? 'Ask now' : 'Explore',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  if (wideWeb && index != 0)
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: index == 2 ? widget.onOpenAi : widget.onSearch,
+                        child: Semantics(
+                          label: copy.localized(
+                            index == 2 ? '立即提问' : '开始探索',
+                            index == 2 ? 'Ask now' : 'Explore',
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -480,8 +507,8 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     ),
   );
 
-  Widget _recommendationCard(GameInfo game, double screenWidth) => SizedBox(
-    width: ((screenWidth - 44) / 2).clamp(154, 220),
+  Widget _recommendationCard(GameInfo game, double cardWidth) => SizedBox(
+    width: cardWidth,
     child: InkWell(
       key: ValueKey('mobile-recommendation-${game.id}'),
       onTap: () => widget.onOpenGame(game),

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/resolved_document.dart';
-import '../shared/documents/markdown_document_screen.dart';
-import '../shared/documents/pdf_document_screen.dart';
+import '../shared/documents/document_viewer_launcher.dart';
 import 'assistant_chat_screen.dart';
 import 'game_cover.dart';
 
@@ -57,12 +57,21 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     if (mounted) setState(() {});
   }
 
+  void _stepGalleryPage(int delta, int count) {
+    if (count <= 1 || !_galleryController.hasClients) return;
+    final next = (_galleryIndex + delta + count) % count;
+    _galleryController.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final copy = controller.copy;
     final game = controller.selectedGame;
-    final favorite = controller.isFavorite(game);
     final gallery = game.galleryAssetPaths.isEmpty
         ? [game.coverAssetPath]
         : game.galleryAssetPaths;
@@ -108,30 +117,6 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         ),
                       ),
                       _roundButton(
-                        asset: favorite
-                            ? 'assets/mobile/detail/heart_filled.png'
-                            : 'assets/mobile/detail/heart_outline.png',
-                        tooltip: favorite
-                            ? copy.localized('取消喜欢', 'Unlike')
-                            : copy.localized('喜欢', 'Like'),
-                        onTap: () async {
-                          final saved = await controller.toggleFavorite(game);
-                          if (!saved && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  copy.localized(
-                                    '收藏保存失败',
-                                    'Could not save favorite',
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 7),
-                      _roundButton(
                         asset: 'assets/mobile/detail/share.png',
                         tooltip: copy.localized('分享', 'Share'),
                         onTap: () async {
@@ -164,73 +149,123 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                           270.0,
                           480.0,
                         ),
-                        child: PageView.builder(
-                          controller: _galleryController,
-                          itemCount: gallery.length,
-                          onPageChanged: (index) =>
-                              setState(() => _galleryIndex = index),
-                          itemBuilder: (context, index) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(22),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  _GalleryAsset(
-                                    controller: controller,
-                                    game: game,
-                                    path: gallery[index],
-                                  ),
-                                  if (gallery.length > 1)
-                                    Positioned(
-                                      bottom: 12,
-                                      left: 0,
-                                      right: 0,
-                                      child: Center(
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 7,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black45,
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: List.generate(
-                                              gallery.length,
-                                              (dot) => AnimatedContainer(
-                                                duration: const Duration(
-                                                  milliseconds: 180,
-                                                ),
-                                                margin:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 3,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            PageView.builder(
+                              controller: _galleryController,
+                              itemCount: gallery.length,
+                              onPageChanged: (index) =>
+                                  setState(() => _galleryIndex = index),
+                              itemBuilder: (context, index) => Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(22),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      _GalleryAsset(
+                                        controller: controller,
+                                        game: game,
+                                        path: gallery[index],
+                                      ),
+                                      if (gallery.length > 1)
+                                        Positioned(
+                                          bottom: 12,
+                                          left: 0,
+                                          right: 0,
+                                          child: Center(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 7,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black45,
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: List.generate(
+                                                  gallery.length,
+                                                  (dot) => AnimatedContainer(
+                                                    duration: const Duration(
+                                                      milliseconds: 180,
                                                     ),
-                                                width: dot == _galleryIndex
-                                                    ? 18
-                                                    : 6,
-                                                height: 6,
-                                                decoration: BoxDecoration(
-                                                  color: dot == _galleryIndex
-                                                      ? Colors.white
-                                                      : Colors.white54,
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
+                                                    margin:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 3,
+                                                        ),
+                                                    width: dot == _galleryIndex
+                                                        ? 18
+                                                        : 6,
+                                                    height: 6,
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          dot == _galleryIndex
+                                                          ? Colors.white
+                                                          : Colors.white54,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            6,
+                                                          ),
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                ],
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            if (kIsWeb && gallery.length > 1) ...[
+                              Positioned(
+                                left: 12,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: _GalleryPageArrow(
+                                    key: const ValueKey<String>(
+                                      'mobile-detail-gallery-previous',
+                                    ),
+                                    tooltip: copy.localized(
+                                      '上一张图片',
+                                      'Previous image',
+                                    ),
+                                    icon: Icons.chevron_left_rounded,
+                                    onTap: () =>
+                                        _stepGalleryPage(-1, gallery.length),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 12,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: _GalleryPageArrow(
+                                    key: const ValueKey<String>(
+                                      'mobile-detail-gallery-next',
+                                    ),
+                                    tooltip: copy.localized(
+                                      '下一张图片',
+                                      'Next image',
+                                    ),
+                                    icon: Icons.chevron_right_rounded,
+                                    onTap: () =>
+                                        _stepGalleryPage(1, gallery.length),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(height: 17),
@@ -661,27 +696,12 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         _documentUnavailable(title, () => _openDocument(game, faq: faq));
         return;
       }
-      if (document.renderType == DocumentRenderType.markdown) {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => MarkdownDocumentScreen(
-              controller: controller,
-              remotePath: document.remotePath,
-              title: title,
-            ),
-          ),
-        );
-      } else {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PdfDocumentScreen(
-              controller: controller,
-              remotePath: document.remotePath,
-              title: title,
-            ),
-          ),
-        );
-      }
+      await DocumentViewerLauncher.open(
+        context,
+        controller: controller,
+        document: document,
+        title: title,
+      );
     } catch (_) {
       if (mounted) {
         _documentUnavailable(title, () => _openDocument(game, faq: faq));
@@ -744,4 +764,33 @@ class _GalleryAsset extends StatelessWidget {
           MobileGameCover(controller: controller, game: game),
     );
   }
+}
+
+class _GalleryPageArrow extends StatelessWidget {
+  const _GalleryPageArrow({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: IconButton(
+      onPressed: onTap,
+      icon: Icon(icon, size: 28),
+      color: Colors.white,
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.black45,
+        minimumSize: const Size.square(44),
+        maximumSize: const Size.square(44),
+        padding: EdgeInsets.zero,
+      ),
+    ),
+  );
 }

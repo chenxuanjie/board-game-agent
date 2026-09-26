@@ -5,6 +5,23 @@ extension AppDocumentController on AppController {
     return source.replaceAll('\r\n', '\n').trim();
   }
 
+  Future<List<int>?> _loadWebDocument(String path) async {
+    // Shipped documents remain readable when WebDAV is offline. A remote-only
+    // document still falls back to the configured source.
+    if (path.startsWith('assets/')) {
+      try {
+        final data = await rootBundle.load(path);
+        return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      } catch (_) {
+        // This document is not bundled with the application.
+      }
+    }
+    return _remoteAssetService.loadBytes(
+      sources: _assetSourceConfigs,
+      remotePath: path,
+    );
+  }
+
   Future<String?> cacheDocument(String remotePath) async {
     if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
@@ -43,10 +60,12 @@ extension AppDocumentController on AppController {
       return null;
     }
     try {
-      final bytes = await _remoteAssetService.loadBytes(
-        sources: _assetSourceConfigs,
-        remotePath: remotePath,
-      );
+      final bytes = kIsWeb
+          ? await _loadWebDocument(remotePath)
+          : await _remoteAssetService.loadBytes(
+              sources: _assetSourceConfigs,
+              remotePath: remotePath,
+            );
       if (bytes == null || bytes.isEmpty) {
         _assetConnectivityStatus = ConnectivityStatus(
           state: ConnectivityState.failure,
@@ -168,10 +187,7 @@ extension AppDocumentController on AppController {
     if (kIsWeb) {
       for (final candidate in candidates) {
         try {
-          final bytes = await _remoteAssetService.loadBytes(
-            sources: _assetSourceConfigs,
-            remotePath: candidate,
-          );
+          final bytes = await _loadWebDocument(candidate);
           if (bytes != null && bytes.isNotEmpty) {
             return ResolvedDocument(
               remotePath: candidate,

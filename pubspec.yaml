@@ -56,6 +56,27 @@ flutter:
     - assets/desktop/warmwood/
     - branding/app_icon.png
     - assets/catalog.json
+    # Registered rulebooks and FAQs are bundled for offline Web reading.
+    - assets/games/puerto_rico/docs/official/rules/rulebook_en.pdf
+    - assets/games/arkham_horror_lcg/docs/official/answers/faq_en.pdf
+    - assets/games/arkham_horror_lcg/docs/official/rules/rulebook_en.pdf
+    - assets/games/cabo/docs/official/rules/rulebook_en.pdf
+    - assets/games/carcassonne_3/docs/official/rules/rulebook_en.pdf
+    - assets/games/harmonies/docs/official/rules/rulebook_en.pdf
+    - assets/games/war_chest/docs/official/rules/rulebook_en.pdf
+    - assets/games/decrypto/docs/official/rules/rulebook_cn.pdf
+    - assets/games/decrypto/docs/official/rules/rulebook_en.pdf
+    - assets/games/seven_wonders_duel/docs/official/rules/rulebook_en.pdf
+    - assets/games/splendor/docs/official/rules/rulebook_en.pdf
+    - assets/games/splendor_duel/docs/official/rules/rulebook_en.pdf
+    - assets/games/exploding_kittens/docs/official/rules/rulebook_en.pdf
+    - assets/games/castles_of_burgundy_2019/docs/official/rules/rulebook_en.pdf
+    - assets/games/citadels/docs/official/rules/rulebook_en.pdf
+    - assets/games/night_of_the_ninja/docs/official/answers/faq_en.pdf
+    - assets/games/night_of_the_ninja/docs/official/rules/rulebook_en.pdf
+    - assets/games/patchwork_10th_anniversary/docs/official/rules/rulebook_de.pdf
+    - assets/games/patchwork_10th_anniversary/docs/official/rules/rulebook_en.pdf
+    - assets/games/slay_the_spire/docs/official/rules/rulebook_en.pdf
     - assets/games/puerto_rico/images/
     - assets/games/puerto_rico/game.json
     - assets/games/puerto_rico/manifest.json

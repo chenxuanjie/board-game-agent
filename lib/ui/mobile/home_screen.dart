@@ -9,6 +9,7 @@ import '../../core/localization/app_copy.dart';
 import 'language_sheet.dart';
 import 'game_detail_screen.dart';
 import 'game_search_screen.dart';
+import 'rule_materials_screen.dart';
 import 'home_content.dart';
 import 'library_content.dart';
 import 'mine_content.dart';
@@ -76,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onFavorites: () => _openSearch(favoritesOnly: true),
                 onSettings: _openSettings,
                 onActivities: _openActivities,
-                onRules: () => _openSearch(rulesOnly: true),
+                onRules: _openRuleMaterials,
                 onRecentAll: () => _openSearch(recentOnly: true),
               )
             : _tab == 1
@@ -190,20 +191,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openSearch({
-    bool favoritesOnly = false,
-    bool recentOnly = false,
-    bool rulesOnly = false,
-  }) {
+  void _openSearch({bool favoritesOnly = false, bool recentOnly = false}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MobileGameSearchScreen(
           controller: widget.controller,
           favoritesOnly: favoritesOnly,
           recentOnly: recentOnly,
-          rulesOnly: rulesOnly,
           onOpenGame: _openGame,
         ),
+      ),
+    );
+  }
+
+  void _openRuleMaterials() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            MobileRuleMaterialsScreen(controller: widget.controller),
       ),
     );
   }
