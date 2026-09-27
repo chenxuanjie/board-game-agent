@@ -41,12 +41,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _configureWindowsWindow();
 
-  final preferencesService = PreferencesService(
-    missingColorSchemeDefault:
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
-        ? ColorSchemeOption.warmwoodStudy
-        : null,
-  );
+  final preferencesService = PreferencesService();
   final initialColorScheme = await _loadInitialColorScheme(preferencesService);
 
   final updateStore = SecureWebDavSettingsStore(appId: 'board_game_agent');
@@ -110,7 +105,7 @@ Future<ColorSchemeOption> _loadInitialColorScheme(
   } catch (_) {
     // Keep the native launch path usable even if the preference store is
     // temporarily unavailable. The controller will retry during initialize.
-    return ColorSchemeOption.sunsetCoast;
+    return defaultColorScheme;
   }
 }
 

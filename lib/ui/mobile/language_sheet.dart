@@ -151,6 +151,19 @@ class _LanguageSheetState extends State<LanguageSheet> {
                         _ChoiceTile(
                           palette: palette,
                           title: copy.colorSchemeName(
+                            ColorSchemeOption.warmwoodStudy,
+                          ),
+                          selected:
+                              controller.colorScheme ==
+                              ColorSchemeOption.warmwoodStudy,
+                          onTap: () => controller.setColorScheme(
+                            ColorSchemeOption.warmwoodStudy,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _ChoiceTile(
+                          palette: palette,
+                          title: copy.colorSchemeName(
                             ColorSchemeOption.classic,
                           ),
                           selected:
@@ -171,19 +184,6 @@ class _LanguageSheetState extends State<LanguageSheet> {
                               ColorSchemeOption.sunsetCoast,
                           onTap: () => controller.setColorScheme(
                             ColorSchemeOption.sunsetCoast,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _ChoiceTile(
-                          palette: palette,
-                          title: copy.colorSchemeName(
-                            ColorSchemeOption.warmwoodStudy,
-                          ),
-                          selected:
-                              controller.colorScheme ==
-                              ColorSchemeOption.warmwoodStudy,
-                          onTap: () => controller.setColorScheme(
-                            ColorSchemeOption.warmwoodStudy,
                           ),
                         ),
                       ],

@@ -1,5 +1,7 @@
 enum ColorSchemeOption { classic, sunsetCoast, warmwoodStudy }
 
+const ColorSchemeOption defaultColorScheme = ColorSchemeOption.warmwoodStudy;
+
 extension ColorSchemeOptionX on ColorSchemeOption {
   String get code {
     switch (this) {
@@ -26,7 +28,7 @@ extension ColorSchemeOptionX on ColorSchemeOption {
       case '暖木书房':
         return ColorSchemeOption.warmwoodStudy;
       default:
-        return ColorSchemeOption.classic;
+        return defaultColorScheme;
     }
   }
 }

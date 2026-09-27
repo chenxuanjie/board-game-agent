@@ -89,7 +89,7 @@ class AppController extends ChangeNotifier {
     RealtimeVoiceService? realtimeVoiceService,
     ColorSchemeOption? initialColorScheme,
   }) : _preferencesService = preferencesService,
-       _colorScheme = initialColorScheme ?? ColorSchemeOption.sunsetCoast,
+       _colorScheme = initialColorScheme ?? defaultColorScheme,
        _aiService = aiService,
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,

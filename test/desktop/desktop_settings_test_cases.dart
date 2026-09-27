@@ -86,6 +86,15 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
       );
       expect(voiceSwitch.onChanged, isNull);
 
+      final Finder nightTheme = find.byKey(
+        ValueKey<String>(
+          'desktop-settings-theme-${ColorSchemeOption.classic.code}',
+        ),
+      );
+      await tester.tap(nightTheme);
+      await tester.pumpAndSettle();
+      expect(context.preferences._colorScheme, ColorSchemeOption.classic);
+
       final Finder warmwoodTheme = find.byKey(
         ValueKey<String>(
           'desktop-settings-theme-${ColorSchemeOption.warmwoodStudy.code}',

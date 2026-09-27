@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:board_game_agent/core/theme/color_scheme_option.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/core/theme/app_palette.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
@@ -68,6 +70,7 @@ void main() {
   });
 
   test('color scheme codes expose the supported themes', () {
+    expect(defaultColorScheme, ColorSchemeOption.warmwoodStudy);
     expect(ColorSchemeOption.classic.code, 'classic');
     expect(ColorSchemeOption.sunsetCoast.code, 'sunset_coast');
     expect(ColorSchemeOption.warmwoodStudy.code, 'warmwood_study');
@@ -81,17 +84,27 @@ void main() {
     );
     expect(
       ColorSchemeOptionX.fromCode('removed_theme'),
-      ColorSchemeOption.classic,
+      ColorSchemeOption.warmwoodStudy,
+    );
+    expect(PaletteRegistry.classic.nameZh, '夜幕棋局');
+    expect(PaletteRegistry.classic.nameEn, 'Midnight Table');
+    expect(
+      AppCopy(AppLanguage.zhHans).colorSchemeName(ColorSchemeOption.classic),
+      '夜幕棋局',
+    );
+    expect(
+      AppCopy(AppLanguage.en).colorSchemeName(ColorSchemeOption.classic),
+      'Midnight Table',
     );
   });
 
   test(
-    'fresh installs default to sunset coast while legacy stores stay classic',
+    'missing theme defaults to warmwood without replacing saved choices',
     () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       expect(
         await PreferencesService().loadColorScheme(),
-        ColorSchemeOption.sunsetCoast,
+        ColorSchemeOption.warmwoodStudy,
       );
 
       SharedPreferences.setMockInitialValues(<String, Object>{
@@ -99,7 +112,23 @@ void main() {
       });
       expect(
         await PreferencesService().loadColorScheme(),
+        ColorSchemeOption.warmwoodStudy,
+      );
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'color_scheme': 'classic',
+      });
+      expect(
+        await PreferencesService().loadColorScheme(),
         ColorSchemeOption.classic,
+      );
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'color_scheme': 'sunset_coast',
+      });
+      expect(
+        await PreferencesService().loadColorScheme(),
+        ColorSchemeOption.sunsetCoast,
       );
     },
   );

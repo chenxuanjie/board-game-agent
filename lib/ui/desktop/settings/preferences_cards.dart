@@ -96,7 +96,11 @@ class _AppearanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const List<ColorSchemeOption> schemes = ColorSchemeOption.values;
+    const List<ColorSchemeOption> schemes = [
+      ColorSchemeOption.warmwoodStudy,
+      ColorSchemeOption.classic,
+      ColorSchemeOption.sunsetCoast,
+    ];
     final AppCopy copy = controller.copy;
     return _SettingsCard(
       icon: Icons.palette_outlined,
