@@ -51,9 +51,15 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     _textController = TextEditingController(text: widget.initialDraft ?? '');
     _scrollController = ScrollController();
     _textController.addListener(_onDraftChanged);
+    final selectedConversation = widget.controller.selectedConversation;
     if (widget.useGlobalMode) {
-      widget.controller.openGlobalAssistant(greeting: widget.customGreeting);
-    } else if (widget.controller.hasGames) {
+      if (selectedConversation?.isGlobal != true) {
+        widget.controller.openGlobalAssistant(greeting: widget.customGreeting);
+      }
+    } else if (widget.controller.hasGames &&
+        (selectedConversation?.isGlobal == true ||
+            selectedConversation?.gameId !=
+                widget.controller.selectedGame.id)) {
       widget.controller.openGameAssistant(
         widget.controller.selectedGame.id,
         greeting: widget.customGreeting,

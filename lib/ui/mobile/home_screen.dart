@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
 import '../../app/state/app_controller.dart';
-import '../../core/localization/app_copy.dart';
 import 'language_sheet.dart';
 import 'game_detail_screen.dart';
 import 'game_search_screen.dart';
@@ -87,6 +86,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 onActivities: _openActivities,
                 onProfile: _openSettings,
               )
+            : _tab == 2
+            ? UniversalAiScreen(controller: widget.controller)
             : _tab == 3
             ? MobileMineContent(
                 controller: widget.controller,
@@ -97,11 +98,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 onActivities: _openActivities,
                 onSettings: _openSettings,
               )
-            : _reservedPage(copy),
+            : const SizedBox.shrink(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _tab,
-        onTap: (index) => setState(() => _tab = index),
+        onTap: (index) {
+          if (index == 2 &&
+              widget.controller.selectedConversation?.isGlobal != true) {
+            widget.controller.openGlobalAssistant();
+          }
+          setState(() => _tab = index);
+        },
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFFFF673F),
@@ -138,45 +145,6 @@ class _HomeScreenState extends State<HomeScreen> {
             label: copy.localized('我的', 'Me'),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _reservedPage(AppCopy copy) {
-    final (icon, title, action, callback) = switch (_tab) {
-      2 => (
-        Icons.smart_toy_rounded,
-        copy.localized('AI助手', 'AI helper'),
-        copy.localized('打开现有 AI 助手', 'Open the existing AI helper'),
-        _openAi,
-      ),
-      _ => (
-        Icons.person_rounded,
-        copy.localized('我的', 'Me'),
-        copy.localized('打开现有设置', 'Open existing settings'),
-        _openSettings,
-      ),
-    };
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 44, color: const Color(0xFFFF673F)),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              copy.localized('新版页面暂未开放', 'The new page is not yet available'),
-            ),
-            const SizedBox(height: 18),
-            OutlinedButton(onPressed: callback, child: Text(action)),
-          ],
-        ),
       ),
     );
   }
