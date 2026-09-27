@@ -47,6 +47,8 @@ void main() {
       expect(find.text('继续游玩'), findsOneWidget);
       if (size.width == 390) {
         expect(find.text('推荐桌游'), findsOneWidget);
+        expect(find.text('快速找到心仪桌游'), findsNothing);
+        expect(find.text('图文视频一应俱全'), findsNothing);
       }
       expect(find.byKey(const ValueKey('mobile-tab-home')), findsOneWidget);
       expect(find.byKey(const ValueKey('mobile-tab-library')), findsOneWidget);
@@ -56,7 +58,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       if (size.width == 390) {
-        await tester.tap(find.text('规则资料'));
+        await tester.tap(find.text('规则资料库'));
         await tester.pumpAndSettle();
         expect(find.byType(MobileRuleMaterialsScreen), findsOneWidget);
         expect(

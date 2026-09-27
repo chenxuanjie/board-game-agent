@@ -134,7 +134,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
               _emptyRecent(copy)
             else
               SizedBox(
-                height: 160,
+                height: 138,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: ordered.length,
@@ -366,7 +366,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
       ),
       (
         Icons.menu_book_rounded,
-        copy.localized('规则资料', 'Rules'),
+        copy.localized('规则资料库', 'Rules'),
         const Color(0xFFFFF3D9),
         widget.onRules,
       ),
@@ -378,48 +378,63 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
       ),
       (
         Icons.favorite_rounded,
-        copy.localized('我的喜欢', 'My likes'),
+        copy.localized('我的收藏', 'Favorites'),
         const Color(0xFFFFE9EC),
         widget.onFavorites,
       ),
     ];
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final entry in entries)
-          Expanded(
-            child: InkWell(
-              onTap: entry.$4,
-              borderRadius: BorderRadius.circular(15),
-              child: Column(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1.15,
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: entry.$3,
-                        borderRadius: BorderRadius.circular(17),
+    const double itemGap = 12;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth =
+            (constraints.maxWidth - itemGap * (entries.length - 1)) /
+            entries.length;
+        final iconSize = itemWidth * 0.48;
+        final borderRadius = itemWidth * 0.28;
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final entry in entries)
+              SizedBox(
+                width: itemWidth,
+                child: InkWell(
+                  onTap: entry.$4,
+                  borderRadius: BorderRadius.circular(borderRadius),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: itemWidth,
+                        height: itemWidth,
+                        decoration: BoxDecoration(
+                          color: entry.$3,
+                          borderRadius: BorderRadius.circular(borderRadius),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(entry.$1, size: iconSize, color: _orange),
                       ),
-                      child: Icon(entry.$1, size: 36, color: _orange),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        entry.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: _ink,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    entry.$2,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -509,15 +524,16 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
 
   Widget _recommendationCard(GameInfo game, double cardWidth) => SizedBox(
     width: cardWidth,
+    height: 138,
     child: InkWell(
       key: ValueKey('mobile-recommendation-${game.id}'),
       onTap: () => widget.onOpenGame(game),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(7),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFFF2E6DE)),
         ),
         child: Row(
@@ -525,11 +541,13 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: SizedBox(
-                width: 68,
-                height: 142,
-                child: MobileGameCover(
-                  controller: widget.controller,
-                  game: game,
+                width: cardWidth >= 190 ? 88 : 72,
+                child: AspectRatio(
+                  aspectRatio: 1 / 1.35,
+                  child: MobileGameCover(
+                    controller: widget.controller,
+                    game: game,
+                  ),
                 ),
               ),
             ),
@@ -540,22 +558,22 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                 children: [
                   Text(
                     game.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 13,
                       fontWeight: FontWeight.w900,
                       color: _ink,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     game.categoryLine,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 9, color: _muted),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 3),
                   Row(
                     children: [
                       const Icon(
@@ -576,17 +594,16 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                   ),
                   const Spacer(),
                   Text(
-                    game.playerCount,
-                    maxLines: 1,
+                    game.summary.trim().isNotEmpty
+                        ? game.summary
+                        : game.heroTagline,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: _muted),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    game.playTime,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: _muted),
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF7D7773),
+                      height: 1.2,
+                    ),
                   ),
                 ],
               ),
