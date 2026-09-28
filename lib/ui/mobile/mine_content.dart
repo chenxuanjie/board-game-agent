@@ -598,15 +598,11 @@ class _MobileMineContentState extends State<MobileMineContent> {
   );
 
   Widget _shortcuts(AppCopy copy) {
-    final entries = <(String, IconData, String, String, Color, VoidCallback)>[
+    final entries = <(String, IconData, String, Color, VoidCallback)>[
       (
         'heart_icon.png',
         Icons.favorite_rounded,
         copy.localized('我的收藏', 'My likes'),
-        copy.localized(
-          '${widget.controller.favoriteCount} 个游戏',
-          '${widget.controller.favoriteCount} games',
-        ),
         const Color(0xFFFFEDF0),
         widget.onFavorites,
       ),
@@ -614,7 +610,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
         'wishlist_list_icon.png',
         Icons.bookmark_rounded,
         copy.localized('想玩清单', 'Wishlist'),
-        copy.localized('未开放', 'Coming soon'),
         const Color(0xFFFFF4DE),
         () => _notAvailable(copy.localized('想玩清单', 'Wishlist')),
       ),
@@ -622,7 +617,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
         'recent_play_gamepad_icon.png',
         Icons.sports_esports_rounded,
         copy.localized('最近浏览', 'Recent'),
-        copy.localized('继续发现', 'Keep exploring'),
         const Color(0xFFFFEDE6),
         widget.onRecentAll,
       ),
@@ -630,88 +624,101 @@ class _MobileMineContentState extends State<MobileMineContent> {
         'history_clock_icon.png',
         Icons.history_rounded,
         copy.localized('历史记录', 'History'),
-        copy.localized('未开放', 'Coming soon'),
         const Color(0xFFFFF0E8),
         () => _notAvailable(copy.localized('历史记录', 'History')),
       ),
     ];
-    return Row(
-      children: [
-        for (var index = 0; index < entries.length; index++) ...[
-          if (index > 0) const SizedBox(width: 8),
-          Expanded(
-            child: InkWell(
-              key: ValueKey('mobile-mine-shortcut-$index'),
-              onTap: entries[index].$6,
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(4, 9, 4, 11),
-                decoration: BoxDecoration(
-                  color: Colors.white,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gap = constraints.maxWidth < 340 ? 6.0 : 8.0;
+        final cardWidth = (constraints.maxWidth - gap * 3) / 4;
+        final iconSize = (cardWidth * 0.33).clamp(22.0, 42.0);
+        final labelSize = cardWidth < 75
+            ? 9.0
+            : cardWidth < 105
+            ? 10.5
+            : 12.5;
+        return Row(
+          children: [
+            for (var index = 0; index < entries.length; index++) ...[
+              if (index > 0) SizedBox(width: gap),
+              Expanded(
+                child: InkWell(
+                  key: ValueKey('mobile-mine-shortcut-$index'),
+                  onTap: entries[index].$5,
                   borderRadius: BorderRadius.circular(18),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x0C7A452B),
-                      blurRadius: 10,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      height: 48,
-                      width: double.infinity,
-                      alignment: Alignment.center,
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        color: entries[index].$5,
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      child: Image.asset(
-                        '$_assetRoot/${entries[index].$1}',
-                        width: 29,
-                        height: 29,
-                        errorBuilder: (_, _, _) =>
-                            Icon(entries[index].$2, size: 26, color: _orange),
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            entries[index].$3,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: _ink,
-                            ),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0C7A452B),
+                            blurRadius: 10,
+                            offset: Offset(0, 3),
                           ),
+                        ],
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: entries[index].$4,
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        const Icon(
-                          Icons.chevron_right_rounded,
-                          size: 13,
-                          color: Color(0xFFBAC3CF),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              '$_assetRoot/${entries[index].$1}',
+                              width: iconSize,
+                              height: iconSize,
+                              errorBuilder: (_, _, _) => Icon(
+                                entries[index].$2,
+                                size: iconSize,
+                                color: _orange,
+                              ),
+                            ),
+                            SizedBox(height: cardWidth * 0.06),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 2,
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      entries[index].$3,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: labelSize,
+                                        fontWeight: FontWeight.w800,
+                                        color: _ink,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: labelSize + 2,
+                                    color: const Color(0xFF778297),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      entries[index].$4,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 9.5, color: _muted),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ],
-      ],
+            ],
+          ],
+        );
+      },
     );
   }
 
