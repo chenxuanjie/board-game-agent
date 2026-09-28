@@ -108,7 +108,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
             onPressed: () => controller.clearConversationForContext(
               useGlobalMode: widget.useGlobalMode,
             ),
-            icon: const Icon(Icons.delete_sweep_rounded),
+            icon: const Icon(Icons.delete_outline_rounded),
           ),
           const SizedBox(width: 6),
         ],
@@ -125,19 +125,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   padding: EdgeInsets.fromLTRB(
                     screenWidth >= 720 ? 28 : 16,
                     4,
-                    screenWidth >= 720 ? 28 : 16,
-                    8,
-                  ),
-                  child: _ContextStrip(
-                    controller: controller,
-                    useGlobalMode: widget.useGlobalMode,
-                    onTap: _openContextSheet,
-                  ),
-                ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    screenWidth >= 720 ? 28 : 16,
-                    0,
                     screenWidth >= 720 ? 28 : 16,
                     8,
                   ),
@@ -624,69 +611,6 @@ class _AssistantAppBarTitle extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ContextStrip extends StatelessWidget {
-  const _ContextStrip({
-    required this.controller,
-    required this.useGlobalMode,
-    required this.onTap,
-  });
-
-  final AppController controller;
-  final bool useGlobalMode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final copy = controller.copy;
-    final palette = AppPalette.of(context);
-    final smart = controller.allowSmartSupplement(useGlobalMode: useGlobalMode);
-    final modeLabel = smart
-        ? copy.smartSupplementLabel
-        : copy.knowledgeOnlyLabel;
-
-    return Material(
-      color: palette.primaryContainer.withValues(alpha: 0.32),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  color: smart ? palette.secondary : palette.primary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  modeLabel,
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-              ),
-              Text(
-                controller.speechAvailable
-                    ? copy.speechReady
-                    : copy.speechUnavailableShort,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
-              ),
-              const SizedBox(width: 6),
-              Icon(Icons.tune_rounded, size: 18, color: palette.textSecondary),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

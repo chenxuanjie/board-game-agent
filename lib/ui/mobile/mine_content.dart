@@ -438,45 +438,32 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 ],
               ),
               const SizedBox(height: 2),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      copy.localized(
-                        '好桌游，让平凡的日子闪闪发光！',
-                        'Good games brighten every day!',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10.5, color: _muted),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton(
+                  key: const ValueKey('mobile-mine-edit-profile'),
+                  onPressed: _editProfile,
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF9F7F5),
+                    foregroundColor: const Color(0xFF6F7788),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 5,
+                    ),
+                    minimumSize: const Size(0, 30),
+                    side: const BorderSide(color: Color(0xFFEADBCE)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    key: const ValueKey('mobile-mine-edit-profile'),
-                    onPressed: _editProfile,
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: const Color(0xFFF9F7F5),
-                      foregroundColor: const Color(0xFF6F7788),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 5,
-                      ),
-                      minimumSize: const Size(0, 30),
-                      side: const BorderSide(color: Color(0xFFEADBCE)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      copy.localized('编辑资料', 'Edit'),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  child: Text(
+                    copy.localized('编辑资料', 'Edit'),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -828,12 +815,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
   Widget _services(AppCopy copy) {
     final entries = <(IconData, String, String, VoidCallback)>[
       (
-        Icons.accessibility_new_rounded,
-        copy.localized('我的桌游', 'My games'),
-        copy.localized('未开放', 'Coming soon'),
-        () => _notAvailable(copy.localized('我的桌游', 'My games')),
-      ),
-      (
         Icons.notifications_rounded,
         copy.localized('消息通知', 'Notifications'),
         copy.localized('活动、评论、系统消息等', 'Activities and updates'),
@@ -881,7 +862,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
                     Icon(
                       entries[index].$1,
                       size: 22,
-                      color: index == 0 ? _orange : const Color(0xFF5B677D),
+                      color: const Color(0xFF5B677D),
                     ),
                     const SizedBox(width: 13),
                     SizedBox(

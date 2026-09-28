@@ -44,7 +44,9 @@ void main() {
 
       expect(find.byKey(const ValueKey('mobile-home-root')), findsOneWidget);
       expect(find.text('桌游伙伴'), findsOneWidget);
-      expect(find.text('继续游玩'), findsOneWidget);
+      expect(find.text('最近AI对话'), findsOneWidget);
+      expect(find.text('查看更多'), findsNothing);
+      expect(find.text('向 AI 提一个问题'), findsOneWidget);
       if (size.width == 390) {
         expect(find.text('推荐桌游'), findsOneWidget);
         expect(find.text('快速找到心仪桌游'), findsNothing);
@@ -131,15 +133,50 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(find.text('让好游戏，连接更多人'), findsNothing);
       expect(find.byKey(const ValueKey('mobile-detail-rules')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile-detail-ask-ai')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile-detail-wishlist')),
+        findsNothing,
+      );
+      expect(find.text('FAQ'), findsNothing);
+      expect(find.text('加入想玩'), findsNothing);
+      expect(find.text('展开全部'), findsNothing);
+      if (controller.games.first.mentorPitch.trim().isNotEmpty) {
+        expect(find.text(controller.games.first.mentorPitch), findsNothing);
+      }
+      final favoriteBefore = controller.isFavorite(controller.games.first);
+      await tester.tap(
+        find.byKey(
+          ValueKey('mobile-detail-favorite-${controller.games.first.id}'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.isFavorite(controller.games.first), !favoriteBefore);
+      await tester.tap(find.byKey(const ValueKey('mobile-detail-ask-ai')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AssistantChatScreen), findsOneWidget);
+      expect(
+        controller.selectedConversation?.gameId,
+        controller.games.first.id,
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('返回'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();
-      expect(find.text('继续游玩'), findsOneWidget);
+      expect(find.text('最近AI对话'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('mobile-tab-ai')));
       await tester.pumpAndSettle();
       expect(find.byType(AssistantChatScreen), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.delete_sweep_rounded), findsNothing);
+      expect(find.text('语音已准备好'), findsNothing);
       expect(controller.selectedConversation?.isGlobal, isTrue);
       expect(find.text('打开现有 AI 助手'), findsNothing);
       expect(tester.takeException(), isNull);
@@ -147,12 +184,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('mobile-mine-profile')), findsOneWidget);
       expect(find.text('${controller.favoriteCount}'), findsOneWidget);
+      expect(find.text('好桌游，让平凡的日子闪闪发光！'), findsNothing);
       await tester.scrollUntilVisible(
         find.text('我的服务'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('我的服务'), findsOneWidget);
+      expect(find.text('我的桌游'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

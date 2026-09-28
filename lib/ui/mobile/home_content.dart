@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/localization/app_copy.dart';
@@ -18,23 +19,23 @@ class MobileHomeContent extends StatefulWidget {
     required this.controller,
     required this.onSearch,
     required this.onOpenGame,
+    required this.onOpenConversation,
     required this.onOpenAi,
     required this.onFavorites,
     required this.onSettings,
     required this.onActivities,
     required this.onRules,
-    required this.onRecentAll,
   });
 
   final AppController controller;
   final VoidCallback onSearch;
   final ValueChanged<GameInfo> onOpenGame;
+  final ValueChanged<AiConversation> onOpenConversation;
   final VoidCallback onOpenAi;
   final VoidCallback onFavorites;
   final VoidCallback onSettings;
   final VoidCallback onActivities;
   final VoidCallback onRules;
-  final VoidCallback onRecentAll;
 
   @override
   State<MobileHomeContent> createState() => _MobileHomeContentState();
@@ -69,7 +70,11 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   @override
   Widget build(BuildContext context) {
     final copy = widget.controller.copy;
-    final recent = widget.controller.recentlyViewedGames.take(8).toList();
+    final recentConversations =
+        widget.controller.conversations
+            .where((conversation) => conversation.hasUserMessages)
+            .toList()
+          ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
     final recommended = widget.controller.dailyRecommendedGames;
     final viewportWidth = MediaQuery.sizeOf(context).width;
     final contentWidth =
@@ -101,23 +106,21 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             _shortcuts(copy),
             const SizedBox(height: 25),
             _sectionHeader(
-              icon: Icons.history_rounded,
-              title: copy.localized('继续游玩', 'Continue playing'),
-              action: recent.isEmpty ? null : copy.localized('查看更多', 'See all'),
-              onAction: recent.isEmpty ? null : widget.onRecentAll,
+              icon: Icons.chat_bubble_outline_rounded,
+              title: copy.localized('最近AI对话', 'Recent AI chats'),
             ),
             const SizedBox(height: 12),
-            if (recent.isEmpty)
-              _emptyRecent(copy)
+            if (recentConversations.isEmpty)
+              _emptyAiConversations(copy)
             else
               SizedBox(
-                height: 157,
+                height: 132,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  itemCount: recent.length,
+                  itemCount: recentConversations.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 11),
                   itemBuilder: (context, index) =>
-                      _recentCard(recent[index], copy),
+                      _conversationCard(recentConversations[index], copy),
                 ),
               ),
             const SizedBox(height: 25),
@@ -485,39 +488,79 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     ),
   );
 
-  Widget _recentCard(GameInfo game, AppCopy copy) => SizedBox(
-    width: 94,
+  Widget _emptyAiConversations(AppCopy copy) => Container(
+    height: 102,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: const Color(0xFFF4EAE1)),
+    ),
+    child: TextButton(
+      onPressed: widget.onOpenAi,
+      child: Text(copy.localized('向 AI 提一个问题', 'Ask AI a question')),
+    ),
+  );
+
+  Widget _conversationCard(
+    AiConversation conversation,
+    AppCopy copy,
+  ) => SizedBox(
+    width: 176,
     child: InkWell(
-      key: ValueKey('mobile-recent-${game.id}'),
-      onTap: () => widget.onOpenGame(game),
-      borderRadius: BorderRadius.circular(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              height: 110,
-              width: 94,
-              child: MobileGameCover(controller: widget.controller, game: game),
+      key: ValueKey('mobile-recent-ai-${conversation.id}'),
+      onTap: () => widget.onOpenConversation(conversation),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF2E6DE)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.smart_toy_rounded, size: 18, color: _orange),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    conversation.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            game.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: _ink,
+            const SizedBox(height: 8),
+            Text(
+              conversation.messages.reversed
+                  .map((message) => message.text.trim())
+                  .firstWhere(
+                    (text) => text.isNotEmpty,
+                    orElse: () => copy.localized('继续对话', 'Continue chatting'),
+                  ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: _muted, height: 1.3),
             ),
-          ),
-          Text(
-            copy.localized('继续上次', 'Continue'),
-            style: const TextStyle(fontSize: 10, color: _muted),
-          ),
-        ],
+            const Spacer(),
+            Text(
+              copy.localized(
+                '${conversation.updatedAt.month}月${conversation.updatedAt.day}日',
+                '${conversation.updatedAt.month}/${conversation.updatedAt.day}',
+              ),
+              style: const TextStyle(fontSize: 10, color: _muted),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -561,33 +604,35 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: FontWeight.w900,
                       color: _ink,
+                      height: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Text(
                     game.categoryLine,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 9, color: _muted),
+                    style: const TextStyle(fontSize: 10, color: _muted),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       const Icon(
                         Icons.star_rounded,
-                        size: 14,
+                        size: 17,
                         color: Color(0xFFFF9F23),
                       ),
-                      const SizedBox(width: 2),
+                      const SizedBox(width: 4),
                       Text(
                         game.score,
                         style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
                           color: _ink,
+                          height: 1.1,
                         ),
                       ),
                     ],
@@ -600,9 +645,9 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 9,
-                      color: Color(0xFF7D7773),
-                      height: 1.2,
+                      fontSize: 10,
+                      color: Color(0xFF85818A),
+                      height: 1.3,
                     ),
                   ),
                 ],

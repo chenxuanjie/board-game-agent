@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
 import '../../app/state/app_controller.dart';
@@ -13,6 +14,7 @@ import 'home_content.dart';
 import 'library_content.dart';
 import 'mine_content.dart';
 import 'universal_ai_screen.dart';
+import 'assistant_chat_screen.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
 class HomeScreen extends StatefulWidget {
@@ -72,12 +74,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: widget.controller,
                 onSearch: () => _openSearch(),
                 onOpenGame: _openGame,
+                onOpenConversation: _openConversation,
                 onOpenAi: _openAi,
                 onFavorites: () => _openSearch(favoritesOnly: true),
                 onSettings: _openSettings,
                 onActivities: _openActivities,
                 onRules: _openRuleMaterials,
-                onRecentAll: () => _openSearch(recentOnly: true),
               )
             : _tab == 1
             ? MobileLibraryContent(
@@ -155,6 +157,21 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => GameDetailScreen(controller: widget.controller),
+      ),
+    );
+  }
+
+  void _openConversation(AiConversation conversation) {
+    widget.controller.selectConversation(conversation.id);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AssistantChatScreen(
+          controller: widget.controller,
+          useGlobalMode: conversation.isGlobal,
+          customTitle: conversation.isGlobal
+              ? widget.controller.copy.globalAiTitle
+              : null,
+        ),
       ),
     );
   }

@@ -27,8 +27,6 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   late final PageController _galleryController;
   int _galleryIndex = 0;
   bool _openingRulebook = false;
-  bool _openingFaq = false;
-  bool _expandedSummary = false;
 
   @override
   void initState() {
@@ -100,22 +98,33 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         tooltip: copy.localized('返回', 'Back'),
                         onTap: () => Navigator.of(context).pop(),
                       ),
-                      Expanded(
-                        child: Text(
-                          copy.localized(
-                            '让好游戏，连接更多人',
-                            'Good games bring us together',
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            color: Color(0xFF8C4C31),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                      const Spacer(),
+                      _roundButton(
+                        key: ValueKey('mobile-detail-favorite-${game.id}'),
+                        icon: controller.isFavorite(game)
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        iconColor: _orange,
+                        tooltip: controller.isFavorite(game)
+                            ? copy.localized('取消喜欢', 'Unlike')
+                            : copy.localized('喜欢', 'Like'),
+                        onTap: () async {
+                          final saved = await controller.toggleFavorite(game);
+                          if (!saved && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  copy.localized(
+                                    '收藏保存失败',
+                                    'Could not save favorite',
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                        },
                       ),
+                      const SizedBox(width: 6),
                       _roundButton(
                         asset: 'assets/mobile/detail/share.png',
                         tooltip: copy.localized('分享', 'Share'),
@@ -433,116 +442,24 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          copy.localized(
-                                            '游戏简介',
-                                            'About this game',
-                                          ),
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w800,
-                                            color: _ink,
-                                          ),
-                                        ),
-                                      ),
-                                      TextButton.icon(
-                                        onPressed: () => setState(
-                                          () => _expandedSummary =
-                                              !_expandedSummary,
-                                        ),
-                                        label: Text(
-                                          _expandedSummary
-                                              ? copy.localized('收起', 'Collapse')
-                                              : copy.localized(
-                                                  '展开全部',
-                                                  'Show all',
-                                                ),
-                                        ),
-                                        icon: Icon(
-                                          _expandedSummary
-                                              ? Icons.expand_less_rounded
-                                              : Icons.expand_more_rounded,
-                                        ),
-                                      ),
-                                    ],
+                                  Text(
+                                    copy.localized('游戏简介', 'About this game'),
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                      color: _ink,
+                                    ),
                                   ),
                                   Text(
                                     summary,
-                                    maxLines: _expandedSummary ? null : 4,
-                                    overflow: _expandedSummary
-                                        ? null
-                                        : TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 14,
                                       color: Color(0xFF626166),
                                       height: 1.6,
                                     ),
                                   ),
-                                  if (game.mentorPitch.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      children: [
-                                        _assetIcon(
-                                          'assets/mobile/detail/tip.png',
-                                          21,
-                                        ),
-                                        const SizedBox(width: 7),
-                                        Expanded(
-                                          child: Text(
-                                            game.mentorPitch,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Color(0xFF9C6948),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
                                 ],
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _openingFaq
-                                        ? null
-                                        : () => _openDocument(game, faq: true),
-                                    icon: _openingFaq
-                                        ? const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Icon(Icons.quiz_outlined),
-                                    label: Text(copy.faq),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => AssistantChatScreen(
-                                          controller: controller,
-                                        ),
-                                      ),
-                                    ),
-                                    icon: const Icon(Icons.smart_toy_outlined),
-                                    label: Text(copy.askAiAssistant),
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
                         ),
@@ -574,7 +491,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                       key: const ValueKey('mobile-detail-rules'),
                       onPressed: _openingRulebook
                           ? null
-                          : () => _openDocument(game, faq: false),
+                          : () => _openDocument(game),
                       icon: _openingRulebook
                           ? const SizedBox(
                               width: 18,
@@ -594,20 +511,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton.icon(
-                      key: const ValueKey('mobile-detail-wishlist'),
-                      onPressed: () =>
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                copy.localized(
-                                  '想玩清单暂未开放',
-                                  'Wishlist is coming soon',
-                                ),
-                              ),
-                            ),
+                      key: const ValueKey('mobile-detail-ask-ai'),
+                      onPressed: () {
+                        if (!controller.openGameAssistant(game.id)) return;
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                AssistantChatScreen(controller: controller),
                           ),
-                      icon: const Icon(Icons.add_circle_outline_rounded),
-                      label: Text(copy.localized('加入想玩', 'Want to play')),
+                        );
+                      },
+                      icon: const Icon(Icons.smart_toy_outlined),
+                      label: Text(copy.askAiAssistant),
                       style: FilledButton.styleFrom(
                         backgroundColor: _orange,
                         minimumSize: const Size(0, 52),
@@ -624,7 +539,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   }
 
   Widget _roundButton({
+    Key? key,
     IconData? icon,
+    Color iconColor = const Color(0xFF78431E),
     String? asset,
     required String tooltip,
     required VoidCallback onTap,
@@ -633,10 +550,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       color: _cream,
       borderRadius: BorderRadius.circular(18),
       child: IconButton(
+        key: key,
         tooltip: tooltip,
         onPressed: onTap,
         icon: asset == null
-            ? Icon(icon, size: 21, color: const Color(0xFF78431E))
+            ? Icon(icon, size: 21, color: iconColor)
             : _assetIcon(asset, 23),
       ),
     );
@@ -677,23 +595,16 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     );
   }
 
-  Future<void> _openDocument(GameInfo game, {required bool faq}) async {
+  Future<void> _openDocument(GameInfo game) async {
     final controller = widget.controller;
-    final title = faq ? controller.copy.faq : controller.copy.rulesBook;
-    setState(() {
-      if (faq) {
-        _openingFaq = true;
-      } else {
-        _openingRulebook = true;
-      }
-    });
+    final title = controller.copy.rulesBook;
+    setState(() => _openingRulebook = true);
     try {
-      final ResolvedDocument? document = faq
-          ? await controller.resolveFaqDocument(game)
-          : await controller.resolveRulebookDocument(game);
+      final ResolvedDocument? document = await controller
+          .resolveRulebookDocument(game);
       if (!mounted) return;
       if (document == null) {
-        _documentUnavailable(title, () => _openDocument(game, faq: faq));
+        _documentUnavailable(title, () => _openDocument(game));
         return;
       }
       await DocumentViewerLauncher.open(
@@ -704,17 +615,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       );
     } catch (_) {
       if (mounted) {
-        _documentUnavailable(title, () => _openDocument(game, faq: faq));
+        _documentUnavailable(title, () => _openDocument(game));
       }
     } finally {
       if (mounted) {
-        setState(() {
-          if (faq) {
-            _openingFaq = false;
-          } else {
-            _openingRulebook = false;
-          }
-        });
+        setState(() => _openingRulebook = false);
       }
     }
   }
