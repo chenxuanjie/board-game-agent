@@ -36,6 +36,63 @@ class MobileMineContent extends StatefulWidget {
   State<MobileMineContent> createState() => _MobileMineContentState();
 }
 
+class _ProfileCardClipper extends CustomClipper<Path> {
+  const _ProfileCardClipper();
+
+  @override
+  Path getClip(Size size) {
+    const radius = 24.0;
+    final drop = (size.width * 0.13).clamp(50.0, 75.0);
+    final start = size.width * 0.49;
+    final end = size.width * 0.68;
+    return Path()
+      ..moveTo(radius, 0)
+      ..lineTo(start, 0)
+      ..cubicTo(
+        start + (end - start) * 0.45,
+        0,
+        start + (end - start) * 0.55,
+        drop,
+        end,
+        drop,
+      )
+      ..lineTo(size.width - radius, drop)
+      ..quadraticBezierTo(size.width, drop, size.width, drop + radius)
+      ..lineTo(size.width, size.height - radius)
+      ..quadraticBezierTo(
+        size.width,
+        size.height,
+        size.width - radius,
+        size.height,
+      )
+      ..lineTo(radius, size.height)
+      ..quadraticBezierTo(0, size.height, 0, size.height - radius)
+      ..lineTo(0, radius)
+      ..quadraticBezierTo(0, 0, radius, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _ProfileCardShadowPainter extends CustomPainter {
+  const _ProfileCardShadowPainter({required this.clipper});
+
+  final _ProfileCardClipper clipper;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x147A452B)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
+    canvas.drawPath(clipper.getClip(size).shift(const Offset(0, 6)), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _MobileMineContentState extends State<MobileMineContent> {
   static const _nicknameKey = 'mobile_profile_nickname';
   String _nickname = '小桌友';
@@ -105,366 +162,548 @@ class _MobileMineContentState extends State<MobileMineContent> {
       for (final record in widget.controller.recentGameRecords)
         record.normalizedGameSlug: record,
     };
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: ListView(
-          key: const ValueKey('mobile-mine-scroll'),
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          children: [
-            _header(copy),
-            _profileCard(copy),
-            const SizedBox(height: 13),
-            _shortcuts(copy),
-            const SizedBox(height: 21),
-            _sectionTitle(
-              '$_assetRoot/recent_play_gamepad_icon.png',
-              copy.localized('最近浏览', 'Recently viewed'),
-              action: recent.isEmpty ? null : copy.localized('查看全部', 'See all'),
-              onAction: widget.onRecentAll,
-            ),
-            const SizedBox(height: 10),
-            if (recent.isEmpty)
-              _emptyRecent(copy)
-            else
-              SizedBox(
-                height: 134,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: recent.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, index) => _recentCard(
-                    recent[index],
-                    recentBySlug[recent[index].slug.toLowerCase()]?.viewedAt,
-                    copy,
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFFFF7F0), Color(0xFFFAF3EC), Color(0xFFF7EFE7)],
+        ),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: ListView(
+            key: const ValueKey('mobile-mine-scroll'),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            children: [
+              _integratedHeaderSection(copy),
+              const SizedBox(height: 13),
+              _shortcuts(copy),
+              const SizedBox(height: 21),
+              _sectionTitle(
+                '$_assetRoot/recent_play_gamepad_icon.png',
+                copy.localized('最近浏览', 'Recently viewed'),
+                action: recent.isEmpty
+                    ? null
+                    : copy.localized('查看全部', 'See all'),
+                onAction: widget.onRecentAll,
+              ),
+              const SizedBox(height: 10),
+              if (recent.isEmpty)
+                _emptyRecent(copy)
+              else
+                SizedBox(
+                  height: 134,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: recent.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) => _recentCard(
+                      recent[index],
+                      recentBySlug[recent[index].slug.toLowerCase()]?.viewedAt,
+                      copy,
+                    ),
                   ),
                 ),
-              ),
-            const SizedBox(height: 21),
-            _sectionTitle(null, copy.localized('我的服务', 'My services')),
-            const SizedBox(height: 10),
-            _services(copy),
-            const SizedBox(height: 16),
-            _promo(),
-          ],
+              const SizedBox(height: 21),
+              _sectionTitle(null, copy.localized('我的服务', 'My services')),
+              const SizedBox(height: 10),
+              _services(copy),
+              const SizedBox(height: 16),
+              _promo(),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _header(AppCopy copy) => SizedBox(
-    height: 105,
-    child: Stack(
-      children: [
-        const Positioned.fill(
-          child: Image(
-            image: AssetImage('$_assetRoot/header_background.png'),
-            fit: BoxFit.cover,
-            alignment: Alignment.centerRight,
-          ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 22,
-          child: Row(
-            children: [
-              Image.asset(
-                'assets/desktop/home/logo.png',
-                width: 44,
-                height: 44,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      copy.localized('桌游伙伴', 'Board Game Buddy'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 23,
-                        fontWeight: FontWeight.w900,
-                        color: _ink,
-                      ),
-                    ),
-                    Text(
-                      copy.localized(
-                        '好游戏 · 好伙伴 · 好时光',
-                        'Good games · Better people',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Color(0xFFAC8068),
-                      ),
-                    ),
-                  ],
+  Widget _integratedHeaderSection(AppCopy copy) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      // Match the artwork to the card width, then cap it on wider Web layouts
+      // so the meeple and die stay inside the curved opening.
+      final imageWidth = (width + 32).clamp(0.0, 420.0);
+      final imageHeight = imageWidth * 763 / 2060;
+      final imageRight = width * 0.126 - 55;
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            left: -16,
+            right: -16,
+            height: imageHeight,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFFF7EE), Color(0xFFFFE9D0)],
                 ),
               ),
-              IconButton(
-                key: const ValueKey('mobile-mine-scan'),
-                tooltip: copy.localized('扫一扫', 'Scan'),
-                onPressed: () => _notAvailable(copy.localized('扫一扫', 'Scan')),
-                icon: Image.asset('$_assetRoot/scan_icon.png', width: 24),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: imageRight,
+            child: ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [Colors.transparent, Colors.black, Colors.black],
+                stops: [0, 0.15, 1],
+              ).createShader(bounds),
+              blendMode: BlendMode.dstIn,
+              child: Image.asset(
+                '$_assetRoot/header_background_card.jpg',
+                width: imageWidth,
+                height: imageHeight,
+                fit: BoxFit.fill,
               ),
-              Stack(
-                children: [
-                  IconButton(
-                    key: const ValueKey('mobile-mine-notifications'),
-                    tooltip: copy.localized('消息通知', 'Notifications'),
-                    onPressed: widget.onActivities,
-                    icon: Image.asset(
-                      '$_assetRoot/notification_bell_icon.png',
-                      width: 24,
-                    ),
-                  ),
-                  if (widget.controller.unreadActivityCount > 0)
-                    const Positioned(
-                      right: 8,
-                      top: 7,
-                      child: CircleAvatar(radius: 4, backgroundColor: _orange),
-                    ),
-                ],
+            ),
+          ),
+          Positioned(
+            top: 22,
+            left: width * 0.57,
+            width: width * 0.26,
+            child: Transform.rotate(
+              angle: -0.12,
+              child: Text(
+                copy.localized(
+                  '桌游\n让生活多一点\n乐趣 ♡',
+                  'Games bring\nmore joy\nto life ♡',
+                ),
+                maxLines: 3,
+                style: TextStyle(
+                  color: const Color(0xFFE97536),
+                  fontSize: width < 340 ? 9.5 : 13,
+                  fontWeight: FontWeight.w600,
+                  fontStyle: FontStyle.italic,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
+          Column(
+            children: [
+              _topNavRow(copy),
+              const SizedBox(height: 8),
+              _profileCard(copy),
+            ],
+          ),
+        ],
+      );
+    },
+  );
+
+  Widget _topNavRow(AppCopy copy) => Padding(
+    padding: const EdgeInsets.only(top: 14, bottom: 4),
+    child: Row(
+      children: [
+        Image.asset('assets/desktop/home/logo.png', width: 44, height: 44),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                copy.localized('桌游伙伴', 'Board Game Buddy'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: _ink,
+                ),
+              ),
+              Text(
+                copy.localized('好游戏 · 好伙伴 · 好时光', 'Good games · Better people'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF9E7259)),
               ),
             ],
           ),
+        ),
+        IconButton(
+          key: const ValueKey('mobile-mine-scan'),
+          tooltip: copy.localized('扫一扫', 'Scan'),
+          onPressed: () => _notAvailable(copy.localized('扫一扫', 'Scan')),
+          icon: Image.asset('$_assetRoot/scan_icon.png', width: 24),
+        ),
+        Stack(
+          children: [
+            IconButton(
+              key: const ValueKey('mobile-mine-notifications'),
+              tooltip: copy.localized('消息通知', 'Notifications'),
+              onPressed: widget.onActivities,
+              icon: Image.asset(
+                '$_assetRoot/notification_bell_icon.png',
+                width: 24,
+              ),
+            ),
+            if (widget.controller.unreadActivityCount > 0)
+              const Positioned(
+                right: 8,
+                top: 7,
+                child: CircleAvatar(radius: 4, backgroundColor: _orange),
+              ),
+          ],
         ),
       ],
     ),
   );
 
-  Widget _profileCard(AppCopy copy) => Container(
-    key: const ValueKey('mobile-mine-profile'),
-    padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFFFDFC),
-      borderRadius: BorderRadius.circular(24),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0C9F5637),
-          blurRadius: 18,
-          offset: Offset(0, 5),
-        ),
-      ],
-    ),
-    child: Column(
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 66,
-              height: 66,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFFFD9B7),
-                border: Border.all(color: Colors.white, width: 3),
-              ),
-              child: const Icon(
-                Icons.person_rounded,
-                size: 43,
-                color: Color(0xFFB86A42),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
+  Widget _profileCard(AppCopy copy) {
+    const clipper = _ProfileCardClipper();
+    return CustomPaint(
+      painter: const _ProfileCardShadowPainter(clipper: clipper),
+      child: ClipPath(
+        clipper: clipper,
+        child: Container(
+          key: const ValueKey('mobile-mine-profile'),
+          color: Colors.white,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _nickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w900,
-                      color: _ink,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF0D8),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  _avatarWithBadge(),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Image.asset(
-                          '$_assetRoot/crown_badge_icon.png',
-                          width: 16,
+                        const SizedBox(height: 2),
+                        InkWell(
+                          onTap: _editProfile,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _nickname,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                    color: _ink,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 19,
+                                color: Color(0xFF8B94A4),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(width: 3),
-                        Text(
-                          copy.localized('桌游伙伴', 'Player'),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Color(0xFF8B5A2E),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1DA),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                '$_assetRoot/crown_badge_icon.png',
+                                width: 13,
+                                height: 13,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                copy.localized('桌游伙伴', 'Player'),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF8B5A2E),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
+                  // Keep content clear of the lowered right-hand edge.
+                  const SizedBox(width: 76),
                 ],
               ),
-            ),
-            OutlinedButton(
-              key: const ValueKey('mobile-mine-edit-profile'),
-              onPressed: _editProfile,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                minimumSize: const Size(0, 32),
-                side: const BorderSide(color: Color(0xFFF2D9C8)),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      copy.localized(
+                        '好桌游，让平凡的日子闪闪发光！',
+                        'Good games brighten every day!',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10.5, color: _muted),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    key: const ValueKey('mobile-mine-edit-profile'),
+                    onPressed: _editProfile,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF9F7F5),
+                      foregroundColor: const Color(0xFF6F7788),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 5,
+                      ),
+                      minimumSize: const Size(0, 30),
+                      side: const BorderSide(color: Color(0xFFEADBCE)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      copy.localized('编辑资料', 'Edit'),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: Text(
-                copy.localized('编辑资料', 'Edit'),
-                style: const TextStyle(fontSize: 11),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _stat(
+                    '${widget.controller.favoriteCount}',
+                    copy.localized('收藏游戏', 'Liked games'),
+                    onTap: widget.onFavorites,
+                  ),
+                  _statDivider(),
+                  _stat('-', copy.localized('游玩次数', 'Plays')),
+                  _statDivider(),
+                  _stat('-', copy.localized('想玩清单', 'Wishlist')),
+                  _statDivider(),
+                  _stat('-', copy.localized('最爱分类', 'Favorite genre')),
+                ],
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 9),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            copy.localized('好桌游，让平凡的日子闪闪发光！', 'Good games brighten every day!'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, color: _muted),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 11),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(17),
-          ),
-          child: Row(
-            children: [
-              _stat(
-                '${widget.controller.favoriteCount}',
-                copy.localized('收藏游戏', 'Liked games'),
-              ),
-              _stat('-', copy.localized('游玩次数', 'Plays')),
-              _stat('-', copy.localized('想玩清单', 'Wishlist')),
-              _stat('-', copy.localized('最爱分类', 'Favorite genre')),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarWithBadge() => SizedBox(
+    width: 64,
+    height: 64,
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFFFE8D1), width: 2.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x187A452B),
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: Image.asset(
+              'assets/desktop/warmwood/avatar.png',
+              fit: BoxFit.cover,
+              width: 64,
+              height: 64,
+            ),
+          ),
+        ),
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: Container(
+            width: 21,
+            height: 21,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFC654), Color(0xFFFFA21E)],
+              ),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.8),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x24000000),
+                  blurRadius: 3,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Image.asset(
+              '$_assetRoot/crown_badge_icon.png',
+              width: 12,
+              height: 12,
+            ),
           ),
         ),
       ],
     ),
   );
 
-  Widget _stat(String value, String label) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            color: _ink,
+  Widget _statDivider() =>
+      Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));
+
+  Widget _stat(String value, String label, {VoidCallback? onTap}) => Expanded(
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 19.5,
+              fontWeight: FontWeight.w900,
+              color: _ink,
+              height: 1.1,
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 10, color: _muted),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: _muted,
+            ),
+          ),
+        ],
+      ),
     ),
   );
 
   Widget _shortcuts(AppCopy copy) {
-    final entries = <(String, String, String, Color, VoidCallback)>[
+    final entries = <(String, IconData, String, String, Color, VoidCallback)>[
       (
         'heart_icon.png',
+        Icons.favorite_rounded,
         copy.localized('我的收藏', 'My likes'),
         copy.localized(
           '${widget.controller.favoriteCount} 个游戏',
           '${widget.controller.favoriteCount} games',
         ),
-        const Color(0xFFFFEBED),
+        const Color(0xFFFFEDF0),
         widget.onFavorites,
       ),
       (
         'wishlist_list_icon.png',
+        Icons.bookmark_rounded,
         copy.localized('想玩清单', 'Wishlist'),
         copy.localized('未开放', 'Coming soon'),
-        const Color(0xFFFFF3DC),
+        const Color(0xFFFFF4DE),
         () => _notAvailable(copy.localized('想玩清单', 'Wishlist')),
       ),
       (
         'recent_play_gamepad_icon.png',
+        Icons.sports_esports_rounded,
         copy.localized('最近浏览', 'Recent'),
         copy.localized('继续发现', 'Keep exploring'),
-        const Color(0xFFFFECE7),
+        const Color(0xFFFFEDE6),
         widget.onRecentAll,
       ),
       (
         'history_clock_icon.png',
+        Icons.history_rounded,
         copy.localized('历史记录', 'History'),
         copy.localized('未开放', 'Coming soon'),
-        const Color(0xFFFFF1E8),
+        const Color(0xFFFFF0E8),
         () => _notAvailable(copy.localized('历史记录', 'History')),
       ),
     ];
     return Row(
       children: [
         for (var index = 0; index < entries.length; index++) ...[
-          if (index > 0) const SizedBox(width: 6),
+          if (index > 0) const SizedBox(width: 8),
           Expanded(
             child: InkWell(
               key: ValueKey('mobile-mine-shortcut-$index'),
-              onTap: entries[index].$5,
-              borderRadius: BorderRadius.circular(17),
+              onTap: entries[index].$6,
+              borderRadius: BorderRadius.circular(18),
               child: Container(
-                padding: const EdgeInsets.fromLTRB(4, 7, 4, 8),
+                padding: const EdgeInsets.fromLTRB(4, 9, 4, 11),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(17),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0C7A452B),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
                 ),
                 child: Column(
                   children: [
                     Container(
-                      height: 47,
+                      height: 48,
                       width: double.infinity,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: entries[index].$4,
+                        color: entries[index].$5,
                         borderRadius: BorderRadius.circular(13),
                       ),
                       child: Image.asset(
                         '$_assetRoot/${entries[index].$1}',
-                        width: 30,
-                        height: 30,
+                        width: 29,
+                        height: 29,
+                        errorBuilder: (_, _, _) =>
+                            Icon(entries[index].$2, size: 26, color: _orange),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      entries[index].$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: _ink,
-                      ),
+                    const SizedBox(height: 7),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            entries[index].$3,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: _ink,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 13,
+                          color: Color(0xFFBAC3CF),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 3),
                     Text(
-                      entries[index].$3,
+                      entries[index].$4,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 9, color: _muted),
+                      style: const TextStyle(fontSize: 9.5, color: _muted),
                     ),
                   ],
                 ),
