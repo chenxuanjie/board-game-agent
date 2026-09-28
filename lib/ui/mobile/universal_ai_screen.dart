@@ -13,7 +13,6 @@ class UniversalAiScreen extends StatelessWidget {
     return AssistantChatScreen(
       controller: controller,
       customTitle: controller.copy.globalAiTitle,
-      customSubtitle: controller.copy.globalAiSubtitle,
       useGlobalMode: true,
     );
   }

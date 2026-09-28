@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
+import '../../features/games/services/related_game_recommender.dart';
 import '../../features/library/models/resolved_document.dart';
 import '../shared/documents/document_viewer_launcher.dart';
 import 'assistant_chat_screen.dart';
@@ -15,9 +16,14 @@ const _orange = Color(0xFFE9772E);
 const _cream = Color(0xFFFFF3E4);
 
 class GameDetailScreen extends StatefulWidget {
-  const GameDetailScreen({super.key, required this.controller});
+  const GameDetailScreen({
+    super.key,
+    required this.controller,
+    required this.game,
+  });
 
   final AppController controller;
+  final GameInfo game;
 
   @override
   State<GameDetailScreen> createState() => _GameDetailScreenState();
@@ -69,7 +75,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final copy = controller.copy;
-    final game = controller.selectedGame;
+    final game = widget.game;
     final gallery = game.galleryAssetPaths.isEmpty
         ? [game.coverAssetPath]
         : game.galleryAssetPaths;
@@ -375,12 +381,15 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                               ),
                             const SizedBox(height: 14),
                             Container(
-                              padding: const EdgeInsets.symmetric(vertical: 15),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: const Color(0xFFFFF8EF),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: const Color(0xFFF3E8DC),
+                                  color: const Color(0xFFF4E8DA),
                                 ),
                               ),
                               child: Row(
@@ -389,16 +398,21 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                     Icons.people_alt_rounded,
                                     game.playerCount,
                                     copy.localized('游戏人数', 'Players'),
+                                    const Color(0xFFEE8A45),
                                   ),
+                                  _statDivider(),
                                   _stat(
                                     Icons.schedule_rounded,
                                     game.playTime,
                                     copy.localized('游戏时长', 'Play time'),
+                                    _orange,
                                   ),
+                                  _statDivider(),
                                   _stat(
                                     Icons.bar_chart_rounded,
                                     game.complexity,
                                     copy.localized('游戏难度', 'Difficulty'),
+                                    const Color(0xFFF6B833),
                                   ),
                                 ],
                               ),
@@ -461,6 +475,8 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                 ],
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            _relatedGames(game),
                           ],
                         ),
                       ),
@@ -476,10 +492,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         top: false,
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 9, 16, 10),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFF3E8DC))),
-          ),
+          decoration: const BoxDecoration(color: Color(0xFFFFFBF7)),
           child: Center(
             heightFactor: 1,
             child: ConstrainedBox(
@@ -573,26 +586,191 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     ),
   );
 
-  Widget _stat(IconData icon, String value, String label) {
+  Widget _statDivider() =>
+      Container(width: 1, height: 32, color: const Color(0xFFF0E5D9));
+
+  Widget _stat(IconData icon, String value, String label, Color iconColor) {
     return Expanded(
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: _orange, size: 24),
-          const SizedBox(height: 4),
-          Text(
-            value.trim().isEmpty ? '-' : value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: _ink,
+          Icon(icon, color: iconColor, size: 22),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value.trim().isEmpty ? '-' : value,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: _ink,
+                    ),
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 9, color: _muted),
+                ),
+              ],
             ),
           ),
-          Text(label, style: const TextStyle(fontSize: 11, color: _muted)),
         ],
       ),
     );
+  }
+
+  Widget _relatedGames(GameInfo game) {
+    final copy = widget.controller.copy;
+    final results = const RelatedGameRecommender().recommend(
+      source: game,
+      catalog: widget.controller.games,
+    );
+    if (results.isEmpty) return const SizedBox.shrink();
+    return Column(
+      key: const ValueKey('mobile-related-games-section'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          copy.localized('相关游戏', 'Related games'),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: _ink,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 104,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: results.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final result = results[index];
+              return SizedBox(
+                width: 225,
+                child: Material(
+                  color: const Color(0xFFFFF8EF),
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    key: ValueKey('mobile-related-game-${result.game.id}'),
+                    onTap: () => _openRelatedGame(result.game),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: SizedBox(
+                              width: 63,
+                              height: 88,
+                              child: MobileGameCover(
+                                controller: widget.controller,
+                                game: result.game,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  result.game.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: _ink,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  _relatedReason(result.reason),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: _muted,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.star_rounded,
+                                      size: 14,
+                                      color: _orange,
+                                    ),
+                                    Text(
+                                      result.game.score,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: _orange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _relatedReason(String reason) => switch (reason) {
+    'players' => widget.controller.copy.localized(
+      '适合相近人数',
+      'Similar player count',
+    ),
+    'difficulty' => widget.controller.copy.localized(
+      '难度相近',
+      'Similar difficulty',
+    ),
+    'rating' => widget.controller.copy.localized(
+      '按评分推荐',
+      'Recommended by rating',
+    ),
+    _ => widget.controller.copy.localized(
+      '共同特色：$reason',
+      'Shared trait: $reason',
+    ),
+  };
+
+  Future<void> _openRelatedGame(GameInfo game) async {
+    final currentGameId = widget.game.id;
+    widget.controller.selectGame(game.id);
+    await widget.controller.recordRecentlyViewed(game);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            GameDetailScreen(controller: widget.controller, game: game),
+      ),
+    );
+    if (mounted) widget.controller.selectGame(currentGameId);
   }
 
   Future<void> _openDocument(GameInfo game) async {

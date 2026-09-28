@@ -126,6 +126,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             const SizedBox(height: 25),
             _sectionHeader(
               icon: Icons.star_rounded,
+              iconSize: 30,
               title: copy.localized('推荐桌游', 'Recommended games'),
               action: copy.localized('换一批', 'Refresh'),
               onAction: recommended.length < 3
@@ -444,11 +445,12 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   Widget _sectionHeader({
     required IconData icon,
     required String title,
+    double iconSize = 22,
     String? action,
     VoidCallback? onAction,
   }) => Row(
     children: [
-      Icon(icon, size: 22, color: _orange),
+      Icon(icon, size: iconSize, color: _orange),
       const SizedBox(width: 7),
       Expanded(
         child: Text(
@@ -565,99 +567,117 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     ),
   );
 
-  Widget _recommendationCard(GameInfo game, double cardWidth) => SizedBox(
-    width: cardWidth,
-    height: 138,
-    child: InkWell(
-      key: ValueKey('mobile-recommendation-${game.id}'),
-      onTap: () => widget.onOpenGame(game),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(7),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF2E6DE)),
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: cardWidth >= 190 ? 88 : 72,
-                child: AspectRatio(
-                  aspectRatio: 1 / 1.35,
-                  child: MobileGameCover(
-                    controller: widget.controller,
-                    game: game,
+  Widget _recommendationCard(GameInfo game, double baseWidth) {
+    final attributes = game.categoryLine
+        .split(RegExp(r'\s*[/／·,，]\s*'))
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .take(2)
+        .join(' / ');
+    final painter = TextPainter(
+      text: TextSpan(text: attributes, style: const TextStyle(fontSize: 10)),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final cardWidth = (painter.width + 112).clamp(baseWidth, 280.0);
+    painter.dispose();
+    return SizedBox(
+      width: cardWidth,
+      height: 138,
+      child: InkWell(
+        key: ValueKey('mobile-recommendation-${game.id}'),
+        onTap: () => widget.onOpenGame(game),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFF2E6DE)),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: cardWidth >= 190 ? 88 : 72,
+                  child: AspectRatio(
+                    aspectRatio: 1 / 1.35,
+                    child: MobileGameCover(
+                      controller: widget.controller,
+                      game: game,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    game.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: _ink,
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    game.categoryLine,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: _muted),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.star_rounded,
-                        size: 17,
-                        color: Color(0xFFFF9F23),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      game.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: _ink,
+                        height: 1.2,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        game.score,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w900,
-                          color: _ink,
-                          height: 1.1,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      attributes,
+                      key: ValueKey(
+                        'mobile-recommendation-attributes-${game.id}',
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.clip,
+                      style: const TextStyle(fontSize: 10, color: _muted),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 17,
+                          color: Color(0xFFFF9F23),
                         ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    game.summary.trim().isNotEmpty
-                        ? game.summary
-                        : game.heroTagline,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Color(0xFF85818A),
-                      height: 1.3,
+                        const SizedBox(width: 4),
+                        Text(
+                          game.score,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                            color: _ink,
+                            height: 1.1,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      game.summary.trim().isNotEmpty
+                          ? game.summary
+                          : game.heroTagline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF85818A),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _activityCard(AppCopy copy) {
     final activity = widget.controller.activities.first;

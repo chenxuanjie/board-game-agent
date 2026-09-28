@@ -156,7 +156,8 @@ class _HomeScreenState extends State<HomeScreen> {
     widget.controller.selectGame(game.id);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => GameDetailScreen(controller: widget.controller),
+        builder: (_) =>
+            GameDetailScreen(controller: widget.controller, game: game),
       ),
     );
   }

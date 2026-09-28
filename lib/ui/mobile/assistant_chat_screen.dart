@@ -18,7 +18,6 @@ class AssistantChatScreen extends StatefulWidget {
     required this.controller,
     this.initialDraft,
     this.customTitle,
-    this.customSubtitle,
     this.customGreeting,
     this.useGlobalMode = false,
   });
@@ -26,7 +25,6 @@ class AssistantChatScreen extends StatefulWidget {
   final AppController controller;
   final String? initialDraft;
   final String? customTitle;
-  final String? customSubtitle;
   final String? customGreeting;
   final bool useGlobalMode;
 
@@ -98,9 +96,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         toolbarHeight: 72,
         titleSpacing: 6,
         title: _AssistantAppBarTitle(
-          controller: controller,
           title: widget.customTitle ?? controller.featuredGame.title,
-          subtitle: widget.customSubtitle ?? copy.assistantMode,
         ),
         actions: <Widget>[
           IconButton(
@@ -574,15 +570,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
 }
 
 class _AssistantAppBarTitle extends StatelessWidget {
-  const _AssistantAppBarTitle({
-    required this.controller,
-    required this.title,
-    required this.subtitle,
-  });
+  const _AssistantAppBarTitle({required this.title});
 
-  final AppController controller;
   final String title;
-  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -591,23 +581,10 @@ class _AssistantAppBarTitle extends StatelessWidget {
         const _AssistantAvatar(size: 38),
         const SizedBox(width: 10),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                title,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              Text(
-                subtitle,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppPalette.of(context).textSecondary,
-                ),
-              ),
-            ],
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
       ],

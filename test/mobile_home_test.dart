@@ -9,6 +9,7 @@ import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
+import 'package:board_game_agent/features/games/services/related_game_recommender.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
@@ -133,6 +134,33 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(GameDetailScreen), findsOneWidget);
+      final related = const RelatedGameRecommender().recommend(
+        source: controller.games.first,
+        catalog: controller.games,
+      );
+      expect(related, isNotEmpty);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('mobile-related-games-section')),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('mobile-game-detail-scroll')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text('相关游戏'), findsOneWidget);
+      final relatedCard = find.byKey(
+        ValueKey('mobile-related-game-${related.first.game.id}'),
+      );
+      await tester.ensureVisible(relatedCard);
+      await tester.pumpAndSettle();
+      await tester.tap(relatedCard);
+      await tester.pumpAndSettle();
+      expect(controller.selectedGame.id, related.first.game.id);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(controller.selectedGame.id, controller.games.first.id);
       expect(find.text('让好游戏，连接更多人'), findsNothing);
       expect(find.byKey(const ValueKey('mobile-detail-rules')), findsOneWidget);
       expect(
@@ -210,16 +238,24 @@ void main() {
     );
     if (kIsWeb && controller.dailyRecommendedGames.isNotEmpty) {
       final firstRecommendation = controller.dailyRecommendedGames.first;
-      expect(
-        tester
-            .getSize(
-              find.byKey(
-                ValueKey('mobile-recommendation-${firstRecommendation.id}'),
-              ),
-            )
-            .width,
-        closeTo((720 - 32 - 20) / 3, 1),
+      final recommendationWidth = tester
+          .getSize(
+            find.byKey(
+              ValueKey('mobile-recommendation-${firstRecommendation.id}'),
+            ),
+          )
+          .width;
+      expect(recommendationWidth, greaterThanOrEqualTo((720 - 32 - 20) / 3));
+      expect(recommendationWidth, lessThanOrEqualTo(280));
+      final attributes = tester.widget<Text>(
+        find.byKey(
+          ValueKey(
+            'mobile-recommendation-attributes-${firstRecommendation.id}',
+          ),
+        ),
       );
+      expect(attributes.data!.split(' / '), hasLength(lessThanOrEqualTo(2)));
+      expect(attributes.overflow, TextOverflow.clip);
     }
     await tester.tap(find.byKey(const ValueKey('mobile-home-search')));
     await tester.pumpAndSettle();
