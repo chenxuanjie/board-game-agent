@@ -27,7 +27,6 @@ class MessageBubble extends StatelessWidget {
     this.showAssistantActionLabels = false,
     this.maxWidth = 720,
     this.desktopLayout = false,
-    this.desktopMeta,
   });
 
   final ChatMessage message;
@@ -45,7 +44,6 @@ class MessageBubble extends StatelessWidget {
   final bool showAssistantActionLabels;
   final double maxWidth;
   final bool desktopLayout;
-  final String? desktopMeta;
 
   @override
   Widget build(BuildContext context) {
@@ -103,21 +101,6 @@ class MessageBubble extends StatelessWidget {
                       ? CrossAxisAlignment.end
                       : CrossAxisAlignment.start,
                   children: <Widget>[
-                    if (desktopMeta != null && desktopMeta!.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: 6,
-                          left: 2,
-                          right: 2,
-                        ),
-                        child: Text(
-                          desktopMeta!,
-                          textAlign: isUser ? TextAlign.right : TextAlign.left,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: palette.textSecondary,
-                          ),
-                        ),
-                      ),
                     _TapToShowTimes(
                       onTap: onTap,
                       child: Material(

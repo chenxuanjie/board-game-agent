@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show PointerDeviceKind;
+import 'dart:ui' show ImageByteFormat, PointerDeviceKind;
 import 'package:flutter/foundation.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -25,6 +26,7 @@ import 'package:board_game_agent/core/models/connectivity_status.dart';
 import 'package:board_game_agent/features/library/models/desktop_library_resource.dart';
 import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
+import 'package:board_game_agent/features/games/models/game_metadata_text.dart';
 import 'package:board_game_agent/features/library/models/remote_asset_file.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
 import 'package:board_game_agent/features/games/models/search_history_record.dart';
@@ -52,6 +54,7 @@ part 'desktop/desktop_settings_test_cases.dart';
 part 'desktop/desktop_shell_test_cases.dart';
 part 'desktop/desktop_library_test_cases.dart';
 part 'desktop/desktop_home_test_cases.dart';
+part 'desktop/desktop_typography_test_cases.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -69,6 +72,16 @@ class _DesktopWorkspaceTestContext {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Exercise Chinese/Latin glyph metrics and real variable weights, rather
+  // than Ahem's fixed boxes, in every desktop layout and menu regression.
+  setUpAll(() async {
+    final font = FontLoader('Noto Sans SC')
+      ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
+    await font.load();
+    final icons = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
+  });
   late AppController controller;
   late _InMemoryPreferencesService preferences;
   final _DesktopWorkspaceTestContext workspaceContext =
@@ -94,6 +107,13 @@ void main() {
   _registerDesktopLibraryTests(workspaceContext);
 
   _registerDesktopHomeTests(workspaceContext);
+  _registerDesktopTypographyTests(workspaceContext);
+
+  test('opening a new assistant does not create a fake reply', () {
+    controller.openGlobalAssistant();
+    expect(controller.selectedConversation?.messages, isEmpty);
+    expect(controller.messagesForContext(useGlobalMode: true), isEmpty);
+  });
 
   testWidgets('AI hero banner opens a visible assistant on a wide desktop', (
     tester,
@@ -129,6 +149,107 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final Size size in const <Size>[Size(720, 700), Size(1280, 800)]) {
+    testWidgets('model picker stays compact and updates effort at $size', (
+      tester,
+    ) async {
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(
+          apiKey: 'test-key',
+          model: 'gpt-6-astra',
+          reasoningEffort: AiReasoningEffort.max,
+        ),
+      );
+      await controller.refreshAiModels();
+      await _mount(tester, controller, size);
+      await _navigate(tester, 'AI助手');
+      await tester.tap(
+        find.byKey(const ValueKey<String>('desktop-model-selector')),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder panel = find.byKey(
+        const ValueKey<String>('desktop-model-picker-panel'),
+      );
+      expect(panel, findsOneWidget);
+      final Rect rect = tester.getRect(panel);
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.bottom, lessThanOrEqualTo(size.height));
+      expect(rect.height, lessThanOrEqualTo(430));
+      expect(
+        find.byKey(const ValueKey<String>('desktop-model-option-gpt-5.5')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('desktop-model-picker-tab-reasoning'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('desktop-reasoning-option-none')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('desktop-reasoning-option-max')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('desktop-model-picker-tab-models')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('desktop-model-picker-search')),
+        'sol',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('desktop-model-option-gpt-5.6-sol')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.model, 'gpt-5.6-sol');
+      expect(
+        find.byKey(const ValueKey<String>('desktop-reasoning-option-none')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('desktop-reasoning-option-none')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.reasoningEffort, AiReasoningEffort.none);
+      expect(panel, findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('desktop-model-selector')),
+      );
+      await tester.pumpAndSettle();
+      expect(panel, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(panel, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('model picker explains an unconfigured service', (tester) async {
+    await _mount(tester, controller, const Size(720, 700));
+    await _navigate(tester, 'AI助手');
+    await tester.tap(
+      find.byKey(const ValueKey<String>('desktop-model-selector')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('请先在设置中配置 AI 服务'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-model-picker-retry')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   _registerDesktopSettingsTests(
     _DesktopSettingsTestContext(
       controller: () => controller,
@@ -144,17 +265,25 @@ Future<void> _mount(
   VoidCallback? onOpenAbout,
   bool settle = true,
   WebDavSettingsController? webDavSettingsController,
+  TextScaler textScaler = TextScaler.noScaling,
 }) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.binding.setSurfaceSize(size);
   await tester.pumpWidget(
-    MaterialApp(
-      theme: buildDesktopTheme(),
-      home: DesktopWorkspace(
-        controller: controller,
-        webDavSettingsController: webDavSettingsController,
-        onOpenAbout: onOpenAbout ?? () {},
-        enableNativeWindowControls: false,
+    RepaintBoundary(
+      key: const ValueKey<String>('desktop-test-capture'),
+      child: MaterialApp(
+        theme: buildDesktopTheme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        ),
+        home: DesktopWorkspace(
+          controller: controller,
+          webDavSettingsController: webDavSettingsController,
+          onOpenAbout: onOpenAbout ?? () {},
+          enableNativeWindowControls: false,
+        ),
       ),
     ),
   );
@@ -209,13 +338,14 @@ Future<void> _navigate(WidgetTester tester, String label) async {
 Future<AppController> _createController({
   PreferencesService? preferencesService,
   TtsService? ttsService,
+  AiService? aiService,
 }) async {
   if (preferencesService == null) {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   }
   final AppController controller = AppController(
     preferencesService: preferencesService ?? PreferencesService(),
-    aiService: _FakeAiService(),
+    aiService: aiService ?? _FakeAiService(),
     gameManifestService: GameManifestService(),
     remoteAssetService: _NoNetworkAssetService(),
     speechService: SpeechService(),
@@ -377,7 +507,11 @@ class _NoopHttpClient extends http.BaseClient {
 class _FakeAiService implements AiService {
   @override
   Future<List<AiModel>> listModels(AiApiConfig config) async {
-    return const <AiModel>[AiModel(id: 'desktop-model')];
+    return const <AiModel>[
+      AiModel(id: 'gpt-5.5'),
+      AiModel(id: 'gpt-5.6-sol'),
+      AiModel(id: 'text-embedding-3-large'),
+    ];
   }
 
   @override

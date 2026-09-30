@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_metadata_text.dart';
 import '../../features/games/services/related_game_recommender.dart';
 import '../../features/library/models/resolved_document.dart';
 import '../shared/documents/document_viewer_launcher.dart';
@@ -396,14 +397,14 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                 children: [
                                   _stat(
                                     Icons.people_alt_rounded,
-                                    game.playerCount,
+                                    GameMetadataText.players(game.playerCount),
                                     copy.localized('游戏人数', 'Players'),
                                     const Color(0xFFEE8A45),
                                   ),
                                   _statDivider(),
                                   _stat(
                                     Icons.schedule_rounded,
-                                    game.playTime,
+                                    GameMetadataText.playTime(game.playTime),
                                     copy.localized('游戏时长', 'Play time'),
                                     _orange,
                                   ),

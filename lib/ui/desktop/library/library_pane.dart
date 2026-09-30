@@ -68,12 +68,6 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
                     ),
                   ),
                 ),
-                FilledButton.icon(
-                  onPressed: _showImportComingSoon,
-                  icon: const Icon(Icons.file_upload_outlined),
-                  label: Text(copy.desktopImport),
-                ),
-                const SizedBox(width: 8),
                 IconButton(
                   key: const ValueKey<String>('desktop-library-refresh'),
                   tooltip: copy.desktopRefreshLibrary,
@@ -209,7 +203,6 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
                         ? null
                         : () => widget.onOpenRules!(resource),
                     onDownload: () => _downloadItem(resource),
-                    onDelete: () => _deleteItem(resource),
                   ),
                 );
               },
@@ -217,13 +210,6 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
           ),
       ],
     );
-  }
-
-  void _showImportComingSoon() {
-    final AppCopy copy = widget.controller.copy;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(copy.desktopImportComingSoon)));
   }
 
   Future<void> _openItem(DesktopLibraryResource resource) async {
@@ -301,13 +287,6 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
     } finally {
       if (mounted) setState(() => _downloadingItemId = null);
     }
-  }
-
-  void _deleteItem(DesktopLibraryResource resource) {
-    final AppCopy copy = widget.controller.copy;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(copy.desktopDeleteUnavailable)));
   }
 
   String _displayResourceTitle(DesktopLibraryResource resource) {
@@ -487,7 +466,6 @@ class _LibraryItemTile extends StatelessWidget {
     required this.onOpen,
     this.onOpenRules,
     required this.onDownload,
-    required this.onDelete,
   });
 
   final DesktopLibraryResource resource;
@@ -497,7 +475,6 @@ class _LibraryItemTile extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback? onOpenRules;
   final VoidCallback onDownload;
-  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -569,7 +546,7 @@ class _LibraryItemTile extends StatelessWidget {
                       minimumSize: const Size(0, 28),
                       padding: const EdgeInsets.symmetric(horizontal: 9),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(3),
+                        borderRadius: BorderRadius.circular(8),
                         side: const BorderSide(color: Color(0x4066C0F4)),
                       ),
                     ),
@@ -584,8 +561,6 @@ class _LibraryItemTile extends StatelessWidget {
                         onOpen();
                       case _LibraryItemAction.download:
                         onDownload();
-                      case _LibraryItemAction.delete:
-                        onDelete();
                     }
                   },
                   itemBuilder: (BuildContext context) =>
@@ -602,10 +577,6 @@ class _LibraryItemTile extends StatelessWidget {
                         PopupMenuItem<_LibraryItemAction>(
                           value: _LibraryItemAction.download,
                           child: Text(copy.desktopDownload),
-                        ),
-                        PopupMenuItem<_LibraryItemAction>(
-                          value: _LibraryItemAction.delete,
-                          child: Text(copy.desktopDelete),
                         ),
                       ],
                   icon: isDownloading
@@ -685,4 +656,4 @@ class _LibraryItemTile extends StatelessWidget {
   }
 }
 
-enum _LibraryItemAction { open, download, delete }
+enum _LibraryItemAction { open, download }

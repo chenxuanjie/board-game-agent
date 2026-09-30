@@ -41,26 +41,40 @@ class AppCopy {
   String get aiApiPresetLabel => isChinese ? '常用服务预设' : 'Provider preset';
   String get aiApiModelLabel => isChinese ? '模型名称' : 'Model';
   String get aiApiModelSelectHint =>
-      isChinese ? '请选择接口返回的模型' : 'Select a model returned by the endpoint';
+      isChinese ? '选择 GPT-5.6 及以上模型' : 'Select a GPT-5.6+ model';
   String get aiApiReasoningEffortLabel =>
       isChinese ? '推理强度' : 'Reasoning effort';
   String get aiApiReasoningEffortHint => isChinese
-      ? '仅对支持 reasoning_effort 的模型生效；自动模式不会发送额外参数。'
-      : 'Only supported by models that implement reasoning_effort; automatic sends no extra field.';
-  String get aiApiResponseSpeedLabel => isChinese ? '推理速度' : 'Response speed';
+      ? '选项按已知模型能力显示；自动模式不发送推理强度。'
+      : 'Options follow known model capabilities; Automatic omits reasoning effort.';
+  String aiApiReasoningRequestValue(AiReasoningEffort value) {
+    final String? requestValue = value.requestValue;
+    if (requestValue == null) {
+      return isChinese ? '请求值：不发送' : 'Request value: omitted';
+    }
+    return isChinese ? '请求值：$requestValue' : 'Request value: $requestValue';
+  }
+
+  String get aiApiResponseSpeedLabel => isChinese ? '服务等级' : 'Service tier';
   String get aiApiResponseSpeedHint => isChinese
-      ? '这是服务商的速度策略提示，实际速度仍取决于模型、网络和接口实现。'
-      : 'A provider speed-tier hint; actual speed still depends on the model, network, and endpoint.';
+      ? 'Fast 会发送 service_tier=fast，可能额外计费；是否生效由服务商决定。'
+      : 'Fast sends service_tier=fast, may cost more, and depends on provider support.';
   String aiApiReasoningEffortName(AiReasoningEffort value) {
     switch (value) {
       case AiReasoningEffort.automatic:
         return isChinese ? '自动' : 'Automatic';
+      case AiReasoningEffort.none:
+        return isChinese ? '无（None）' : 'None';
       case AiReasoningEffort.low:
         return isChinese ? '低' : 'Low';
       case AiReasoningEffort.medium:
         return isChinese ? '中' : 'Medium';
       case AiReasoningEffort.high:
         return isChinese ? '高' : 'High';
+      case AiReasoningEffort.xhigh:
+        return isChinese ? '极高（Xhigh）' : 'Extra high (Xhigh)';
+      case AiReasoningEffort.max:
+        return isChinese ? '最高（Max）' : 'Maximum (Max)';
     }
   }
 
@@ -80,14 +94,21 @@ class AppCopy {
       : 'If a custom endpoint does not support these optional fields, keep Automatic or it may return 400.';
   String get aiApiModelRequired =>
       isChinese ? '请先获取并选择一个模型' : 'Fetch and select a model first';
+  String get aiApiModelNotAllowed => isChinese
+      ? '当前仅支持 GPT-5.6 及以上的已知文本模型，请重新选择'
+      : 'Select a known GPT-5.6+ text model';
+  String get aiApiReasoningUnsupported => isChinese
+      ? '当前模型不支持所选推理强度，请重新选择'
+      : 'This model does not support the selected reasoning effort';
   String get aiApiModelsNotLoaded => isChinese
       ? '点击“测试并保存配置”，从 /models 获取可用模型'
       : 'Click “Test and save config” to load models from /models';
   String get aiApiModelsLoading => isChinese ? '正在加载模型列表…' : 'Loading models…';
   String aiApiModelsLoaded(int count) =>
       isChinese ? '已加载 $count 个模型' : '$count models loaded';
-  String get aiApiModelsEmpty =>
-      isChinese ? '接口返回了空模型列表' : 'The endpoint returned no models';
+  String get aiApiModelsEmpty => isChinese
+      ? '没有符合 GPT-5.6 及以上规则的模型'
+      : 'No models match the GPT-5.6+ policy';
   String get aiApiModelsFailed =>
       isChinese ? '模型列表加载失败' : 'Could not load models';
   String aiApiModelsSaved(int count) =>
@@ -266,10 +287,6 @@ class AppCopy {
       ? '通用助手中允许按当前选中的桌游查阅规则资料；关闭后仍会识别明确的桌游问题。'
       : 'Let the standalone assistant use selected game sources; explicit game questions still work when off.';
   String get askAnything => isChinese ? '现在就问它' : 'Ask anything now';
-  String get helperSectionTitle =>
-      isChinese ? '这个版本已经能做什么' : 'What this build already does';
-  String get futureSectionTitle =>
-      isChinese ? '下一步接真实 AI 时' : 'When you wire in a real AI later';
   String get homeSearchHint => isChinese ? '搜索桌游...' : 'Search games...';
   String get favouritesOnly => isChinese ? '只看喜欢' : 'Show liked only';
   String get globalAiTitle => isChinese ? '通用 AI 助手' : 'Global AI Assistant';
@@ -277,22 +294,10 @@ class AppCopy {
       ? '独立 AI 入口，可切换知识库优先与智能补充'
       : 'A standalone AI entry with knowledge-first and fallback modes';
   String get gameLibraryTitle => isChinese ? '桌游列表' : 'Game Library';
-  String get allKnowledgeGreeting => isChinese
-      ? '这里是独立 AI 入口。你可以切换为仅知识库回答，或允许在知识不足时做智能补充。'
-      : 'This is the standalone AI entry. You can keep answers knowledge-only or allow a smart fallback when the knowledge base is insufficient.';
   String get homeAssetsLoadingTitle =>
       isChinese ? '正在加载资源...' : 'Loading assets...';
   String homeAssetsLoadingProgress(int loaded, int total) =>
       isChinese ? '已加载 $loaded / $total' : 'Loaded $loaded / $total';
-  String assistantGreetingFor(String gameTitle, String intro) {
-    final String normalizedIntro = intro.trim().isEmpty
-        ? (isChinese
-              ? '《$gameTitle》是一款值得边玩边问的桌游。'
-              : '$gameTitle is a board game worth exploring as you play.')
-        : intro.trim();
-    return normalizedIntro;
-  }
-
   String get messageHint => isChinese
       ? '问规则、流程、术语、策略...'
       : 'Ask about rules, flow, terms, or strategy...';
@@ -334,7 +339,6 @@ class AppCopy {
       isChinese ? '语音不可用' : 'Speech unavailable';
   String get voiceReplyOff => isChinese ? '朗读已关闭' : 'Voice reply off';
   String get speakAgain => isChinese ? '再朗读一次' : 'Speak again';
-  String get mockBadge => isChinese ? '回声 AI' : 'Echo AI';
   String get send => isChinese ? '发送' : 'Send';
   String get detailPageTitle => isChinese ? '桌游详情' : 'Game Details';
   String get rulesBook => isChinese ? '规则书' : 'Rulebook';
@@ -417,7 +421,6 @@ class AppCopy {
   String get desktopSmartSupplement =>
       isChinese ? '允许智能补充' : 'Smart supplement';
   String get desktopLibraryTitle => isChinese ? '规则资料' : 'Library';
-  String get desktopImport => isChinese ? '导入' : 'Import';
   String get desktopCreate => isChinese ? '新建' : 'New';
   String get desktopRefreshLibrary => isChinese ? '刷新资料库' : 'Refresh library';
   String get desktopLibraryOther => isChinese ? '其他' : 'Other';
@@ -428,7 +431,6 @@ class AppCopy {
   String get desktopOpenUnavailable =>
       isChinese ? '打开（暂不支持）' : 'Open (unavailable)';
   String get desktopDownload => isChinese ? '下载' : 'Download';
-  String get desktopDelete => isChinese ? '删除' : 'Delete';
   String get desktopMore => isChinese ? '更多' : 'More';
   String get desktopRetry => isChinese ? '重试' : 'Retry';
   String get desktopLibraryUnavailable => isChinese
@@ -438,8 +440,6 @@ class AppCopy {
       isChinese ? '远端资料库暂无可展示的资料' : 'No library resources available';
   String get desktopLibraryFilterNoResources =>
       isChinese ? '当前筛选没有资料' : 'No resources match this filter';
-  String get desktopImportComingSoon =>
-      isChinese ? '该功能正在开发中' : 'This feature is under development';
   String get desktopOpenUnavailableMessage => isChinese
       ? '该资源暂不支持在线阅读，请先下载'
       : 'This resource cannot be opened online yet. Download it first.';
@@ -450,9 +450,6 @@ class AppCopy {
       isChinese ? '已下载到 $path' : 'Downloaded to $path';
   String desktopDownloadError(Object error) =>
       isChinese ? '下载失败：$error' : 'Download failed: $error';
-  String get desktopDeleteUnavailable => isChinese
-      ? '暂时无法删除远端资源，相关功能正在开发中'
-      : 'Remote deletion is not available yet.';
   String get desktopLibraryEmptyTitle =>
       isChinese ? '资料库暂为空' : 'Library is empty';
   String get desktopLibraryEmptyMessage => isChinese
@@ -481,8 +478,6 @@ class AppCopy {
   String get desktopOfficialLoaded =>
       isChinese ? '官方资料已加载' : 'Official sources loaded';
   String get desktopRulebookCached => isChinese ? '规则书已缓存' : 'Rulebook cached';
-  String get desktopAssistantRuleMeta =>
-      isChinese ? '规则说明' : 'Rule explanation';
   String get desktopCrossGameQuestions =>
       isChinese ? '跨桌游知识问答' : 'Cross-game questions';
   String desktopConversationSummary(bool global, int count) => global

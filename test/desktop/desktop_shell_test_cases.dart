@@ -7,6 +7,27 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
     expect(theme.brightness, Brightness.light);
     expect(theme.useMaterial3, isTrue);
     expect(theme.scaffoldBackgroundColor, DesktopColors.background);
+    expect(theme.textTheme.bodyMedium?.fontFamily, 'Noto Sans SC');
+    expect(theme.primaryTextTheme.bodyMedium?.fontFamily, 'Noto Sans SC');
+    expect(theme.popupMenuTheme.shape, isA<RoundedRectangleBorder>());
+    expect(theme.tooltipTheme.textStyle?.fontFamily, 'Noto Sans SC');
+    for (final border in [
+      theme.inputDecorationTheme.enabledBorder,
+      theme.inputDecorationTheme.focusedBorder,
+      theme.inputDecorationTheme.disabledBorder,
+      theme.inputDecorationTheme.errorBorder,
+      theme.inputDecorationTheme.focusedErrorBorder,
+    ]) {
+      expect(border, isA<OutlineInputBorder>());
+      expect(
+        (border! as OutlineInputBorder).borderRadius,
+        BorderRadius.circular(12),
+      );
+    }
+    expect(
+      theme.inputDecorationTheme.focusedBorder?.borderSide.color,
+      DesktopColors.orange,
+    );
     expect(theme.extensions, isNotEmpty);
   });
 
@@ -57,7 +78,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('通用'), findsOneWidget);
       expect(find.text('AI 服务'), findsOneWidget);
       expect(find.text('外观与主题'), findsOneWidget);
-      expect(find.text('通知设置'), findsOneWidget);
+      expect(find.text('通知设置'), findsNothing);
       expect(find.text('同步与备份'), findsOneWidget);
       expect(find.text('关于与更新'), findsOneWidget);
       final Finder settingsPane = find.byType(DesktopSettingsPane);
@@ -68,7 +89,6 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
         '通用',
         'AI 服务',
         '外观与主题',
-        '通知设置',
         '同步与备份',
         '关于与更新',
       ];

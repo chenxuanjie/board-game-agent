@@ -47,7 +47,12 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Noto Sans SC
+      fonts:
+        - asset: assets/fonts/NotoSansSC-Variable.ttf
   assets:
+    - assets/fonts/OFL-NotoSansSC.txt
     - assets/mobile/home/
     - assets/mobile/mine/
     - assets/mobile/detail/
@@ -98,6 +103,11 @@ flutter:
     - assets/games/carcassonne_3/manifest.json
     - assets/games/carcassonne_3/docs/local/knowledge/
     - assets/games/castles_of_burgundy_2019/images/
+    - assets/games/castles_of_burgundy_2019/images/app/cover/
+    - assets/games/castles_of_burgundy_2019/images/app/hero/
+    - assets/games/castles_of_burgundy_2019/images/app/search/
+    - assets/games/castles_of_burgundy_2019/images/app/thumbnail/
+    - assets/games/castles_of_burgundy_2019/images/app/gallery/
     - assets/games/castles_of_burgundy_2019/game.json
     - assets/games/castles_of_burgundy_2019/manifest.json
     - assets/games/castles_of_burgundy_2019/docs/local/knowledge/
@@ -132,6 +142,11 @@ flutter:
     - assets/games/in_a_grove/game.json
     - assets/games/in_a_grove/manifest.json
     - assets/games/wriggle_roulette/images/
+    - assets/games/wriggle_roulette/images/app/cover/
+    - assets/games/wriggle_roulette/images/app/hero/
+    - assets/games/wriggle_roulette/images/app/search/
+    - assets/games/wriggle_roulette/images/app/thumbnail/
+    - assets/games/wriggle_roulette/images/app/gallery/
     - assets/games/wriggle_roulette/game.json
     - assets/games/wriggle_roulette/manifest.json
     - assets/games/manila/images/

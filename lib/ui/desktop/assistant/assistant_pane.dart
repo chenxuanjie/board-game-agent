@@ -233,6 +233,15 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                       16,
                     ),
                     children: <Widget>[
+                      if (messages.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Text(
+                            controller.copy.messageHint,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: palette.textSecondary),
+                          ),
+                        ),
                       for (
                         int index = 0;
                         index < messages.length;
@@ -272,10 +281,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                             showAssistantActionLabels: true,
                             maxWidth: 780,
                             desktopLayout: true,
-                            desktopMeta: _desktopMessageMeta(
-                              messages[index],
-                              controller.copy,
-                            ),
                             onSpeak: messages[index].role == ChatRole.assistant
                                 ? () => controller.speakMessage(
                                     messages[index].text,
@@ -548,21 +553,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     _draftController.clear();
     await controller.sendPrompt(text, useGlobalMode: useGlobalMode);
   }
-}
-
-String _desktopMessageMeta(ChatMessage message, AppCopy copy) {
-  if (message.role == ChatRole.user) return copy.activityJustNow;
-  final String source = switch (message.source) {
-    AnswerSource.official ||
-    AnswerSource.rulebook => copy.desktopAssistantRuleMeta,
-    AnswerSource.community => copy.answerSourceCommunity,
-    AnswerSource.web => copy.answerSourceWeb,
-    AnswerSource.modelKnowledge => copy.answerSourceModelKnowledge,
-    AnswerSource.generalAdvice => copy.answerSourceGeneral,
-    AnswerSource.insufficient => copy.answerSourceInsufficient,
-    null => copy.desktopAssistantRuleMeta,
-  };
-  return '$source · ${copy.activityJustNow}';
 }
 
 class _DesktopAssistantEmptyPane extends StatelessWidget {

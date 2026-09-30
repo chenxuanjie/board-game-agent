@@ -11,11 +11,16 @@ class _AiServiceCard extends StatelessWidget {
     required this.baseUrlController,
     required this.showApiKey,
     required this.saving,
+    required this.checkStep,
+    required this.reasoningEffort,
+    required this.responseSpeed,
     required this.feedback,
     required this.feedbackSucceeded,
     required this.onProviderChanged,
     required this.onAiFieldChanged,
     required this.onModelChanged,
+    required this.onReasoningChanged,
+    required this.onSpeedChanged,
     required this.onToggleApiKey,
     required this.onSaveAndCheck,
   });
@@ -29,11 +34,16 @@ class _AiServiceCard extends StatelessWidget {
   final TextEditingController baseUrlController;
   final bool showApiKey;
   final bool saving;
+  final DesktopAiCheckStep? checkStep;
+  final AiReasoningEffort reasoningEffort;
+  final AiResponseSpeed responseSpeed;
   final String? feedback;
   final bool? feedbackSucceeded;
   final ValueChanged<String?> onProviderChanged;
   final ValueChanged<String> onAiFieldChanged;
   final ValueChanged<String?> onModelChanged;
+  final ValueChanged<AiReasoningEffort> onReasoningChanged;
+  final ValueChanged<AiResponseSpeed> onSpeedChanged;
   final VoidCallback onToggleApiKey;
   final VoidCallback onSaveAndCheck;
 
@@ -41,6 +51,21 @@ class _AiServiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppCopy copy = controller.copy;
     final bool hasKey = apiKeyController.text.trim().isNotEmpty;
+    final List<AiReasoningEffort> supportedEfforts =
+        AiModelPolicy.reasoningEfforts(modelController.text) ??
+        const <AiReasoningEffort>[AiReasoningEffort.automatic];
+    final List<AiReasoningEffort> visibleEfforts = <AiReasoningEffort>[
+      if (!supportedEfforts.contains(reasoningEffort)) reasoningEffort,
+      ...supportedEfforts,
+    ];
+    final AiApiConfig savedConfig = controller.aiApiConfig;
+    final bool draftChanged =
+        providerController.text.trim() != savedConfig.name.trim() ||
+        modelController.text.trim() != savedConfig.model.trim() ||
+        apiKeyController.text.trim() != savedConfig.apiKey.trim() ||
+        baseUrlController.text.trim() != savedConfig.baseUrl.trim() ||
+        reasoningEffort != savedConfig.reasoningEffort ||
+        responseSpeed != savedConfig.responseSpeed;
 
     return _SettingsCard(
       icon: Icons.auto_awesome_rounded,
@@ -120,10 +145,50 @@ class _AiServiceCard extends StatelessWidget {
             onChanged: onAiFieldChanged,
           ),
           SizedBox(height: _px(context, 10)),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _AiOptionDropdownField<AiReasoningEffort>(
+                  fieldKey: const ValueKey<String>(
+                    'desktop-settings-ai-reasoning',
+                  ),
+                  label: copy.aiApiReasoningEffortLabel,
+                  value: reasoningEffort,
+                  values: visibleEfforts,
+                  itemLabel: copy.aiApiReasoningEffortName,
+                  enabled: !saving,
+                  onChanged: (AiReasoningEffort? value) {
+                    if (value != null) onReasoningChanged(value);
+                  },
+                ),
+              ),
+              SizedBox(width: _px(context, 9)),
+              Expanded(
+                child: _AiOptionDropdownField<AiResponseSpeed>(
+                  fieldKey: const ValueKey<String>('desktop-settings-ai-speed'),
+                  label: copy.aiApiResponseSpeedLabel,
+                  value: responseSpeed,
+                  values: AiResponseSpeed.values,
+                  itemLabel: copy.aiApiResponseSpeedName,
+                  enabled: !saving,
+                  onChanged: (AiResponseSpeed? value) {
+                    if (value != null) onSpeedChanged(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: _px(context, 10)),
           _AiStatusLabel(
             status: controller.aiConnectivityStatus,
             hasKey: hasKey,
             copy: copy,
+            saving: saving,
+            checkStep: checkStep,
+            draftChanged: draftChanged,
+            feedback: feedback,
+            feedbackSucceeded: feedbackSucceeded,
+            fastSelected: responseSpeed == AiResponseSpeed.fast,
           ),
           SizedBox(height: _px(context, 8)),
           Align(
@@ -156,26 +221,90 @@ class _AiServiceCard extends StatelessWidget {
               ),
             ),
           ),
-          if (feedback != null) ...<Widget>[
-            SizedBox(height: _px(context, 7)),
-            Text(
-              feedback!,
-              key: const ValueKey<String>('desktop-settings-ai-feedback'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: _font(context, 11),
-                height: 1.25,
-                color: feedbackSucceeded == true
-                    ? const Color(0xFF497461)
-                    : const Color(0xFF9F4D5D),
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
+}
+
+class _AiOptionDropdownField<T> extends StatelessWidget {
+  const _AiOptionDropdownField({
+    required this.fieldKey,
+    required this.label,
+    required this.value,
+    required this.values,
+    required this.itemLabel,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final Key fieldKey;
+  final String label;
+  final T value;
+  final List<T> values;
+  final String Function(T) itemLabel;
+  final bool enabled;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      _FieldLabel(label: label),
+      SizedBox(height: _px(context, 4)),
+      SizedBox(
+        height: _px(context, 39),
+        child: KeyedSubtree(
+          key: fieldKey,
+          child: Theme(
+            data: _dropdownTheme(context),
+            child: DropdownButtonFormField<T>(
+              key: ValueKey<T>(value),
+              initialValue: value,
+              isExpanded: true,
+              borderRadius: BorderRadius.circular(_px(context, 12)),
+              dropdownColor: DesktopColors.card,
+              icon: Icon(Icons.expand_more_rounded, size: _px(context, 18)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontSize: _font(context, 12),
+                color: DesktopColors.text,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: _fieldDecoration(context).copyWith(
+                contentPadding: EdgeInsets.only(
+                  left: _px(context, 10),
+                  right: _px(context, 6),
+                ),
+              ),
+              items: values
+                  .map(
+                    (T option) => DropdownMenuItem<T>(
+                      value: option,
+                      child: _dropdownOption(
+                        context,
+                        itemLabel(option),
+                        selected: option == value,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              selectedItemBuilder: (context) => <Widget>[
+                for (final option in values)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      itemLabel(option),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: enabled ? onChanged : null,
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 class _AiStatusLabel extends StatelessWidget {
@@ -183,41 +312,99 @@ class _AiStatusLabel extends StatelessWidget {
     required this.status,
     required this.hasKey,
     required this.copy,
+    required this.saving,
+    required this.checkStep,
+    required this.draftChanged,
+    required this.feedback,
+    required this.feedbackSucceeded,
+    required this.fastSelected,
   });
 
   final ConnectivityStatus status;
   final bool hasKey;
   final AppCopy copy;
+  final bool saving;
+  final DesktopAiCheckStep? checkStep;
+  final bool draftChanged;
+  final String? feedback;
+  final bool? feedbackSucceeded;
+  final bool fastSelected;
 
   @override
   Widget build(BuildContext context) {
-    final String label;
+    final String message;
     final Color color;
-    if (!hasKey) {
-      label = copy.localized('未配置', 'Not configured');
+    if (saving) {
+      message = switch (checkStep) {
+        DesktopAiCheckStep.saving => copy.localized(
+          '正在保存配置…',
+          'Saving configuration…',
+        ),
+        DesktopAiCheckStep.loadingModels => copy.localized(
+          '正在获取 /models（最长 15 秒）…',
+          'Fetching /models (up to 15 s)…',
+        ),
+        DesktopAiCheckStep.probingChat => copy.localized(
+          '正在探测 Chat Completions（最长 20 秒；不验证强度与 Fast）…',
+          'Probing Chat Completions (up to 20 s; effort and Fast unverified)…',
+        ),
+        null => copy.localized('正在检测…', 'Checking…'),
+      };
+      color = DesktopColors.brown;
+    } else if (feedback != null) {
+      final bool success = feedbackSucceeded == true;
+      final String label = success
+          ? status.state == ConnectivityState.warning
+                ? copy.localized('待选模型', 'Select a model')
+                : copy.localized('连接正常', 'Connection ready')
+          : copy.localized('检测失败', 'Check failed');
+      message = '$label：$feedback';
+      color = success
+          ? status.state == ConnectivityState.warning
+                ? const Color(0xFF945D31)
+                : const Color(0xFF497461)
+          : const Color(0xFF9F4D5D);
+    } else if (draftChanged) {
+      message = copy.localized(
+        '配置已修改，请保存并检测',
+        'Changes pending; save and check',
+      );
+      color = DesktopColors.brown;
+    } else if (!hasKey) {
+      message = copy.localized('未配置', 'Not configured');
       color = DesktopColors.secondaryText;
     } else {
       switch (status.state) {
         case ConnectivityState.success:
-          label = copy.localized('连接正常', 'Connection ready');
+          message =
+              '${copy.localized('连接正常', 'Connection ready')}：${status.message}';
           color = const Color(0xFF497461);
         case ConnectivityState.loading:
-          label = copy.localized('检测中', 'Checking');
+          message = status.message;
           color = DesktopColors.brown;
         case ConnectivityState.warning:
-          label = copy.localized('需要留意', 'Needs attention');
+          message = status.message;
           color = const Color(0xFF945D31);
         case ConnectivityState.failure:
-          label = copy.localized('连接失败', 'Connection failed');
+          message = status.message;
           color = const Color(0xFF9F4D5D);
         case ConnectivityState.unknown:
-          label = copy.localized('尚未检测', 'Not checked');
+          message = copy.localized('尚未检测', 'Not checked');
           color = DesktopColors.secondaryText;
       }
     }
+    final String fastNote = copy.localized(
+      'Fast 可能额外计费，是否生效由服务商决定。',
+      'Fast may cost more; availability depends on the provider.',
+    );
+    final String fullMessage =
+        '${copy.localized('AI 服务', 'AI Service')} · $message'
+        '${fastSelected && !saving ? ' $fastNote' : ''}';
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Container(
+          margin: EdgeInsets.only(top: _px(context, 5)),
           width: _px(context, 7),
           height: _px(context, 7),
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
@@ -225,11 +412,11 @@ class _AiStatusLabel extends StatelessWidget {
         SizedBox(width: _px(context, 6)),
         Flexible(
           child: Text(
-            '${copy.localized('AI 服务', 'AI Service')} · $label',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            fullMessage,
+            key: const ValueKey<String>('desktop-settings-ai-status'),
             style: TextStyle(
               fontSize: _font(context, 11),
+              height: 1.3,
               color: color,
               fontWeight: FontWeight.w500,
             ),
@@ -281,35 +468,48 @@ class _AiProviderDropdownField extends StatelessWidget {
         height: _px(context, 39),
         child: KeyedSubtree(
           key: fieldKey,
-          child: DropdownButtonFormField<String>(
-            key: ValueKey<String>('provider-$selectedId'),
-            initialValue: selectedId,
-            isExpanded: true,
-            icon: Icon(Icons.expand_more_rounded, size: _px(context, 18)),
-            style: TextStyle(
-              fontSize: _font(context, 12),
-              color: DesktopColors.text,
-              fontWeight: FontWeight.w500,
-            ),
-            decoration: _fieldDecoration(context).copyWith(
-              contentPadding: EdgeInsets.only(
-                left: _px(context, 10),
-                right: _px(context, 6),
+          child: Theme(
+            data: _dropdownTheme(context),
+            child: DropdownButtonFormField<String>(
+              key: ValueKey<String>('provider-$selectedId'),
+              initialValue: selectedId,
+              isExpanded: true,
+              borderRadius: BorderRadius.circular(_px(context, 12)),
+              dropdownColor: DesktopColors.card,
+              icon: Icon(Icons.expand_more_rounded, size: _px(context, 18)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontSize: _font(context, 12),
+                color: DesktopColors.text,
+                fontWeight: FontWeight.w500,
               ),
-            ),
-            items: options
-                .map(
-                  (_DesktopAiProviderOption option) => DropdownMenuItem<String>(
-                    value: option.id,
-                    child: Text(
-                      option.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              decoration: _fieldDecoration(context).copyWith(
+                contentPadding: EdgeInsets.only(
+                  left: _px(context, 10),
+                  right: _px(context, 6),
+                ),
+              ),
+              items: options
+                  .map(
+                    (_DesktopAiProviderOption option) =>
+                        DropdownMenuItem<String>(
+                          value: option.id,
+                          child: _dropdownOption(
+                            context,
+                            option.label,
+                            selected: option.id == selectedId,
+                          ),
+                        ),
+                  )
+                  .toList(growable: false),
+              selectedItemBuilder: (context) => <Widget>[
+                for (final option in options)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(option.label, overflow: TextOverflow.ellipsis),
                   ),
-                )
-                .toList(growable: false),
-            onChanged: enabled ? onChanged : null,
+              ],
+              onChanged: enabled ? onChanged : null,
+            ),
           ),
         ),
       ),
@@ -359,45 +559,57 @@ class _AiModelDropdownField extends StatelessWidget {
           height: _px(context, 39),
           child: KeyedSubtree(
             key: fieldKey,
-            child: DropdownButtonFormField<String>(
-              key: ValueKey<String>(
-                'model-${loadState.name}-$normalizedSelection-${models.length}',
-              ),
-              initialValue: selectionAvailable ? normalizedSelection : null,
-              isExpanded: true,
-              hint: Text(hint, overflow: TextOverflow.ellipsis),
-              icon: loadState == AiModelLoadState.loading
-                  ? SizedBox.square(
-                      dimension: _px(context, 14),
-                      child: CircularProgressIndicator(
-                        strokeWidth: _px(context, 1.6),
+            child: Theme(
+              data: _dropdownTheme(context),
+              child: DropdownButtonFormField<String>(
+                key: ValueKey<String>(
+                  'model-${loadState.name}-$normalizedSelection-${models.length}',
+                ),
+                initialValue: selectionAvailable ? normalizedSelection : null,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(_px(context, 12)),
+                dropdownColor: DesktopColors.card,
+                hint: Text(hint, overflow: TextOverflow.ellipsis),
+                icon: loadState == AiModelLoadState.loading
+                    ? SizedBox.square(
+                        dimension: _px(context, 14),
+                        child: CircularProgressIndicator(
+                          strokeWidth: _px(context, 1.6),
+                        ),
+                      )
+                    : Icon(Icons.expand_more_rounded, size: _px(context, 18)),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontSize: _font(context, 12),
+                  color: DesktopColors.text,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: _fieldDecoration(context).copyWith(
+                  contentPadding: EdgeInsets.only(
+                    left: _px(context, 10),
+                    right: _px(context, 6),
+                  ),
+                ),
+                items: models
+                    .map(
+                      (AiModel model) => DropdownMenuItem<String>(
+                        value: model.id,
+                        child: _dropdownOption(
+                          context,
+                          model.label,
+                          selected: model.id == normalizedSelection,
+                        ),
                       ),
                     )
-                  : Icon(Icons.expand_more_rounded, size: _px(context, 18)),
-              style: TextStyle(
-                fontSize: _font(context, 12),
-                color: DesktopColors.text,
-                fontWeight: FontWeight.w500,
-              ),
-              decoration: _fieldDecoration(context).copyWith(
-                contentPadding: EdgeInsets.only(
-                  left: _px(context, 10),
-                  right: _px(context, 6),
-                ),
-              ),
-              items: models
-                  .map(
-                    (AiModel model) => DropdownMenuItem<String>(
-                      value: model.id,
-                      child: Text(
-                        model.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    .toList(growable: false),
+                selectedItemBuilder: (context) => <Widget>[
+                  for (final model in models)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(model.label, overflow: TextOverflow.ellipsis),
                     ),
-                  )
-                  .toList(growable: false),
-              onChanged: enabled && models.isNotEmpty ? onChanged : null,
+                ],
+                onChanged: enabled && models.isNotEmpty ? onChanged : null,
+              ),
             ),
           ),
         ),

@@ -3,6 +3,8 @@ part of '../app_controller.dart';
 extension AppAiConfigurationController on AppController {
   Future<void> saveAiApiConfig(AiApiConfig next) async {
     final AiApiConfig previous = _aiApiConfig;
+    ++_aiServiceStatusGeneration;
+    _aiServiceStatusRefreshFuture = null;
     final bool runContextChanged = _aiRunContextChanged(previous, next);
     _invalidateActiveRuns();
     _aiApiConfig = next;
@@ -17,7 +19,9 @@ extension AppAiConfigurationController on AppController {
           ? '未配置 AI 服务'
           : '等待检查',
     );
-    invalidateAiModels();
+    if (_aiModelSignature(previous) != _aiModelSignature(next)) {
+      invalidateAiModels();
+    }
     await _preferencesService.saveAiApiConfig(next);
     if (_isSaveableCustomPreset(next)) {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, next);
@@ -33,13 +37,30 @@ extension AppAiConfigurationController on AppController {
   ///
   /// Keeping this operation at the controller boundary ensures the desktop
   /// composer, settings and any future platform UI share the same persistence,
-  /// model-cache invalidation and active-run isolation behavior.
+  /// model selection and active-run isolation behavior.
   Future<void> setAiModel(String model) async {
     final String normalized = model.trim();
     if (normalized.isEmpty || normalized == _aiApiConfig.model.trim()) {
       return;
     }
-    await saveAiApiConfig(_aiApiConfig.copyWith(model: normalized));
+    if (!AiModelPolicy.allowsModel(normalized)) {
+      throw ArgumentError.value(
+        model,
+        'model',
+        'Model is outside the GPT-5.6+ catalog',
+      );
+    }
+    final List<AiReasoningEffort> supported = AiModelPolicy.reasoningEfforts(
+      normalized,
+    )!;
+    await saveAiApiConfig(
+      _aiApiConfig.copyWith(
+        model: normalized,
+        reasoningEffort: supported.contains(_aiApiConfig.reasoningEffort)
+            ? _aiApiConfig.reasoningEffort
+            : AiReasoningEffort.automatic,
+      ),
+    );
   }
 
   /// Selects the reasoning effort sent to providers that support it.
@@ -48,6 +69,17 @@ extension AppAiConfigurationController on AppController {
   /// compatibility with OpenAI-compatible providers that do not implement it.
   Future<void> setAiReasoningEffort(AiReasoningEffort effort) async {
     if (_aiApiConfig.reasoningEffort == effort) return;
+    final List<AiReasoningEffort>? supported = AiModelPolicy.reasoningEfforts(
+      _aiApiConfig.model,
+    );
+    if (effort != AiReasoningEffort.automatic &&
+        (supported == null || !supported.contains(effort))) {
+      throw ArgumentError.value(
+        effort,
+        'effort',
+        'Unsupported reasoning effort',
+      );
+    }
     await saveAiApiConfig(_aiApiConfig.copyWith(reasoningEffort: effort));
   }
 
@@ -104,10 +136,7 @@ extension AppAiConfigurationController on AppController {
     return result;
   }
 
-  Future<List<AiModel>> refreshAiModels({
-    AiApiConfig? config,
-    bool persistSelection = false,
-  }) {
+  Future<List<AiModel>> refreshAiModels({AiApiConfig? config}) {
     final AiApiConfig target = config ?? _aiApiConfig;
     final String signature = _aiModelSignature(target);
     final Future<List<AiModel>>? active = _aiModelRefreshFuture;
@@ -127,23 +156,18 @@ extension AppAiConfigurationController on AppController {
           if (generation != _aiModelRefreshGeneration) {
             return models;
           }
-          _availableAiModels = List<AiModel>.from(models);
-          _aiModelLoadState = models.isEmpty
+          final List<AiModel> eligible = models
+              .where((AiModel model) => AiModelPolicy.allowsModel(model.id))
+              .toList(growable: false);
+          _availableAiModels = eligible;
+          _aiModelLoadState = eligible.isEmpty
               ? AiModelLoadState.empty
               : AiModelLoadState.success;
           _aiModelLoadError = null;
-          if (persistSelection && identical(config, null)) {
-            final String selected = _aiApiConfig.model.trim();
-            final bool stillAvailable = models.any(
-              (AiModel model) => model.id == selected,
-            );
-            if (selected.isNotEmpty && !stillAvailable) {
-              _aiApiConfig = _aiApiConfig.copyWith(model: '');
-              await _preferencesService.saveAiApiConfig(_aiApiConfig);
-            }
-          }
+          // /models is discovery only. An unavailable or filtered model is
+          // retained in preferences and blocked by the request policy.
           _notifyListeners();
-          return models;
+          return eligible;
         })
         .catchError((Object error, StackTrace stackTrace) {
           if (generation != _aiModelRefreshGeneration) {
@@ -174,7 +198,7 @@ extension AppAiConfigurationController on AppController {
 
   Future<void> _refreshAiModelsOnInitialize() async {
     try {
-      await refreshAiModels(persistSelection: true);
+      await refreshAiModels();
     } catch (_) {
       // The settings screen exposes the retryable failure state.
     }

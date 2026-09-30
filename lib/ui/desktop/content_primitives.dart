@@ -1,6 +1,7 @@
 // Body primitives adapted from the read-only Desktop reference layout.
 import 'package:flutter/material.dart';
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_metadata_text.dart';
 import '../../app/state/app_controller.dart';
 import 'desktop_resolved_image.dart';
 
@@ -92,8 +93,8 @@ class DesktopContentGame {
 
   String get tagA => tags.first;
   String get tagB => tags.length > 1 ? tags[1] : '-';
-  String get players => desktopContentValue(data.playerCount);
-  String get duration => desktopContentValue(data.playTime);
+  String get players => GameMetadataText.players(data.playerCount);
+  String get duration => GameMetadataText.playTime(data.playTime);
   String get difficulty => desktopContentValue(data.complexity);
   String get description => desktopContentValue(data.summary);
   String get quote => desktopContentValue(data.heroTagline);
@@ -104,12 +105,6 @@ class DesktopContentGame {
     assetPath: data.coverAssetPath,
     palette: controller.palette,
   );
-}
-
-void desktopContentPending(BuildContext context, String feature) {
-  ScaffoldMessenger.maybeOf(
-    context,
-  )?.showSnackBar(SnackBar(content: Text('$feature · 未开放')));
 }
 
 class DesktopContentColumns extends StatelessWidget {

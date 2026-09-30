@@ -41,10 +41,14 @@ void main() {
   test('legacy IDs infer global and game scopes', () {
     final AiConversation global = AiConversation.fromMap(<String, dynamic>{
       'id': 'global',
+      'createdAt': '2026-08-27T10:00:00.000Z',
+      'updatedAt': '2026-08-27T10:00:00.000Z',
       'messages': <dynamic>[],
     });
     final AiConversation game = AiConversation.fromMap(<String, dynamic>{
       'id': 'game:puerto-rico',
+      'createdAt': '2026-08-27T10:00:00.000Z',
+      'updatedAt': '2026-08-27T10:00:00.000Z',
       'messages': <dynamic>[],
     });
 
@@ -111,6 +115,112 @@ void main() {
 
     expect(restored.opened, isFalse);
     expect(restored.isUnstarted, isTrue);
+    expect(restored.createdAt, DateTime.utc(2026, 8, 27, 11));
+  });
+
+  test('malformed timestamps do not turn old records into current records', () {
+    final restored = AiConversation.fromMap(<String, dynamic>{
+      'id': 'game:cabo',
+      'scope': 'game',
+      'gameId': 'cabo',
+      'messages': <dynamic>[
+        <String, dynamic>{
+          'id': 'valid',
+          'role': 'user',
+          'text': '真实问题',
+          'timestamp': '2026-08-27T11:00:00.000Z',
+        },
+        <String, dynamic>{
+          'id': 'broken',
+          'role': 'assistant',
+          'text': '损坏记录',
+          'timestamp': 'invalid',
+        },
+      ],
+    });
+    expect(restored.messages.single.text, '真实问题');
+    expect(restored.createdAt, DateTime.utc(2026, 8, 27, 11));
+    expect(restored.updatedAt, DateTime.utc(2026, 8, 27, 11));
+    expect(
+      () => AiConversation.fromMap(<String, dynamic>{
+        'id': 'global',
+        'messages': <dynamic>[],
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('run checkpoints skip events without a real timestamp', () {
+    final checkpoint = AiRunCheckpoint.fromMap(<String, dynamic>{
+      'runId': 'run-1',
+      'status': 'incomplete',
+      'events': <dynamic>[
+        <String, dynamic>{
+          'runId': 'run-1',
+          'sequence': 0,
+          'type': 'runStarted',
+          'timestamp': 'invalid',
+        },
+      ],
+    });
+    expect(checkpoint.events, isEmpty);
+  });
+
+  test('migration removes only the old bootstrap greeting', () {
+    final now = DateTime.utc(2026, 8, 27);
+    final conversation = AiConversation(
+      id: 'game:cabo',
+      title: 'Cabo助手',
+      scope: AiConversationScope.game,
+      gameId: 'cabo',
+      createdAt: now,
+      updatedAt: now,
+      messages: <ChatMessage>[
+        ChatMessage(
+          id: '1780000000000-cabo',
+          role: ChatRole.assistant,
+          text: '固定开场白',
+          timestamp: now,
+        ),
+        ChatMessage(
+          id: '1780000000001-user',
+          role: ChatRole.user,
+          text: '真实提问',
+          timestamp: now,
+        ),
+        ChatMessage(
+          id: '1780000000002-assistant',
+          role: ChatRole.assistant,
+          text: '真实回答',
+          timestamp: now,
+        ),
+      ],
+    );
+
+    expect(conversation.discardLegacyBootstrapGreeting(), isTrue);
+    expect(conversation.messages.map((message) => message.text), <String>[
+      '真实提问',
+      '真实回答',
+    ]);
+    expect(conversation.discardLegacyBootstrapGreeting(), isFalse);
+
+    final realReply = AiConversation(
+      id: 'global',
+      title: '通用 AI 助手',
+      scope: AiConversationScope.global,
+      createdAt: now,
+      updatedAt: now,
+      messages: <ChatMessage>[
+        ChatMessage(
+          id: '1780000000003-assistant',
+          role: ChatRole.assistant,
+          text: '真实回答',
+          timestamp: now,
+        ),
+      ],
+    );
+    expect(realReply.discardLegacyBootstrapGreeting(), isFalse);
+    expect(realReply.messages.single.text, '真实回答');
   });
 
   test('persists a safe run checkpoint without streaming answer text', () {

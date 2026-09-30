@@ -6,7 +6,7 @@ import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
 import '../../app/state/app_controller.dart';
-import 'language_sheet.dart';
+import 'settings_screen.dart';
 import 'game_detail_screen.dart';
 import 'game_search_screen.dart';
 import 'rule_materials_screen.dart';
@@ -208,15 +208,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSettings() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (_) => LanguageSheet(
-        controller: widget.controller,
-        onOpenAbout: widget.onOpenAbout,
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MobileSettingsScreen(
+          controller: widget.controller,
+          onOpenAbout: widget.onOpenAbout,
+        ),
       ),
     );
   }

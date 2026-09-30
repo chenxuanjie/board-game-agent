@@ -18,6 +18,13 @@ abstract final class DesktopResponsive {
   static const double desktopWindowMinimumAspectRatio =
       desktopWindowMinimumWidth / desktopWindowMinimumHeight;
 
+  /// Use for both the wide Web shell and its theme, so resizing cannot leave
+  /// desktop content with mobile fonts or default component surfaces.
+  static bool supportsDesktopViewport(Size size) =>
+      size.width >= desktopWindowMinimumWidth &&
+      size.height >= desktopWindowMinimumHeight &&
+      size.width / size.height >= desktopWindowMinimumAspectRatio;
+
   static const narrowBreakpoint = 760.0;
   static const fullSidebarBreakpoint = 1200.0;
   static const fullSidebarWidth = 205.0;

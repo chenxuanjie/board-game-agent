@@ -95,7 +95,7 @@ class _ProfileCardShadowPainter extends CustomPainter {
 
 class _MobileMineContentState extends State<MobileMineContent> {
   static const _nicknameKey = 'mobile_profile_nickname';
-  String _nickname = '小桌友';
+  String _nickname = '';
 
   @override
   void initState() {
@@ -143,15 +143,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_nicknameKey, next);
     if (mounted) setState(() => _nickname = next);
-  }
-
-  void _notAvailable(String title) {
-    final copy = widget.controller.copy;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(copy.localized('$title · 暂未开放', '$title · Coming soon')),
-      ),
-    );
   }
 
   @override
@@ -323,12 +314,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
             ],
           ),
         ),
-        IconButton(
-          key: const ValueKey('mobile-mine-scan'),
-          tooltip: copy.localized('扫一扫', 'Scan'),
-          onPressed: () => _notAvailable(copy.localized('扫一扫', 'Scan')),
-          icon: Image.asset('$_assetRoot/scan_icon.png', width: 24),
-        ),
         Stack(
           children: [
             IconButton(
@@ -382,7 +367,9 @@ class _MobileMineContentState extends State<MobileMineContent> {
                             children: [
                               Flexible(
                                 child: Text(
-                                  _nickname,
+                                  _nickname.isEmpty
+                                      ? copy.localized('设置昵称', 'Set nickname')
+                                      : _nickname,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -474,11 +461,10 @@ class _MobileMineContentState extends State<MobileMineContent> {
                     onTap: widget.onFavorites,
                   ),
                   _statDivider(),
-                  _stat('-', copy.localized('游玩次数', 'Plays')),
-                  _statDivider(),
-                  _stat('-', copy.localized('想玩清单', 'Wishlist')),
-                  _statDivider(),
-                  _stat('-', copy.localized('最爱分类', 'Favorite genre')),
+                  _stat(
+                    '${widget.controller.conversations.length}',
+                    copy.localized('AI 对话', 'AI chats'),
+                  ),
                 ],
               ),
             ],
@@ -594,31 +580,19 @@ class _MobileMineContentState extends State<MobileMineContent> {
         widget.onFavorites,
       ),
       (
-        'wishlist_list_icon.png',
-        Icons.bookmark_rounded,
-        copy.localized('想玩清单', 'Wishlist'),
-        const Color(0xFFFFF4DE),
-        () => _notAvailable(copy.localized('想玩清单', 'Wishlist')),
-      ),
-      (
         'recent_play_gamepad_icon.png',
         Icons.sports_esports_rounded,
         copy.localized('最近浏览', 'Recent'),
         const Color(0xFFFFEDE6),
         widget.onRecentAll,
       ),
-      (
-        'history_clock_icon.png',
-        Icons.history_rounded,
-        copy.localized('历史记录', 'History'),
-        const Color(0xFFFFF0E8),
-        () => _notAvailable(copy.localized('历史记录', 'History')),
-      ),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
         final gap = constraints.maxWidth < 340 ? 6.0 : 8.0;
-        final cardWidth = (constraints.maxWidth - gap * 3) / 4;
+        final cardWidth =
+            (constraints.maxWidth - gap * (entries.length - 1)) /
+            entries.length;
         final iconSize = (cardWidth * 0.33).clamp(22.0, 42.0);
         final labelSize = cardWidth < 75
             ? 9.0
@@ -825,12 +799,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
         copy.localized('设置', 'Settings'),
         copy.localized('语言、偏好设置', 'Language and preferences'),
         widget.onSettings,
-      ),
-      (
-        Icons.support_agent_rounded,
-        copy.localized('帮助与反馈', 'Help & feedback'),
-        copy.localized('有问题？我们来帮你', 'How can we help?'),
-        () => _notAvailable(copy.localized('帮助与反馈', 'Help & feedback')),
       ),
     ];
     return Container(

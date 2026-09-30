@@ -341,22 +341,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     });
   }
 
-  void _unavailable(String title) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(widget.controller.copy.localized('未开放', 'Coming soon')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(widget.controller.copy.localized('知道了', 'OK')),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _refreshSearch() {
     if (mounted) setState(() {});
   }
@@ -649,28 +633,22 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      switch (_page) {
-                                        'favorites' =>
-                                          widget.controller.copy.favoritesTitle,
-                                        'community' =>
-                                          widget.controller.copy.localized(
-                                            '社区',
-                                            'Community',
-                                          ),
-                                        _ => _page,
-                                      },
+                                      widget.controller.copy.localized(
+                                        '找不到这个页面',
+                                        'Page not found',
+                                      ),
                                       style: Theme.of(
                                         context,
                                       ).textTheme.headlineSmall,
                                     ),
                                     const SizedBox(height: 12),
-                                    Text(
-                                      widget.controller.copy.localized(
-                                        '未开放',
-                                        'Coming soon',
-                                      ),
-                                      style: const TextStyle(
-                                        color: DesktopColors.secondaryText,
+                                    TextButton(
+                                      onPressed: () => _navigate('home'),
+                                      child: Text(
+                                        widget.controller.copy.localized(
+                                          '返回首页',
+                                          'Back to home',
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -825,9 +803,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             color: Color(0xFF2F2924),
                           ),
                           decoration: InputDecoration(
+                            filled: false,
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
                             isDense: true,
                             prefixIcon: Icon(
                               Icons.search_rounded,
@@ -892,52 +872,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 ),
               ),
             ),
-            if (!narrow) SizedBox(width: metrics.px(11)),
-            if (!narrow)
-              InkWell(
-                onTap: () => _unavailable(
-                  widget.controller.copy.localized('个人中心', 'Profile'),
-                ),
-                borderRadius: BorderRadius.circular(metrics.radius(22)),
-                child: Row(
-                  children: [
-                    ClipOval(
-                      child: Image.asset(
-                        'assets/desktop/warmwood/avatar.png',
-                        width: metrics.px(44),
-                        height: metrics.px(44),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    SizedBox(width: metrics.px(10)),
-                    if (!compact)
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '—',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: metrics.font(16),
-                            ),
-                          ),
-                          SizedBox(height: metrics.px(2)),
-                          Text(
-                            widget.controller.copy.localized(
-                              '未开放',
-                              'Coming soon',
-                            ),
-                            style: TextStyle(
-                              fontSize: metrics.font(11),
-                              color: DesktopColors.secondaryText,
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),

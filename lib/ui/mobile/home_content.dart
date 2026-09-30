@@ -12,6 +12,7 @@ import 'game_cover.dart';
 const _ink = Color(0xFF25242B);
 const _muted = Color(0xFF85818A);
 const _orange = Color(0xFFFF673F);
+const _recommendationCardHeight = 154.0;
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -85,7 +86,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     final recommendationWidth = kIsWeb && contentWidth >= 600
         ? (contentWidth - 10 * (visibleRecommendations - 1)) /
               visibleRecommendations
-        : ((contentWidth - 10) / 2).clamp(154.0, 220.0).toDouble();
+        : ((contentWidth - 10) / 2).clamp(240.0, 280.0).toDouble();
     final ordered = recommended.isEmpty
         ? const <GameInfo>[]
         : <GameInfo>[
@@ -138,7 +139,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
               _emptyRecent(copy)
             else
               SizedBox(
-                height: 138,
+                height: _recommendationCardHeight,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: ordered.length,
@@ -583,93 +584,90 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     painter.dispose();
     return SizedBox(
       width: cardWidth,
-      height: 138,
+      height: _recommendationCardHeight,
       child: InkWell(
         key: ValueKey('mobile-recommendation-${game.id}'),
         onTap: () => widget.onOpenGame(game),
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(7),
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFF2E6DE)),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: cardWidth >= 190 ? 88 : 72,
-                  child: AspectRatio(
-                    aspectRatio: 1 / 1.35,
-                    child: MobileGameCover(
-                      controller: widget.controller,
-                      game: game,
-                    ),
-                  ),
+              SizedBox(
+                width: (cardWidth * 0.4).clamp(96.0, 112.0),
+                child: MobileGameCover(
+                  controller: widget.controller,
+                  game: game,
                 ),
               ),
-              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      game.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: _ink,
-                        height: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      attributes,
-                      key: ValueKey(
-                        'mobile-recommendation-attributes-${game.id}',
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.clip,
-                      style: const TextStyle(fontSize: 10, color: _muted),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 17,
-                          color: Color(0xFFFF9F23),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        game.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: _ink,
+                          height: 1.2,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          game.score,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w900,
-                            color: _ink,
-                            height: 1.1,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        attributes,
+                        key: ValueKey(
+                          'mobile-recommendation-attributes-${game.id}',
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.clip,
+                        style: const TextStyle(fontSize: 10, color: _muted),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            size: 17,
+                            color: Color(0xFFFF9F23),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      game.summary.trim().isNotEmpty
-                          ? game.summary
-                          : game.heroTagline,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Color(0xFF85818A),
-                        height: 1.3,
+                          const SizedBox(width: 4),
+                          Text(
+                            game.score,
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w900,
+                              color: _ink,
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 22),
+                      Text(
+                        game.summary.trim().isNotEmpty
+                            ? game.summary
+                            : game.heroTagline,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: Color(0xFF85818A),
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

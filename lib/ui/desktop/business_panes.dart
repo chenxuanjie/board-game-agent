@@ -3,14 +3,15 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../core/models/app_activity.dart';
 import '../../features/assistant/models/ai_api_config.dart';
+import '../../features/assistant/models/ai_model_policy.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/assistant/models/ai_run.dart';
-import '../../features/assistant/models/answer_source.dart';
 import '../../features/assistant/models/chat_message.dart';
 import '../../core/theme/color_scheme_option.dart';
 import '../../features/library/models/desktop_library_resource.dart';
@@ -31,6 +32,7 @@ part 'activity_popup.dart';
 part 'assistant/assistant_pane.dart';
 part 'assistant/assistant_sessions.dart';
 part 'assistant/assistant_composer.dart';
+part 'assistant/model_selector.dart';
 part 'library/library_pane.dart';
 
 Color _desktopFeatureColor(

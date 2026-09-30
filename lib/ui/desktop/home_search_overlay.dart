@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_metadata_text.dart';
 import '../../app/state/app_controller.dart';
 import 'content_primitives.dart';
 import 'theme.dart';
@@ -89,7 +90,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
                 child: query.trim().isEmpty
-                    ? _buildDiscoveryPanel()
+                    ? _buildDiscoveryPanel(context)
                     : _buildResultsPanel(_results),
               ),
             ),
@@ -99,7 +100,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
     ),
   );
 
-  Widget _buildDiscoveryPanel() => Column(
+  Widget _buildDiscoveryPanel(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: <Widget>[
       _SectionHeader(
@@ -109,7 +110,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
           onPressed: onClearHistory,
           icon: const Icon(Icons.delete_outline_rounded, size: 16),
           label: const Text('清空记录'),
-          style: _linkStyle,
+          style: _linkStyle(context),
         ),
       ),
       const SizedBox(height: 8),
@@ -158,7 +159,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
           onPressed: onViewAll,
           icon: const Icon(Icons.chevron_right_rounded, size: 18),
           label: const Text('查看游戏库'),
-          style: _linkStyle,
+          style: _linkStyle(context),
         ),
       ),
       const SizedBox(height: 8),
@@ -317,13 +318,17 @@ const TextStyle _metaStyle = TextStyle(
   height: 1.45,
 );
 
-const ButtonStyle _linkStyle = ButtonStyle(
+ButtonStyle _linkStyle(BuildContext context) => ButtonStyle(
   visualDensity: VisualDensity.compact,
-  padding: WidgetStatePropertyAll<EdgeInsets>(
+  padding: const WidgetStatePropertyAll<EdgeInsets>(
     EdgeInsets.symmetric(horizontal: 6),
   ),
-  textStyle: WidgetStatePropertyAll<TextStyle>(TextStyle(fontSize: 12)),
-  foregroundColor: WidgetStatePropertyAll<Color>(DesktopColors.secondaryText),
+  textStyle: WidgetStatePropertyAll<TextStyle>(
+    Theme.of(context).textTheme.labelLarge!.copyWith(fontSize: 12),
+  ),
+  foregroundColor: const WidgetStatePropertyAll<Color>(
+    DesktopColors.secondaryText,
+  ),
 );
 
 class _SectionHeader extends StatelessWidget {
@@ -379,7 +384,9 @@ class _RecentQueryChip extends StatelessWidget {
     onDeleted: onDeleted,
     deleteIcon: const Icon(Icons.close_rounded, size: 14),
     deleteButtonTooltipMessage: '删除最近搜索',
-    labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
+    labelStyle: Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: DesktopColors.text),
     visualDensity: VisualDensity.compact,
     side: BorderSide.none,
     backgroundColor: DesktopColors.soft,
@@ -397,7 +404,9 @@ class _QueryChip extends StatelessWidget {
   Widget build(BuildContext context) => ActionChip(
     label: Text(label),
     onPressed: onPressed,
-    labelStyle: const TextStyle(fontSize: 12, color: DesktopColors.text),
+    labelStyle: Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: DesktopColors.text),
     visualDensity: VisualDensity.compact,
     side: BorderSide.none,
     backgroundColor: DesktopColors.soft,
@@ -536,16 +545,28 @@ class _SearchResultRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      <String>[
-                        if (game.subtitle.trim().isNotEmpty) game.subtitle,
+                    if (game.subtitle.trim().isNotEmpty)
+                      Text(
+                        game.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _metaStyle,
+                      ),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 2,
+                      children: <Widget>[
                         if (game.playerCount.trim().isNotEmpty)
-                          game.playerCount,
-                        if (game.playTime.trim().isNotEmpty) game.playTime,
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _metaStyle,
+                          Text(
+                            GameMetadataText.players(game.playerCount),
+                            style: _metaStyle,
+                          ),
+                        if (game.playTime.trim().isNotEmpty)
+                          Text(
+                            GameMetadataText.playTime(game.playTime),
+                            style: _metaStyle,
+                          ),
+                      ],
                     ),
                   ],
                 ),

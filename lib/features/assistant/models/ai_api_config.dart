@@ -7,23 +7,29 @@ enum AiProviderPreset { openAi, deepSeek, custom }
 /// `automatic` deliberately omits the optional provider field so existing
 /// OpenAI-compatible endpoints keep working, including providers that do not
 /// implement reasoning controls.
-enum AiReasoningEffort { automatic, low, medium, high }
+enum AiReasoningEffort { automatic, none, low, medium, high, xhigh, max }
 
 extension AiReasoningEffortX on AiReasoningEffort {
   String get storageValue => name;
 
   String? get requestValue => switch (this) {
     AiReasoningEffort.automatic => null,
+    AiReasoningEffort.none => 'none',
     AiReasoningEffort.low => 'low',
     AiReasoningEffort.medium => 'medium',
     AiReasoningEffort.high => 'high',
+    AiReasoningEffort.xhigh => 'xhigh',
+    AiReasoningEffort.max => 'max',
   };
 
   static AiReasoningEffort fromStored(String? value) {
     return switch (value?.trim().toLowerCase()) {
+      'none' => AiReasoningEffort.none,
       'low' => AiReasoningEffort.low,
       'medium' => AiReasoningEffort.medium,
       'high' => AiReasoningEffort.high,
+      'xhigh' => AiReasoningEffort.xhigh,
+      'max' => AiReasoningEffort.max,
       _ => AiReasoningEffort.automatic,
     };
   }

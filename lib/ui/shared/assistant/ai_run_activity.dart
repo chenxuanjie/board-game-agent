@@ -206,10 +206,13 @@ class AiRunActivity extends StatelessWidget {
         event.detail?.trim() ?? event.errorMessage?.trim() ?? '',
       );
       if (event.attempt != null) {
-        final String attempt = _text(
-          '第 ${event.attempt} 次尝试（共 ${event.maxAttempts ?? 3} 次）',
-          'Attempt ${event.attempt} of ${event.maxAttempts ?? 3}',
-        );
+        final int? maxAttempts = event.maxAttempts;
+        final String attempt = maxAttempts == null
+            ? _text('第 ${event.attempt} 次尝试', 'Attempt ${event.attempt}')
+            : _text(
+                '第 ${event.attempt} 次尝试（共 $maxAttempts 次）',
+                'Attempt ${event.attempt} of $maxAttempts',
+              );
         if (!connectionDetails.contains(attempt)) {
           connectionDetails.add(attempt);
         }
@@ -573,7 +576,10 @@ class AiRunActivity extends StatelessWidget {
         }
         if (pendingConnection.status == _ActivityStepStatus.failed) {
           connectionStage.status = _ActivityStepStatus.failed;
-          connectionStage.detail = _text('无法恢复连接', 'Unable to restore connection');
+          connectionStage.detail = _text(
+            '无法恢复连接',
+            'Unable to restore connection',
+          );
         } else if (pendingConnection.connectionStatus ==
             _ActivityStepStatus.completed) {
           connectionStage.detail = _text('连接已恢复', 'Connection restored');

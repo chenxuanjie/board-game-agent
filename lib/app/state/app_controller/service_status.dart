@@ -187,18 +187,28 @@ extension AppServiceStatusController on AppController {
   /// This is the shared settings boundary for `/models` discovery and the
   /// optional chat-path health check. Platform-specific settings UIs should
   /// call this method instead of rebuilding the provider protocol themselves.
-  Future<void> refreshAiServiceStatus() {
+  Future<void> refreshAiServiceStatus({
+    void Function(AiServiceCheckStage stage)? onStage,
+  }) {
     final Future<void>? active = _aiServiceStatusRefreshFuture;
     if (active != null) {
       return active;
     }
+    final int generation = ++_aiServiceStatusGeneration;
     _aiConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.loading,
-      message: '正在检查 AI 服务',
+      message: copy.localized(
+        '正在获取模型列表（/models）',
+        'Fetching model list (/models)',
+      ),
       checkedAt: DateTime.now(),
     );
+    onStage?.call(AiServiceCheckStage.models);
     _notifyListeners();
-    final Future<void> future = _refreshAiServiceStatus();
+    final Future<void> future = _refreshAiServiceStatus(
+      generation: generation,
+      onStage: onStage,
+    );
     _aiServiceStatusRefreshFuture = future;
     future
         .whenComplete(() {
@@ -210,7 +220,10 @@ extension AppServiceStatusController on AppController {
     return future;
   }
 
-  Future<void> _refreshAiServiceStatus() async {
+  Future<void> _refreshAiServiceStatus({
+    required int generation,
+    void Function(AiServiceCheckStage stage)? onStage,
+  }) async {
     final AiApiConfig config = _aiApiConfig;
     if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
       _availableAiModels = <AiModel>[];
@@ -226,41 +239,73 @@ extension AppServiceStatusController on AppController {
     }
 
     try {
-      final List<AiModel> models = await refreshAiModels(
-        persistSelection: true,
-      );
+      final List<AiModel> models = await refreshAiModels();
+      if (generation != _aiServiceStatusGeneration) return;
       if (models.isEmpty) {
         _aiConnectivityStatus = ConnectivityStatus(
           state: ConnectivityState.failure,
-          message: '模型列表为空',
+          message: copy.aiApiModelsEmpty,
           checkedAt: DateTime.now(),
         );
       } else if (!hasSelectedAiModel) {
         _aiConnectivityStatus = ConnectivityStatus(
           state: ConnectivityState.warning,
-          message: '接口可用，请选择模型',
+          message: copy.localized(
+            '接口可用，请选择模型',
+            'Endpoint available; select a model',
+          ),
+          checkedAt: DateTime.now(),
+        );
+      } else if (!selectedAiModelResolution.isUsable) {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.failure,
+          message:
+              selectedAiModelResolution.issue == AiModelIssue.unsupportedEffort
+              ? copy.aiApiReasoningUnsupported
+              : copy.aiApiModelNotAllowed,
           checkedAt: DateTime.now(),
         );
       } else {
+        _aiConnectivityStatus = ConnectivityStatus(
+          state: ConnectivityState.loading,
+          message: copy.localized(
+            '正在探测 Chat Completions（不含推理强度和 Fast）',
+            'Probing Chat Completions (without effort or Fast)',
+          ),
+          checkedAt: DateTime.now(),
+        );
+        onStage?.call(AiServiceCheckStage.chatProbe);
+        _notifyListeners();
         final AiHealthResult health = await _aiService.checkConnection(config);
+        if (generation != _aiServiceStatusGeneration) return;
         _aiConnectivityStatus = ConnectivityStatus(
           state: health.success
               ? ConnectivityState.success
               : ConnectivityState.failure,
           message: health.success
-              ? 'AI 服务与聊天接口正常'
-              : '聊天接口失败: ${_safeStatusError(health.message)}',
+              ? copy.localized(
+                  'Chat Completions 可连接；推理强度与 Fast 未验证',
+                  'Chat Completions connected; effort and Fast unverified',
+                )
+              : copy.localized(
+                  'Chat Completions 探测失败: ${_safeStatusError(health.message)}',
+                  'Chat Completions probe failed: ${_safeStatusError(health.message)}',
+                ),
           checkedAt: DateTime.now(),
         );
       }
     } catch (error) {
+      if (generation != _aiServiceStatusGeneration) return;
       _aiConnectivityStatus = ConnectivityStatus(
         state: ConnectivityState.failure,
-        message: 'AI 服务失败: ${_safeStatusError(error)}',
+        message: copy.localized(
+          'AI 服务失败: ${_safeStatusError(error)}',
+          'AI service failed: ${_safeStatusError(error)}',
+        ),
         checkedAt: DateTime.now(),
       );
     }
-    _notifyListeners();
+    if (generation == _aiServiceStatusGeneration) _notifyListeners();
   }
 
   String _safeStatusError(Object error) {

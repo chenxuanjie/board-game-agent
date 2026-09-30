@@ -490,6 +490,12 @@ class AiRunEvent {
   };
 
   factory AiRunEvent.fromMap(Map<String, dynamic> map) {
+    final DateTime? timestamp = DateTime.tryParse(
+      map['timestamp'] as String? ?? '',
+    );
+    if (timestamp == null) {
+      throw const FormatException('Invalid run event timestamp');
+    }
     final RuleCitation? citation = map['citation'] is Map
         ? RuleCitation.fromMap(
             Map<String, dynamic>.from(map['citation'] as Map),
@@ -507,9 +513,7 @@ class AiRunEvent {
         (AiRunEventType value) => value.name == map['type'],
         orElse: () => AiRunEventType.status,
       ),
-      timestamp:
-          DateTime.tryParse(map['timestamp'] as String? ?? '') ??
-          DateTime.now(),
+      timestamp: timestamp,
       stageId: map['stageId'] as String?,
       scope: map['scope'] is String
           ? AiKnowledgeScope.fromCode(
@@ -675,6 +679,11 @@ class AiRunCheckpoint {
     final List<AiRunEvent> events =
         (map['events'] as List? ?? const <dynamic>[])
             .whereType<Map>()
+            .where(
+              (Map value) =>
+                  DateTime.tryParse(value['timestamp'] as String? ?? '') !=
+                  null,
+            )
             .map(
               (Map value) =>
                   AiRunEvent.fromMap(Map<String, dynamic>.from(value)),

@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
+import '../../features/assistant/models/ai_model_policy.dart';
 import '../../core/localization/app_language.dart';
 import '../../features/library/models/asset_source_config.dart';
 import '../../core/theme/color_scheme_option.dart';
@@ -50,6 +51,9 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   late final TextEditingController _webDavUsername;
   late final TextEditingController _webDavPassword;
   late String _aiProviderOptionId;
+  late AiReasoningEffort _aiReasoningEffort;
+  late AiResponseSpeed _aiResponseSpeed;
+  DesktopAiCheckStep? _aiCheckStep;
   bool _saving = false;
   bool _savingAi = false;
   bool _checkingSources = false;
@@ -76,6 +80,8 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     _webDavUsername = TextEditingController(text: webDav.username);
     _webDavPassword = TextEditingController(text: webDav.password);
     _aiProviderOptionId = _providerOptionId(config);
+    _aiReasoningEffort = config.reasoningEffort;
+    _aiResponseSpeed = config.responseSpeed;
   }
 
   @override
@@ -213,6 +219,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     if (_savingAi) return;
     setState(() {
       _savingAi = true;
+      _aiCheckStep = DesktopAiCheckStep.saving;
       _aiFeedback = null;
       _aiFeedbackSucceeded = null;
     });
@@ -224,7 +231,12 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
               model: _aiModel.text,
               apiKey: _aiApiKey.text,
               baseUrl: _aiBaseUrl.text,
+              reasoningEffort: _aiReasoningEffort,
+              responseSpeed: _aiResponseSpeed,
             ),
+            onProgress: (DesktopAiCheckStep step) {
+              if (mounted) setState(() => _aiCheckStep = step);
+            },
           );
       if (!mounted) return;
       _aiModel.text = result.config.model;
@@ -249,7 +261,12 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
         _aiFeedbackSucceeded = false;
       });
     } finally {
-      if (mounted) setState(() => _savingAi = false);
+      if (mounted) {
+        setState(() {
+          _savingAi = false;
+          _aiCheckStep = null;
+        });
+      }
     }
   }
 
@@ -319,6 +336,9 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       _aiModel.text = option.config.model;
       _aiApiKey.text = option.isNewCustom ? '' : option.config.apiKey;
       _aiBaseUrl.text = option.isNewCustom ? '' : option.config.baseUrl;
+      _aiReasoningEffort = option.config.reasoningEffort;
+      _aiResponseSpeed = option.config.responseSpeed;
+      _aiCheckStep = null;
       _aiFeedback = null;
       _aiFeedbackSucceeded = null;
     });
@@ -326,21 +346,26 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   }
 
   void _invalidateAiDiscovery(String _) {
+    setState(() {
+      if (_aiModel.text.isNotEmpty) {
+        _aiModel.clear();
+        _aiReasoningEffort = AiReasoningEffort.automatic;
+      }
+      _aiFeedback = null;
+      _aiFeedbackSucceeded = null;
+    });
     widget.controller.invalidateAiModels();
-    if (_aiModel.text.isNotEmpty) {
-      _aiModel.clear();
-    }
-    if (_aiFeedback != null || _aiFeedbackSucceeded != null) {
-      setState(() {
-        _aiFeedback = null;
-        _aiFeedbackSucceeded = null;
-      });
-    }
   }
 
   void _selectAiModel(String? model) {
     setState(() {
       _aiModel.text = model ?? '';
+      final List<AiReasoningEffort>? supported = AiModelPolicy.reasoningEfforts(
+        _aiModel.text,
+      );
+      if (supported != null && !supported.contains(_aiReasoningEffort)) {
+        _aiReasoningEffort = AiReasoningEffort.automatic;
+      }
       _aiFeedback = null;
       _aiFeedbackSucceeded = null;
     });
@@ -374,11 +399,24 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           baseUrlController: _aiBaseUrl,
           showApiKey: _showApiKey,
           saving: _savingAi,
+          checkStep: _aiCheckStep,
+          reasoningEffort: _aiReasoningEffort,
+          responseSpeed: _aiResponseSpeed,
           feedback: _aiFeedback,
           feedbackSucceeded: _aiFeedbackSucceeded,
           onProviderChanged: _selectAiProvider,
           onAiFieldChanged: _invalidateAiDiscovery,
           onModelChanged: _selectAiModel,
+          onReasoningChanged: (AiReasoningEffort value) => setState(() {
+            _aiReasoningEffort = value;
+            _aiFeedback = null;
+            _aiFeedbackSucceeded = null;
+          }),
+          onSpeedChanged: (AiResponseSpeed value) => setState(() {
+            _aiResponseSpeed = value;
+            _aiFeedback = null;
+            _aiFeedbackSucceeded = null;
+          }),
           onToggleApiKey: () => setState(() => _showApiKey = !_showApiKey),
           onSaveAndCheck: () => unawaited(_saveAndCheckAi()),
         ),
@@ -388,7 +426,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           onSelectTheme: (ColorSchemeOption scheme) =>
               unawaited(_save(() => widget.controller.setColorScheme(scheme))),
         ),
-        _NotificationsCard(copy: widget.controller.copy),
         _SyncBackupCard(
           controller: widget.controller,
           settingsController: widget.webDavSettingsController,
@@ -495,46 +532,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                     ),
                   ),
                 ],
-                SizedBox(height: metrics.px(14)),
-                Row(
-                  children: <Widget>[
-                    OutlinedButton.icon(
-                      key: const ValueKey<String>(
-                        'desktop-settings-restore-defaults',
-                      ),
-                      onPressed: null,
-                      icon: const Icon(Icons.restart_alt_rounded),
-                      label: Text(
-                        widget.controller.copy.localized(
-                          '恢复默认设置',
-                          'Restore defaults',
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: Size(0, metrics.px(40)),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: metrics.px(14),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            metrics.radius(9),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      widget.controller.copy.localized(
-                        '大多数设置会自动保存',
-                        'Most settings save automatically',
-                      ),
-                      style: TextStyle(
-                        fontSize: metrics.font(12),
-                        color: DesktopColors.secondaryText,
-                      ),
-                    ),
-                  ],
-                ),
               ],
             );
           },
@@ -658,96 +655,6 @@ class _SettingSwitchRow extends StatelessWidget {
   );
 }
 
-class _UnavailableSettingRow extends StatelessWidget {
-  const _UnavailableSettingRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.unavailableLabel,
-    this.compact = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final String unavailableLabel;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    enabled: false,
-    child: Opacity(
-      opacity: 0.72,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: _px(context, compact ? 2 : 8)),
-        child: Row(
-          children: <Widget>[
-            Icon(icon, size: _px(context, 20), color: DesktopColors.brown),
-            SizedBox(width: _px(context, 10)),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: _font(context, 13),
-                      fontWeight: FontWeight.w600,
-                      color: DesktopColors.text,
-                    ),
-                  ),
-                  SizedBox(height: _px(context, 2)),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: _font(context, 11),
-                      height: 1.25,
-                      color: DesktopColors.secondaryText,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(width: _px(context, 8)),
-            _UnavailableLabel(label: unavailableLabel),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _UnavailableLabel extends StatelessWidget {
-  const _UnavailableLabel({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    label,
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-    style: TextStyle(
-      fontSize: _font(context, 11),
-      color: const Color(0xFF9B928A),
-    ),
-  );
-}
-
-class _SettingsDivider extends StatelessWidget {
-  const _SettingsDivider({this.height = 8});
-
-  final double height;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.symmetric(vertical: height / 2),
-    child: const Divider(height: 1, color: Color(0x16A76D48)),
-  );
-}
-
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.label, required this.color});
 
@@ -777,53 +684,76 @@ class _StatusPill extends StatelessWidget {
   );
 }
 
-class _DisabledButton extends StatelessWidget {
-  const _DisabledButton({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.unavailableMessage,
-  });
-
-  final String label;
-  final IconData icon;
-  final String unavailableMessage;
-
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: unavailableMessage,
-    child: OutlinedButton.icon(
-      onPressed: null,
-      icon: Icon(icon, size: _px(context, 15)),
-      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      style: OutlinedButton.styleFrom(
-        minimumSize: Size(0, _px(context, 35)),
-        padding: EdgeInsets.symmetric(horizontal: _px(context, 5)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_px(context, 8)),
-        ),
-      ),
-    ),
-  );
-}
-
 InputDecoration _fieldDecoration(BuildContext context) => InputDecoration(
   isDense: true,
   contentPadding: EdgeInsets.symmetric(
     horizontal: _px(context, 10),
     vertical: _px(context, 10),
   ),
-  filled: true,
-  fillColor: DesktopColors.soft,
-  enabledBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(_px(context, 8)),
-    borderSide: const BorderSide(color: Color(0x10A76D48)),
-  ),
-  focusedBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(_px(context, 8)),
-    borderSide: const BorderSide(color: DesktopColors.orange, width: 1.2),
-  ),
 );
+
+ThemeData _dropdownTheme(BuildContext context) =>
+    Theme.of(context).copyWith(focusColor: Colors.transparent);
+
+Widget _dropdownOption(
+  BuildContext context,
+  String label, {
+  required bool selected,
+}) => _DesktopDropdownOption(
+  label: label,
+  selected: selected,
+  metrics: DesktopMetricsScope.of(context),
+);
+
+class _DesktopDropdownOption extends StatefulWidget {
+  const _DesktopDropdownOption({
+    required this.label,
+    required this.selected,
+    required this.metrics,
+  });
+
+  final String label;
+  final bool selected;
+  final DesktopMetrics metrics;
+
+  @override
+  State<_DesktopDropdownOption> createState() => _DesktopDropdownOptionState();
+}
+
+class _DesktopDropdownOptionState extends State<_DesktopDropdownOption> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool focused = Focus.maybeOf(context)?.hasFocus ?? false;
+    final metrics = widget.metrics;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        height: metrics.px(40),
+        alignment: Alignment.centerLeft,
+        margin: EdgeInsets.symmetric(
+          horizontal: metrics.px(4),
+          vertical: metrics.px(3),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: metrics.px(9)),
+        decoration: BoxDecoration(
+          color: widget.selected
+              ? const Color(0xFFFFE8DF)
+              : focused || _hovered
+              ? DesktopColors.soft
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(metrics.px(8)),
+        ),
+        child: Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
+}
 
 ButtonStyle _settingsButtonStyle(BuildContext context) =>
     OutlinedButton.styleFrom(

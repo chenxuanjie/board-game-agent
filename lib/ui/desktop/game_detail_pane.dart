@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_metadata_text.dart';
 import '../../features/games/services/related_game_recommender.dart';
 import '../../app/state/app_controller.dart';
 import 'desktop_resolved_image.dart';
@@ -40,7 +41,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
   int _galleryIndex = 0;
 
-  static const _tabs = ['游戏介绍', '规则摘要', '玩家评价', '讨论区'];
+  static const _tabs = ['游戏介绍', '规则摘要'];
 
   @override
   void didUpdateWidget(covariant DesktopGameDetailPane oldWidget) {
@@ -318,12 +319,12 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                             children: [
                               _HeroMetric(
                                 Icons.group_rounded,
-                                value(game.playerCount),
+                                GameMetadataText.players(game.playerCount),
                                 '推荐人数',
                               ),
                               _HeroMetric(
                                 Icons.schedule_rounded,
-                                value(game.playTime),
+                                GameMetadataText.playTime(game.playTime),
                                 '游戏时长',
                               ),
                               _HeroMetric(
@@ -507,7 +508,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   Widget _tabBody() => switch (_tab) {
     0 => _introduction(),
     1 => _rules(),
-    _ => _UnavailableTab(title: _tabs[_tab]),
+    _ => const SizedBox.shrink(),
   };
 
   Widget _relatedSection() => Container(
@@ -887,34 +888,6 @@ class _Highlights extends StatelessWidget {
       ),
     );
   }
-}
-
-class _UnavailableTab extends StatelessWidget {
-  const _UnavailableTab({required this.title});
-  final String title;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 150,
-    child: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.hourglass_empty_rounded,
-            color: DesktopColors.orange,
-            size: 28,
-          ),
-          const SizedBox(height: 8),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          const Text(
-            '未开放',
-            style: TextStyle(color: DesktopColors.secondaryText),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 class _HeroMetric extends StatelessWidget {

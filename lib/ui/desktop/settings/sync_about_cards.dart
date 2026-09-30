@@ -207,56 +207,6 @@ class _SyncBackupCard extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(height: _px(context, 5)),
-          _SettingsDivider(height: _px(context, 9)),
-          _UnavailableSettingRow(
-            icon: Icons.sync_rounded,
-            title: copy.localized('个人数据自动同步', 'Automatic Personal Data Sync'),
-            subtitle: copy.localized(
-              '当前版本不包含个人数据同步',
-              'Personal data sync is not included in this version',
-            ),
-            unavailableLabel: copy.localized('暂不可用', 'Unavailable'),
-            compact: true,
-          ),
-          SizedBox(height: _px(context, 6)),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _DisabledButton(
-                  label: copy.localized('立即同步', 'Sync now'),
-                  icon: Icons.sync_rounded,
-                  unavailableMessage: copy.localized(
-                    '当前版本不可用',
-                    'Unavailable in this version',
-                  ),
-                  key: const ValueKey<String>('desktop-settings-sync-disabled'),
-                ),
-              ),
-              SizedBox(width: _px(context, 8)),
-              Expanded(
-                child: _DisabledButton(
-                  label: copy.localized('导入备份', 'Import backup'),
-                  icon: Icons.file_download_outlined,
-                  unavailableMessage: copy.localized(
-                    '当前版本不可用',
-                    'Unavailable in this version',
-                  ),
-                ),
-              ),
-              SizedBox(width: _px(context, 8)),
-              Expanded(
-                child: _DisabledButton(
-                  label: copy.localized('导出备份', 'Export backup'),
-                  icon: Icons.file_upload_outlined,
-                  unavailableMessage: copy.localized(
-                    '当前版本不可用',
-                    'Unavailable in this version',
-                  ),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

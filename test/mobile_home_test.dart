@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -21,17 +22,92 @@ import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_search_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
 import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
+import 'package:board_game_agent/ui/mobile/settings_screen.dart';
+import 'package:board_game_agent/ui/mobile/game_cover.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/core/theme/color_scheme_option.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('mobile V4 home fits phone sizes and searches real games', (
-    tester,
-  ) async {
+  testWidgets('mobile home and settings fit phone sizes', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    final controller = _controller();
+    final controller = _controller(ttsService: _UnavailableTtsService());
     addTearDown(controller.dispose);
     await controller.reloadGames();
+    final squareGame = controller.games.firstWhere(
+      (game) => game.id == 'exploding-kittens',
+    );
+    final portraitGame = controller.games.firstWhere(
+      (game) => game.id == 'castles_of_burgundy_2019',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        key: UniqueKey(),
+        home: Scaffold(
+          body: SizedBox(
+            height: 154,
+            child: Row(
+              children: [
+                ConstrainedBox(
+                  key: const ValueKey('square-cover'),
+                  constraints: const BoxConstraints(
+                    maxWidth: 124,
+                    maxHeight: 124,
+                  ),
+                  child: MobileGameCover(
+                    controller: controller,
+                    game: squareGame,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                ConstrainedBox(
+                  key: const ValueKey('portrait-cover'),
+                  constraints: const BoxConstraints(
+                    maxWidth: 124,
+                    maxHeight: 124,
+                  ),
+                  child: MobileGameCover(
+                    controller: controller,
+                    game: portraitGame,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(
+      () => Future.wait([
+        precacheImage(
+          AssetImage(squareGame.coverAssetPath),
+          tester.element(find.byKey(const ValueKey('square-cover'))),
+        ),
+        precacheImage(
+          AssetImage(portraitGame.coverAssetPath),
+          tester.element(find.byKey(const ValueKey('portrait-cover'))),
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+    final squareSize = tester.getSize(
+      find.descendant(
+        of: find.byKey(const ValueKey('square-cover')),
+        matching: find.byType(Image),
+      ),
+    );
+    final portraitSize = tester.getSize(
+      find.descendant(
+        of: find.byKey(const ValueKey('portrait-cover')),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(squareSize.width, closeTo(124, 1));
+    expect(squareSize.height, closeTo(124, 1));
+    expect(portraitSize.width, closeTo(124 * 3 / 4, 1));
+    expect(portraitSize.height, closeTo(124, 1));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final size in [const Size(390, 844), const Size(320, 640)]) {
       await tester.binding.setSurfaceSize(size);
@@ -224,11 +300,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     }
+    var aboutOpened = false;
     await tester.binding.setSurfaceSize(const Size(720, 844));
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.buildTheme(controller.palette),
-        home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        home: HomeScreen(
+          controller: controller,
+          onOpenAbout: () => aboutOpened = true,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -270,17 +350,89 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
+    await tester.pumpAndSettle();
+    final settingsEntry = find.byKey(const ValueKey('mobile-mine-service-1'));
+    await tester.scrollUntilVisible(
+      settingsEntry,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('mobile-mine-scroll')),
+      const Offset(0, -180),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(settingsEntry);
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSettingsScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile-settings-screen')),
+      findsOneWidget,
+    );
+    expect(find.byType(BottomSheet), findsNothing);
+    await tester.binding.setSurfaceSize(const Size(720, 1080));
+    await tester.pumpAndSettle();
+    final appBarBottom = tester.getBottomLeft(find.byType(AppBar)).dy;
+    final languageTop = tester
+        .getTopLeft(find.byKey(const ValueKey('mobile-settings-language')))
+        .dy;
+    expect(languageTop - appBarBottom, lessThan(100));
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    await tester.pumpAndSettle();
+
+    final languageChanged = Completer<void>();
+    void onLanguageChanged() {
+      if (controller.language == AppLanguage.en &&
+          !languageChanged.isCompleted) {
+        languageChanged.complete();
+      }
+    }
+
+    controller.addListener(onLanguageChanged);
+    await tester.tap(find.text('English'));
+    await tester.runAsync(
+      () => languageChanged.future.timeout(const Duration(seconds: 5)),
+    );
+    controller.removeListener(onLanguageChanged);
+    await tester.pumpAndSettle();
+    expect(controller.language, AppLanguage.en);
+    expect(find.byType(MobileSettingsScreen), findsOneWidget);
+    await tester.tap(find.text('Midnight Table'));
+    await tester.pumpAndSettle();
+    expect(controller.colorScheme, ColorSchemeOption.classic);
+
+    final aiSection = find.byKey(const ValueKey('mobile-settings-ai'));
+    await tester.ensureVisible(aiSection);
+    await tester.tap(aiSection);
+    await tester.pumpAndSettle();
+    expect(find.text(controller.copy.aiApiPresetLabel), findsOneWidget);
+
+    final aboutEntry = find.byKey(const ValueKey('mobile-settings-about'));
+    await tester.ensureVisible(aboutEntry);
+    await tester.tap(aboutEntry);
+    expect(aboutOpened, isTrue);
+    expect(tester.takeException(), isNull);
   });
 }
 
-AppController _controller() => AppController(
+AppController _controller({TtsService? ttsService}) => AppController(
   preferencesService: PreferencesService(),
   aiService: _UnusedAiService(),
   gameManifestService: GameManifestService(),
   remoteAssetService: _NoNetworkAssetService(),
   speechService: SpeechService(),
-  ttsService: TtsService(),
+  ttsService: ttsService ?? TtsService(),
 );
+
+class _UnavailableTtsService extends TtsService {
+  @override
+  bool get isAvailable => false;
+}
 
 class _UnusedAiService extends Fake implements AiService {}
 

@@ -28,28 +28,44 @@ class _GeneralCard extends StatelessWidget {
           SizedBox(height: _px(context, 5)),
           SizedBox(
             height: _px(context, 42),
-            child: DropdownButtonFormField<AppLanguage>(
-              key: const ValueKey<String>('desktop-settings-language'),
-              initialValue: controller.language,
-              isExpanded: true,
-              decoration: _fieldDecoration(context),
-              style: TextStyle(
-                fontSize: _font(context, 13),
-                color: DesktopColors.text,
-              ),
-              items: AppLanguage.values
-                  .map(
-                    (AppLanguage language) => DropdownMenuItem<AppLanguage>(
-                      value: language,
+            child: Theme(
+              data: _dropdownTheme(context),
+              child: DropdownButtonFormField<AppLanguage>(
+                key: const ValueKey<String>('desktop-settings-language'),
+                initialValue: controller.language,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(_px(context, 12)),
+                dropdownColor: DesktopColors.card,
+                decoration: _fieldDecoration(context),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontSize: _font(context, 13),
+                  color: DesktopColors.text,
+                ),
+                items: AppLanguage.values
+                    .map(
+                      (AppLanguage language) => DropdownMenuItem<AppLanguage>(
+                        value: language,
+                        child: _dropdownOption(
+                          context,
+                          language.label,
+                          selected: language == controller.language,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                selectedItemBuilder: (context) => <Widget>[
+                  for (final language in AppLanguage.values)
+                    Align(
+                      alignment: Alignment.centerLeft,
                       child: Text(language.label),
                     ),
-                  )
-                  .toList(growable: false),
-              onChanged: saving
-                  ? null
-                  : (value) {
-                      if (value != null) onLanguage(value);
-                    },
+                ],
+                onChanged: saving
+                    ? null
+                    : (value) {
+                        if (value != null) onLanguage(value);
+                      },
+              ),
             ),
           ),
           SizedBox(height: _px(context, 7)),
@@ -123,78 +139,6 @@ class _AppearanceCard extends StatelessWidget {
                 ),
               ],
             ],
-          ),
-          SizedBox(height: _px(context, 12)),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _FieldLabel(
-                  label: copy.localized('主题色', 'Accent color'),
-                ),
-              ),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _UnavailableLabel(
-                    label: copy.localized(
-                      '当前版本不可调整',
-                      'Not adjustable in this version',
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: _px(context, 6)),
-          _DisabledAccentColors(copy: copy),
-          SizedBox(height: _px(context, 8)),
-          Row(
-            children: <Widget>[
-              _FieldLabel(label: copy.localized('界面缩放', 'Interface scale')),
-              SizedBox(width: _px(context, 8)),
-              Text(
-                '100%',
-                style: TextStyle(
-                  fontSize: _font(context, 12),
-                  fontWeight: FontWeight.w600,
-                  color: DesktopColors.secondaryText,
-                ),
-              ),
-              SizedBox(width: _px(context, 8)),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _UnavailableLabel(
-                    label: copy.localized(
-                      '当前版本不可调整',
-                      'Not adjustable in this version',
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(
-            height: _px(context, 24),
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                disabledActiveTrackColor: const Color(0xFFDCD5CD),
-                disabledInactiveTrackColor: const Color(0xFFEAE4DD),
-                disabledThumbColor: const Color(0xFFCFC7BE),
-                trackHeight: _px(context, 3),
-                thumbShape: RoundSliderThumbShape(
-                  enabledThumbRadius: _px(context, 6),
-                  disabledThumbRadius: _px(context, 6),
-                ),
-                overlayShape: SliderComponentShape.noOverlay,
-              ),
-              child: const Slider(
-                value: 1,
-                min: 0.8,
-                max: 1.2,
-                onChanged: null,
-              ),
-            ),
           ),
         ],
       ),
@@ -356,101 +300,6 @@ class _ThemeMiniature extends StatelessWidget {
           ),
         ],
       ),
-    ),
-  );
-}
-
-class _DisabledAccentColors extends StatelessWidget {
-  const _DisabledAccentColors({required this.copy});
-
-  final AppCopy copy;
-
-  static const List<Color> _colors = <Color>[
-    Color(0xFFFF6846),
-    Color(0xFFFFB427),
-    Color(0xFF46BE72),
-    Color(0xFF3489E8),
-    Color(0xFFA555D8),
-    Color(0xFFEF4A7A),
-  ];
-
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: copy.localized('当前版本不可调整', 'Not adjustable in this version'),
-    child: Semantics(
-      enabled: false,
-      label: copy.localized(
-        '主题色，当前版本不可调整',
-        'Accent color, not adjustable in this version',
-      ),
-      child: IgnorePointer(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.basic,
-          child: Opacity(
-            opacity: 0.38,
-            child: Row(
-              children: <Widget>[
-                for (
-                  int index = 0;
-                  index < _colors.length;
-                  index++
-                ) ...<Widget>[
-                  if (index > 0) SizedBox(width: _px(context, 9)),
-                  Container(
-                    key: index == 0
-                        ? const ValueKey<String>(
-                            'desktop-settings-disabled-accent',
-                          )
-                        : null,
-                    width: _px(context, 19),
-                    height: _px(context, 19),
-                    decoration: BoxDecoration(
-                      color: _colors[index],
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-class _NotificationsCard extends StatelessWidget {
-  const _NotificationsCard({required this.copy});
-
-  final AppCopy copy;
-
-  @override
-  Widget build(BuildContext context) => _SettingsCard(
-    icon: Icons.notifications_none_rounded,
-    title: copy.localized('通知设置', 'Notification Settings'),
-    child: Column(
-      children: <Widget>[
-        _UnavailableSettingRow(
-          icon: Icons.new_releases_outlined,
-          title: copy.localized('游戏上新通知', 'New Game Notifications'),
-          subtitle: copy.localized(
-            '关注的桌游有新内容时提醒',
-            'Notify me when followed games get new content',
-          ),
-          unavailableLabel: copy.localized('暂不可用', 'Unavailable'),
-        ),
-        const _SettingsDivider(),
-        _UnavailableSettingRow(
-          icon: Icons.article_outlined,
-          title: copy.localized('桌游资讯推送', 'Board Game News'),
-          subtitle: copy.localized(
-            '精选桌游文章、测评和资讯',
-            'Curated articles, reviews, and news',
-          ),
-          unavailableLabel: copy.localized('暂不可用', 'Unavailable'),
-        ),
-      ],
     ),
   );
 }

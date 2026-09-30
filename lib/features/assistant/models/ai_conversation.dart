@@ -29,9 +29,9 @@ class AiConversation {
 
   /// Whether the user explicitly entered this assistant context.
   ///
-  /// New sessions are marked opened immediately, even when they only contain
-  /// the automatic greeting. Older stores without this field derive the value
-  /// from the presence of a user message during migration.
+  /// New sessions are marked opened immediately, including empty sessions.
+  /// Older stores without this field derive the value from the presence of a
+  /// user message during migration.
   final bool opened;
 
   /// Latest local Run checkpoint, restored for activity continuity.
@@ -48,6 +48,22 @@ class AiConversation {
   /// Legacy sessions with no persisted opened marker are treated as
   /// unstarted by the restore migration. New sessions are opened on entry.
   bool get isUnstarted => !opened;
+
+  /// Removes only the greeting IDs created by older session initialization.
+  /// Real assistant replies use a different ID suffix and are preserved.
+  bool discardLegacyBootstrapGreeting() {
+    if (messages.isEmpty) return false;
+    final ChatMessage first = messages.first;
+    if (first.role != ChatRole.assistant || first.source != null) return false;
+    final String? suffix = isGlobal ? 'global' : gameId;
+    final bool knownId =
+        RegExp(r'^\d+$').hasMatch(first.id) ||
+        (suffix != null &&
+            RegExp('^\\d+-${RegExp.escape(suffix)}\$').hasMatch(first.id));
+    if (!knownId) return false;
+    messages.removeAt(0);
+    return true;
+  }
 
   AiConversation copyWith({
     String? id,
@@ -97,12 +113,31 @@ class AiConversation {
     final List<ChatMessage> messages =
         (map['messages'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<Map<String, dynamic>>()
+            .where(
+              (message) =>
+                  DateTime.tryParse(message['timestamp'] as String? ?? '') !=
+                  null,
+            )
             .map(ChatMessage.fromMap)
             .toList();
     final bool opened =
         map['opened'] as bool? ??
         messages.any((ChatMessage message) => message.role == ChatRole.user);
-    final DateTime now = DateTime.now();
+    final DateTime? storedCreatedAt = DateTime.tryParse(
+      map['createdAt'] as String? ?? '',
+    );
+    final DateTime? storedUpdatedAt = DateTime.tryParse(
+      map['updatedAt'] as String? ?? '',
+    );
+    final DateTime? createdAt =
+        storedCreatedAt ??
+        (messages.isNotEmpty ? messages.first.timestamp : storedUpdatedAt);
+    final DateTime? updatedAt =
+        storedUpdatedAt ??
+        (messages.isNotEmpty ? messages.last.timestamp : storedCreatedAt);
+    if (createdAt == null || updatedAt == null) {
+      throw const FormatException('Invalid conversation timestamps');
+    }
     return AiConversation(
       id: id,
       title: (map['title'] as String?)?.trim().isNotEmpty == true
@@ -116,8 +151,8 @@ class AiConversation {
               Map<String, dynamic>.from(map['lastRun'] as Map),
             )
           : null,
-      createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? now,
-      updatedAt: DateTime.tryParse(map['updatedAt'] as String? ?? '') ?? now,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
       messages: messages,
     );
   }

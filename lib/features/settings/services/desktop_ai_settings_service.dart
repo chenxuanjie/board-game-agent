@@ -9,20 +9,28 @@ class DesktopAiSettingsDraft {
     required this.model,
     required this.apiKey,
     required this.baseUrl,
+    this.reasoningEffort = AiReasoningEffort.automatic,
+    this.responseSpeed = AiResponseSpeed.automatic,
   });
 
   final String provider;
   final String model;
   final String apiKey;
   final String baseUrl;
+  final AiReasoningEffort reasoningEffort;
+  final AiResponseSpeed responseSpeed;
 
   AiApiConfig mergeWith(AiApiConfig current) => current.copyWith(
     name: provider.trim(),
     model: model.trim(),
     apiKey: apiKey.trim(),
     baseUrl: baseUrl.trim(),
+    reasoningEffort: reasoningEffort,
+    responseSpeed: responseSpeed,
   );
 }
+
+enum DesktopAiCheckStep { saving, loadingModels, probingChat }
 
 class DesktopAiSettingsResult {
   const DesktopAiSettingsResult({
@@ -52,8 +60,9 @@ class DesktopAiSettingsService {
   final AppController controller;
 
   Future<DesktopAiSettingsResult> saveAndCheck(
-    DesktopAiSettingsDraft draft,
-  ) async {
+    DesktopAiSettingsDraft draft, {
+    void Function(DesktopAiCheckStep step)? onProgress,
+  }) async {
     final AppCopy copy = controller.copy;
     final String provider = draft.provider.trim();
     final String baseUrl = draft.baseUrl.trim();
@@ -83,8 +92,14 @@ class DesktopAiSettingsService {
     }
 
     final AiApiConfig config = draft.mergeWith(controller.aiApiConfig);
+    onProgress?.call(DesktopAiCheckStep.saving);
     await controller.saveAiApiConfig(config);
-    await controller.refreshAiServiceStatus();
+    await controller.refreshAiServiceStatus(
+      onStage: (AiServiceCheckStage stage) => onProgress?.call(switch (stage) {
+        AiServiceCheckStage.models => DesktopAiCheckStep.loadingModels,
+        AiServiceCheckStage.chatProbe => DesktopAiCheckStep.probingChat,
+      }),
+    );
 
     final bool connected =
         controller.aiConnectivityStatus.state == ConnectivityState.success;
@@ -95,8 +110,8 @@ class DesktopAiSettingsService {
     final String message;
     if (connected) {
       message = copy.localized(
-        '配置已保存，连接正常，已获取 $modelCount 个模型。',
-        'Saved and connected. $modelCount models found.',
+        '已保存；获取 $modelCount 个模型，Chat Completions 探测通过。推理强度与 Fast 尚未验证。',
+        'Saved; $modelCount models found and Chat Completions probe passed. Effort and Fast are unverified.',
       );
     } else if (controller.aiConnectivityStatus.state ==
             ConnectivityState.warning &&
@@ -106,7 +121,10 @@ class DesktopAiSettingsService {
         'Saved. $modelCount models loaded from /models; select a model.',
       );
     } else {
-      message = controller.aiConnectivityStatus.message;
+      message = copy.localized(
+        '配置已保存；${controller.aiConnectivityStatus.message}',
+        'Configuration saved; ${controller.aiConnectivityStatus.message}',
+      );
     }
 
     return DesktopAiSettingsResult(

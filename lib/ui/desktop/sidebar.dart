@@ -74,8 +74,12 @@ class DesktopSidebar extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  height: metrics.px(_headerHeight),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: metrics.px(
+                      compact || copy.isChinese ? _headerHeight : 216,
+                    ),
+                  ),
                   child: compact
                       ? Align(
                           alignment: Alignment.topCenter,
@@ -110,7 +114,9 @@ class DesktopSidebar extends StatelessWidget {
                               child: Text(
                                 copy.localized('桌游助手', 'Board Game Agent'),
                                 style: TextStyle(
-                                  fontSize: metrics.font(25),
+                                  fontSize: metrics.font(
+                                    copy.isChinese ? 25 : 19,
+                                  ),
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: metrics.px(-0.5),
                                 ),
@@ -129,7 +135,9 @@ class DesktopSidebar extends StatelessWidget {
                                 ),
                                 style: TextStyle(
                                   color: DesktopColors.secondaryText,
-                                  fontSize: metrics.font(13),
+                                  fontSize: metrics.font(
+                                    copy.isChinese ? 13 : 11,
+                                  ),
                                 ),
                               ),
                             ),
@@ -227,12 +235,15 @@ class _NavTileState extends State<_NavTile> {
               ),
               if (!widget.compact) ...[
                 SizedBox(width: metrics.px(10)),
-                Text(
-                  widget.label,
-                  style: TextStyle(
-                    fontSize: metrics.font(17),
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                    color: active ? Colors.white : const Color(0xFF4B4038),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    maxLines: 2,
+                    style: TextStyle(
+                      fontSize: metrics.font(17),
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: active ? Colors.white : const Color(0xFF4B4038),
+                    ),
                   ),
                 ),
               ],

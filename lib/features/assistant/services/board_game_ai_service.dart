@@ -4,6 +4,7 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/ai_api_config.dart';
+import '../models/ai_model_policy.dart';
 import '../models/ai_answer_mode.dart';
 import '../models/answer_source.dart';
 import '../../../core/localization/app_language.dart';
@@ -69,6 +70,7 @@ class BoardGameAiService implements AiService {
     required List<ChatMessage> conversationHistory,
     bool useCurrentGameKnowledge = false,
   }) async {
+    _resolveAllowedModel(config);
     if (_responsesEnabled(config)) {
       return _responsesWorkflow!.generateReply(
         prompt: prompt,
@@ -182,6 +184,7 @@ class BoardGameAiService implements AiService {
     bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {
+    _resolveAllowedModel(config);
     if (_responsesEnabled(config)) {
       yield* _responsesWorkflow!.streamReply(
         prompt: prompt,
@@ -339,7 +342,25 @@ class BoardGameAiService implements AiService {
 
   @override
   Future<AiHealthResult> checkConnection(AiApiConfig config) {
-    return _aiClient.check(_endpointFor(config));
+    _resolveAllowedModel(config);
+    return _aiClient
+        .check(
+          _endpointFor(
+            config,
+            timeout: const Duration(seconds: 20),
+            connectTimeout: const Duration(seconds: 8),
+            retryPolicy: const AiRetryPolicy(maxRetries: 0),
+          ),
+        )
+        .timeout(const Duration(seconds: 20));
+  }
+
+  AiModelResolution _resolveAllowedModel(AiApiConfig config) {
+    final AiModelResolution resolved = AiModelPolicy.resolve(config);
+    if (!resolved.isUsable) {
+      throw StateError('AI model selection is not usable: ${resolved.issue}');
+    }
+    return resolved;
   }
 
   @override
@@ -652,7 +673,12 @@ class BoardGameAiService implements AiService {
     }
   }
 
-  AiEndpointConfig _endpointFor(AiApiConfig config) {
+  AiEndpointConfig _endpointFor(
+    AiApiConfig config, {
+    Duration timeout = const Duration(seconds: 60),
+    Duration connectTimeout = const Duration(seconds: 20),
+    AiRetryPolicy retryPolicy = const AiRetryPolicy(),
+  }) {
     return AiEndpointConfig(
       name: config.name,
       baseUrl: config.baseUrl,
@@ -660,6 +686,9 @@ class BoardGameAiService implements AiService {
       model: config.model,
       apiKeyHeader: 'Authorization',
       chatPath: '/chat/completions',
+      timeout: timeout,
+      connectTimeout: connectTimeout,
+      retryPolicy: retryPolicy,
     );
   }
 
@@ -671,14 +700,15 @@ class BoardGameAiService implements AiService {
     required double frequencyPenalty,
     required double presencePenalty,
   }) {
+    final AiModelResolution resolved = _resolveAllowedModel(config);
     return AiGenerationOptions(
       temperature: temperature,
       topP: topP,
       maxCompletionTokens: maxCompletionTokens,
       frequencyPenalty: frequencyPenalty,
       presencePenalty: presencePenalty,
-      reasoningEffort: config.reasoningEffort.requestValue,
-      serviceTier: config.responseSpeed.serviceTier,
+      reasoningEffort: resolved.reasoningEffort,
+      serviceTier: resolved.serviceTier,
     );
   }
 

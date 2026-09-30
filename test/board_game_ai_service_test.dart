@@ -19,6 +19,43 @@ import 'package:http/http.dart' as http;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('connection probe uses a bounded timeout without retries', () async {
+    final _FakeAiClient client = _FakeAiClient();
+    final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+    await service.checkConnection(
+      AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6-sol'),
+    );
+
+    expect(client.lastCheckEndpoint?.timeout, const Duration(seconds: 20));
+    expect(
+      client.lastCheckEndpoint?.connectTimeout,
+      const Duration(seconds: 8),
+    );
+    expect(client.lastCheckEndpoint?.retryPolicy.maxRetries, 0);
+  });
+
+  test('rejects an older model before any AI request', () async {
+    final _FakeAiClient client = _FakeAiClient(responses: const <AiResponse>[]);
+    final BoardGameAiService service = BoardGameAiService(aiClient: client);
+
+    await expectLater(
+      service.generateReply(
+        prompt: '你好',
+        language: AppLanguage.zhHans,
+        game: _gameInfo(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: true,
+        config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.5'),
+        assetSourceConfigs: const <AssetSourceConfig>[],
+        remoteAssetService: _FakeRemoteAssetService(),
+        conversationHistory: const <ChatMessage>[],
+      ),
+      throwsStateError,
+    );
+    expect(client.requestCount, 0);
+  });
+
   test(
     'knowledge-only mode returns unknown when knowledge pass says unknown',
     () async {
@@ -38,7 +75,7 @@ void main() {
         game: _gameInfo(),
         answerMode: AiAnswerMode.knowledgeOnly,
         useGlobalMode: false,
-        config: AiApiConfig.defaultOpenAi,
+        config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
         assetSourceConfigs: const <AssetSourceConfig>[],
         remoteAssetService: _FakeRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
@@ -70,7 +107,7 @@ void main() {
         game: _gameInfo(),
         answerMode: AiAnswerMode.knowledgeThenDirect,
         useGlobalMode: false,
-        config: AiApiConfig.defaultOpenAi,
+        config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
         assetSourceConfigs: const <AssetSourceConfig>[],
         remoteAssetService: _FakeRemoteAssetService(),
         conversationHistory: const <ChatMessage>[],
@@ -99,7 +136,7 @@ void main() {
         game: _gameInfo(),
         answerMode: AiAnswerMode.knowledgeThenDirect,
         useGlobalMode: true,
-        config: AiApiConfig.defaultOpenAi,
+        config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
         assetSourceConfigs: const <AssetSourceConfig>[],
         remoteAssetService: remote,
         conversationHistory: const <ChatMessage>[],
@@ -131,7 +168,7 @@ void main() {
       game: _gameInfo(),
       answerMode: AiAnswerMode.knowledgeThenDirect,
       useGlobalMode: true,
-      config: AiApiConfig.defaultOpenAi,
+      config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
       assetSourceConfigs: const <AssetSourceConfig>[],
       remoteAssetService: remote,
       conversationHistory: const <ChatMessage>[],
@@ -161,7 +198,7 @@ void main() {
       game: _gameInfo(),
       answerMode: AiAnswerMode.knowledgeOnly,
       useGlobalMode: false,
-      config: AiApiConfig.defaultOpenAi,
+      config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
       assetSourceConfigs: const <AssetSourceConfig>[],
       remoteAssetService: _FakeRemoteAssetService(),
       conversationHistory: const <ChatMessage>[],
@@ -193,7 +230,7 @@ void main() {
             game: _gameInfo(),
             answerMode: AiAnswerMode.knowledgeOnly,
             useGlobalMode: false,
-            config: AiApiConfig.defaultOpenAi,
+            config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
             assetSourceConfigs: const <AssetSourceConfig>[],
             remoteAssetService: _FakeRemoteAssetService(),
             conversationHistory: const <ChatMessage>[],
@@ -228,7 +265,7 @@ void main() {
             game: _gameInfo(),
             answerMode: AiAnswerMode.knowledgeThenDirect,
             useGlobalMode: false,
-            config: AiApiConfig.defaultOpenAi,
+            config: AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6'),
             assetSourceConfigs: const <AssetSourceConfig>[],
             remoteAssetService: _FakeRemoteAssetService(),
             conversationHistory: const <ChatMessage>[],
@@ -269,7 +306,7 @@ void main() {
         name: '自定义服务商',
         baseUrl: 'https://example.test/v1',
         apiKey: 'test-key',
-        model: 'test-model',
+        model: 'gpt-5.6',
         apiKeyHeader: 'Authorization',
       ),
       assetSourceConfigs: const <AssetSourceConfig>[],
@@ -334,6 +371,7 @@ class _FakeAiClient implements AiClient {
   final List<List<AiStreamEvent>> _streams;
   int requestCount = 0;
   int streamRequestCount = 0;
+  AiEndpointConfig? lastCheckEndpoint;
 
   @override
   Future<List<AiModel>> listModels(AiEndpointConfig endpoint) async {
@@ -351,6 +389,7 @@ class _FakeAiClient implements AiClient {
 
   @override
   Future<AiHealthResult> check(AiEndpointConfig endpoint) async {
+    lastCheckEndpoint = endpoint;
     return const AiHealthResult(
       success: true,
       message: 'ok',

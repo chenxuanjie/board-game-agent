@@ -1,6 +1,29 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  testWidgets('quick entries have centered icon and title without subtitles', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    for (final entry in <(String, String, IconData)>[
+      ('home-quick-entry-rules', '规则查询', Icons.menu_book_rounded),
+      ('home-quick-entry-ai', 'AI助手', Icons.lightbulb_rounded),
+    ]) {
+      final card = find.byKey(ValueKey<String>(entry.$1));
+      final title = find.descendant(of: card, matching: find.text(entry.$2));
+      final icon = find.descendant(of: card, matching: find.byIcon(entry.$3));
+      expect(title, findsOneWidget);
+      expect(icon, findsOneWidget);
+      expect(tester.widget<Text>(title).style?.fontSize, 14);
+      final groupCenter =
+          (tester.getRect(icon).left + tester.getRect(title).right) / 2;
+      expect(groupCenter, closeTo(tester.getRect(card).center.dx, 2));
+    }
+    expect(find.text('快速查规则'), findsNothing);
+    expect(find.text('桌游问题随时问'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('home rules query shortcut navigates to the shared library', (
     tester,
   ) async {
@@ -319,11 +342,11 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     ];
     expect(recommendationRects, hasLength(5));
     expect(recommendationRects.map((rect) => rect.top).toSet(), hasLength(1));
-    expect(recommendationRects.first.width, closeTo(140, 0.1));
-    expect(recommendationRects.first.height, closeTo(229, 0.1));
+    expect(recommendationRects.first.width, closeTo(175, 0.1));
+    expect(recommendationRects.first.height, closeTo(280, 0.1));
     expect(
       recommendationRects.first.width / recommendationRects.first.height,
-      closeTo(140 / 229, 0.001),
+      closeTo(175 / 280, 0.001),
     );
 
     final firstCard = find.byKey(
@@ -336,9 +359,9 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       matching: find.text(context.controller.dailyRecommendedGames.first.title),
     );
     final titleStyle = tester.widget<Text>(title).style!;
-    expect(titleStyle.fontSize, 15);
+    expect(titleStyle.fontSize, 14);
     expect(titleStyle.fontWeight, FontWeight.w700);
-    expect(titleStyle.height, 1.1);
+    expect(titleStyle.height, 1.12);
     final categoryTags = context
         .controller
         .dailyRecommendedGames
@@ -390,13 +413,77 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       ),
     );
     final rect = tester.getRect(card);
-    expect(rect.width / rect.height, closeTo(140 / 229, 0.001));
+    expect(rect.width / rect.height, closeTo(175 / 280, 0.001));
 
     final title = find.descendant(
       of: card,
       matching: find.text(context.controller.dailyRecommendedGames.first.title),
     );
-    expect(tester.widget<Text>(title).style!.fontSize, closeTo(16.2, 0.01));
+    expect(tester.widget<Text>(title).style!.fontSize, closeTo(15.12, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in <Size>[
+    const Size(720, 700),
+    const Size(1280, 800),
+    const Size(1920, 1080),
+  ]) {
+    testWidgets('recommendation facts share one line at $size', (tester) async {
+      await _mount(tester, context.controller, size);
+      final game = context.controller.dailyRecommendedGames.first;
+      final card = find.byKey(
+        ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+      );
+      final cardWidth = tester.getRect(card).width;
+      final players = find.descendant(
+        of: card,
+        matching: find.text(
+          cardWidth >= 230
+              ? GameMetadataText.players(game.playerCount)
+              : GameMetadataText.cardPlayers(game.playerCount),
+        ),
+      );
+      final duration = find.descendant(
+        of: card,
+        matching: find.text(GameMetadataText.cardPlayTime(game.playTime)),
+      );
+      expect(players, findsOneWidget);
+      expect(duration, findsOneWidget);
+      expect(
+        tester.getRect(duration).center.dy,
+        closeTo(tester.getRect(players).center.dy, 1),
+      );
+      expect(
+        tester.getRect(duration).left,
+        greaterThan(tester.getRect(players).right),
+      );
+      expect(
+        tester.getRect(duration).right,
+        lessThanOrEqualTo(tester.getRect(card).right),
+      );
+      expect(
+        tester.widget<Text>(duration).overflow,
+        isNot(TextOverflow.ellipsis),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('English recommendation cards keep full facts', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.runAsync(() => context.controller.setLanguage(AppLanguage.en));
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final game = context.controller.dailyRecommendedGames.first;
+    final card = find.byKey(
+      ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.text(GameMetadataText.cardPlayTime(game.playTime)),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -533,7 +620,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('home hero exposes three manually selectable carousel pages', (
+  testWidgets('home hero exposes three available carousel pages', (
     tester,
   ) async {
     await _mount(tester, context.controller, const Size(1280, 800));
@@ -560,6 +647,16 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       findsOneWidget,
     );
     expect(tester.getRect(frame), initialFrame);
+    expect(
+      tester
+          .widget<Image>(
+            find.byWidgetPredicate(
+              (widget) => widget is Image && widget.semanticLabel == '国庆桌游聚会清单',
+            ),
+          )
+          .image,
+      const AssetImage('assets/desktop/home/banner_gathering.png'),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-2')));
     await tester.pumpAndSettle();
     expect(
@@ -614,6 +711,11 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       expect(icon, findsOneWidget);
       expect(tester.getSize(icon), const Size(28, 28));
     }
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-dot-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('home-hero-page-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGamesPane), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -642,12 +744,12 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       expect(tester.takeException(), isNull);
 
       await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('detail-tab-2')),
+        find.byKey(const ValueKey<String>('detail-tab-1')),
       );
-      await tester.tap(find.byKey(const ValueKey<String>('detail-tab-2')));
+      await tester.tap(find.byKey(const ValueKey<String>('detail-tab-1')));
       await tester.pumpAndSettle();
-      expect(find.text('玩家评价'), findsWidgets);
-      expect(find.text('未开放'), findsOneWidget);
+      expect(find.text('规则摘要'), findsWidgets);
+      expect(find.byKey(const ValueKey<String>('detail-tab-2')), findsNothing);
       expect(tester.takeException(), isNull);
 
       await tester.ensureVisible(find.byTooltip('返回游戏库'));

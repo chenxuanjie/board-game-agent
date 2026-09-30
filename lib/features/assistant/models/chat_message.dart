@@ -81,6 +81,12 @@ class ChatMessage {
   }
 
   factory ChatMessage.fromMap(Map<String, dynamic> map) {
+    final DateTime? timestamp = DateTime.tryParse(
+      map['timestamp'] as String? ?? '',
+    );
+    if (timestamp == null) {
+      throw const FormatException('Invalid message timestamp');
+    }
     return ChatMessage(
       id: map['id'] as String? ?? '',
       role: ChatRole.values.firstWhere(
@@ -88,9 +94,7 @@ class ChatMessage {
         orElse: () => ChatRole.assistant,
       ),
       text: map['text'] as String? ?? '',
-      timestamp:
-          DateTime.tryParse(map['timestamp'] as String? ?? '') ??
-          DateTime.now(),
+      timestamp: timestamp,
       source: _parseSource(map['source'] as String?),
       evidence: (map['evidence'] as List<dynamic>? ?? const <dynamic>[])
           .whereType<Map<String, dynamic>>()

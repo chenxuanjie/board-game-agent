@@ -14,7 +14,7 @@ extension AppAssistantController on AppController {
 
   /// Opens the game-scoped assistant for [gameId], creating its session only
   /// when the user explicitly enters that assistant context.
-  bool openGameAssistant(String gameId, {String? greeting}) {
+  bool openGameAssistant(String gameId) {
     final GameInfo? game = _games
         .where((GameInfo item) => item.id == gameId)
         .cast<GameInfo?>()
@@ -32,7 +32,6 @@ extension AppAssistantController on AppController {
     final AiConversation conversation = _ensureConversationForContext(
       useGlobalMode: false,
       gameId: game.id,
-      greeting: greeting,
     );
     _selectConversationInternal(conversation.id);
     _notifyListeners();
@@ -40,7 +39,7 @@ extension AppAssistantController on AppController {
   }
 
   /// Opens the cross-game assistant, creating its session on first entry.
-  void openGlobalAssistant({String? greeting}) {
+  void openGlobalAssistant() {
     final String previousConversationId = _selectedConversationId ?? '';
     if (previousConversationId !=
         AppConversationController._globalConversationKey) {
@@ -48,7 +47,6 @@ extension AppAssistantController on AppController {
     }
     final AiConversation conversation = _ensureConversationForContext(
       useGlobalMode: true,
-      greeting: greeting,
     );
     _selectConversationInternal(conversation.id);
     _notifyListeners();
@@ -233,10 +231,7 @@ extension AppAssistantController on AppController {
     await resetConversation(useGlobalMode: useGlobalMode);
   }
 
-  Future<void> resetConversation({
-    String? greeting,
-    bool useGlobalMode = false,
-  }) async {
+  Future<void> resetConversation({bool useGlobalMode = false}) async {
     final _ChatGenerationState generation = _generationStateForContext(
       useGlobalMode: useGlobalMode,
     );
@@ -248,26 +243,7 @@ extension AppAssistantController on AppController {
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
-    final GameInfo game = selectedGame;
-    messages
-      ..clear()
-      ..add(
-        ChatMessage(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          role: ChatRole.assistant,
-          text:
-              greeting ??
-              copy.assistantGreetingFor(
-                useGlobalMode ? copy.globalAiTitle : game.title,
-                useGlobalMode
-                    ? copy.allKnowledgeGreeting
-                    : game.assistantIntro.isNotEmpty
-                    ? game.assistantIntro
-                    : game.summary,
-              ),
-          timestamp: DateTime.now(),
-        ),
-      );
+    messages.clear();
     final AiConversation? existingConversation = _conversations[conversationId];
     if (existingConversation != null && existingConversation.lastRun != null) {
       existingConversation.lastRun = null;
@@ -286,18 +262,27 @@ extension AppAssistantController on AppController {
     if (trimmed.isEmpty || generation.isSending) {
       return;
     }
-    if (_aiApiConfig.model.trim().isEmpty) {
+    final AiModelResolution modelResolution = AiModelPolicy.resolve(
+      _aiApiConfig,
+    );
+    if (!modelResolution.isUsable) {
+      final String notice = switch (modelResolution.issue!) {
+        AiModelIssue.modelRequired => copy.aiApiModelRequired,
+        AiModelIssue.modelNotAllowed => copy.aiApiModelNotAllowed,
+        AiModelIssue.unsupportedEffort => copy.aiApiReasoningUnsupported,
+      };
       _aiConnectivityStatus = ConnectivityStatus(
         state: ConnectivityState.failure,
-        message: copy.aiApiModelRequired,
+        message: notice,
         checkedAt: DateTime.now(),
       );
       _recordActivity(
         kind: AppActivityKind.aiFailed,
         title: copy.activityAiFailedTitle,
-        message: copy.aiApiModelRequired,
+        message: notice,
         conversationId: _conversationIdForContext(useGlobalMode: useGlobalMode),
       );
+      _notifyListeners();
       return;
     }
     final List<ChatMessage> messages = _messagesForContext(

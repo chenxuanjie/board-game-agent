@@ -251,9 +251,9 @@ class _DesktopActivityTile extends StatelessWidget {
     if (onTap == null) return content;
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(compact ? 11 : 4),
+      borderRadius: BorderRadius.circular(compact ? 11 : 8),
       child: InkWell(
-        borderRadius: BorderRadius.circular(compact ? 11 : 4),
+        borderRadius: BorderRadius.circular(compact ? 11 : 8),
         onTap: onTap,
         child: content,
       ),

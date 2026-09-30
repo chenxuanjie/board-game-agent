@@ -4,7 +4,6 @@ extension AppConversationController on AppController {
   AiConversation _ensureConversationForContext({
     required bool useGlobalMode,
     String? gameId,
-    String? greeting,
   }) {
     final GameInfo game = gameId == null
         ? selectedGame
@@ -39,12 +38,6 @@ extension AppConversationController on AppController {
     }
 
     final DateTime now = DateTime.now();
-    final String defaultGreeting = useGlobalMode
-        ? copy.allKnowledgeGreeting
-        : copy.assistantGreetingFor(
-            game.title,
-            game.assistantIntro.isNotEmpty ? game.assistantIntro : game.summary,
-          );
     final AiConversation created = AiConversation(
       id: id,
       title: title,
@@ -54,14 +47,7 @@ extension AppConversationController on AppController {
       gameId: useGlobalMode ? null : game.id,
       createdAt: now,
       updatedAt: now,
-      messages: <ChatMessage>[
-        ChatMessage(
-          id: '${now.microsecondsSinceEpoch}-${useGlobalMode ? 'global' : game.id}',
-          role: ChatRole.assistant,
-          text: greeting ?? defaultGreeting,
-          timestamp: now,
-        ),
-      ],
+      messages: const <ChatMessage>[],
     );
     _conversations[id] = created;
     _queueConversationSave(conversationId: id);
@@ -118,7 +104,7 @@ extension AppConversationController on AppController {
   }
 
   static const String _globalConversationKey = 'global';
-  static const int _conversationStoreVersion = 3;
+  static const int _conversationStoreVersion = 4;
   static const int _maxMessagesPerConversation = 100;
 
   String _conversationKeyForContext({required bool useGlobalMode}) {
@@ -261,11 +247,15 @@ extension AppConversationController on AppController {
           json['conversations'] as Map<String, dynamic>? ?? <String, dynamic>{};
 
       _conversations.clear();
+      bool removedLegacyGreetings = false;
       for (final MapEntry<String, dynamic> entry in conversations.entries) {
         final AiConversation? restored = _conversationFromStoredEntry(
           entry.key,
           entry.value,
         );
+        if (restored?.discardLegacyBootstrapGreeting() == true) {
+          removedLegacyGreetings = true;
+        }
         if (restored != null && !restored.isUnstarted) {
           _conversations[entry.key] = restored;
         } else if (restored != null) {
@@ -288,6 +278,7 @@ extension AppConversationController on AppController {
       for (final _ChatGenerationState generation in _generationStates.values) {
         generation.checkpointRestored = false;
       }
+      if (removedLegacyGreetings) await _persistConversations();
     } catch (error, stackTrace) {
       debugPrint('[chat] restore conversations failed: $error');
       debugPrint('$stackTrace');

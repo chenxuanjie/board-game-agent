@@ -11,10 +11,12 @@ class MobileGameCover extends StatefulWidget {
     super.key,
     required this.controller,
     required this.game,
+    this.fit = BoxFit.cover,
   });
 
   final AppController controller;
   final GameInfo game;
+  final BoxFit fit;
 
   @override
   State<MobileGameCover> createState() => _MobileGameCoverState();
@@ -67,9 +69,9 @@ class _MobileGameCoverState extends State<MobileGameCover> {
     }
     return Image.asset(
       assetPath,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
+      fit: widget.fit,
+      width: widget.fit == BoxFit.contain ? null : double.infinity,
+      height: widget.fit == BoxFit.contain ? null : double.infinity,
       errorBuilder: (_, _, _) {
         _resolveRemote();
         return _cachedOrPlaceholder();
@@ -82,9 +84,9 @@ class _MobileGameCoverState extends State<MobileGameCover> {
     if (kIsWeb || path == null || path.isEmpty) return _placeholder();
     return Image.file(
       File(path),
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
+      fit: widget.fit,
+      width: widget.fit == BoxFit.contain ? null : double.infinity,
+      height: widget.fit == BoxFit.contain ? null : double.infinity,
       errorBuilder: (_, _, _) => _placeholder(),
     );
   }

@@ -18,14 +18,12 @@ class AssistantChatScreen extends StatefulWidget {
     required this.controller,
     this.initialDraft,
     this.customTitle,
-    this.customGreeting,
     this.useGlobalMode = false,
   });
 
   final AppController controller;
   final String? initialDraft;
   final String? customTitle;
-  final String? customGreeting;
   final bool useGlobalMode;
 
   @override
@@ -52,16 +50,13 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final selectedConversation = widget.controller.selectedConversation;
     if (widget.useGlobalMode) {
       if (selectedConversation?.isGlobal != true) {
-        widget.controller.openGlobalAssistant(greeting: widget.customGreeting);
+        widget.controller.openGlobalAssistant();
       }
     } else if (widget.controller.hasGames &&
         (selectedConversation?.isGlobal == true ||
             selectedConversation?.gameId !=
                 widget.controller.selectedGame.id)) {
-      widget.controller.openGameAssistant(
-        widget.controller.selectedGame.id,
-        greeting: widget.customGreeting,
-      );
+      widget.controller.openGameAssistant(widget.controller.selectedGame.id);
     }
     widget.controller.addListener(_onControllerChanged);
     _lastScrollContextKey = _conversationContextKey;

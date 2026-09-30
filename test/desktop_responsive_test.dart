@@ -5,6 +5,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
 
 void main() {
+  test('wide Web shell and theme use the same viewport boundary', () {
+    expect(
+      DesktopResponsive.supportsDesktopViewport(const Size(1100, 800)),
+      isTrue,
+    );
+    expect(
+      DesktopResponsive.supportsDesktopViewport(const Size(1920, 1080)),
+      isTrue,
+    );
+    expect(
+      DesktopResponsive.supportsDesktopViewport(const Size(1099, 800)),
+      isFalse,
+    );
+    expect(
+      DesktopResponsive.supportsDesktopViewport(const Size(1280, 799)),
+      isFalse,
+    );
+    expect(
+      DesktopResponsive.supportsDesktopViewport(const Size(1100, 900)),
+      isFalse,
+    );
+  });
   test('desktop layout tiers stay stable at their boundaries', () {
     expect(DesktopResponsive.desktopWindowDefaultSize, const Size(1280, 800));
     expect(DesktopResponsive.desktopWindowMinimumSize, const Size(1100, 800));

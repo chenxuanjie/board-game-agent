@@ -16,10 +16,12 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     expect(find.byType(DesktopFavoritesPane), findsNothing);
   });
 
-  testWidgets('home uses likes and activity terminology', (tester) async {
+  testWidgets('home shows only backed personal statistics', (tester) async {
     await _mount(tester, context.controller, const Size(1280, 800));
     expect(find.text('我的喜欢'), findsWidgets);
-    expect(find.text('我的活动'), findsOneWidget);
+    expect(find.text('AI对话'), findsOneWidget);
+    expect(find.text('我的活动'), findsNothing);
+    expect(find.text('想玩游戏'), findsNothing);
     expect(find.text('我的投票'), findsNothing);
     expect(find.text('我的收藏'), findsNothing);
   });

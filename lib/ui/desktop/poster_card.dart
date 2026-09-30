@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_metadata_text.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import 'desktop_resolved_image.dart';
@@ -155,7 +156,8 @@ class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
     final Color accent = Color(game.cardAccent);
     return Semantics(
       button: true,
-      label: '${game.title}，${game.playerCount}，${game.complexity}',
+      label:
+          '${game.title}，${GameMetadataText.players(game.playerCount)}，${game.complexity}',
       child: CompositedTransformTarget(
         link: _previewLink,
         child: MouseRegion(
@@ -321,10 +323,7 @@ class _DesktopGameHoverPreview extends StatelessWidget {
         : game.coverAssetPath;
     final String title = _previewTitle(game);
     final String status = _rulebookStatus(controller, game);
-    final String playTime = game.playTime.trim().isEmpty ? '—' : game.playTime;
-    final String perPlayer = game.perPlayerTime.trim().isEmpty
-        ? '—'
-        : game.perPlayerTime;
+    final String playTime = GameMetadataText.playTime(game.playTime);
     final String complexity = game.complexity.trim().isNotEmpty
         ? game.complexity
         : (game.learningDifficulty.trim().isNotEmpty
@@ -348,7 +347,7 @@ class _DesktopGameHoverPreview extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: const Color(0xF517212E),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0x5966C0F4)),
             boxShadow: const <BoxShadow>[
               BoxShadow(
@@ -360,7 +359,7 @@ class _DesktopGameHoverPreview extends StatelessWidget {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -433,7 +432,7 @@ class _DesktopGameHoverPreview extends StatelessWidget {
                       const Divider(height: 1, color: Color(0x14FFFFFF)),
                       const SizedBox(height: 10),
                       const Text(
-                        '游戏时间',
+                        '游玩时长',
                         style: TextStyle(
                           color: Color(0xFF8F98A0),
                           fontSize: 10.5,
@@ -441,33 +440,12 @@ class _DesktopGameHoverPreview extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              '单局：$playTime',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFC7D5E0),
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              '人均：$perPlayer',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                color: Color(0xFFC7D5E0),
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        playTime,
+                        style: const TextStyle(
+                          color: Color(0xFFC7D5E0),
+                          fontSize: 11.5,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -475,9 +453,7 @@ class _DesktopGameHoverPreview extends StatelessWidget {
                           Expanded(
                             child: _DesktopGameHoverStat(
                               label: '适合人数',
-                              value: game.playerCount.trim().isEmpty
-                                  ? '—'
-                                  : game.playerCount,
+                              value: GameMetadataText.players(game.playerCount),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -501,7 +477,7 @@ class _DesktopGameHoverPreview extends StatelessWidget {
                             disabledBackgroundColor: const Color(0xFF3A4A2A),
                             disabledForegroundColor: const Color(0xFF8F98A0),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(2),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
                           child: const Text(
@@ -564,7 +540,7 @@ class _DesktopGameHoverStat extends StatelessWidget {
     padding: const EdgeInsets.all(8),
     decoration: BoxDecoration(
       color: const Color(0xB30E1621),
-      borderRadius: BorderRadius.circular(3),
+      borderRadius: BorderRadius.circular(8),
       border: Border.all(color: const Color(0x0DFFFFFF)),
     ),
     child: Column(

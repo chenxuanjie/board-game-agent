@@ -45,7 +45,7 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
       await context.controller.saveAiApiConfig(
         context.controller.aiApiConfig.copyWith(
           apiKey: 'test-secret-key',
-          model: 'test-model',
+          model: 'gpt-5.6-sol',
         ),
       );
       expect(context.preferences._aiApiConfig?.apiKey, 'test-secret-key');
@@ -105,30 +105,9 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
       expect(context.controller.colorScheme, ColorSchemeOption.warmwoodStudy);
       expect(context.preferences._colorScheme, ColorSchemeOption.warmwoodStudy);
 
-      expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNull);
-      expect(
-        tester
-            .widget<OutlinedButton>(
-              find.descendant(
-                of: find.byKey(
-                  const ValueKey<String>('desktop-settings-sync-disabled'),
-                ),
-                matching: find.byType(OutlinedButton),
-              ),
-            )
-            .onPressed,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<OutlinedButton>(
-              find.byKey(
-                const ValueKey<String>('desktop-settings-restore-defaults'),
-              ),
-            )
-            .onPressed,
-        isNull,
-      );
+      expect(find.byType(Slider), findsNothing);
+      expect(find.text('立即同步'), findsNothing);
+      expect(find.text('恢复默认设置'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -139,20 +118,24 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await _mount(tester, context.controller, const Size(1280, 800));
     await _navigate(tester, '设置');
 
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('desktop-settings-ai-provider')),
+    for (final key in <String>[
+      'desktop-settings-ai-provider',
+      'desktop-settings-ai-model',
+    ]) {
+      final field = find.descendant(
+        of: find.byKey(ValueKey<String>(key)),
         matching: find.byType(DropdownButtonFormField<String>),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('desktop-settings-ai-model')),
-        matching: find.byType(DropdownButtonFormField<String>),
-      ),
-      findsOneWidget,
-    );
+      );
+      expect(field, findsOneWidget);
+      final dropdown = find.descendant(
+        of: field,
+        matching: find.byType(DropdownButton<String>),
+      );
+      expect(
+        tester.widget<DropdownButton<String>>(dropdown).borderRadius,
+        BorderRadius.circular(12),
+      );
+    }
     await tester.enterText(
       find.byKey(const ValueKey<String>('desktop-settings-ai-api-key')),
       'desktop-secret',
@@ -238,20 +221,37 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
   test(
     'desktop AI settings service persists and checks all card fields',
     () async {
+      final List<DesktopAiCheckStep> steps = <DesktopAiCheckStep>[];
       final DesktopAiSettingsResult result =
           await DesktopAiSettingsService(context.controller).saveAndCheck(
             const DesktopAiSettingsDraft(
               provider: 'Desktop Provider',
-              model: 'desktop-model',
+              model: 'gpt-5.6-sol',
               apiKey: 'desktop-secret',
               baseUrl: 'https://desktop.example/v1',
+              reasoningEffort: AiReasoningEffort.high,
+              responseSpeed: AiResponseSpeed.fast,
             ),
+            onProgress: steps.add,
           );
 
       expect(result.connected, isTrue);
       expect(context.controller.aiApiConfig.name, 'Desktop Provider');
-      expect(context.controller.aiApiConfig.model, 'desktop-model');
+      expect(context.controller.aiApiConfig.model, 'gpt-5.6-sol');
       expect(context.controller.aiApiConfig.apiKey, 'desktop-secret');
+      expect(
+        context.controller.aiApiConfig.reasoningEffort,
+        AiReasoningEffort.high,
+      );
+      expect(
+        context.controller.aiApiConfig.responseSpeed,
+        AiResponseSpeed.fast,
+      );
+      expect(steps, <DesktopAiCheckStep>[
+        DesktopAiCheckStep.saving,
+        DesktopAiCheckStep.loadingModels,
+        DesktopAiCheckStep.probingChat,
+      ]);
       expect(
         context.controller.aiApiConfig.baseUrl,
         'https://desktop.example/v1',
@@ -263,6 +263,133 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
       );
     },
   );
+
+  testWidgets('desktop AI card shows model-specific effort and Fast controls', (
+    tester,
+  ) async {
+    await context.controller.saveAiApiConfig(
+      context.controller.aiApiConfig.copyWith(model: 'gpt-6-astra'),
+    );
+    await _mount(tester, context.controller, const Size(1280, 800));
+    await _navigate(tester, '设置');
+
+    final Finder effort = find.descendant(
+      of: find.byKey(const ValueKey<String>('desktop-settings-ai-reasoning')),
+      matching: find.byType(DropdownButtonFormField<AiReasoningEffort>),
+    );
+    final Finder speed = find.descendant(
+      of: find.byKey(const ValueKey<String>('desktop-settings-ai-speed')),
+      matching: find.byType(DropdownButtonFormField<AiResponseSpeed>),
+    );
+    expect(effort, findsOneWidget);
+    expect(speed, findsOneWidget);
+    await tester.ensureVisible(effort);
+    await tester.tap(effort);
+    await tester.pumpAndSettle();
+    expect(find.text('无（None）'), findsNothing);
+    expect(find.text('最高（Max）'), findsWidgets);
+    await tester.tap(find.text('最高（Max）').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('配置已修改，请保存并检测'), findsOneWidget);
+    expect(find.textContaining('请求值：'), findsNothing);
+
+    await tester.ensureVisible(speed);
+    await tester.tap(speed);
+    await tester.pumpAndSettle();
+    final selectedOption = find
+        .ancestor(of: find.text('自动').last, matching: find.byType(Container))
+        .first;
+    final selectedDecoration =
+        tester.widget<Container>(selectedOption).decoration as BoxDecoration?;
+    expect(selectedDecoration?.borderRadius, BorderRadius.circular(8));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final focusedOption = find
+        .ancestor(
+          of: find.text('快速（Fast）').last,
+          matching: find.byType(Container),
+        )
+        .first;
+    final focusedDecoration =
+        tester.widget<Container>(focusedOption).decoration as BoxDecoration?;
+    expect(focusedDecoration?.color, DesktopColors.soft);
+    await tester.tap(find.text('快速（Fast）').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Fast 可能额外计费'), findsOneWidget);
+    expect(find.textContaining('service_tier='), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('desktop AI check reports model and chat probe stages', (
+    tester,
+  ) async {
+    final _GatedDesktopAiService aiService = _GatedDesktopAiService();
+    final AppController local = AppController(
+      preferencesService: _InMemoryPreferencesService(),
+      aiService: aiService,
+      gameManifestService: GameManifestService(),
+      remoteAssetService: _NoNetworkAssetService(),
+      speechService: SpeechService(),
+      ttsService: _UnavailableTtsService(),
+    );
+    addTearDown(local.dispose);
+    await local.saveAiApiConfig(
+      local.aiApiConfig.copyWith(model: 'gpt-5.6-sol', apiKey: 'test-key'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDesktopTheme(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DesktopSettingsPane(controller: local, onOpenAbout: () {}),
+          ),
+        ),
+      ),
+    );
+
+    final Finder button = find.byKey(
+      const ValueKey<String>('desktop-settings-ai-save-check'),
+    );
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.textContaining('正在获取 /models'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-status')),
+      findsOneWidget,
+    );
+
+    aiService.models.complete(const <AiModel>[AiModel(id: 'gpt-5.6-sol')]);
+    await tester.pump();
+    expect(find.textContaining('正在探测 Chat Completions'), findsOneWidget);
+
+    aiService.health.complete(
+      const AiHealthResult(
+        success: true,
+        message: 'ok',
+        latency: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('强度与 Fast 尚未验证'), findsOneWidget);
+    expect(find.textContaining('连接正常：已保存'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('desktop-settings-ai-feedback')),
+      findsNothing,
+    );
+
+    final Finder speed = find.descendant(
+      of: find.byKey(const ValueKey<String>('desktop-settings-ai-speed')),
+      matching: find.byType(DropdownButtonFormField<AiResponseSpeed>),
+    );
+    await tester.ensureVisible(speed);
+    await tester.tap(speed);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('快速（Fast）').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('配置已修改，请保存并检测'), findsOneWidget);
+    expect(find.textContaining('连接正常：'), findsNothing);
+  });
 
   test('desktop AI settings discovers models before one is selected', () async {
     final DesktopAiSettingsResult result =
@@ -277,13 +404,57 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
 
     expect(result.connected, isFalse);
     expect(result.modelCount, 1);
-    expect(context.controller.availableAiModels.single.id, 'desktop-model');
+    expect(context.controller.availableAiModels.single.id, 'gpt-5.6-sol');
     expect(context.controller.aiApiConfig.model, isEmpty);
     expect(
       context.controller.aiConnectivityStatus.state,
       ConnectivityState.warning,
     );
   });
+
+  test(
+    'discovery filters old models without deleting a saved selection',
+    () async {
+      await context.controller.saveAiApiConfig(
+        context.controller.aiApiConfig.copyWith(
+          model: 'gpt-5.5',
+          reasoningEffort: AiReasoningEffort.high,
+        ),
+      );
+
+      final List<AiModel> visible = await context.controller.refreshAiModels();
+
+      expect(visible.map((AiModel model) => model.id), <String>['gpt-5.6-sol']);
+      expect(context.controller.aiApiConfig.model, 'gpt-5.5');
+      expect(context.controller.selectedAiModelResolution.isUsable, isFalse);
+      await context.controller.setAiReasoningEffort(
+        AiReasoningEffort.automatic,
+      );
+      expect(
+        context.controller.aiApiConfig.reasoningEffort,
+        AiReasoningEffort.automatic,
+      );
+    },
+  );
+
+  test(
+    'changing reasoning keeps discovery and resets unsupported effort',
+    () async {
+      await context.controller.saveAiApiConfig(
+        context.controller.aiApiConfig.copyWith(model: 'gpt-5.6-sol'),
+      );
+      await context.controller.refreshAiModels();
+      await context.controller.setAiReasoningEffort(AiReasoningEffort.none);
+
+      expect(context.controller.availableAiModels, hasLength(1));
+      await context.controller.setAiModel('gpt-6-astra');
+      expect(
+        context.controller.aiApiConfig.reasoningEffort,
+        AiReasoningEffort.automatic,
+      );
+      expect(context.controller.availableAiModels, hasLength(1));
+    },
+  );
 
   testWidgets('switching to English updates the desktop settings shell', (
     tester,
@@ -308,11 +479,22 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     expect(find.text('General'), findsOneWidget);
     expect(find.text('AI Service'), findsOneWidget);
     expect(find.text('Appearance & Theme'), findsOneWidget);
-    expect(find.text('Notification Settings'), findsOneWidget);
+    expect(find.text('Notification Settings'), findsNothing);
     expect(find.text('Sync & Backup'), findsOneWidget);
     expect(find.text('About & Updates'), findsOneWidget);
     expect(find.text('应用偏好与服务'), findsNothing);
     expect(find.text('通知设置'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _GatedDesktopAiService extends _FakeAiService {
+  final Completer<List<AiModel>> models = Completer<List<AiModel>>();
+  final Completer<AiHealthResult> health = Completer<AiHealthResult>();
+
+  @override
+  Future<List<AiModel>> listModels(AiApiConfig config) => models.future;
+
+  @override
+  Future<AiHealthResult> checkConnection(AiApiConfig config) => health.future;
 }

@@ -214,7 +214,7 @@ class _RulesDrawerPanel extends StatelessWidget {
                     fixedSize: Size.square(28),
                     padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
@@ -600,7 +600,7 @@ class _RulesAssistantContent extends StatelessWidget {
                     AppPalette.of(context).primaryContainer,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
               ),

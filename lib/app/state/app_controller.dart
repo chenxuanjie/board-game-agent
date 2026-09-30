@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
+import '../../features/assistant/models/ai_model_policy.dart';
 import '../../features/assistant/models/ai_answer_mode.dart';
 import '../../features/assistant/models/ai_run.dart';
 import '../../features/assistant/models/answer_source.dart';
@@ -59,6 +60,8 @@ part 'app_controller/library_updates.dart';
 part 'app_controller/documents.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
+
+enum AiServiceCheckStage { models, chatProbe }
 
 enum LibraryLoadState { idle, loading, success, empty, failure }
 
@@ -150,6 +153,7 @@ class AppController extends ChangeNotifier {
   Future<void>? _assetStatusRefreshFuture;
   Future<void>? _serviceStatusRefreshFuture;
   Future<void>? _aiServiceStatusRefreshFuture;
+  int _aiServiceStatusGeneration = 0;
   RemoteLibraryUpdate? _pendingLibraryUpdate;
   bool _checkingLibraryUpdate = false;
   bool _applyingLibraryUpdate = false;
@@ -224,6 +228,8 @@ class AppController extends ChangeNotifier {
   }
 
   bool get hasSelectedAiModel => _aiApiConfig.model.trim().isNotEmpty;
+  AiModelResolution get selectedAiModelResolution =>
+      AiModelPolicy.resolve(_aiApiConfig);
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
   bool get globalUseCurrentGameKnowledge => _globalUseCurrentGameKnowledge;

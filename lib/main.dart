@@ -30,12 +30,6 @@ import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
 
-const double _webDesktopMinWidth = DesktopResponsive.desktopWindowMinimumWidth;
-const double _webDesktopMinHeight =
-    DesktopResponsive.desktopWindowMinimumHeight;
-const double _webDesktopMinAspectRatio =
-    DesktopResponsive.desktopWindowMinimumAspectRatio;
-
 Future<void> main() async {
   enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
@@ -166,59 +160,52 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      title: widget.controller.copy.appTitle,
-      debugShowCheckedModeBanner: false,
-      locale: widget.controller.language == AppLanguage.en
-          ? const Locale('en')
-          : const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
-      supportedLocales: const <Locale>[
-        Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
-        Locale('en'),
-      ],
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
-          ? buildDesktopTheme()
-          : AppTheme.buildTheme(widget.controller.palette),
-      home: FutureBuilder<void>(
-        future: _initialization,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const _StartupScreen();
-          }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Theme and workspace must use the same decision, including after a
+        // browser resize. Otherwise desktop menus inherit the mobile theme.
+        final bool desktopLayout =
+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) ||
+            (kIsWeb &&
+                DesktopResponsive.supportsDesktopViewport(constraints.biggest));
+        return MaterialApp(
+          navigatorKey: _navigatorKey,
+          title: widget.controller.copy.appTitle,
+          debugShowCheckedModeBanner: false,
+          locale: widget.controller.language == AppLanguage.en
+              ? const Locale('en')
+              : const Locale.fromSubtags(
+                  languageCode: 'zh',
+                  scriptCode: 'Hans',
+                ),
+          supportedLocales: const <Locale>[
+            Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+            Locale('en'),
+          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          theme: desktopLayout
+              ? buildDesktopTheme()
+              : AppTheme.buildTheme(widget.controller.palette),
+          home: FutureBuilder<void>(
+            future: _initialization,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const _StartupScreen();
+              }
 
-          if (snapshot.hasError) {
-            return _StartupErrorScreen(
-              onRetry: () {
-                setState(() {
-                  _initialization = _initialize();
-                });
-              },
-              message: widget.controller.copy.startupDataUnavailable,
-            );
-          }
-
-          _scheduleStartupUpdateCheck(context);
-          return LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final double width = constraints.maxWidth;
-              final double height = constraints.maxHeight;
-              final bool wideWeb =
-                  kIsWeb &&
-                  width >= _webDesktopMinWidth &&
-                  height >= _webDesktopMinHeight &&
-                  width / height >= _webDesktopMinAspectRatio;
-              final bool nativeWindows =
-                  !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
-              if (nativeWindows) {
-                return DesktopWorkspace(
-                  controller: widget.controller,
-                  webDavSettingsController: widget.updateSettingsController,
-                  onOpenAbout: _openAbout,
+              if (snapshot.hasError) {
+                return _StartupErrorScreen(
+                  onRetry: () {
+                    setState(() {
+                      _initialization = _initialize();
+                    });
+                  },
+                  message: widget.controller.copy.startupDataUnavailable,
                 );
               }
-              if (wideWeb) {
+
+              _scheduleStartupUpdateCheck(context);
+              if (desktopLayout) {
                 return DesktopWorkspace(
                   controller: widget.controller,
                   webDavSettingsController: widget.updateSettingsController,
@@ -230,9 +217,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                 onOpenAbout: _openAbout,
               );
             },
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 

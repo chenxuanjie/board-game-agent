@@ -252,55 +252,26 @@ void main() {
     expect(find.textContaining('第 2 次尝试'), findsOneWidget);
   });
 
-  testWidgets('keeps reconnect details in the latest stage when active is gone', (
+  testWidgets('does not invent a retry limit when the event omits it', (
     WidgetTester tester,
   ) async {
-    final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
-    final List<AiRunEvent> events = <AiRunEvent>[
-      AiRunEvent(
-        runId: 'run-lost-active',
-        sequence: 0,
-        type: AiRunEventType.runStarted,
-        timestamp: startedAt,
-      ),
-      AiRunEvent(
-        runId: 'run-lost-active',
-        sequence: 1,
-        type: AiRunEventType.stageStarted,
-        timestamp: startedAt.add(const Duration(milliseconds: 1)),
-        stageId: 'answering',
-      ),
-      // This terminal stage snapshot models a rebuild that has lost the
-      // renderer's active pointer while the same Run is still reconnecting.
-      AiRunEvent(
-        runId: 'run-lost-active',
-        sequence: 2,
-        type: AiRunEventType.stageCompleted,
-        timestamp: startedAt.add(const Duration(milliseconds: 2)),
-        stageId: 'answering',
-        stageResult: const AiStageResult(
-          stageId: 'answering',
-          scope: AiKnowledgeScope.general(),
-          status: AiStageStatus.incomplete,
-        ),
-      ),
-      AiRunEvent(
-        runId: 'run-lost-active',
-        sequence: 3,
-        type: AiRunEventType.resumeStarted,
-        timestamp: startedAt.add(const Duration(milliseconds: 3)),
-        detail: '重新连接事件流（第 2 / 3 次）',
-        attempt: 2,
-        maxAttempts: 3,
-      ),
-    ];
-
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData.dark(),
         home: Scaffold(
           body: AiRunActivity(
-            events: events,
+            events: <AiRunEvent>[
+              event(sequence: 0, type: AiRunEventType.runStarted),
+              event(
+                sequence: 1,
+                type: AiRunEventType.stageStarted,
+                stageId: 'answering',
+              ),
+              event(
+                sequence: 2,
+                type: AiRunEventType.responseStreamFailed,
+                attempt: 2,
+              ),
+            ],
             isRunning: true,
             palette: PaletteRegistry.classic,
             copy: copy,
@@ -308,11 +279,72 @@ void main() {
         ),
       ),
     );
-
-    expect(find.text('resume'), findsNothing);
-    expect(find.text('回答未完成'), findsOneWidget);
     expect(find.textContaining('第 2 次尝试'), findsOneWidget);
+    expect(find.textContaining('共 3 次'), findsNothing);
   });
+
+  testWidgets(
+    'keeps reconnect details in the latest stage when active is gone',
+    (WidgetTester tester) async {
+      final DateTime startedAt = DateTime(2026, 9, 1, 12, 0);
+      final List<AiRunEvent> events = <AiRunEvent>[
+        AiRunEvent(
+          runId: 'run-lost-active',
+          sequence: 0,
+          type: AiRunEventType.runStarted,
+          timestamp: startedAt,
+        ),
+        AiRunEvent(
+          runId: 'run-lost-active',
+          sequence: 1,
+          type: AiRunEventType.stageStarted,
+          timestamp: startedAt.add(const Duration(milliseconds: 1)),
+          stageId: 'answering',
+        ),
+        // This terminal stage snapshot models a rebuild that has lost the
+        // renderer's active pointer while the same Run is still reconnecting.
+        AiRunEvent(
+          runId: 'run-lost-active',
+          sequence: 2,
+          type: AiRunEventType.stageCompleted,
+          timestamp: startedAt.add(const Duration(milliseconds: 2)),
+          stageId: 'answering',
+          stageResult: const AiStageResult(
+            stageId: 'answering',
+            scope: AiKnowledgeScope.general(),
+            status: AiStageStatus.incomplete,
+          ),
+        ),
+        AiRunEvent(
+          runId: 'run-lost-active',
+          sequence: 3,
+          type: AiRunEventType.resumeStarted,
+          timestamp: startedAt.add(const Duration(milliseconds: 3)),
+          detail: '重新连接事件流（第 2 / 3 次）',
+          attempt: 2,
+          maxAttempts: 3,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: Scaffold(
+            body: AiRunActivity(
+              events: events,
+              isRunning: true,
+              palette: PaletteRegistry.classic,
+              copy: copy,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('resume'), findsNothing);
+      expect(find.text('回答未完成'), findsOneWidget);
+      expect(find.textContaining('第 2 次尝试'), findsOneWidget);
+    },
+  );
 
   testWidgets('folds a temporary connection row into a later stage', (
     WidgetTester tester,

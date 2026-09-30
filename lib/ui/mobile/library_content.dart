@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_metadata_text.dart';
 import 'game_cover.dart';
 
 const _orange = Color(0xFFFF673F);
@@ -179,24 +180,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                   hintStyle: const TextStyle(color: _muted, fontSize: 14),
                   prefixIcon: const Icon(Icons.search_rounded, color: _muted),
                   suffixIcon: query.isEmpty
-                      ? IconButton(
-                          tooltip: copy.localized('扫码搜索', 'Scan to search'),
-                          onPressed: () =>
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    copy.localized(
-                                      '扫码搜索暂未开放',
-                                      'Scanning is coming soon',
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          icon: const Icon(
-                            Icons.qr_code_scanner_rounded,
-                            color: _muted,
-                          ),
-                        )
+                      ? null
                       : IconButton(
                           tooltip: copy.localized('清除搜索', 'Clear search'),
                           onPressed: () => setState(_search.clear),
@@ -272,7 +256,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                                 crossAxisCount: columns,
                                 crossAxisSpacing: 9,
                                 mainAxisSpacing: 12,
-                                mainAxisExtent: coverHeight + 99,
+                                mainAxisExtent: coverHeight + 134,
                               ),
                           itemBuilder: (context, index) => _GameCard(
                             controller: widget.controller,
@@ -391,8 +375,7 @@ class _GameCard extends StatelessWidget {
             ),
             Text(
               game.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
@@ -401,65 +384,66 @@ class _GameCard extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             if (tags.isNotEmpty)
-              SizedBox(
-                height: 19,
-                child: Row(
-                  children: tags
-                      .map(
-                        (tag) => Flexible(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 3),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFF1E9),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                tag,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 9,
-                                  color: Color(0xFFD85E2E),
-                                ),
-                              ),
-                            ),
-                          ),
+              Wrap(
+                spacing: 3,
+                runSpacing: 3,
+                children: [
+                  for (final tag in tags)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF1E9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        tag,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: Color(0xFFD85E2E),
                         ),
-                      )
-                      .toList(),
-                ),
+                      ),
+                    ),
+                ],
               ),
             const Spacer(),
-            Row(
-              children: [
-                const Icon(Icons.people_alt_outlined, size: 12, color: _muted),
-                Expanded(
-                  child: Text(
-                    game.playerCount.isEmpty ? '-' : game.playerCount,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: _muted),
-                  ),
-                ),
-                const Icon(Icons.schedule_outlined, size: 12, color: _muted),
-                Flexible(
-                  child: Text(
-                    game.playTime.isEmpty ? '-' : game.playTime,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: _muted),
-                  ),
-                ),
-              ],
+            _GameCardFact(
+              icon: Icons.people_alt_outlined,
+              text: GameMetadataText.players(game.playerCount),
+            ),
+            const SizedBox(height: 4),
+            _GameCardFact(
+              icon: Icons.schedule_outlined,
+              text: GameMetadataText.playTime(game.playTime),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _GameCardFact extends StatelessWidget {
+  const _GameCardFact({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 12, color: _muted),
+      const SizedBox(width: 5),
+      Expanded(
+        child: Text(
+          text,
+          softWrap: true,
+          style: const TextStyle(fontSize: 10, color: _muted, height: 1.15),
+        ),
+      ),
+    ],
+  );
 }
