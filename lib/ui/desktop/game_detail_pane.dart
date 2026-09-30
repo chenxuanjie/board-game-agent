@@ -8,6 +8,7 @@ import 'desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
+import '../shared/hover_horizontal_scrollbar.dart';
 
 class DesktopGameDetailPane extends StatefulWidget {
   const DesktopGameDetailPane({
@@ -549,80 +550,91 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             ? 2
             : 1;
         final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final result in results)
-              SizedBox(
-                width: width,
-                child: InkWell(
-                  key: ValueKey<String>('related-game-${result.game.id}'),
-                  onTap: () => widget.onOpenGame(result.game),
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFFCF9),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: DesktopColors.line),
+        return HoverHorizontalScrollbar(
+          enabled: true,
+          keyPrefix: 'desktop-detail-related',
+          builder: (scrollController) => SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final result in results)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      right: result == results.last ? 0 : 12,
                     ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: SizedBox(
-                            width: 62,
-                            height: 82,
-                            child: DesktopResolvedImage(
-                              controller: widget.controller,
-                              assetPath: result.game.coverAssetPath,
-                              palette: widget.controller.palette,
-                            ),
+                    child: SizedBox(
+                      width: width,
+                      child: InkWell(
+                        key: ValueKey<String>('related-game-${result.game.id}'),
+                        onTap: () => widget.onOpenGame(result.game),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFFCF9),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: DesktopColors.line),
                           ),
-                        ),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              Text(
-                                result.game.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: SizedBox(
+                                  width: 62,
+                                  height: 82,
+                                  child: DesktopResolvedImage(
+                                    controller: widget.controller,
+                                    assetPath: result.game.coverAssetPath,
+                                    palette: widget.controller.palette,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 5),
-                              Text(
-                                _relatedReason(result.reason),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: DesktopColors.secondaryText,
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                result.game.score,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: DesktopColors.orange,
-                                  fontWeight: FontWeight.w700,
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      result.game.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      _relatedReason(result.reason),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: DesktopColors.secondaryText,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      result.game.score,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: DesktopColors.orange,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         );
       },
     );

@@ -8,6 +8,8 @@ import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/localization/app_copy.dart';
 import 'game_cover.dart';
+import '../shared/hover_carousel_controls.dart';
+import '../shared/hover_horizontal_scrollbar.dart';
 
 const _ink = Color(0xFF25242B);
 const _muted = Color(0xFF85818A);
@@ -26,6 +28,7 @@ class MobileHomeContent extends StatefulWidget {
     required this.onSettings,
     required this.onActivities,
     required this.onRules,
+    required this.onOpenNationalDay,
   });
 
   final AppController controller;
@@ -37,6 +40,7 @@ class MobileHomeContent extends StatefulWidget {
   final VoidCallback onSettings;
   final VoidCallback onActivities;
   final VoidCallback onRules;
+  final VoidCallback onOpenNationalDay;
 
   @override
   State<MobileHomeContent> createState() => _MobileHomeContentState();
@@ -47,12 +51,15 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   Timer? _bannerTimer;
   int _banner = 0;
   int _recommendationOffset = 0;
+  bool _bannerInteracting = false;
 
   @override
   void initState() {
     super.initState();
     _bannerTimer = Timer.periodic(const Duration(seconds: 7), (_) {
-      if (!mounted || !_bannerController.hasClients) return;
+      if (!mounted || !_bannerController.hasClients || _bannerInteracting) {
+        return;
+      }
       _bannerController.animateToPage(
         (_banner + 1) % 3,
         duration: const Duration(milliseconds: 420),
@@ -138,14 +145,20 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             if (ordered.isEmpty)
               _emptyRecent(copy)
             else
-              SizedBox(
-                height: _recommendationCardHeight,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: ordered.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, index) =>
-                      _recommendationCard(ordered[index], recommendationWidth),
+              HoverHorizontalScrollbar(
+                keyPrefix: 'mobile-home-recommendations',
+                builder: (scrollController) => SizedBox(
+                  height: _recommendationCardHeight,
+                  child: ListView.separated(
+                    controller: scrollController,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: ordered.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) => _recommendationCard(
+                      ordered[index],
+                      recommendationWidth,
+                    ),
+                  ),
                 ),
               ),
             if (widget.controller.activities.isNotEmpty) ...[
@@ -225,110 +238,175 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
       ('assets/mobile/home/gathering_banner.png', '让每一次\n相聚都有好游戏', '发现桌游的更多乐趣'),
       (
         'assets/desktop/home/banner_gathering.png',
-        '好游戏，\n和朋友一起玩',
-        '找到下一款喜欢的桌游',
+        '国庆聚会，\n一起玩桌游',
+        '投票选出这次想玩的游戏',
       ),
       ('assets/desktop/home/banner_ai.png', '规则看不懂？\n直接问 AI', '桌游问题随时问'),
     ];
     return SizedBox(
       height: 191,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _bannerController,
-            itemCount: pages.length,
-            onPageChanged: (index) => setState(() => _banner = index),
-            itemBuilder: (context, index) => ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.asset(
-                    pages[index].$1,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.centerRight,
-                  ),
-                  if (!wideWeb || index == 0)
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Color(0xF9FFF8EE),
-                            Color(0xD7FFF4E6),
-                            Color(0x00FFF4E6),
-                          ],
-                          stops: [0, .47, .82],
+      child: HoverCarouselControls(
+        enabled: kIsWeb,
+        keyPrefix: 'mobile-home-banner',
+        onPrevious: () => _stepBanner(-1),
+        onNext: () => _stepBanner(1),
+        onInteractionChanged: (value) => _bannerInteracting = value,
+        child: Stack(
+          children: [
+            PageView.builder(
+              key: const ValueKey('mobile-home-banners'),
+              controller: _bannerController,
+              itemCount: pages.length,
+              onPageChanged: (index) => setState(() => _banner = index),
+              itemBuilder: (context, index) => ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      pages[index].$1,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerRight,
+                    ),
+                    if (!wideWeb || index == 0)
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xF9FFF8EE),
+                              Color(0xD7FFF4E6),
+                              Color(0x00FFF4E6),
+                            ],
+                            stops: [0, .47, .82],
+                          ),
                         ),
                       ),
-                    ),
-                  if (!wideWeb || index == 0)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 18, 16, 20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            copy.localized(
-                              pages[index].$2,
-                              index == 2
-                                  ? 'Ask AI about\nthe rules'
-                                  : 'Better games\ntogether',
-                            ),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              height: 1.2,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF5D2419),
-                            ),
+                    if (index == 1)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          key: const ValueKey(
+                            'mobile-home-national-day-banner',
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            copy.localized(
-                              pages[index].$3,
-                              'Discover your next favorite',
-                            ),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF945C45),
-                            ),
-                          ),
-                          const Spacer(),
-                          FilledButton.icon(
-                            onPressed: index == 2
-                                ? widget.onOpenAi
-                                : widget.onSearch,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _orange,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              minimumSize: const Size(0, 39),
-                            ),
-                            icon: const Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 17,
-                            ),
-                            iconAlignment: IconAlignment.end,
-                            label: Text(
-                              copy.localized(
-                                index == 2 ? '立即提问' : '开始探索',
-                                index == 2 ? 'Ask now' : 'Explore',
-                              ),
-                            ),
-                          ),
-                        ],
+                          onTap: widget.onOpenNationalDay,
+                          child: Semantics(button: true, label: '打开国庆专题'),
+                        ),
                       ),
-                    ),
-                  if (wideWeb && index != 0)
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: index == 2 ? widget.onOpenAi : widget.onSearch,
-                        child: Semantics(
-                          label: copy.localized(
-                            index == 2 ? '立即提问' : '开始探索',
-                            index == 2 ? 'Ask now' : 'Explore',
+                    if (!wideWeb || index == 0)
+                      IgnorePointer(
+                        ignoring: index == 1,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 18, 16, 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                copy.localized(
+                                  pages[index].$2,
+                                  index == 2
+                                      ? 'Ask AI about\nthe rules'
+                                      : 'Better games\ntogether',
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF5D2419),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                copy.localized(
+                                  pages[index].$3,
+                                  'Discover your next favorite',
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF945C45),
+                                ),
+                              ),
+                              const Spacer(),
+                              FilledButton.icon(
+                                onPressed: index == 2
+                                    ? widget.onOpenAi
+                                    : index == 1
+                                    ? widget.onOpenNationalDay
+                                    : widget.onSearch,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _orange,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  minimumSize: const Size(0, 39),
+                                ),
+                                icon: const Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 17,
+                                ),
+                                iconAlignment: IconAlignment.end,
+                                label: Text(
+                                  copy.localized(
+                                    index == 2
+                                        ? '立即提问'
+                                        : index == 1
+                                        ? '投票想玩'
+                                        : '开始探索',
+                                    index == 2
+                                        ? 'Ask now'
+                                        : index == 1
+                                        ? 'Vote to play'
+                                        : 'Explore',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (wideWeb && index == 2)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: index == 2 ? widget.onOpenAi : widget.onSearch,
+                          child: Semantics(
+                            label: copy.localized(
+                              index == 2 ? '立即提问' : '开始探索',
+                              index == 2 ? 'Ask now' : 'Explore',
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              right: 14,
+              bottom: 13,
+              child: Row(
+                children: [
+                  for (var index = 0; index < pages.length; index++)
+                    InkWell(
+                      key: ValueKey('mobile-home-banner-dot-$index'),
+                      onTap: () => _bannerController.animateToPage(
+                        index,
+                        duration: const Duration(milliseconds: 420),
+                        curve: Curves.easeInOut,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 4,
+                        ),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          margin: const EdgeInsets.only(left: 4),
+                          width: index == _banner ? 15 : 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: index == _banner ? _orange : Colors.white,
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         ),
                       ),
@@ -336,28 +414,20 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                 ],
               ),
             ),
-          ),
-          Positioned(
-            right: 14,
-            bottom: 13,
-            child: Row(
-              children: [
-                for (var index = 0; index < pages.length; index++)
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    margin: const EdgeInsets.only(left: 4),
-                    width: index == _banner ? 15 : 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: index == _banner ? _orange : Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  void _stepBanner(int delta) {
+    if (!_bannerController.hasClients) return;
+    _bannerController.animateToPage(
+      (_banner + delta + 3) % 3,
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 420),
+      curve: Curves.easeInOut,
     );
   }
 

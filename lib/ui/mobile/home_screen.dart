@@ -15,6 +15,7 @@ import 'library_content.dart';
 import 'mine_content.dart';
 import 'universal_ai_screen.dart';
 import 'assistant_chat_screen.dart';
+import 'national_day_screen.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
 class HomeScreen extends StatefulWidget {
@@ -80,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onSettings: _openSettings,
                 onActivities: _openActivities,
                 onRules: _openRuleMaterials,
+                onOpenNationalDay: _openNationalDay,
               )
             : _tab == 1
             ? MobileLibraryContent(
@@ -147,6 +149,17 @@ class _HomeScreenState extends State<HomeScreen> {
             label: copy.localized('我的', 'Me'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openNationalDay() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MobileNationalDayScreen(
+          controller: widget.controller,
+          onOpenGame: _openGame,
+        ),
       ),
     );
   }

@@ -41,6 +41,7 @@ import '../../features/settings/services/preferences_service.dart';
 import '../../features/games/services/daily_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
 import '../../features/games/services/game_vote_service.dart';
+import '../../features/games/services/national_day_list_controller.dart';
 import '../../features/library/services/remote_asset_service.dart';
 import '../../features/assistant/services/speech_service.dart';
 import '../../features/assistant/services/tts_service.dart';
@@ -107,6 +108,13 @@ class AppController extends ChangeNotifier {
 
   final PreferencesService _preferencesService;
   final GameVoteService gameVotes;
+  NationalDayListController? _nationalDayList;
+  NationalDayListController get nationalDayList =>
+      _nationalDayList ??= NationalDayListController(
+        preferences: _preferencesService,
+        defaultSlugs: () =>
+            defaultNationalDayGames.map((game) => game.slug).toList(),
+      );
   final AiService _aiService;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
@@ -769,6 +777,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> disposeServices() async {
     gameVotes.dispose();
+    _nationalDayList?.dispose();
     _assetStatusTimer?.cancel();
     for (final _ChatGenerationState generation in _generationStates.values) {
       generation.wasStopped = true;

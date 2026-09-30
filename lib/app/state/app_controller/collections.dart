@@ -9,11 +9,13 @@ extension AppCollectionController on AppController {
     return {...preferred, ...games}.take(3).toList();
   }
 
-  Future<List<String>?> loadNationalDayGameSlugs() =>
-      _preferencesService.loadNationalDayGameSlugs();
+  List<GameInfo> get nationalDayGames => nationalDayList.slugs
+      .expand((slug) => games.where((game) => game.slug == slug))
+      .toList();
 
-  Future<void> saveNationalDayGameSlugs(Iterable<String> slugs) =>
-      _preferencesService.saveNationalDayGameSlugs(slugs);
+  String get nationalDayShareText =>
+      '${copy.localized('国庆聚会 · 桌游清单', 'National Day · Games to play')}\n'
+      '${nationalDayGames.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}';
 
   Future<bool> toggleFavorite(GameInfo game) {
     final Future<bool> operation = _favoriteMutationQueue

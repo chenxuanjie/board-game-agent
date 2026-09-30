@@ -13,6 +13,8 @@ import 'desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
+import '../shared/hover_horizontal_scrollbar.dart';
+import '../shared/hover_carousel_controls.dart';
 
 class DesktopHomePane extends StatefulWidget {
   const DesktopHomePane({
@@ -192,25 +194,32 @@ class _MainColumn extends StatelessWidget {
 
             if (constraints.maxWidth < fiveCardMinimumWidth) {
               final visibleGames = games.take(5).toList();
-              return SingleChildScrollView(
-                key: const ValueKey<String>('desktop-home-recommendation-row'),
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < visibleGames.length; i++) ...[
-                      if (i > 0) SizedBox(width: gap),
-                      SizedBox(
-                        width: minimumCardWidth,
-                        child: _GameCard(
-                          key: ValueKey<String>(
-                            'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+              return HoverHorizontalScrollbar(
+                enabled: true,
+                keyPrefix: 'desktop-home-recommendations',
+                builder: (scrollController) => SingleChildScrollView(
+                  controller: scrollController,
+                  key: const ValueKey<String>(
+                    'desktop-home-recommendation-row',
+                  ),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < visibleGames.length; i++) ...[
+                        if (i > 0) SizedBox(width: gap),
+                        SizedBox(
+                          width: minimumCardWidth,
+                          child: _GameCard(
+                            key: ValueKey<String>(
+                              'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                            ),
+                            game: visibleGames[i],
+                            onTap: () => onOpenGame(visibleGames[i].data),
                           ),
-                          game: visibleGames[i],
-                          onTap: () => onOpenGame(visibleGames[i].data),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               );
             }
@@ -461,74 +470,12 @@ class _HeroBannerState extends State<_HeroBanner> {
     );
   }
 
-  Widget _navigationButton({required bool previous}) {
-    final label = previous
-        ? MaterialLocalizations.of(context).previousPageTooltip
-        : MaterialLocalizations.of(context).nextPageTooltip;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : Duration(milliseconds: _showControls ? 180 : 150);
-    final shape = RoundedRectangleBorder(
-      borderRadius: previous
-          ? const BorderRadius.horizontal(right: Radius.circular(10))
-          : const BorderRadius.horizontal(left: Radius.circular(10)),
-    );
-    return Positioned(
-      left: previous ? 0 : null,
-      right: previous ? null : 0,
-      top: 0,
-      bottom: 0,
-      child: Center(
-        child: IgnorePointer(
-          ignoring: !_showControls,
-          child: AnimatedOpacity(
-            key: ValueKey(
-              'home-hero-${previous ? 'previous' : 'next'}-visibility',
-            ),
-            opacity: _showControls ? 1 : 0,
-            duration: duration,
-            curve: Curves.easeOutCubic,
-            child: AnimatedSlide(
-              offset: _showControls
-                  ? Offset.zero
-                  : Offset(previous ? -.2 : .2, 0),
-              duration: duration,
-              curve: Curves.easeOutCubic,
-              child: Tooltip(
-                message: label,
-                child: SizedBox(
-                  width: 38,
-                  height: 72,
-                  child: TextButton(
-                    key: ValueKey(
-                      'home-hero-${previous ? 'previous' : 'next'}',
-                    ),
-                    onPressed: () => _step(previous ? -1 : 1),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      backgroundColor: const Color(0x66000000),
-                      foregroundColor: Colors.white,
-                      overlayColor: Colors.white,
-                      shape: shape,
-                    ),
-                    child: Icon(
-                      previous
-                          ? Icons.chevron_left_rounded
-                          : Icons.chevron_right_rounded,
-                      size: 30,
-                      semanticLabel: label,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _navigationButton({required bool previous}) => CarouselEdgeButton(
+    visible: _showControls,
+    previous: previous,
+    keyPrefix: 'home-hero',
+    onTap: () => _step(previous ? -1 : 1),
+  );
 }
 
 class _HeroImagePage extends StatelessWidget {

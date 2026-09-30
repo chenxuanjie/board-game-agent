@@ -61,6 +61,7 @@ flutter:
     - assets/mobile/home/
     - assets/mobile/mine/
     - assets/mobile/detail/
+    - assets/mobile/national_day/
     - assets/desktop/home/
     - assets/desktop/home/sidebar_icons/
     - assets/desktop/warmwood/

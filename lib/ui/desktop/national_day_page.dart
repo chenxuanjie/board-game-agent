@@ -10,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/services/game_vote_service.dart';
+import '../shared/national_day_game_picker.dart';
 import 'desktop_resolved_image.dart';
 import 'window_controls.dart';
 
@@ -39,11 +40,13 @@ class DesktopNationalDayPage extends StatefulWidget {
 
 class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
   final _scroll = ScrollController();
-  List<String> _slugs = [];
-  bool _loading = true;
-  bool _saving = false;
+  List<String> get _slugs => widget.controller.nationalDayList.slugs;
+  bool get _loading =>
+      !widget.controller.nationalDayList.ready &&
+      widget.controller.nationalDayList.error == null;
+  bool get _saving => widget.controller.nationalDayList.saving;
   bool _sharing = false;
-  String? _loadError;
+  String? get _loadError => widget.controller.nationalDayList.error;
 
   @override
   void initState() {
@@ -58,37 +61,10 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
     super.dispose();
   }
 
-  List<GameInfo> get _games => _slugs
-      .expand(
-        (slug) => widget.controller.games.where((game) => game.slug == slug),
-      )
-      .toList();
+  List<GameInfo> get _games => widget.controller.nationalDayGames;
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _loadError = null;
-    });
-    try {
-      final stored = await widget.controller.loadNationalDayGameSlugs().timeout(
-        const Duration(seconds: 8),
-      );
-      if (!mounted) return;
-      setState(() {
-        _slugs =
-            stored?.toSet().toList() ??
-            widget.controller.defaultNationalDayGames
-                .map((game) => game.slug)
-                .toList();
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _loadError = '清单读取失败';
-      });
-    }
+    await widget.controller.nationalDayList.load();
   }
 
   void _notice(String text) {
@@ -99,24 +75,17 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
 
   Future<void> _save(List<String> next) async {
     if (_saving || _loading || _loadError != null) return;
-    setState(() => _saving = true);
-    try {
-      await widget.controller
-          .saveNationalDayGameSlugs(next)
-          .timeout(const Duration(seconds: 8));
-      if (mounted) setState(() => _slugs = next);
-    } catch (_) {
-      if (mounted) _notice('清单保存失败，请重试');
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    final saved = await widget.controller.nationalDayList.save(next);
+    if (!saved && mounted) _notice('清单保存失败，请重试');
   }
 
   Future<void> _add() async {
-    final game = await showDialog<GameInfo>(
-      context: context,
-      builder: (_) =>
-          _GamePicker(controller: widget.controller, selected: _slugs.toSet()),
+    final game = await showNationalDayGamePicker(
+      context,
+      controller: widget.controller,
+      selected: _slugs.toSet(),
+      coverBuilder: (game) =>
+          _GameCover(controller: widget.controller, game: game),
     );
     if (!mounted || game == null || _slugs.contains(game.slug)) return;
     await _save([..._slugs, game.slug]);
@@ -134,12 +103,8 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
     if (_sharing) return;
     setState(() => _sharing = true);
     try {
-      final games = _games;
       await Clipboard.setData(
-        ClipboardData(
-          text:
-              '国庆聚会 · 桌游清单\n${games.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}',
-        ),
+        ClipboardData(text: widget.controller.nationalDayShareText),
       ).timeout(const Duration(seconds: 8));
       if (mounted) _notice('清单已复制，可以分享给朋友');
     } catch (_) {
@@ -154,6 +119,7 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
     animation: Listenable.merge([
       widget.controller,
       widget.controller.gameVotes,
+      widget.controller.nationalDayList,
     ]),
     builder: (context, _) {
       final native = widget.enableNativeWindowControls;
@@ -604,98 +570,4 @@ class _GameCover extends StatelessWidget {
     color: _cream,
     child: Center(child: Icon(Icons.casino_rounded, color: _brown, size: 48)),
   );
-}
-
-class _GamePicker extends StatefulWidget {
-  const _GamePicker({required this.controller, required this.selected});
-  final AppController controller;
-  final Set<String> selected;
-
-  @override
-  State<_GamePicker> createState() => _GamePickerState();
-}
-
-class _GamePickerState extends State<_GamePicker> {
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final games = widget.controller.games
-        .where(
-          (game) =>
-              !widget.selected.contains(game.slug) &&
-              '${game.title} ${game.subtitle} ${game.categoryLine}'
-                  .toLowerCase()
-                  .contains(_query.toLowerCase().trim()),
-        )
-        .toList();
-    final viewport = MediaQuery.sizeOf(context);
-    return Dialog(
-      child: SizedBox(
-        width: math.min(560, viewport.width - 64),
-        height: math.min(560, viewport.height - 64),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      '添加桌游',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    tooltip: '关闭',
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                key: const ValueKey('national-day-picker-search'),
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '搜索桌游',
-                  prefixIcon: Icon(Icons.search_rounded),
-                ),
-                onChanged: (value) => setState(() => _query = value),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: games.isEmpty
-                    ? const Center(child: Text('没有可添加的桌游'))
-                    : ListView.builder(
-                        itemCount: games.length,
-                        itemBuilder: (_, index) {
-                          final game = games[index];
-                          return ListTile(
-                            key: ValueKey('national-day-pick-${game.slug}'),
-                            leading: SizedBox(
-                              width: 40,
-                              height: 48,
-                              child: _GameCover(
-                                controller: widget.controller,
-                                game: game,
-                              ),
-                            ),
-                            title: Text(game.title),
-                            subtitle: Text(game.categoryLine),
-                            trailing: const Icon(Icons.add_rounded),
-                            onTap: () => Navigator.pop(context, game),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

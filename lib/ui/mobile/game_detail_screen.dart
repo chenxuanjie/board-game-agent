@@ -10,6 +10,8 @@ import '../../features/library/models/resolved_document.dart';
 import '../shared/documents/document_viewer_launcher.dart';
 import 'assistant_chat_screen.dart';
 import 'game_cover.dart';
+import '../shared/hover_carousel_controls.dart';
+import '../shared/hover_horizontal_scrollbar.dart';
 
 const _ink = Color(0xFF271D1B);
 const _muted = Color(0xFF817B7A);
@@ -165,123 +167,92 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                           270.0,
                           480.0,
                         ),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            PageView.builder(
-                              controller: _galleryController,
-                              itemCount: gallery.length,
-                              onPageChanged: (index) =>
-                                  setState(() => _galleryIndex = index),
-                              itemBuilder: (context, index) => Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(22),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      _GalleryAsset(
-                                        controller: controller,
-                                        game: game,
-                                        path: gallery[index],
-                                      ),
-                                      if (gallery.length > 1)
-                                        Positioned(
-                                          bottom: 12,
-                                          left: 0,
-                                          right: 0,
-                                          child: Center(
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 7,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black45,
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: List.generate(
-                                                  gallery.length,
-                                                  (dot) => AnimatedContainer(
-                                                    duration: const Duration(
-                                                      milliseconds: 180,
+                        child: HoverCarouselControls(
+                          enabled: kIsWeb && gallery.length > 1,
+                          keyPrefix: 'mobile-detail-gallery',
+                          onPrevious: () =>
+                              _stepGalleryPage(-1, gallery.length),
+                          onNext: () => _stepGalleryPage(1, gallery.length),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              PageView.builder(
+                                controller: _galleryController,
+                                itemCount: gallery.length,
+                                onPageChanged: (index) =>
+                                    setState(() => _galleryIndex = index),
+                                itemBuilder: (context, index) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(22),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        _GalleryAsset(
+                                          controller: controller,
+                                          game: game,
+                                          path: gallery[index],
+                                        ),
+                                        if (gallery.length > 1)
+                                          Positioned(
+                                            bottom: 12,
+                                            left: 0,
+                                            right: 0,
+                                            child: Center(
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 7,
                                                     ),
-                                                    margin:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 3,
-                                                        ),
-                                                    width: dot == _galleryIndex
-                                                        ? 18
-                                                        : 6,
-                                                    height: 6,
-                                                    decoration: BoxDecoration(
-                                                      color:
-                                                          dot == _galleryIndex
-                                                          ? Colors.white
-                                                          : Colors.white54,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            6,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black45,
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: List.generate(
+                                                    gallery.length,
+                                                    (dot) => AnimatedContainer(
+                                                      duration: const Duration(
+                                                        milliseconds: 180,
+                                                      ),
+                                                      margin:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 3,
                                                           ),
+                                                      width:
+                                                          dot == _galleryIndex
+                                                          ? 18
+                                                          : 6,
+                                                      height: 6,
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            dot == _galleryIndex
+                                                            ? Colors.white
+                                                            : Colors.white54,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              6,
+                                                            ),
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (kIsWeb && gallery.length > 1) ...[
-                              Positioned(
-                                left: 12,
-                                top: 0,
-                                bottom: 0,
-                                child: Center(
-                                  child: _GalleryPageArrow(
-                                    key: const ValueKey<String>(
-                                      'mobile-detail-gallery-previous',
+                                      ],
                                     ),
-                                    tooltip: copy.localized(
-                                      '上一张图片',
-                                      'Previous image',
-                                    ),
-                                    icon: Icons.chevron_left_rounded,
-                                    onTap: () =>
-                                        _stepGalleryPage(-1, gallery.length),
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                right: 12,
-                                top: 0,
-                                bottom: 0,
-                                child: Center(
-                                  child: _GalleryPageArrow(
-                                    key: const ValueKey<String>(
-                                      'mobile-detail-gallery-next',
-                                    ),
-                                    tooltip: copy.localized(
-                                      '下一张图片',
-                                      'Next image',
-                                    ),
-                                    icon: Icons.chevron_right_rounded,
-                                    onTap: () =>
-                                        _stepGalleryPage(1, gallery.length),
                                   ),
                                 ),
                               ),
                             ],
-                          ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 17),
@@ -649,92 +620,96 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: 104,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: results.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final result = results[index];
-              return SizedBox(
-                width: 225,
-                child: Material(
-                  color: const Color(0xFFFFF8EF),
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    key: ValueKey('mobile-related-game-${result.game.id}'),
-                    onTap: () => _openRelatedGame(result.game),
+        HoverHorizontalScrollbar(
+          keyPrefix: 'mobile-detail-related',
+          builder: (scrollController) => SizedBox(
+            height: 104,
+            child: ListView.separated(
+              controller: scrollController,
+              scrollDirection: Axis.horizontal,
+              itemCount: results.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final result = results[index];
+                return SizedBox(
+                  width: 225,
+                  child: Material(
+                    color: const Color(0xFFFFF8EF),
                     borderRadius: BorderRadius.circular(14),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: SizedBox(
-                              width: 63,
-                              height: 88,
-                              child: MobileGameCover(
-                                controller: widget.controller,
-                                game: result.game,
+                    child: InkWell(
+                      key: ValueKey('mobile-related-game-${result.game.id}'),
+                      onTap: () => _openRelatedGame(result.game),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: 63,
+                                height: 88,
+                                child: MobileGameCover(
+                                  controller: widget.controller,
+                                  game: result.game,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 9),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  result.game.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: _ink,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  _relatedReason(result.reason),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: _muted,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.star_rounded,
-                                      size: 14,
-                                      color: _orange,
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    result.game.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: _ink,
                                     ),
-                                    Text(
-                                      result.game.score,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    _relatedReason(result.reason),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: _muted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.star_rounded,
+                                        size: 14,
                                         color: _orange,
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                      Text(
+                                        result.game.score,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: _orange,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -848,33 +823,4 @@ class _GalleryAsset extends StatelessWidget {
           MobileGameCover(controller: controller, game: game),
     );
   }
-}
-
-class _GalleryPageArrow extends StatelessWidget {
-  const _GalleryPageArrow({
-    super.key,
-    required this.tooltip,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: tooltip,
-    child: IconButton(
-      onPressed: onTap,
-      icon: Icon(icon, size: 28),
-      color: Colors.white,
-      style: IconButton.styleFrom(
-        backgroundColor: Colors.black45,
-        minimumSize: const Size.square(44),
-        maximumSize: const Size.square(44),
-        padding: EdgeInsets.zero,
-      ),
-    ),
-  );
 }

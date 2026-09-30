@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageByteFormat;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -24,8 +27,12 @@ import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
 import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
 import 'package:board_game_agent/ui/mobile/settings_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_cover.dart';
+import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
+import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/core/theme/color_scheme_option.dart';
+
+part 'mobile/mobile_national_day_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -418,10 +425,14 @@ void main() {
     expect(aboutOpened, isTrue);
     expect(tester.takeException(), isNull);
   });
+  _registerMobileNationalDayTests();
 }
 
-AppController _controller({TtsService? ttsService}) => AppController(
-  preferencesService: PreferencesService(),
+AppController _controller({
+  TtsService? ttsService,
+  PreferencesService? preferences,
+}) => AppController(
+  preferencesService: preferences ?? PreferencesService(),
   aiService: _UnusedAiService(),
   gameManifestService: GameManifestService(),
   remoteAssetService: _NoNetworkAssetService(),
