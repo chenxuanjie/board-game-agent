@@ -1,6 +1,20 @@
 part of '../app_controller.dart';
 
 extension AppCollectionController on AppController {
+  List<GameInfo> get defaultNationalDayGames {
+    const slugs = ['carcassonne_3', 'splendor', 'harmonies'];
+    final preferred = slugs.expand(
+      (slug) => games.where((game) => game.slug == slug),
+    );
+    return {...preferred, ...games}.take(3).toList();
+  }
+
+  Future<List<String>?> loadNationalDayGameSlugs() =>
+      _preferencesService.loadNationalDayGameSlugs();
+
+  Future<void> saveNationalDayGameSlugs(Iterable<String> slugs) =>
+      _preferencesService.saveNationalDayGameSlugs(slugs);
+
   Future<bool> toggleFavorite(GameInfo game) {
     final Future<bool> operation = _favoriteMutationQueue
         .catchError((Object _) {})

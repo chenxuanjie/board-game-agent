@@ -44,6 +44,7 @@ import 'package:board_game_agent/ui/desktop/workspace.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/home_pane.dart';
+import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/ui/desktop/games_pane.dart';
 import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
@@ -55,6 +56,7 @@ part 'desktop/desktop_shell_test_cases.dart';
 part 'desktop/desktop_library_test_cases.dart';
 part 'desktop/desktop_home_test_cases.dart';
 part 'desktop/desktop_typography_test_cases.dart';
+part 'desktop/desktop_national_day_test_cases.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -78,6 +80,9 @@ void main() {
     final font = FontLoader('Noto Sans SC')
       ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
     await font.load();
+    await (FontLoader(
+      'National Day Display',
+    )..addFont(rootBundle.load('assets/fonts/NationalDayDisplay.ttf'))).load();
     final icons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     await icons.load();
@@ -108,6 +113,7 @@ void main() {
 
   _registerDesktopHomeTests(workspaceContext);
   _registerDesktopTypographyTests(workspaceContext);
+  _registerDesktopNationalDayTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {
     controller.openGlobalAssistant();
@@ -273,6 +279,7 @@ Future<void> _mount(
     RepaintBoundary(
       key: const ValueKey<String>('desktop-test-capture'),
       child: MaterialApp(
+        debugShowCheckedModeBanner: false,
         theme: buildDesktopTheme(),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
@@ -361,6 +368,27 @@ class _UnavailableTtsService extends TtsService {
 }
 
 class _InMemoryPreferencesService extends PreferencesService {
+  String? gameVoteCache;
+
+  @override
+  Future<String?> loadGameVoteCache() async => gameVoteCache;
+
+  @override
+  Future<void> saveGameVoteCache(String value) async => gameVoteCache = value;
+
+  List<String>? nationalDayGameSlugs;
+  bool failNationalDaySave = false;
+
+  @override
+  Future<List<String>?> loadNationalDayGameSlugs() async =>
+      nationalDayGameSlugs;
+
+  @override
+  Future<void> saveNationalDayGameSlugs(Iterable<String> slugs) async {
+    if (failNationalDaySave) throw StateError('test save failure');
+    nationalDayGameSlugs = slugs.toList();
+  }
+
   AiApiConfig? _aiApiConfig;
   List<AiApiConfig> _aiCustomPresets = <AiApiConfig>[];
   ColorSchemeOption? _colorScheme;

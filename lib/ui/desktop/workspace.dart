@@ -16,6 +16,7 @@ import '../shared/documents/markdown_document_screen.dart';
 import '../shared/documents/pdf_document_screen.dart';
 import 'business_panes.dart';
 import 'home_pane.dart';
+import 'national_day_page.dart';
 import 'games_pane.dart';
 import 'favorites_pane.dart';
 import 'game_detail_pane.dart';
@@ -133,6 +134,22 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       _page = 'gameDetail';
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void _openNationalDay() {
+    _dismissSearch(clearQuery: true);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (pageContext) => DesktopNationalDayPage(
+          controller: widget.controller,
+          enableNativeWindowControls: _native,
+          onOpenGame: (game) {
+            Navigator.of(pageContext).pop();
+            _game(game);
+          },
+        ),
+      ),
+    );
   }
 
   void _openRules(GameInfo game) {
@@ -579,6 +596,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               controller: widget.controller,
                               onNavigate: _navigate,
                               onOpenGame: _game,
+                              onOpenNationalDay: _openNationalDay,
                             ),
                             'games' => DesktopGamesPane(
                               controller: widget.controller,

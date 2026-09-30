@@ -620,6 +620,141 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('home hero hover arrows fade, wrap and pause automatic rotation', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final frame = find.byKey(const ValueKey('home-hero-frame'));
+    final previous = find.byKey(const ValueKey('home-hero-previous'));
+    final next = find.byKey(const ValueKey('home-hero-next'));
+    final visibility = find.byKey(const ValueKey('home-hero-next-visibility'));
+    final carousel = tester.widget<PageView>(
+      find.byKey(const ValueKey('home-hero-carousel')),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(1279, 799));
+    addTearDown(mouse.removePointer);
+    expect(tester.widget<AnimatedOpacity>(visibility).opacity, 0);
+    await mouse.moveTo(tester.getCenter(frame));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+    final fade = find.descendant(
+      of: visibility,
+      matching: find.byType(FadeTransition),
+    );
+    expect(tester.widget<FadeTransition>(fade).opacity.value, greaterThan(0));
+    expect(tester.widget<FadeTransition>(fade).opacity.value, lessThan(1));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(previous).left,
+      closeTo(tester.getRect(frame).left, .1),
+    );
+    expect(
+      tester.getRect(next).right,
+      closeTo(tester.getRect(frame).right, .1),
+    );
+    expect(tester.getSize(next), const Size(38, 72));
+    if (Platform.environment['DESKTOP_UI_CAPTURE_DIR'] != null) {
+      final bannerContext = tester.element(frame);
+      await tester.runAsync(
+        () => precacheImage(
+          const AssetImage('assets/desktop/home/banner_tonight.png'),
+          bannerContext,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _captureDesktopTypography(tester, 'banner-arrows');
+    }
+    await tester.tap(previous);
+    await tester.pumpAndSettle();
+    expect(carousel.controller!.page, 2);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(carousel.controller!.page, 0);
+    // Repeated clicks should advance from the requested slide, not stale state.
+    await tester.tap(next);
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(carousel.controller!.page, 2);
+    await tester.pump(const Duration(seconds: 6));
+    expect(carousel.controller!.page, 2);
+    await mouse.moveTo(const Offset(1279, 799));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 75));
+    expect(tester.widget<FadeTransition>(fade).opacity.value, greaterThan(0));
+    expect(tester.widget<FadeTransition>(fade).opacity.value, lessThan(1));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(visibility).opacity, 0);
+    await tester.pump(const Duration(seconds: 4));
+    expect(carousel.controller!.page, 2);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(carousel.controller!.page, 0);
+    expect(find.byType(DesktopHomePane), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home hero keyboard arrows reveal controls and preserve focus', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final next = find.byKey(const ValueKey('home-hero-next'));
+    final icon = find.descendant(of: next, matching: find.byType(Icon));
+    Focus.of(tester.element(icon)).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    final carousel = tester.widget<PageView>(
+      find.byKey(const ValueKey('home-hero-carousel')),
+    );
+    expect(carousel.controller!.page, 1);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(const ValueKey('home-hero-next-visibility')),
+          )
+          .opacity,
+      1,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(carousel.controller!.page, 0);
+    await tester.pump(const Duration(seconds: 6));
+    expect(carousel.controller!.page, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home hero respects reduced motion for controls and navigation', (
+    tester,
+  ) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final frame = find.byKey(const ValueKey('home-hero-frame'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(1279, 799));
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(frame));
+    await tester.pump();
+    final visible = tester.widget<AnimatedOpacity>(
+      find.byKey(const ValueKey('home-hero-next-visibility')),
+    );
+    expect(visible.duration, Duration.zero);
+    expect(visible.opacity, 1);
+    await tester.tap(find.byKey(const ValueKey('home-hero-next')));
+    await tester.pump();
+    final carousel = tester.widget<PageView>(
+      find.byKey(const ValueKey('home-hero-carousel')),
+    );
+    expect(carousel.controller!.page, 1);
+    await tester.tap(find.byKey(const ValueKey('home-hero-next')));
+    await tester.pump();
+    expect(carousel.controller!.page, 2);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('home hero exposes three available carousel pages', (
     tester,
   ) async {
@@ -715,7 +850,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey<String>('home-hero-page-1')));
     await tester.pumpAndSettle();
-    expect(find.byType(DesktopGamesPane), findsOneWidget);
+    expect(find.byType(DesktopNationalDayPage), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -64,7 +64,7 @@ class AppCopy {
       case AiReasoningEffort.automatic:
         return isChinese ? '自动' : 'Automatic';
       case AiReasoningEffort.none:
-        return isChinese ? '无（None）' : 'None';
+        return isChinese ? '无' : 'None';
       case AiReasoningEffort.low:
         return isChinese ? '低' : 'Low';
       case AiReasoningEffort.medium:
@@ -72,9 +72,9 @@ class AppCopy {
       case AiReasoningEffort.high:
         return isChinese ? '高' : 'High';
       case AiReasoningEffort.xhigh:
-        return isChinese ? '极高（Xhigh）' : 'Extra high (Xhigh)';
+        return isChinese ? '极高' : 'Extra high';
       case AiReasoningEffort.max:
-        return isChinese ? '最高（Max）' : 'Maximum (Max)';
+        return isChinese ? '最高' : 'Maximum';
     }
   }
 

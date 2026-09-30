@@ -51,8 +51,13 @@ flutter:
     - family: Noto Sans SC
       fonts:
         - asset: assets/fonts/NotoSansSC-Variable.ttf
+    - family: National Day Display
+      fonts:
+        - asset: assets/fonts/NationalDayDisplay.ttf
   assets:
     - assets/fonts/OFL-NotoSansSC.txt
+    - assets/fonts/OFL-NotoSerifSC.txt
+    - assets/desktop/national_day/
     - assets/mobile/home/
     - assets/mobile/mine/
     - assets/mobile/detail/

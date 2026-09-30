@@ -286,9 +286,9 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await tester.ensureVisible(effort);
     await tester.tap(effort);
     await tester.pumpAndSettle();
-    expect(find.text('无（None）'), findsNothing);
-    expect(find.text('最高（Max）'), findsWidgets);
-    await tester.tap(find.text('最高（Max）').last);
+    expect(find.text('无'), findsNothing);
+    expect(find.text('最高'), findsWidgets);
+    await tester.tap(find.text('最高').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('配置已修改，请保存并检测'), findsOneWidget);
     expect(find.textContaining('请求值：'), findsNothing);

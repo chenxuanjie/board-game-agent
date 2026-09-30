@@ -35,10 +35,32 @@ class PreferencesService {
   static const _recentSearchesKey = 'recent_searches_v1';
   static const _recentGamesKey = 'recent_games_v1';
   static const _dailyRecommendationsKey = 'daily_recommendations_v1';
+  static const _nationalDayGamesKey = 'national_day_game_slugs_v1';
+  static const _gameVoteCacheKey = 'national_day_votes_v1';
   static const int recentSearchesLimit = 8;
   static const int recentGamesLimit = 20;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+
+  Future<String?> loadGameVoteCache() async =>
+      (await _prefs).getString(_gameVoteCacheKey);
+
+  Future<void> saveGameVoteCache(String value) async {
+    if (!await (await _prefs).setString(_gameVoteCacheKey, value)) {
+      throw StateError('Game votes could not be saved');
+    }
+  }
+
+  Future<List<String>?> loadNationalDayGameSlugs() async =>
+      (await _prefs).getStringList(_nationalDayGamesKey);
+
+  Future<void> saveNationalDayGameSlugs(Iterable<String> slugs) async {
+    final saved = await (await _prefs).setStringList(
+      _nationalDayGamesKey,
+      slugs.toSet().toList(),
+    );
+    if (!saved) throw StateError('National Day list could not be saved');
+  }
 
   Future<AppLanguage> loadLanguage() async {
     final prefs = await _prefs;

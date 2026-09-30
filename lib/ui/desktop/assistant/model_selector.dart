@@ -685,12 +685,13 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
     bool selected,
   ) {
     final AppPalette palette = AppPalette.of(context);
+    final AppCopy copy = widget.controller.copy;
     final String requestValue = effort.requestValue == null
-        ? widget.controller.copy.localized(
-            '不发送 reasoning_effort',
-            'Omits reasoning_effort',
-          )
-        : 'reasoning_effort=${effort.requestValue}';
+        ? copy.localized('使用服务默认强度', 'Use the service default')
+        : copy.localized(
+            '请求推理强度：${copy.aiApiReasoningEffortName(effort)}',
+            'Requested reasoning effort: ${copy.aiApiReasoningEffortName(effort)}',
+          );
     return Tooltip(
       message: requestValue,
       child: Material(

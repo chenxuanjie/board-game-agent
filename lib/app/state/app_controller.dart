@@ -40,6 +40,7 @@ import '../../features/assistant/services/ai_service.dart';
 import '../../features/settings/services/preferences_service.dart';
 import '../../features/games/services/daily_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
+import '../../features/games/services/game_vote_service.dart';
 import '../../features/library/services/remote_asset_service.dart';
 import '../../features/assistant/services/speech_service.dart';
 import '../../features/assistant/services/tts_service.dart';
@@ -91,7 +92,10 @@ class AppController extends ChangeNotifier {
     required TtsService ttsService,
     RealtimeVoiceService? realtimeVoiceService,
     ColorSchemeOption? initialColorScheme,
+    GameVoteService? gameVotes,
   }) : _preferencesService = preferencesService,
+       gameVotes =
+           gameVotes ?? GameVoteService(preferences: preferencesService),
        _colorScheme = initialColorScheme ?? defaultColorScheme,
        _aiService = aiService,
        _gameManifestService = gameManifestService,
@@ -102,6 +106,7 @@ class AppController extends ChangeNotifier {
            realtimeVoiceService ?? const UnconfiguredRealtimeVoiceService();
 
   final PreferencesService _preferencesService;
+  final GameVoteService gameVotes;
   final AiService _aiService;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
@@ -763,6 +768,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> disposeServices() async {
+    gameVotes.dispose();
     _assetStatusTimer?.cancel();
     for (final _ChatGenerationState generation in _generationStates.values) {
       generation.wasStopped = true;

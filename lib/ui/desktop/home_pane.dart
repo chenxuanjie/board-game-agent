@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
@@ -19,10 +20,12 @@ class DesktopHomePane extends StatefulWidget {
     required this.controller,
     required this.onNavigate,
     required this.onOpenGame,
+    required this.onOpenNationalDay,
   });
   final AppController controller;
   final ValueChanged<String> onNavigate;
   final ValueChanged<GameInfo> onOpenGame;
+  final VoidCallback onOpenNationalDay;
 
   @override
   State<DesktopHomePane> createState() => _DesktopHomePaneState();
@@ -91,6 +94,7 @@ class _DesktopHomePaneState extends State<DesktopHomePane> {
             games: games,
             onNavigate: widget.onNavigate,
             onOpenGame: widget.onOpenGame,
+            onOpenNationalDay: widget.onOpenNationalDay,
             onAction: action,
           ),
         ],
@@ -132,6 +136,7 @@ class _MainColumn extends StatelessWidget {
   final ValueChanged<String> onAction;
   final ValueChanged<String> onNavigate;
   final ValueChanged<GameInfo> onOpenGame;
+  final VoidCallback onOpenNationalDay;
 
   final List<DesktopContentGame> games;
   const _MainColumn({
@@ -139,6 +144,7 @@ class _MainColumn extends StatelessWidget {
     required this.onAction,
     required this.onNavigate,
     required this.onOpenGame,
+    required this.onOpenNationalDay,
     required this.games,
   });
 
@@ -155,6 +161,7 @@ class _MainColumn extends StatelessWidget {
               width: DesktopResponsive.homeHeroWidthFor(constraints.maxWidth),
               child: _HeroBanner(
                 onExplore: () => onAction('开始探索'),
+                onOpenNationalDay: onOpenNationalDay,
                 onOpenAssistant: () => onAction('AI助手'),
               ),
             ),
@@ -260,9 +267,14 @@ class _MainColumn extends StatelessWidget {
 
 class _HeroBanner extends StatefulWidget {
   final VoidCallback onExplore;
+  final VoidCallback onOpenNationalDay;
   final VoidCallback onOpenAssistant;
 
-  const _HeroBanner({required this.onExplore, required this.onOpenAssistant});
+  const _HeroBanner({
+    required this.onExplore,
+    required this.onOpenNationalDay,
+    required this.onOpenAssistant,
+  });
 
   @override
   State<_HeroBanner> createState() => _HeroBannerState();
@@ -277,7 +289,13 @@ class _HeroBannerState extends State<_HeroBanner> {
   final PageController _controller = PageController();
   Timer? _timer;
   int _page = 0;
+  int _targetPage = 0;
+  int _transition = 0;
+  bool _switching = false;
   bool _hovering = false;
+  bool _keyboardFocused = false;
+
+  bool get _showControls => _hovering || _keyboardFocused;
 
   @override
   void initState() {
@@ -295,86 +313,139 @@ class _HeroBannerState extends State<_HeroBanner> {
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(_interval, (_) {
-      if (!mounted || _hovering || !_controller.hasClients) return;
+      if (!mounted || _showControls || !_controller.hasClients) return;
       _goTo((_page + 1) % _pageCount);
     });
   }
 
-  void _goTo(int page) {
-    _controller.animateToPage(
-      page,
-      duration: const Duration(milliseconds: 480),
-      curve: Curves.easeInOutCubic,
-    );
+  Future<void> _goTo(int page) async {
+    if (!_controller.hasClients) return;
+    _targetPage = page;
+    final transition = ++_transition;
+    _switching = true;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.jumpToPage(page);
+    } else {
+      await _controller.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 480),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+    if (!mounted || transition != _transition) return;
+    _switching = false;
+    _targetPage = _page;
+  }
+
+  void _step(int direction) =>
+      unawaited(_goTo((_targetPage + direction + _pageCount) % _pageCount));
+
+  void _setHover(bool hovering) {
+    if (_hovering == hovering) return;
+    setState(() => _hovering = hovering);
+    if (!hovering) _startTimer();
+  }
+
+  void _setKeyboardFocus(bool focused) {
+    if (_keyboardFocused == focused) return;
+    setState(() => _keyboardFocused = focused);
+    if (!focused) _startTimer();
   }
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) => _hovering = true,
-      onExit: (_) => _hovering = false,
-      child: ClipRRect(
-        key: const ValueKey<String>('home-hero-frame'),
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: _frameAspectRatio,
-          child: Stack(
-            children: [
-              PageView(
-                key: const ValueKey<String>('home-hero-carousel'),
-                controller: _controller,
-                onPageChanged: (page) => setState(() => _page = page),
-                children: [
-                  _HeroImagePage(
-                    key: const ValueKey<String>('home-hero-image-page-0'),
-                    assetPath: 'assets/desktop/home/banner_tonight.png',
-                    semanticLabel: '今晚玩什么：好游戏，好朋友，好时光',
-                    onTap: widget.onExplore,
-                    imageScale: _firstBannerImageScale,
-                  ),
-                  _HeroImagePage(
-                    key: const ValueKey<String>('home-hero-page-1'),
-                    assetPath: 'assets/desktop/home/banner_gathering.png',
-                    semanticLabel: '国庆桌游聚会清单',
-                    onTap: widget.onExplore,
-                  ),
-                  _HeroImagePage(
-                    key: const ValueKey<String>('home-hero-page-2'),
-                    assetPath: 'assets/desktop/home/banner_ai.png',
-                    semanticLabel: '桌游有 AI，拍照、提问、秒懂桌游规则',
-                    onTap: widget.onOpenAssistant,
-                  ),
-                ],
-              ),
-              Positioned(
-                right: 18,
-                bottom: 14,
-                child: Row(
-                  children: List.generate(
-                    _pageCount,
-                    (index) => Padding(
-                      padding: const EdgeInsets.only(left: 7),
-                      child: Tooltip(
-                        message: '第 ${index + 1} 页',
-                        child: InkWell(
-                          key: ValueKey<String>('home-hero-dot-$index'),
-                          onTap: () => _goTo(index),
-                          customBorder: const CircleBorder(),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            width: index == _page ? 18 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: index == _page
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.58),
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x33000000),
-                                  blurRadius: 4,
-                                ),
-                              ],
+      onEnter: (_) => _setHover(true),
+      onExit: (_) => _setHover(false),
+      child: Focus(
+        canRequestFocus: false,
+        onFocusChange: (focused) {
+          if (!focused ||
+              HardwareKeyboard.instance.logicalKeysPressed.isNotEmpty) {
+            _setKeyboardFocus(focused);
+          }
+        },
+        onKeyEvent: (_, event) {
+          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+          _setKeyboardFocus(true);
+          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            _step(-1);
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            _step(1);
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: ClipRRect(
+          key: const ValueKey<String>('home-hero-frame'),
+          borderRadius: BorderRadius.circular(12),
+          child: AspectRatio(
+            aspectRatio: _frameAspectRatio,
+            child: Stack(
+              children: [
+                PageView(
+                  key: const ValueKey<String>('home-hero-carousel'),
+                  controller: _controller,
+                  onPageChanged: (page) => setState(() {
+                    _page = page;
+                    if (!_switching) _targetPage = page;
+                  }),
+                  children: [
+                    _HeroImagePage(
+                      key: const ValueKey<String>('home-hero-image-page-0'),
+                      assetPath: 'assets/desktop/home/banner_tonight.png',
+                      semanticLabel: '今晚玩什么：好游戏，好朋友，好时光',
+                      onTap: widget.onExplore,
+                      imageScale: _firstBannerImageScale,
+                    ),
+                    _HeroImagePage(
+                      key: const ValueKey<String>('home-hero-page-1'),
+                      assetPath: 'assets/desktop/home/banner_gathering.png',
+                      semanticLabel: '国庆桌游聚会清单',
+                      onTap: widget.onOpenNationalDay,
+                    ),
+                    _HeroImagePage(
+                      key: const ValueKey<String>('home-hero-page-2'),
+                      assetPath: 'assets/desktop/home/banner_ai.png',
+                      semanticLabel: '桌游有 AI，拍照、提问、秒懂桌游规则',
+                      onTap: widget.onOpenAssistant,
+                    ),
+                  ],
+                ),
+                _navigationButton(previous: true),
+                _navigationButton(previous: false),
+                Positioned(
+                  right: 18,
+                  bottom: 14,
+                  child: Row(
+                    children: List.generate(
+                      _pageCount,
+                      (index) => Padding(
+                        padding: const EdgeInsets.only(left: 7),
+                        child: Tooltip(
+                          message: '第 ${index + 1} 页',
+                          child: InkWell(
+                            key: ValueKey<String>('home-hero-dot-$index'),
+                            onTap: () => _goTo(index),
+                            customBorder: const CircleBorder(),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              width: index == _page ? 18 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: index == _page
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.58),
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x33000000),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -382,8 +453,77 @@ class _HeroBannerState extends State<_HeroBanner> {
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _navigationButton({required bool previous}) {
+    final label = previous
+        ? MaterialLocalizations.of(context).previousPageTooltip
+        : MaterialLocalizations.of(context).nextPageTooltip;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : Duration(milliseconds: _showControls ? 180 : 150);
+    final shape = RoundedRectangleBorder(
+      borderRadius: previous
+          ? const BorderRadius.horizontal(right: Radius.circular(10))
+          : const BorderRadius.horizontal(left: Radius.circular(10)),
+    );
+    return Positioned(
+      left: previous ? 0 : null,
+      right: previous ? null : 0,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: IgnorePointer(
+          ignoring: !_showControls,
+          child: AnimatedOpacity(
+            key: ValueKey(
+              'home-hero-${previous ? 'previous' : 'next'}-visibility',
+            ),
+            opacity: _showControls ? 1 : 0,
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            child: AnimatedSlide(
+              offset: _showControls
+                  ? Offset.zero
+                  : Offset(previous ? -.2 : .2, 0),
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              child: Tooltip(
+                message: label,
+                child: SizedBox(
+                  width: 38,
+                  height: 72,
+                  child: TextButton(
+                    key: ValueKey(
+                      'home-hero-${previous ? 'previous' : 'next'}',
+                    ),
+                    onPressed: () => _step(previous ? -1 : 1),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      backgroundColor: const Color(0x66000000),
+                      foregroundColor: Colors.white,
+                      overlayColor: Colors.white,
+                      shape: shape,
+                    ),
+                    child: Icon(
+                      previous
+                          ? Icons.chevron_left_rounded
+                          : Icons.chevron_right_rounded,
+                      size: 30,
+                      semanticLabel: label,
+                    ),
+                  ),
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),
