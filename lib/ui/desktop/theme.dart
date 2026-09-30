@@ -6,7 +6,8 @@ import '../../core/theme/palette_registry.dart';
 /// Design tokens for the Warmwood Study desktop theme.
 abstract final class DesktopColors {
   static const background = Color(0xFFFFFCF7);
-  static const sidebar = Color(0xFFFFFAF1);
+  // Continue the castle artwork's warm paper color through the entire sidebar.
+  static const sidebar = Color(0xFFFCF3E2);
   static const card = Color(0xFFFFFEFC);
   static const text = Color(0xFF171412);
   static const secondaryText = Color(0xFF7D756D);

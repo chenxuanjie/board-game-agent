@@ -55,12 +55,22 @@ class DesktopSidebar extends StatelessWidget {
               bottom: 0,
               child: AspectRatio(
                 aspectRatio: 971 / 1619,
-                child: Image.asset(
-                  'assets/desktop/home/sidebar_castle.png',
-                  key: const ValueKey<String>('desktop-sidebar-art'),
-                  width: double.infinity,
-                  fit: BoxFit.fitWidth,
-                  alignment: Alignment.bottomCenter,
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    // Blend only the blank paper margin, before any lettering.
+                    colors: [Colors.transparent, Colors.black, Colors.black],
+                    stops: [0, .08, 1],
+                  ).createShader(bounds),
+                  child: Image.asset(
+                    'assets/desktop/home/sidebar_castle.png',
+                    key: const ValueKey<String>('desktop-sidebar-art'),
+                    width: double.infinity,
+                    fit: BoxFit.fitWidth,
+                    alignment: Alignment.bottomCenter,
+                  ),
                 ),
               ),
             ),
