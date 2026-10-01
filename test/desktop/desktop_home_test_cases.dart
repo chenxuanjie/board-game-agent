@@ -1,6 +1,65 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  for (final size in [
+    const Size(1280, 800),
+    const Size(1920, 1080),
+    const Size(2560, 1440),
+  ]) {
+    testWidgets(
+      'home overview aligns with banner and lists span the page at $size',
+      (tester) async {
+        for (final game in context.controller.games.take(8)) {
+          unawaited(context.controller.recordRecentlyViewed(game));
+        }
+        await _mount(tester, context.controller, size);
+        final home = tester.getRect(find.byType(DesktopHomePane));
+        final hero = tester.getRect(
+          find.byKey(const ValueKey('home-hero-frame')),
+        );
+        final personal = tester.getRect(
+          find.byKey(const ValueKey('desktop-home-overview-personal')),
+        );
+        final recommendations = tester.getRect(
+          find.byKey(const ValueKey('desktop-home-recommendation-header')),
+        );
+        final recent = tester.getRect(
+          find.byKey(const ValueKey('desktop-home-recent-panel')),
+        );
+        expect(personal.top, closeTo(hero.top, .1));
+        expect(personal.bottom, closeTo(hero.bottom, .1));
+        expect(personal.right, closeTo(home.right, .1));
+        for (final rect in [recommendations, recent]) {
+          expect(rect.left, closeTo(home.left, .1));
+          expect(rect.right, closeTo(home.right, .1));
+          expect(rect.top, greaterThanOrEqualTo(hero.bottom));
+        }
+        // More than the old three-item limit remains available by scrolling.
+        final recentScroll = find
+            .descendant(
+              of: find.byKey(const ValueKey('desktop-home-recent-panel')),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final position = tester.state<ScrollableState>(recentScroll).position;
+        expect(
+          find.byKey(
+            ValueKey('desktop-recent-game-${context.controller.games[3].id}'),
+          ),
+          findsOneWidget,
+        );
+        if (position.maxScrollExtent > 0) {
+          await tester.ensureVisible(recentScroll);
+          await tester.pumpAndSettle();
+          await tester.drag(recentScroll, const Offset(-400, 0));
+          await tester.pumpAndSettle();
+          expect(position.pixels, greaterThan(0));
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('quick entries have centered icon and title without subtitles', (
     tester,
   ) async {
@@ -256,7 +315,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       ValueKey<String>('desktop-recent-thumbnail-${first.id}'),
     );
     expect(tester.getSize(firstTile).width, greaterThan(110));
-    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(150.1));
+    expect(tester.getSize(firstTile).width, lessThanOrEqualTo(210));
     expect(
       tester.getSize(firstThumbnail).width /
           tester.getSize(firstThumbnail).height,

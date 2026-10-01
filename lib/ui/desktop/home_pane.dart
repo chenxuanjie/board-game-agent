@@ -83,49 +83,63 @@ class _DesktopHomePaneState extends State<DesktopHomePane> {
         if (route != null) widget.onNavigate(route);
       }
 
-      final main = Column(
-        children: [
-          DesktopContentStatus(controller: widget.controller),
-          if (!widget.controller.hasGames)
-            TextButton(
-              onPressed: () => widget.onNavigate('library'),
-              child: const Text('打开资料库'),
-            ),
-          _MainColumn(
-            controller: widget.controller,
-            games: games,
-            onNavigate: widget.onNavigate,
-            onOpenGame: widget.onOpenGame,
-            onOpenNationalDay: widget.onOpenNationalDay,
-            onAction: action,
-          ),
-        ],
-      );
-      final right = _RightColumn(
-        controller: widget.controller,
-        onNavigate: widget.onNavigate,
-        onAction: action,
-      );
       return LayoutBuilder(
         builder: (context, constraints) {
-          final wide = DesktopResponsive.homeUsesTwoColumns(
-            constraints.maxWidth,
-          );
-          if (!wide) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [main, const SizedBox(height: 14), right],
-            );
-          }
           final rightWidth = (constraints.maxWidth * 0.22)
               .clamp(metrics.px(282), metrics.px(340))
               .toDouble();
-          return DesktopContentColumns(
-            wide: true,
-            main: main,
-            right: right,
-            rightWidth: rightWidth,
-            gap: metrics.px(14),
+          final gap = metrics.px(14);
+          final heroWidth = constraints.maxWidth - rightWidth - gap;
+          final heroHeight = heroWidth / _HeroBannerState._frameAspectRatio;
+          final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+          // Reflow the overview before large text or a narrow banner would
+          // squeeze the profile statistics and shortcut hit targets.
+          final wide =
+              DesktopResponsive.homeUsesTwoColumns(constraints.maxWidth) &&
+              heroHeight >= metrics.px(232) * textScale;
+          final hero = _HeroBanner(
+            onExplore: () => action('开始探索'),
+            onOpenNationalDay: widget.onOpenNationalDay,
+            onOpenAssistant: () => action('AI助手'),
+          );
+          final right = _RightColumn(
+            controller: widget.controller,
+            onNavigate: widget.onNavigate,
+            onAction: action,
+            height: wide ? heroHeight : null,
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DesktopContentStatus(controller: widget.controller),
+              if (!widget.controller.hasGames)
+                TextButton(
+                  onPressed: () => widget.onNavigate('library'),
+                  child: const Text('打开资料库'),
+                ),
+              if (wide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: hero),
+                    SizedBox(width: gap),
+                    SizedBox(width: rightWidth, child: right),
+                  ],
+                )
+              else ...[
+                hero,
+                SizedBox(height: gap),
+                right,
+              ],
+              SizedBox(height: metrics.px(11)),
+              _HomeGameSections(
+                controller: widget.controller,
+                games: games,
+                onNavigate: widget.onNavigate,
+                onOpenGame: widget.onOpenGame,
+                onAction: action,
+              ),
+            ],
           );
         },
       );
@@ -133,20 +147,18 @@ class _DesktopHomePaneState extends State<DesktopHomePane> {
   );
 }
 
-class _MainColumn extends StatelessWidget {
+class _HomeGameSections extends StatelessWidget {
   final AppController controller;
   final ValueChanged<String> onAction;
   final ValueChanged<String> onNavigate;
   final ValueChanged<GameInfo> onOpenGame;
-  final VoidCallback onOpenNationalDay;
 
   final List<DesktopContentGame> games;
-  const _MainColumn({
+  const _HomeGameSections({
     required this.controller,
     required this.onAction,
     required this.onNavigate,
     required this.onOpenGame,
-    required this.onOpenNationalDay,
     required this.games,
   });
 
@@ -156,20 +168,6 @@ class _MainColumn extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) => Align(
-            alignment: Alignment.centerLeft,
-            child: SizedBox(
-              width: DesktopResponsive.homeHeroWidthFor(constraints.maxWidth),
-              child: _HeroBanner(
-                onExplore: () => onAction('开始探索'),
-                onOpenNationalDay: onOpenNationalDay,
-                onOpenAssistant: () => onAction('AI助手'),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(height: metrics.px(11)),
         _SectionHeader(
           key: const ValueKey<String>('desktop-home-recommendation-header'),
           leading: SvgPicture.asset(
@@ -841,67 +839,73 @@ class _RecentCard extends StatelessWidget {
               (game: gamesBySlug[record.normalizedGameSlug], record: record),
         )
         .where((item) => item.game != null)
-        .take(3)
+        .take(8)
         .toList();
-    return _Panel(
-      key: const ValueKey<String>('desktop-home-recent-panel'),
-      height: 200,
-      child: Padding(
-        padding: metrics.insets(const EdgeInsets.fromLTRB(12, 8, 12, 8)),
-        child: Column(
-          children: [
-            _SectionHeader(
-              key: const ValueKey<String>('desktop-home-recent-header'),
-              icon: Icons.history_rounded,
-              iconColor: DesktopColors.orange,
-              title: '最近浏览',
-              onMore: onMore,
-              titleWeight: FontWeight.w700,
-              titleScaleCap: 1.08,
-            ),
-            SizedBox(height: metrics.px(10)),
-            Expanded(
-              child: recentItems.isEmpty
-                  ? _RecentEmptyState(onTap: onMore)
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        final metrics = DesktopMetricsScope.of(context);
-                        final gap = metrics.px(14);
-                        const slotCount = 3;
-                        final naturalSlotWidth =
-                            (constraints.maxWidth - gap * (slotCount - 1)) /
-                            slotCount;
-                        // Keep the preferred minimum when the panel has room,
-                        // but never overflow a narrow panel just to satisfy it.
-                        final slotWidth = naturalSlotWidth < metrics.px(118)
-                            ? naturalSlotWidth
-                            : math.min(metrics.px(150), naturalSlotWidth);
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (var i = 0; i < recentItems.length; i++) ...[
-                              if (i > 0) SizedBox(width: gap),
-                              SizedBox(
-                                width: slotWidth,
-                                child: _RecentGameTile(
-                                  key: ValueKey<String>(
-                                    'desktop-recent-game-${recentItems[i].game!.id}',
-                                  ),
-                                  game: recentItems[i].game!,
-                                  record: recentItems[i].record,
-                                  controller: controller,
-                                  onTap: () => onOpenGame(recentItems[i].game!),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gap = metrics.px(14);
+        final innerWidth = constraints.maxWidth - metrics.px(24);
+        final slots = ((innerWidth + gap) / (metrics.px(180) + gap))
+            .floor()
+            .clamp(2, 8);
+        final slotWidth = (innerWidth - gap * (slots - 1)) / slots;
+        return _Panel(
+          key: const ValueKey<String>('desktop-home-recent-panel'),
+          child: Padding(
+            padding: metrics.insets(const EdgeInsets.fromLTRB(12, 8, 12, 8)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SectionHeader(
+                  key: const ValueKey<String>('desktop-home-recent-header'),
+                  icon: Icons.history_rounded,
+                  iconColor: DesktopColors.orange,
+                  title: '最近浏览',
+                  onMore: onMore,
+                  titleWeight: FontWeight.w700,
+                  titleScaleCap: 1.08,
+                ),
+                SizedBox(height: metrics.px(10)),
+                if (recentItems.isEmpty)
+                  SizedBox(
+                    height: metrics.px(142),
+                    child: _RecentEmptyState(onTap: onMore),
+                  )
+                else
+                  HoverHorizontalScrollbar(
+                    enabled: true,
+                    keyPrefix: 'desktop-home-recent',
+                    builder: (scrollController) => SingleChildScrollView(
+                      controller: scrollController,
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var i = 0; i < recentItems.length; i++) ...[
+                            if (i > 0) SizedBox(width: gap),
+                            SizedBox(
+                              width: slotWidth,
+                              child: _RecentGameTile(
+                                key: ValueKey<String>(
+                                  'desktop-recent-game-${recentItems[i].game!.id}',
                                 ),
+                                game: recentItems[i].game!,
+                                record: recentItems[i].record,
+                                controller: controller,
+                                onTap: () => onOpenGame(recentItems[i].game!),
                               ),
-                            ],
+                            ),
                           ],
-                        );
-                      },
+                        ],
+                      ),
                     ),
+                  ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1038,22 +1042,76 @@ class _RightColumn extends StatelessWidget {
   final AppController controller;
   final ValueChanged<String> onNavigate;
   final ValueChanged<String> onAction;
+  final double? height;
 
   const _RightColumn({
     required this.controller,
     required this.onNavigate,
     required this.onAction,
+    this.height,
   });
 
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
-    return Column(
-      children: [
-        _ProfilePanel(controller: controller, onNavigate: onNavigate),
-        SizedBox(height: metrics.px(12)),
-        _QuickPanel(onAction: onAction),
-      ],
+    final gap = metrics.px(12);
+    if (height != null) {
+      final quickHeight = (height! / metrics.scale * .36).clamp(100.0, 130.0);
+      return SizedBox(
+        key: const ValueKey('desktop-home-overview-personal'),
+        height: height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ProfilePanel(
+              controller: controller,
+              onNavigate: onNavigate,
+              height: (height! - gap) / metrics.scale - quickHeight,
+            ),
+            SizedBox(height: gap),
+            _QuickPanel(onAction: onAction, height: quickHeight),
+          ],
+        ),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+        final panelHeight = 140.0 * math.max(1.0, textScale);
+        if (constraints.maxWidth >= metrics.px(600)) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _ProfilePanel(
+                  controller: controller,
+                  onNavigate: onNavigate,
+                  height: panelHeight,
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: _QuickPanel(onAction: onAction, height: panelHeight),
+              ),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ProfilePanel(
+              controller: controller,
+              onNavigate: onNavigate,
+              height: panelHeight,
+            ),
+            SizedBox(height: gap),
+            _QuickPanel(
+              onAction: onAction,
+              height: 100 * math.max(1.0, textScale),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1124,8 +1182,13 @@ class _HomePanelTypography {
 class _ProfilePanel extends StatelessWidget {
   final AppController controller;
   final ValueChanged<String> onNavigate;
+  final double height;
 
-  const _ProfilePanel({required this.controller, required this.onNavigate});
+  const _ProfilePanel({
+    required this.controller,
+    required this.onNavigate,
+    required this.height,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1150,70 +1213,78 @@ class _ProfilePanel extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => _Panel(
         key: const ValueKey<String>('desktop-home-profile-panel'),
-        height: _profilePanelHeightFor(constraints.maxWidth / metrics.scale),
+        height: height,
         child: Padding(
-          padding: metrics.insets(const EdgeInsets.fromLTRB(14, 15, 14, 14)),
+          padding: metrics.insets(const EdgeInsets.fromLTRB(14, 12, 14, 12)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('你好！', style: typography.heading),
-              SizedBox(height: metrics.px(6)),
-              Text('个人中心', style: typography.caption),
-              SizedBox(height: metrics.px(13)),
+              Row(
+                children: [
+                  Expanded(child: Text('你好！', style: typography.heading)),
+                  Text('个人中心', style: typography.caption),
+                ],
+              ),
+              SizedBox(height: metrics.px(10)),
               Expanded(
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: metrics.px(10),
-                    mainAxisSpacing: metrics.px(10),
-                    childAspectRatio: 1.55,
-                  ),
-                  itemCount: stats.length,
-                  itemBuilder: (context, i) {
-                    final s = stats[i];
-                    return HoverSurface(
-                      key: s.key,
-                      onTap: s.onTap,
-                      lift: 1,
-                      borderRadius: BorderRadius.circular(metrics.radius(9)),
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: metrics.px(10),
-                          vertical: metrics.px(9),
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9F5EF),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < stats.length; i++) ...[
+                      if (i > 0) SizedBox(width: metrics.px(10)),
+                      Expanded(
+                        child: HoverSurface(
+                          key: stats[i].key,
+                          onTap: stats[i].onTap,
+                          lift: 1,
                           borderRadius: BorderRadius.circular(
                             metrics.radius(9),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(s.value, style: typography.value),
-                                  SizedBox(height: metrics.px(3)),
-                                  Text(s.label, style: typography.caption),
-                                ],
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: metrics.px(10),
+                              vertical: metrics.px(9),
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9F5EF),
+                              borderRadius: BorderRadius.circular(
+                                metrics.radius(9),
                               ),
                             ),
-                            Image.asset(
-                              s.assetPath,
-                              width: metrics.px(30),
-                              height: metrics.px(30),
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        stats[i].value,
+                                        style: typography.value,
+                                      ),
+                                      SizedBox(height: metrics.px(3)),
+                                      Text(
+                                        stats[i].label,
+                                        style: typography.caption,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Image.asset(
+                                  stats[i].assetPath,
+                                  width: metrics.px(30),
+                                  height: metrics.px(30),
+                                  fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.high,
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    );
-                  },
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -1226,8 +1297,9 @@ class _ProfilePanel extends StatelessWidget {
 
 class _QuickPanel extends StatelessWidget {
   final ValueChanged<String> onAction;
+  final double height;
 
-  const _QuickPanel({required this.onAction});
+  const _QuickPanel({required this.onAction, required this.height});
 
   @override
   Widget build(BuildContext context) {
@@ -1240,7 +1312,7 @@ class _QuickPanel extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => _Panel(
         key: const ValueKey<String>('desktop-home-quick-panel'),
-        height: _quickPanelHeightFor(constraints.maxWidth / metrics.scale),
+        height: height,
         child: Padding(
           padding: metrics.insets(const EdgeInsets.all(10)),
           child: Column(
@@ -1259,60 +1331,58 @@ class _QuickPanel extends StatelessWidget {
               ),
               SizedBox(height: metrics.px(9)),
               Expanded(
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: metrics.px(9),
-                    mainAxisSpacing: metrics.px(9),
-                    childAspectRatio: 2.35,
-                  ),
-                  itemCount: actions.length,
-                  itemBuilder: (context, i) {
-                    final a = actions[i];
-                    return HoverSurface(
-                      key: a.$1 == '规则查询'
-                          ? const ValueKey<String>('home-quick-entry-rules')
-                          : const ValueKey<String>('home-quick-entry-ai'),
-                      onTap: () => onAction(a.$1),
-                      lift: 1,
-                      borderRadius: BorderRadius.circular(metrics.radius(9)),
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: metrics.px(9),
-                          vertical: metrics.px(6),
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9F5EF),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < actions.length; i++) ...[
+                      if (i > 0) SizedBox(width: metrics.px(9)),
+                      Expanded(
+                        child: HoverSurface(
+                          key: actions[i].$1 == '规则查询'
+                              ? const ValueKey<String>('home-quick-entry-rules')
+                              : const ValueKey<String>('home-quick-entry-ai'),
+                          onTap: () => onAction(actions[i].$1),
+                          lift: 1,
                           borderRadius: BorderRadius.circular(
                             metrics.radius(9),
                           ),
-                        ),
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  a.$2,
-                                  color: const Color(0xFFFF5B43),
-                                  size: metrics.px(20),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: metrics.px(9),
+                              vertical: metrics.px(6),
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9F5EF),
+                              borderRadius: BorderRadius.circular(
+                                metrics.radius(9),
+                              ),
+                            ),
+                            child: Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      actions[i].$2,
+                                      color: const Color(0xFFFF5B43),
+                                      size: metrics.px(20),
+                                    ),
+                                    SizedBox(width: metrics.px(6)),
+                                    Text(
+                                      actions[i].$1,
+                                      maxLines: 1,
+                                      style: typography.action,
+                                    ),
+                                  ],
                                 ),
-                                SizedBox(width: metrics.px(6)),
-                                Text(
-                                  a.$1,
-                                  maxLines: 1,
-                                  style: typography.action,
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    );
-                  },
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -1321,32 +1391,4 @@ class _QuickPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-double _profilePanelHeightFor(double width) {
-  const baseWidth = 282.0;
-  const baseHeight = 172.0;
-  const horizontalPadding = 28.0;
-  const gridGap = 10.0;
-  const cardAspectRatio = 1.55;
-  final cardWidth = math.max(0, (width - horizontalPadding - gridGap) / 2);
-  final gridHeight = cardWidth / cardAspectRatio;
-  final baseCardWidth = (baseWidth - horizontalPadding - gridGap) / 2;
-  final baseGridHeight = baseCardWidth / cardAspectRatio;
-  return math.max(baseHeight, baseHeight + gridHeight - baseGridHeight);
-}
-
-double _quickPanelHeightFor(double width) {
-  const baseHeight = 110.0;
-  const horizontalPadding = 20.0;
-  const gridGap = 9.0;
-  const headingHeight = 23.0;
-  const headingGap = 9.0;
-  const cardAspectRatio = 2.35;
-  final cardWidth = math.max(0, (width - horizontalPadding - gridGap) / 2);
-  final gridHeight = cardWidth / cardAspectRatio;
-  return math.max(
-    baseHeight,
-    horizontalPadding + headingHeight + headingGap + gridHeight,
-  );
 }
