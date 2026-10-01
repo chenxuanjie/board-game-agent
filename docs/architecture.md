@@ -25,3 +25,5 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 测试目前保留 `test/` 下原有的运行入口，已有 `desktop/`、`mobile/` 和 `responses_workflow/` 的 `part` 测试分组。测试用例按原功能继续维护；移动测试入口前应同时检查项目脚本对其路径的引用。
 
 应用动效令牌集中在 `lib/core/theme/app_motion.dart`，主页面过渡在 `lib/ui/shared/app_page_transition.dart`，详见 [应用动效规范](app-motion.md)。页面只挂载一个当前内容，不为淡出保留旧聊天页面。
+
+封面衔接、首屏内容入场、图片解码反馈和收藏确认图标分别在 `lib/ui/shared/game_cover_motion.dart`、`content_entrance.dart`、`image_reveal.dart`、`favorite_feedback.dart`。平台外壳只负责源位置和导航，收藏仍复用同一个 AppController 写入队列与失败回滚；不创建新业务状态或持久化格式。

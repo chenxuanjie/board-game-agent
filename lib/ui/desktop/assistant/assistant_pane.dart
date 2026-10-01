@@ -166,46 +166,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                           )
                         : const Icon(Icons.edit_square, size: 20),
                   ),
-                  PopupMenuButton<String>(
-                    popUpAnimationStyle: AppMotion.menuStyle(context),
-                    tooltip: controller.copy.desktopMore,
-                    onSelected: (String value) {
-                      if (value == 'clear') {
-                        controller.clearConversationForContext(
-                          useGlobalMode: useGlobalMode,
-                        );
-                      }
-                      if (value == 'context') {
-                        _showAssistantSheet(
-                          title: controller.copy.desktopContextTitle,
-                          child: _DesktopContextPanel(
-                            controller: controller,
-                            useGlobalMode: useGlobalMode,
-                          ),
-                        );
-                      }
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                          PopupMenuItem<String>(
-                            value: 'clear',
-                            child: Text(
-                              controller.copy.desktopClearConversation,
-                            ),
-                          ),
-                          PopupMenuItem<String>(
-                            value: 'context',
-                            child: Text(controller.copy.desktopContextTitle),
-                          ),
-                        ],
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 34,
-                      height: 34,
-                    ),
-                    iconSize: 18,
-                    icon: const Icon(Icons.more_horiz_rounded),
-                  ),
                 ],
               ),
             ),
@@ -294,12 +254,16 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                                 maxWidth: 780,
                                 desktopLayout: true,
                                 onSpeak:
-                                    messages[index].role == ChatRole.assistant
+                                    messages[index].role ==
+                                            ChatRole.assistant &&
+                                        controller.voiceReplyAvailable
                                     ? () => controller.speakMessage(
                                         messages[index].text,
                                       )
-                                    : () {},
+                                    : null,
                                 speakTooltip: controller.copy.speakAgain,
+                                onCopy: () => _copyAnswer(messages[index].text),
+                                copyTooltip: controller.copy.copyAnswer,
                                 onRetry: messages[index].canRetry
                                     ? () => controller.retryMessage(
                                         messages[index],
@@ -370,13 +334,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                 textController: _draftController,
                 useGlobalMode: useGlobalMode,
                 onSend: _send,
-                onOpenContext: () => _showAssistantSheet(
-                  title: controller.copy.desktopContextTitle,
-                  child: _DesktopContextPanel(
-                    controller: controller,
-                    useGlobalMode: useGlobalMode,
-                  ),
-                ),
               ),
             ),
           ],
@@ -405,11 +362,15 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
 
   void _handleControllerChanged() {
     if (!mounted) return;
+    final retainedIds = controller.conversations.map((item) => item.id).toSet();
+    _drafts.removeWhere((id, _) => !retainedIds.contains(id));
+    _scrollOffsets.removeWhere((id, _) => !retainedIds.contains(id));
     final String? conversationId = controller.selectedConversationId;
     final bool contextChanged = conversationId != _lastConversationId;
     if (contextChanged) {
-      _saveScrollPosition();
-      if (_lastConversationId != null) {
+      if (_lastConversationId != null &&
+          retainedIds.contains(_lastConversationId)) {
+        _saveScrollPosition();
         _drafts[_lastConversationId!] = _draftController.text;
       }
       _draftController.text = _drafts[conversationId] ?? '';
@@ -530,36 +491,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     });
   }
 
-  Future<void> _showAssistantSheet({
-    required String title,
-    required Widget child,
-  }) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      sheetAnimationStyle: AppMotion.panelStyle(context),
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (BuildContext context) => SafeArea(
-        child: SizedBox(
-          height: math.min(MediaQuery.sizeOf(context).height * 0.72, 560),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              Expanded(child: child),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _toggleMessageTimes() {
     _messageTimesTimer?.cancel();
     if (_showMessageTimes) {
@@ -570,6 +501,25 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     _messageTimesTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showMessageTimes = false);
     });
+  }
+
+  Future<void> _copyAnswer(String text) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(controller.copy.answerCopied)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            controller.copy.localized('复制失败，请重试', 'Could not copy. Try again.'),
+          ),
+        ),
+      );
+    }
   }
 
   void _usePrompt(String prompt) {

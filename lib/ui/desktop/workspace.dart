@@ -25,6 +25,8 @@ import 'desktop_responsive.dart';
 import 'theme.dart';
 import 'window_controls.dart';
 import '../shared/app_page_transition.dart';
+import '../shared/game_cover_motion.dart';
+import 'desktop_resolved_image.dart';
 
 class DesktopWorkspace extends StatefulWidget {
   const DesktopWorkspace({
@@ -47,6 +49,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
+  final _coverLayerKey = GlobalKey();
+  final _detailHeroKey = GlobalKey();
+  CoverOrigin? _coverOrigin;
+  ({GameInfo game, Rect begin, Rect end, int generation, Size viewport})?
+  _coverFlight;
+  int _coverGeneration = 0;
+  final Set<String> _favoriteSaving = {};
   final _activityLink = LayerLink();
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
@@ -96,6 +105,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _navigate(String page) {
+    _coverGeneration++;
+    _coverFlight = null;
     _dismissSearch(clearQuery: true);
     if (page == 'assistant' && widget.controller.selectedConversation == null) {
       widget.controller.openGlobalAssistant();
@@ -127,6 +138,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _game(GameInfo game) {
+    final source = _coverOrigin;
+    _coverOrigin = null;
+    _coverFlight = null;
+    final generation = ++_coverGeneration;
     _dismissSearch(clearQuery: true);
     unawaited(widget.controller.recordRecentlyViewed(game));
     widget.controller.selectGame(game.id);
@@ -136,6 +151,36 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       _page = 'gameDetail';
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (source?.matches(game.coverAssetPath) == true &&
+        !AppMotion.reduced(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _page != 'gameDetail' ||
+            generation != _coverGeneration) {
+          return;
+        }
+        final target = _detailHeroKey.currentContext?.findRenderObject();
+        final layer = _coverLayerKey.currentContext?.findRenderObject();
+        if (target is! RenderBox ||
+            layer is! RenderBox ||
+            !target.hasSize ||
+            !layer.hasSize) {
+          return;
+        }
+        final origin = layer.localToGlobal(Offset.zero);
+        setState(
+          () => _coverFlight = (
+            game: game,
+            begin: source!.rect.shift(-origin),
+            end: (target.localToGlobal(Offset.zero) & target.size).shift(
+              -origin,
+            ),
+            generation: generation,
+            viewport: layer.size,
+          ),
+        );
+      });
+    }
   }
 
   void _openNationalDay() {
@@ -201,8 +246,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   Future<void> _toggleFavorite(GameInfo game) async {
+    if (_favoriteSaving.contains(game.id)) return;
+    setState(() => _favoriteSaving.add(game.id));
     _dismissFavoriteSnackBar();
-    final saved = await widget.controller.toggleFavorite(game);
+    var saved = false;
+    try {
+      saved = await widget.controller.toggleFavorite(game);
+    } finally {
+      if (mounted) setState(() => _favoriteSaving.remove(game.id));
+    }
     if (!mounted) return;
 
     final copy = widget.controller.copy;
@@ -478,7 +530,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     ),
                   )
                 : null,
-            body: body,
+            body: GameCoverMotionScope(
+              onCapture: (origin) => _coverOrigin = origin,
+              child: body,
+            ),
           ),
         );
       },
@@ -507,6 +562,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               _page == 'gameDetail' ? widget.controller.selectedGame.id : null,
             ),
             child: Stack(
+              key: _coverLayerKey,
               fit: StackFit.expand,
               children: [
                 if (_featurePage)
@@ -569,6 +625,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                 onToggleFavorite: _toggleFavorite,
                               ),
                               'gameDetail' => DesktopGameDetailPane(
+                                coverKey: _detailHeroKey,
+                                favoriteSaving: _favoriteSaving.contains(
+                                  widget.controller.selectedGame.id,
+                                ),
                                 controller: widget.controller,
                                 game: widget.controller.selectedGame,
                                 backTooltip: switch (_gameDetailReturnPage) {
@@ -654,6 +714,32 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                       icon: const Icon(Icons.menu_rounded),
                     ),
                   ),
+                if (_coverFlight case final flight?)
+                  if (_page == 'gameDetail' &&
+                      flight.game.id == widget.controller.selectedGame.id)
+                    Positioned.fill(
+                      child: ClipRect(
+                        child: GameCoverFlight(
+                          key: ValueKey('cover-flight-${flight.generation}'),
+                          begin: flight.begin,
+                          end: flight.end,
+                          viewport: flight.viewport,
+                          child: DesktopResolvedImage(
+                            controller: widget.controller,
+                            assetPath: flight.game.coverAssetPath,
+                            palette: widget.controller.palette,
+                          ),
+                          onEnd: () =>
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted &&
+                                    _coverFlight?.generation ==
+                                        flight.generation) {
+                                  setState(() => _coverFlight = null);
+                                }
+                              }),
+                        ),
+                      ),
+                    ),
                 if (_searchOpen)
                   Positioned(
                     left: DesktopMetricsScope.of(context).px(18),

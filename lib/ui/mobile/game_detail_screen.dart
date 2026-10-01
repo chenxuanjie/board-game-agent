@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../shared/favorite_feedback.dart';
+import '../shared/game_cover_motion.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
@@ -24,10 +26,12 @@ class GameDetailScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.game,
+    this.coverOrigin,
   });
 
   final AppController controller;
   final GameInfo game;
+  final CoverOrigin? coverOrigin;
 
   @override
   State<GameDetailScreen> createState() => _GameDetailScreenState();
@@ -84,9 +88,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     final controller = widget.controller;
     final copy = controller.copy;
     final game = widget.game;
-    final gallery = game.galleryAssetPaths.isEmpty
-        ? [game.coverAssetPath]
-        : game.galleryAssetPaths;
+    final gallery = <String>{
+      if (game.coverAssetPath.isNotEmpty) game.coverAssetPath,
+      ...game.galleryAssetPaths,
+    }.toList();
+    if (gallery.isEmpty) gallery.add('');
     final tags = game.categoryLine
         .split(RegExp(r'[/／,，·]'))
         .map((value) => value.trim())
@@ -113,30 +119,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         onTap: () => Navigator.of(context).pop(),
                       ),
                       const Spacer(),
-                      _roundButton(
+                      FavoriteToggleButton(
                         key: ValueKey('mobile-detail-favorite-${game.id}'),
-                        icon: controller.isFavorite(game)
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        iconColor: _orange,
-                        tooltip: controller.isFavorite(game)
-                            ? copy.localized('取消喜欢', 'Unlike')
-                            : copy.localized('喜欢', 'Like'),
-                        onTap: () async {
-                          final saved = await controller.toggleFavorite(game);
-                          if (!saved && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  copy.localized(
-                                    '收藏保存失败',
-                                    'Could not save favorite',
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-                        },
+                        controller: controller,
+                        game: game,
+                        color: _orange,
                       ),
                       const SizedBox(width: 6),
                       _roundButton(
@@ -195,11 +182,27 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                     child: Stack(
                                       fit: StackFit.expand,
                                       children: [
-                                        _GalleryAsset(
-                                          controller: controller,
-                                          game: game,
-                                          path: gallery[index],
-                                        ),
+                                        if (index == 0 &&
+                                            widget.coverOrigin != null)
+                                          HeroMode(
+                                            enabled: !AppMotion.reduced(
+                                              context,
+                                            ),
+                                            child: Hero(
+                                              tag: widget.coverOrigin!.tag,
+                                              child: _GalleryAsset(
+                                                controller: controller,
+                                                game: game,
+                                                path: gallery[index],
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          _GalleryAsset(
+                                            controller: controller,
+                                            game: game,
+                                            path: gallery[index],
+                                          ),
                                         if (gallery.length > 1)
                                           Positioned(
                                             bottom: 12,

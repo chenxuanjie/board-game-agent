@@ -1,6 +1,76 @@
 part of '../app_controller.dart';
 
 extension AppAssistantController on AppController {
+  /// Commit deletion through the same snapshot queue as streaming/new topics.
+  /// A failed write keeps the record and selection available for retry.
+  Future<void> deleteConversation(String conversationId) async {
+    final id = conversationId.trim();
+    final write = _conversationSaveQueue.then((_) async {
+      final deleted = _conversations[id];
+      if (deleted == null) return;
+      _invalidateGenerationForKey(id);
+      if (_aiService is AiConversationContextReset) {
+        final game =
+            _games.where((game) => game.id == deleted.gameId).firstOrNull ??
+            selectedGame;
+        await (_aiService as AiConversationContextReset)
+            .resetConversationContext(
+              conversationId: id,
+              game: game,
+              useGlobalMode: deleted.isGlobal,
+            );
+      }
+      final remaining = conversations
+          .where((conversation) => conversation.id != id)
+          .toList();
+      AiConversation? replacement;
+      if (remaining.isEmpty) {
+        final now = DateTime.now();
+        var serial = now.microsecondsSinceEpoch;
+        var freshId = 'conversation:$serial';
+        while (_conversations.containsKey(freshId)) {
+          freshId = 'conversation:${++serial}';
+        }
+        replacement = AiConversation(
+          id: freshId,
+          title: copy.newConversation,
+          scope: deleted.scope,
+          gameId: deleted.gameId,
+          createdAt: now,
+          updatedAt: now,
+        );
+      }
+      final nextId = _selectedConversationId == id
+          ? (remaining.firstOrNull?.id ?? replacement?.id)
+          : _selectedConversationId;
+      await _persistConversations(
+        throwOnError: true,
+        excludingConversationId: id,
+        replacement: replacement,
+        selectionAfterDelete: nextId,
+      );
+      _conversations.remove(id);
+      if (replacement != null) _conversations[replacement.id] = replacement;
+      _generationStates.remove(id);
+      _runExpandedByContext.remove(id);
+      if (_selectedConversationId == id) {
+        _selectedConversationId = nextId;
+        final next = _conversations[nextId];
+        if (next?.gameId != null) _selectedGameId = next!.gameId!;
+        _selectedConversationSaveQueue = _selectedConversationSaveQueue
+            .then((_) => _persistSelectedConversationId())
+            .catchError(
+              (Object error) => debugPrint(
+                '[chat] selection save failed after delete: $error',
+              ),
+            );
+      }
+      _notifyListeners();
+    });
+    _conversationSaveQueue = write.catchError((Object _) {});
+    await write;
+  }
+
   /// Creates an independent topic. Existing v4 records keep their original IDs.
   /// Selection changes only after the new record has been written successfully.
   Future<String> createConversation({required bool useGlobalMode}) async {
@@ -166,18 +236,27 @@ extension AppAssistantController on AppController {
     final AiAnswerMode next = enabled
         ? AiAnswerMode.knowledgeThenDirect
         : AiAnswerMode.knowledgeOnly;
+    final previous = useGlobalMode ? _globalAnswerMode : _gameAnswerMode;
+    if (previous == next) return;
     if (useGlobalMode) {
-      if (_globalAnswerMode == next) {
-        return;
-      }
       _globalAnswerMode = next;
-      await _preferencesService.saveGlobalAnswerMode(next);
     } else {
-      if (_gameAnswerMode == next) {
-        return;
-      }
       _gameAnswerMode = next;
-      await _preferencesService.saveGameAnswerMode(next);
+    }
+    try {
+      if (useGlobalMode) {
+        await _preferencesService.saveGlobalAnswerMode(next);
+      } else {
+        await _preferencesService.saveGameAnswerMode(next);
+      }
+    } catch (_) {
+      if (useGlobalMode && _globalAnswerMode == next) {
+        _globalAnswerMode = previous;
+      } else if (!useGlobalMode && _gameAnswerMode == next) {
+        _gameAnswerMode = previous;
+      }
+      _notifyListeners();
+      rethrow;
     }
     debugPrint(
       '[chat] answer mode updated: global=$useGlobalMode mode=${next.code}',

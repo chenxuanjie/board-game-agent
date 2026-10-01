@@ -6,11 +6,152 @@ import 'package:board_game_agent/ui/desktop/content_primitives.dart';
 import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/shared/app_page_transition.dart';
+import 'package:board_game_agent/ui/shared/content_entrance.dart';
+import 'package:board_game_agent/ui/shared/favorite_feedback.dart';
+import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('content entrance does not replay on data updates', (
+    tester,
+  ) async {
+    final data = ValueNotifier(0);
+    addTearDown(data.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<int>(
+          valueListenable: data,
+          builder: (_, value, _) => ContentEntrance(
+            key: const ValueKey('stable-content'),
+            child: Text('Content $value'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    data.value = 1;
+    await tester.pump();
+    final opacity = find.descendant(
+      of: find.byType(ContentEntrance),
+      matching: find.byType(Opacity),
+    );
+    expect(tester.widget<Opacity>(opacity).opacity, 1);
+    expect(find.text('Content 1'), findsOneWidget);
+  });
+
+  testWidgets('cover overlay ignores input and cancels on viewport change', (
+    tester,
+  ) async {
+    final width = ValueNotifier(300.0);
+    addTearDown(width.dispose);
+    var presses = 0;
+    var ended = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: ValueListenableBuilder<double>(
+            valueListenable: width,
+            builder: (_, value, _) => SizedBox(
+              width: value,
+              height: 200,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: TextButton(
+                      onPressed: () => presses++,
+                      child: const Text('Open'),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: GameCoverFlight(
+                      begin: const Rect.fromLTWH(0, 0, 100, 100),
+                      end: const Rect.fromLTWH(0, 0, 300, 200),
+                      viewport: const Size(300, 200),
+                      onEnd: () => ended++,
+                      child: const ColoredBox(
+                        key: ValueKey('flight-image'),
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    expect(presses, 1);
+    width.value = 250;
+    await tester.pump();
+    expect(ended, 1);
+    expect(find.byKey(const ValueKey('flight-image')), findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    expect(ended, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'reduced motion suppresses cover capture, entrances and favorite pulses',
+    (tester) async {
+      final selected = ValueNotifier(false);
+      addTearDown(selected.dispose);
+      CoverOrigin? origin;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(disableAnimations: true),
+              child: GameCoverMotionScope(
+                onCapture: (value) => origin = value,
+                child: Column(
+                  children: [
+                    const ContentEntrance(child: Text('Content')),
+                    const GameCoverSource(
+                      path: 'cover',
+                      child: SizedBox(
+                        width: 100,
+                        height: 100,
+                        child: ColoredBox(color: Colors.orange),
+                      ),
+                    ),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: selected,
+                      builder: (_, value, _) =>
+                          FavoriteFeedbackIcon(selected: value),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(GameCoverSource));
+      expect(origin, isNull);
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      selected.value = true;
+      await tester.pump();
+      expect(
+        tester
+            .widget<ScaleTransition>(
+              find.descendant(
+                of: find.byType(FavoriteFeedbackIcon),
+                matching: find.byType(ScaleTransition),
+              ),
+            )
+            .scale
+            .value,
+        1,
+      );
+      expect(tester.widget<HeroMode>(find.byType(HeroMode)).enabled, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'rapid destinations mount only the latest page and do not replay on updates',
     (tester) async {

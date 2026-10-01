@@ -1,5 +1,6 @@
 // Body layout adapted directly from the read-only Desktop reference.
 import 'package:flutter/material.dart';
+import '../shared/content_entrance.dart';
 import '../../core/theme/app_motion.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
@@ -402,14 +403,19 @@ class _LibraryMain extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   for (var index = 0; index < games.length; index++)
-                    SizedBox(
-                      width: posterWidth,
-                      height: posterWidth * 1.49,
-                      child: _LibraryGameCard(
-                        game: games[index],
-                        onTap: () => onSelectGame(index),
-                        onOpenAssistant: () =>
-                            onOpenAssistant(games[index].data),
+                    ContentEntrance(
+                      key: ValueKey('library-entrance-${games[index].data.id}'),
+                      order: index,
+                      animate: index < 6,
+                      child: SizedBox(
+                        width: posterWidth,
+                        height: posterWidth * 1.49,
+                        child: _LibraryGameCard(
+                          game: games[index],
+                          onTap: () => onSelectGame(index),
+                          onOpenAssistant: () =>
+                              onOpenAssistant(games[index].data),
+                        ),
                       ),
                     ),
                 ],

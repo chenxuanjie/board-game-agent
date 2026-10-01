@@ -51,6 +51,9 @@ import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
+import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
+import 'package:board_game_agent/ui/shared/favorite_feedback.dart';
+import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
 
 part 'desktop/desktop_settings_test_cases.dart';
 part 'desktop/desktop_shell_test_cases.dart';

@@ -10,6 +10,8 @@ import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
+import '../shared/favorite_feedback.dart';
+import '../shared/content_entrance.dart';
 
 class DesktopGameDetailPane extends StatefulWidget {
   const DesktopGameDetailPane({
@@ -23,6 +25,8 @@ class DesktopGameDetailPane extends StatefulWidget {
     required this.onAskAi,
     required this.onToggleFavorite,
     required this.onOpenGame,
+    this.coverKey,
+    this.favoriteSaving = false,
   });
 
   final AppController controller;
@@ -34,6 +38,8 @@ class DesktopGameDetailPane extends StatefulWidget {
   final VoidCallback onAskAi;
   final ValueChanged<GameInfo> onToggleFavorite;
   final ValueChanged<GameInfo> onOpenGame;
+  final Key? coverKey;
+  final bool favoriteSaving;
 
   @override
   State<DesktopGameDetailPane> createState() => _DesktopGameDetailPaneState();
@@ -76,7 +82,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
       key: const ValueKey<String>('desktop-game-detail'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _hero(),
+        ContentEntrance(key: ValueKey(game.id), child: _hero()),
         _gallery(),
         Container(
           margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
@@ -122,6 +128,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
       builder: (context, constraints) {
         final condensed = constraints.maxWidth < 1100;
         return SizedBox(
+          key: widget.coverKey,
           height: DesktopResponsive.detailHeroHeightFor(constraints.maxWidth),
           child: Stack(
             fit: StackFit.expand,
@@ -370,7 +377,14 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                                 icon: widget.controller.isFavorite(game)
                                     ? Icons.favorite_rounded
                                     : Icons.favorite_border_rounded,
-                                onTap: () => widget.onToggleFavorite(game),
+                                onTap: widget.favoriteSaving
+                                    ? null
+                                    : () => widget.onToggleFavorite(game),
+                                busy: widget.favoriteSaving,
+                                pendingLabel: widget.controller.copy.localized(
+                                  '保存中',
+                                  'Saving',
+                                ),
                                 width: 108,
                               ),
                               _HeroButton(
@@ -981,10 +995,14 @@ class _HeroButton extends StatefulWidget {
     required this.onTap,
     this.light = false,
     this.width,
+    this.busy = false,
+    this.pendingLabel,
   });
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool busy;
+  final String? pendingLabel;
   final bool light;
   final double? width;
   @override
@@ -993,55 +1011,85 @@ class _HeroButton extends StatefulWidget {
 
 class _HeroButtonState extends State<_HeroButton> {
   bool hover = false;
+  bool? _confirmed;
   @override
-  Widget build(BuildContext context) => MouseRegion(
-    cursor: SystemMouseCursors.click,
-    onEnter: (_) => setState(() => hover = true),
-    onExit: (_) => setState(() => hover = false),
-    child: InkWell(
-      onTap: widget.onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: AnimatedContainer(
-        duration: AppMotion.duration(context, AppMotion.feedback),
-        transform: Matrix4.translationValues(0, hover ? -2 : 0, 0),
-        width: widget.width,
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(
-          color: widget.light ? const Color(0xEFFCF7F3) : DesktopColors.orange,
-          borderRadius: BorderRadius.circular(11),
-          boxShadow: hover
-              ? const [
-                  BoxShadow(
-                    color: Color(0x44000000),
-                    blurRadius: 12,
-                    offset: Offset(0, 5),
-                  ),
-                ]
-              : null,
-        ),
-        child: AnimatedSwitcher(
-          duration: AppMotion.duration(context, AppMotion.menu),
-          reverseDuration: AppMotion.duration(context, AppMotion.exit),
-          switchInCurve: Curves.easeOut,
-          switchOutCurve: Curves.easeIn,
-          transitionBuilder: (child, animation) =>
-              FadeTransition(opacity: animation, child: child),
+  Widget build(BuildContext context) {
+    final heart =
+        widget.icon == Icons.favorite_rounded ||
+        widget.icon == Icons.favorite_border_rounded;
+    _confirmed ??= widget.icon == Icons.favorite_rounded;
+    if (!widget.busy) _confirmed = widget.icon == Icons.favorite_rounded;
+    final color = widget.light ? const Color(0xFF59463B) : Colors.white;
+    return MouseRegion(
+      cursor: widget.onTap == null
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
+      onEnter: (_) => setState(() => hover = true),
+      onExit: (_) => setState(() => hover = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: AnimatedContainer(
+          duration: AppMotion.duration(context),
+          curve: AppMotion.curve,
+          transform: Matrix4.translationValues(
+            0,
+            hover && !AppMotion.reduced(context) && !widget.busy ? -2 : 0,
+            0,
+          ),
+          width: widget.width,
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: widget.light
+                ? const Color(0xEFFCF7F3)
+                : DesktopColors.orange,
+            borderRadius: BorderRadius.circular(11),
+            boxShadow: hover
+                ? const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
           child: Row(
-            key: ValueKey<String>('${widget.icon.codePoint}-${widget.label}'),
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                widget.icon,
-                color: widget.light ? const Color(0xFF59463B) : Colors.white,
-                size: 18,
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Opacity(
+                    opacity: widget.busy ? 0 : 1,
+                    child: heart
+                        ? FavoriteFeedbackIcon(
+                            selected: _confirmed!,
+                            color: color,
+                            size: 18,
+                          )
+                        : Icon(widget.icon, color: color, size: 18),
+                  ),
+                  if (widget.busy)
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: color,
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(width: 8),
               Text(
-                widget.label,
+                widget.busy
+                    ? widget.pendingLabel ?? widget.label
+                    : widget.label,
                 style: TextStyle(
-                  color: widget.light ? const Color(0xFF59463B) : Colors.white,
+                  color: color,
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
                 ),
@@ -1050,8 +1098,8 @@ class _HeroButtonState extends State<_HeroButton> {
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _RoundIcon extends StatelessWidget {

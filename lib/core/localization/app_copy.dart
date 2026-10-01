@@ -57,7 +57,7 @@ class AppCopy {
 
   String get aiApiResponseSpeedLabel => isChinese ? '服务等级' : 'Service tier';
   String get aiApiResponseSpeedHint =>
-      isChinese ? 'Fast 可能额外计费' : 'Fast may cost more';
+      isChinese ? '快速服务可能额外计费' : 'Fast may cost more';
   String aiApiReasoningEffortName(AiReasoningEffort value) {
     switch (value) {
       case AiReasoningEffort.automatic:
@@ -82,9 +82,9 @@ class AppCopy {
       case AiResponseSpeed.automatic:
         return isChinese ? '自动' : 'Automatic';
       case AiResponseSpeed.fast:
-        return isChinese ? '快速（Fast）' : 'Fast';
+        return isChinese ? '快速' : 'Fast';
       case AiResponseSpeed.standard:
-        return isChinese ? '标准（Default）' : 'Standard (Default)';
+        return isChinese ? '标准' : 'Standard';
     }
   }
 

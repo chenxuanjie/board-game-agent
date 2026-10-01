@@ -108,7 +108,7 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     expect(context.controller.favoriteCount, 0);
   });
 
-  testWidgets('detail favorite button keeps its size while state crossfades', (
+  testWidgets('detail favorite button keeps its size while feedback animates', (
     tester,
   ) async {
     await _mount(tester, context.controller, const Size(1440, 800));
@@ -137,8 +137,19 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     await tester.pump();
     expect(tester.getSize(button), const Size(108, 48));
     expect(
-      find.descendant(of: button, matching: find.byType(AnimatedSwitcher)),
+      find.descendant(of: button, matching: find.byType(FavoriteFeedbackIcon)),
       findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FavoriteFeedbackIcon>(
+            find.descendant(
+              of: button,
+              matching: find.byType(FavoriteFeedbackIcon),
+            ),
+          )
+          .selected,
+      isTrue,
     );
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();

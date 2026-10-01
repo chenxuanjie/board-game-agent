@@ -322,10 +322,7 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await tester.tap(speed);
     await tester.pumpAndSettle();
     final selectedOption = find
-        .ancestor(
-          of: find.text('标准（Default）').last,
-          matching: find.byType(Container),
-        )
+        .ancestor(of: find.text('标准').last, matching: find.byType(Container))
         .first;
     final selectedDecoration =
         tester.widget<Container>(selectedOption).decoration as BoxDecoration?;
@@ -333,15 +330,12 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     final focusedOption = find
-        .ancestor(
-          of: find.text('快速（Fast）').last,
-          matching: find.byType(Container),
-        )
+        .ancestor(of: find.text('快速').last, matching: find.byType(Container))
         .first;
     final focusedDecoration =
         tester.widget<Container>(focusedOption).decoration as BoxDecoration?;
     expect(focusedDecoration?.color, DesktopColors.soft);
-    await tester.tap(find.text('快速（Fast）').last);
+    await tester.tap(find.text('快速').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('Fast 可能额外计费'), findsOneWidget);
     expect(find.textContaining('service_tier='), findsNothing);
@@ -413,7 +407,7 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await tester.ensureVisible(speed);
     await tester.tap(speed);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('快速（Fast）').last);
+    await tester.tap(find.text('快速').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('配置已修改，请保存并检测'), findsOneWidget);
     expect(find.textContaining('连接正常：'), findsNothing);
@@ -512,6 +506,18 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     expect(find.text('About & Updates'), findsOneWidget);
     expect(find.text('应用偏好与服务'), findsNothing);
     expect(find.text('通知设置'), findsNothing);
+    final speed = find.byKey(
+      const ValueKey<String>('desktop-settings-ai-speed'),
+    );
+    await tester.ensureVisible(speed);
+    await tester.tap(speed);
+    // Background service status may still animate after changing language.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Standard').last.hitTestable(), findsOneWidget);
+    expect(find.text('Fast').last.hitTestable(), findsOneWidget);
+    expect(find.text('Standard (Default)'), findsNothing);
+    expect(find.text('标准'), findsNothing);
+    expect(find.text('快速'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

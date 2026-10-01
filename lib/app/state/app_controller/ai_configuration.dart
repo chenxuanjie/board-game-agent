@@ -2,7 +2,17 @@ part of '../app_controller.dart';
 
 extension AppAiConfigurationController on AppController {
   Future<void> saveAiApiConfig(AiApiConfig next) async {
+    final write = (_aiConfigSaveQueue ?? Future<void>.value()).then(
+      (_) => _saveAiApiConfig(next),
+    );
+    _aiConfigSaveQueue = write.catchError((Object _) {});
+    await write;
+  }
+
+  Future<void> _saveAiApiConfig(AiApiConfig next) async {
     final AiApiConfig previous = _aiApiConfig;
+    // Publish config/clear Run state only after the durable write succeeds.
+    await _preferencesService.saveAiApiConfig(next);
     ++_aiServiceStatusGeneration;
     _aiServiceStatusRefreshFuture = null;
     final bool runContextChanged = _aiRunContextChanged(previous, next);
@@ -22,10 +32,15 @@ extension AppAiConfigurationController on AppController {
     if (_aiModelSignature(previous) != _aiModelSignature(next)) {
       invalidateAiModels();
     }
-    await _preferencesService.saveAiApiConfig(next);
     if (_isSaveableCustomPreset(next)) {
-      _customAiPresets = _upsertCustomPreset(_customAiPresets, next);
-      await _preferencesService.saveAiCustomPresets(_customAiPresets);
+      final presets = _upsertCustomPreset(_customAiPresets, next);
+      try {
+        await _preferencesService.saveAiCustomPresets(presets);
+        _customAiPresets = presets;
+      } catch (error) {
+        // The active config is already committed; preset history is secondary.
+        debugPrint('[ai] preset history write failed: $error');
+      }
     }
     if (runContextChanged) {
       _queueConversationSave();

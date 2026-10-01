@@ -8,6 +8,7 @@ import '../../../core/localization/app_copy.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_motion.dart';
 import 'model_selector.dart';
+import 'answer_mode_selector.dart';
 
 export 'assistant_motion.dart';
 
@@ -206,7 +207,6 @@ class AssistantComposer extends StatefulWidget {
     required this.textController,
     required this.useGlobalMode,
     required this.onSend,
-    required this.onOpenContext,
     this.onMicTap,
     this.desktop = false,
   });
@@ -214,7 +214,6 @@ class AssistantComposer extends StatefulWidget {
   final TextEditingController textController;
   final bool useGlobalMode;
   final Future<void> Function() onSend;
-  final VoidCallback onOpenContext;
   final Future<void> Function()? onMicTap;
   final bool desktop;
 
@@ -275,9 +274,6 @@ class AssistantComposerState extends State<AssistantComposer> {
         );
         final canSend =
             widget.textController.text.trim().isNotEmpty && !isSending;
-        final smart = widget.controller.allowSmartSupplement(
-          useGlobalMode: widget.useGlobalMode,
-        );
         return AnimatedContainer(
           key: ValueKey(
             widget.desktop ? 'desktop-composer-box' : 'assistant-composer-box',
@@ -331,68 +327,10 @@ class AssistantComposerState extends State<AssistantComposer> {
                   final expandedText =
                       MediaQuery.textScalerOf(context).scale(14) > 17;
                   final stacked = constraints.maxWidth < 370 || expandedText;
-                  final mode = PopupMenuButton<String>(
-                    popUpAnimationStyle: AppMotion.menuStyle(context),
-                    key: const ValueKey('desktop-answer-mode-selector'),
+                  final mode = AssistantAnswerModeSelector(
+                    controller: widget.controller,
+                    useGlobalMode: widget.useGlobalMode,
                     enabled: !isSending,
-                    tooltip: copy.desktopAnswerModeTitle,
-                    onSelected: (value) {
-                      if (value == 'context') {
-                        widget.onOpenContext();
-                      } else {
-                        unawaited(
-                          widget.controller.setAllowSmartSupplement(
-                            value == 'smart',
-                            useGlobalMode: widget.useGlobalMode,
-                          ),
-                        );
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      CheckedPopupMenuItem(
-                        value: 'sources',
-                        checked: !smart,
-                        child: Text(copy.knowledgeOnlyLabel),
-                      ),
-                      CheckedPopupMenuItem(
-                        value: 'smart',
-                        checked: smart,
-                        child: Text(copy.smartSupplementLabel),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'context',
-                        child: Text(copy.assistantContextTitle),
-                      ),
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            smart
-                                ? Icons.auto_awesome_outlined
-                                : Icons.menu_book_outlined,
-                            color: palette.primary,
-                            size: 17,
-                          ),
-                          const SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              smart
-                                  ? copy.smartSupplementLabel
-                                  : copy.knowledgeOnlyLabel,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: palette.primary),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   );
                   final controls = Row(
                     children: [

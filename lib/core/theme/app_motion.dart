@@ -8,6 +8,7 @@ abstract final class AppMotion {
   static const exit = Duration(milliseconds: 140);
   static const panel = Duration(milliseconds: 240);
   static const scroll = Duration(milliseconds: 280);
+  static const cover = Duration(milliseconds: 280);
   static const curve = Curves.easeOutCubic;
   static const exitCurve = Curves.easeInCubic;
 

@@ -11,6 +11,7 @@ import '../../core/localization/app_copy.dart';
 import 'game_cover.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
+import '../shared/content_entrance.dart';
 
 const _ink = Color(0xFF25242B);
 const _muted = Color(0xFF85818A);
@@ -154,9 +155,16 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                     scrollDirection: Axis.horizontal,
                     itemCount: ordered.length,
                     separatorBuilder: (_, _) => const SizedBox(width: 10),
-                    itemBuilder: (context, index) => _recommendationCard(
-                      ordered[index],
-                      recommendationWidth,
+                    itemBuilder: (context, index) => ContentEntrance(
+                      key: ValueKey(
+                        'mobile-recommendation-entrance-${ordered[index].id}',
+                      ),
+                      order: index,
+                      animate: index < 6,
+                      child: _recommendationCard(
+                        ordered[index],
+                        recommendationWidth,
+                      ),
                     ),
                   ),
                 ),

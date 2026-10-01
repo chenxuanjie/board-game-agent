@@ -178,6 +178,7 @@ class AppController extends ChangeNotifier {
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
+  Future<void>? _aiConfigSaveQueue;
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
   Future<void> _activitySaveQueue = Future<void>.value();
   Future<void> _favoriteMutationQueue = Future<void>.value();
@@ -789,6 +790,7 @@ class AppController extends ChangeNotifier {
       }
     }
     await _conversationSaveQueue;
+    await _aiConfigSaveQueue;
     await _selectedConversationSaveQueue;
     await _activitySaveQueue;
     await _searchHistoryMutationQueue;

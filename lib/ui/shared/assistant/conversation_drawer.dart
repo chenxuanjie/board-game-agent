@@ -170,10 +170,63 @@ class ConversationHistoryPanel extends StatefulWidget {
 
 class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
   bool _creating = false;
+  String? _deletingId;
   String? _error;
 
+  Future<void> _delete(AiConversation conversation) async {
+    if (_creating || _deletingId != null) return;
+    final copy = widget.controller.copy;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      animationStyle: AppMotion.menuStyle(context),
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(copy.localized('删除会话？', 'Delete conversation?')),
+        content: Text(
+          copy.localized(
+            '将删除“${conversation.title}”及其消息，无法撤销。',
+            'Delete “${conversation.title}” and its messages? This cannot be undone.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(copy.localized('取消', 'Cancel')),
+          ),
+          TextButton(
+            key: const ValueKey('assistant-confirm-delete'),
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.of(context).error,
+            ),
+            child: Text(copy.localized('删除', 'Delete')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _deletingId = conversation.id;
+      _error = null;
+    });
+    try {
+      await widget.controller.deleteConversation(conversation.id);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = copy.localized(
+            '删除失败，会话已保留，请重试。',
+            'Could not delete. The conversation was kept. Try again.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   Future<void> _create() async {
-    if (_creating) return;
+    if (_creating || _deletingId != null) return;
     setState(() {
       _creating = true;
       _error = null;
@@ -259,7 +312,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   key: const ValueKey('assistant-new-conversation'),
-                  onPressed: _creating ? null : _create,
+                  onPressed: _creating || _deletingId != null ? null : _create,
                   icon: _creating
                       ? const SizedBox(
                           width: 18,
@@ -358,7 +411,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
           child: InkWell(
             key: ValueKey('assistant-conversation-${conversation.id}'),
             borderRadius: BorderRadius.circular(14),
-            onTap: _creating
+            onTap: _creating || _deletingId != null
                 ? null
                 : () {
                     controller.selectConversation(conversation.id);
@@ -395,6 +448,30 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                     const SizedBox(width: 8),
                     Icon(Icons.check_rounded, size: 18, color: palette.primary),
                   ],
+                  const SizedBox(width: 4),
+                  IconButton(
+                    key: ValueKey(
+                      'assistant-delete-conversation-${conversation.id}',
+                    ),
+                    tooltip: controller.copy.localized(
+                      '删除会话',
+                      'Delete conversation',
+                    ),
+                    onPressed: _creating || _deletingId != null
+                        ? null
+                        : () => _delete(conversation),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size.square(36),
+                      padding: EdgeInsets.zero,
+                      foregroundColor: palette.textSecondary,
+                    ),
+                    icon: _deletingId == conversation.id
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.delete_outline_rounded, size: 18),
+                  ),
                 ],
               ),
             ),

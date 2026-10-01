@@ -260,7 +260,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     useGlobalMode: _useGlobalMode,
                     onSend: _sendCurrentText,
                     onMicTap: _toggleListening,
-                    onOpenContext: _openContextSheet,
                   ),
                 ),
               ],
@@ -275,13 +274,20 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (!mounted) {
       return;
     }
+    final retainedIds = widget.controller.conversations
+        .map((item) => item.id)
+        .toSet();
+    _drafts.removeWhere((id, _) => !retainedIds.contains(id));
+    _scrollOffsets.removeWhere((id, _) => !retainedIds.contains(id));
     final String contextKey = _conversationContextKey;
     final bool contextChanged =
         _lastScrollContextKey != null && _lastScrollContextKey != contextKey;
     if (contextChanged) {
       _rememberCurrentMessages();
-      _saveScrollPosition();
-      _drafts[_lastScrollContextKey!] = _textController.text;
+      if (retainedIds.contains(_lastScrollContextKey)) {
+        _saveScrollPosition();
+        _drafts[_lastScrollContextKey!] = _textController.text;
+      }
       _textController.text = _drafts[contextKey] ?? '';
       _lastScrollContextKey = contextKey;
       _followNewMessages = true;
@@ -413,7 +419,23 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (value.isEmpty) {
       return;
     }
-    await Clipboard.setData(ClipboardData(text: value));
+    try {
+      await Clipboard.setData(ClipboardData(text: value));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.localized(
+                '复制失败，请重试',
+                'Could not copy. Try again.',
+              ),
+            ),
+          ),
+        );
+      }
+      return;
+    }
     if (!mounted) {
       return;
     }
@@ -777,9 +799,11 @@ class _MessageList extends StatelessWidget {
                 message: messages[index],
                 palette: AppPalette.of(context),
                 copy: copy,
-                onSpeak: messages[index].role == ChatRole.assistant
+                onSpeak:
+                    messages[index].role == ChatRole.assistant &&
+                        controller.voiceReplyAvailable
                     ? () => controller.speakMessage(messages[index].text)
-                    : () {},
+                    : null,
                 speakTooltip: copy.speakAgain,
                 onCopy:
                     messages[index].role == ChatRole.assistant &&
@@ -848,7 +872,6 @@ class _Composer extends StatelessWidget {
     required this.useGlobalMode,
     required this.onSend,
     required this.onMicTap,
-    required this.onOpenContext,
   });
   final AppController controller;
   final TextEditingController textController;
@@ -856,7 +879,6 @@ class _Composer extends StatelessWidget {
   final bool useGlobalMode;
   final Future<void> Function() onSend;
   final Future<void> Function() onMicTap;
-  final VoidCallback onOpenContext;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -875,7 +897,6 @@ class _Composer extends StatelessWidget {
         useGlobalMode: useGlobalMode,
         onSend: onSend,
         onMicTap: onMicTap,
-        onOpenContext: onOpenContext,
       ),
     ],
   );

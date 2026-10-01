@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../shared/game_cover_motion.dart';
+import '../shared/image_reveal.dart';
 
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
@@ -61,13 +63,17 @@ class _MobileGameCoverState extends State<MobileGameCover> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      GameCoverSource(path: widget.game.coverAssetPath, child: _image(context));
+
+  Widget _image(BuildContext context) {
     final assetPath = widget.game.coverAssetPath;
     if (assetPath.isEmpty) {
       _resolveRemote();
       return _cachedOrPlaceholder();
     }
     return Image.asset(
+      frameBuilder: revealImageFrame,
       assetPath,
       fit: widget.fit,
       width: widget.fit == BoxFit.contain ? null : double.infinity,
@@ -83,6 +89,7 @@ class _MobileGameCoverState extends State<MobileGameCover> {
     final path = _resolvedPath;
     if (kIsWeb || path == null || path.isEmpty) return _placeholder();
     return Image.file(
+      frameBuilder: revealImageFrame,
       File(path),
       fit: widget.fit,
       width: widget.fit == BoxFit.contain ? null : double.infinity,

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/theme/app_motion.dart';
 
 import '../../core/models/app_activity.dart';
@@ -26,7 +27,6 @@ import '../shared/documents/pdf_document_screen.dart';
 import '../shared/documents/library_resource_document_screen.dart';
 part 'activity_popup.dart';
 part 'assistant/assistant_pane.dart';
-part 'assistant/assistant_composer.dart';
 part 'library/library_pane.dart';
 
 ButtonStyle _desktopIconButtonStyle(AppPalette palette) => IconButton.styleFrom(
@@ -38,21 +38,6 @@ ButtonStyle _desktopIconButtonStyle(AppPalette palette) => IconButton.styleFrom(
   padding: EdgeInsets.zero,
   visualDensity: VisualDensity.standard,
   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-);
-
-BoxDecoration _desktopOptionDecoration(
-  AppPalette palette, {
-  required bool selected,
-  double radius = 8,
-}) => BoxDecoration(
-  color: selected ? palette.surfaceContainer : Colors.transparent,
-  borderRadius: BorderRadius.circular(radius),
-  border: Border(
-    left: BorderSide(
-      color: selected ? palette.primary : Colors.transparent,
-      width: 3,
-    ),
-  ),
 );
 
 class _DesktopNoGamesPane extends StatefulWidget {

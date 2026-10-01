@@ -35,15 +35,6 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final Rect trigger = box.localToGlobal(Offset.zero) & box.size;
-    final String currentModel = widget.controller.aiApiConfig.model.trim();
-    final int modelCount =
-        widget.controller.availableAiModels.length +
-        (AiModelPolicy.allowsModel(currentModel) &&
-                !widget.controller.availableAiModels.any(
-                  (AiModel model) => model.id == currentModel,
-                )
-            ? 1
-            : 0);
     setState(() => _open = true);
     try {
       await showGeneralDialog<void>(
@@ -74,11 +65,7 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
                   8,
             );
             final width = math.min(390.0, math.max(120.0, viewport.width - 24));
-            final textScale = media.textScaler.scale(14) / 14;
-            final desiredHeight = math.min(
-              430.0,
-              math.max(360.0, 240.0 + modelCount * 47) * textScale,
-            );
+            const desiredHeight = 430.0;
             final above = math.max(0.0, anchor.top - safeTop - 8);
             final below = math.max(0.0, safeBottom - anchor.bottom - 8);
             final openAbove = above >= desiredHeight || above >= below;
@@ -90,10 +77,12 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
             final left = (anchor.right - width)
                 .clamp(12.0, math.max(12.0, viewport.width - width - 12))
                 .toDouble();
-            final top =
-                (openAbove ? anchor.top - height - 8 : anchor.bottom + 8)
-                    .clamp(safeTop, safeBottom - height)
-                    .toDouble();
+            final edge = (openAbove ? anchor.top - 8 : anchor.bottom + 8)
+                .clamp(
+                  safeTop + (openAbove ? height : 0),
+                  safeBottom - (openAbove ? 0 : height),
+                )
+                .toDouble();
             final Animation<double> curved = CurvedAnimation(
               parent: animation,
               curve: AppMotion.curve,
@@ -103,17 +92,20 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
               children: <Widget>[
                 Positioned(
                   left: left,
-                  top: top,
+                  top: openAbove ? null : edge,
+                  bottom: openAbove ? viewport.height - edge : null,
                   width: width,
-                  height: height,
-                  child: FadeTransition(
-                    opacity: curved,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: Offset(0, (openAbove ? 6 : -6) / height),
-                        end: Offset.zero,
-                      ).animate(curved),
-                      child: child,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: height),
+                    child: FadeTransition(
+                      opacity: curved,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: Offset(0, (openAbove ? 6 : -6) / height),
+                          end: Offset.zero,
+                        ).animate(curved),
+                        child: child,
+                      ),
                     ),
                   ),
                 ),
@@ -180,27 +172,14 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
                     modelLabel,
                     maxLines: 2,
                     overflow: TextOverflow.clip,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
                       color: palette.textPrimary,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
                 const SizedBox(width: 5),
-                Container(width: 1, height: 15, color: palette.outline),
-                const SizedBox(width: 5),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 92),
-                  child: Text(
-                    effortLabel,
-                    maxLines: 2,
-                    overflow: TextOverflow.clip,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 3),
                 AnimatedRotation(
                   turns: _open ? 0.5 : 0,
                   duration: AppMotion.duration(context),
@@ -340,6 +319,7 @@ class _AssistantModelPickerPanelState
       child: ListenableBuilder(
         listenable: widget.controller,
         builder: (context, _) => Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -384,39 +364,38 @@ class _AssistantModelPickerPanelState
                   ).textTheme.bodySmall?.copyWith(color: palette.error),
                 ),
               ),
-            Expanded(
+            Flexible(
+              fit: FlexFit.loose,
               child: AbsorbPointer(
                 absorbing: _busy,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    // In short windows/with a keyboard the entire panel can scroll;
-                    // otherwise keep choices visible while the model list scrolls.
+                    final hasOptions = AiModelPolicy.allowsModel(
+                      widget.controller.aiApiConfig.model,
+                    );
                     if (constraints.maxHeight < 280 ||
                         MediaQuery.textScalerOf(context).scale(14) > 17) {
                       return SingleChildScrollView(
+                        key: const ValueKey('assistant-model-picker-scroll'),
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SizedBox(
-                              height: math.min(
-                                170.0,
-                                math.max(
-                                  90.0,
-                                  (widget.controller.availableAiModels.length +
-                                          1) *
-                                      54.0,
-                                ),
-                              ),
-                              child: _modelPage(context),
-                            ),
-                            _options(context),
+                            _modelPage(context),
+                            if (hasOptions) _options(context),
                           ],
                         ),
                       );
                     }
                     return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(child: _modelPage(context)),
-                        _options(context),
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: _modelPage(context),
+                        ),
+                        if (hasOptions) _options(context),
                       ],
                     );
                   },
@@ -480,12 +459,7 @@ class _AssistantModelPickerPanelState
               for (final tier in AiResponseSpeed.selectableValues)
                 ChoiceChip(
                   key: ValueKey('assistant-service-tier-${tier.name}'),
-                  label: Text(
-                    copy.localized(
-                      tier == AiResponseSpeed.fast ? '快速' : '标准',
-                      tier == AiResponseSpeed.fast ? 'Fast' : 'Standard',
-                    ),
-                  ),
+                  label: Text(copy.aiApiResponseSpeedName(tier)),
                   selected: widget.controller.aiApiConfig.responseSpeed == tier,
                   onSelected: (_) => _selectTier(tier),
                 ),
@@ -549,6 +523,7 @@ class _AssistantModelPickerPanelState
         .toList(growable: false);
     return Column(
       key: const ValueKey<String>('desktop-model-picker-model-page'),
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (all.length > 6 || query.isNotEmpty)
           Padding(
@@ -579,9 +554,11 @@ class _AssistantModelPickerPanelState
               ),
             ),
           ),
-        Expanded(
+        Flexible(
+          fit: FlexFit.loose,
           child: visible.isEmpty
               ? Center(
+                  heightFactor: 1,
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
@@ -628,6 +605,7 @@ class _AssistantModelPickerPanelState
                 )
               : ListView.builder(
                   key: const ValueKey<String>('desktop-model-picker-list'),
+                  shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                   itemCount: visible.length,
                   itemBuilder: (context, index) {

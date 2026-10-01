@@ -18,6 +18,7 @@ import 'universal_ai_screen.dart';
 import 'assistant_chat_screen.dart';
 import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
+import '../shared/game_cover_motion.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
 class HomeScreen extends StatefulWidget {
@@ -36,6 +37,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
+  CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
   RemoteLibraryUpdate? _lastSeenUpdate;
 
@@ -71,43 +73,46 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: const ValueKey('mobile-home-root'),
       backgroundColor: const Color(0xFFFFFBF7),
-      body: SafeArea(
-        child: AppPageTransition(
-          key: const ValueKey('mobile-page-transition'),
-          identity: _tab,
-          child: _tab == 0
-              ? MobileHomeContent(
-                  controller: widget.controller,
-                  onSearch: () => _openSearch(),
-                  onOpenGame: _openGame,
-                  onOpenConversation: _openConversation,
-                  onOpenAi: _openAi,
-                  onFavorites: () => _openSearch(favoritesOnly: true),
-                  onSettings: _openSettings,
-                  onActivities: _openActivities,
-                  onRules: _openRuleMaterials,
-                  onOpenNationalDay: _openNationalDay,
-                )
-              : _tab == 1
-              ? MobileLibraryContent(
-                  controller: widget.controller,
-                  onOpenGame: _openGame,
-                  onActivities: _openActivities,
-                  onProfile: _openSettings,
-                )
-              : _tab == 2
-              ? UniversalAiScreen(controller: widget.controller)
-              : _tab == 3
-              ? MobileMineContent(
-                  controller: widget.controller,
-                  onOpenGame: _openGame,
-                  onFavorites: () => _openSearch(favoritesOnly: true),
-                  onRecentAll: () => _openSearch(recentOnly: true),
-                  onExplore: _openSearch,
-                  onActivities: _openActivities,
-                  onSettings: _openSettings,
-                )
-              : const SizedBox.shrink(),
+      body: GameCoverMotionScope(
+        onCapture: (origin) => _coverOrigin = origin,
+        child: SafeArea(
+          child: AppPageTransition(
+            key: const ValueKey('mobile-page-transition'),
+            identity: _tab,
+            child: _tab == 0
+                ? MobileHomeContent(
+                    controller: widget.controller,
+                    onSearch: () => _openSearch(),
+                    onOpenGame: _openGame,
+                    onOpenConversation: _openConversation,
+                    onOpenAi: _openAi,
+                    onFavorites: () => _openSearch(favoritesOnly: true),
+                    onSettings: _openSettings,
+                    onActivities: _openActivities,
+                    onRules: _openRuleMaterials,
+                    onOpenNationalDay: _openNationalDay,
+                  )
+                : _tab == 1
+                ? MobileLibraryContent(
+                    controller: widget.controller,
+                    onOpenGame: _openGame,
+                    onActivities: _openActivities,
+                    onProfile: _openSettings,
+                  )
+                : _tab == 2
+                ? UniversalAiScreen(controller: widget.controller)
+                : _tab == 3
+                ? MobileMineContent(
+                    controller: widget.controller,
+                    onOpenGame: _openGame,
+                    onFavorites: () => _openSearch(favoritesOnly: true),
+                    onRecentAll: () => _openSearch(recentOnly: true),
+                    onExplore: _openSearch,
+                    onActivities: _openActivities,
+                    onSettings: _openSettings,
+                  )
+                : const SizedBox.shrink(),
+          ),
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -171,12 +176,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openGame(GameInfo game) {
+    final source = _coverOrigin;
+    _coverOrigin = null;
     unawaited(widget.controller.recordRecentlyViewed(game));
     widget.controller.selectGame(game.id);
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            GameDetailScreen(controller: widget.controller, game: game),
+      GameDetailRoute<void>(
+        builder: (_) => GameDetailScreen(
+          controller: widget.controller,
+          game: game,
+          coverOrigin: source?.matches(game.coverAssetPath) == true
+              ? source
+              : null,
+        ),
       ),
     );
   }

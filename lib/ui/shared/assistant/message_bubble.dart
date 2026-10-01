@@ -30,7 +30,7 @@ class MessageBubble extends StatelessWidget {
   });
 
   final ChatMessage message;
-  final VoidCallback onSpeak;
+  final VoidCallback? onSpeak;
   final AppPalette palette;
   final String speakTooltip;
   final VoidCallback? onCopy;
@@ -249,6 +249,7 @@ class MessageBubble extends StatelessWidget {
       onCopy != null;
 
   bool get _canSpeak =>
+      onSpeak != null &&
       message.role == ChatRole.assistant &&
       !message.isStreaming &&
       !message.isFailed &&
