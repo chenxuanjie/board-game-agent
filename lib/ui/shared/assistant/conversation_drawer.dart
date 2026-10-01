@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../../core/theme/app_motion.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../../core/theme/app_palette.dart';
@@ -17,7 +19,6 @@ Future<void> showConversationDrawer(
   final bounds = render is RenderBox && render.hasSize
       ? render.localToGlobal(Offset.zero) & render.size
       : null;
-  final reduceMotion = MediaQuery.disableAnimationsOf(context);
   final themes = InheritedTheme.capture(
     from: context,
     to: Navigator.of(context, rootNavigator: true).context,
@@ -27,7 +28,7 @@ Future<void> showConversationDrawer(
     barrierDismissible: true,
     barrierLabel: controller.copy.closeConversations,
     barrierColor: palette.textPrimary.withValues(alpha: .16),
-    transitionDuration: Duration(milliseconds: reduceMotion ? 0 : 240),
+    transitionDuration: AppMotion.duration(context, AppMotion.panel),
     pageBuilder: (context, animation, secondaryAnimation) => themes.wrap(
       SafeArea(
         child: LayoutBuilder(
@@ -42,9 +43,19 @@ Future<void> showConversationDrawer(
                 child: SizedBox(
                   width: math.min(320, constraints.maxWidth - left - 46),
                   height: double.infinity,
-                  child: ConversationHistoryPanel(
-                    controller: controller,
-                    onClose: () => Navigator.of(context).pop(),
+                  child: FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: animation
+                          .drive(CurveTween(curve: AppMotion.curve))
+                          .drive(
+                            Tween(begin: const Offset(-1, 0), end: Offset.zero),
+                          ),
+                      child: ConversationHistoryPanel(
+                        controller: controller,
+                        onClose: () => Navigator.of(context).pop(),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -53,27 +64,11 @@ Future<void> showConversationDrawer(
         ),
       ),
     ),
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return FadeTransition(
-        opacity: animation,
-        child: SlideTransition(
-          position: Tween(
-            begin: const Offset(-1, 0),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        ),
-      );
-    },
+    transitionBuilder: (_, _, _, child) => child,
   );
 }
 
-class ConversationTitleButton extends StatelessWidget {
+class ConversationTitleButton extends StatefulWidget {
   const ConversationTitleButton({
     super.key,
     required this.title,
@@ -82,16 +77,34 @@ class ConversationTitleButton extends StatelessWidget {
   });
   final String title;
   final String tooltip;
-  final VoidCallback onPressed;
+  final FutureOr<void> Function() onPressed;
+
+  @override
+  State<ConversationTitleButton> createState() =>
+      _ConversationTitleButtonState();
+}
+
+class _ConversationTitleButtonState extends State<ConversationTitleButton> {
+  bool _expanded = false;
+
+  Future<void> _open() async {
+    if (_expanded) return;
+    setState(() => _expanded = true);
+    try {
+      await widget.onPressed();
+    } finally {
+      if (mounted) setState(() => _expanded = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     return Tooltip(
-      message: '$tooltip · $title',
+      message: '${widget.tooltip} · ${widget.title}',
       child: TextButton(
         key: const ValueKey('assistant-conversations-trigger'),
-        onPressed: onPressed,
+        onPressed: _open,
         style: TextButton.styleFrom(
           foregroundColor: palette.textPrimary,
           minimumSize: const Size(44, 48),
@@ -103,32 +116,36 @@ class ConversationTitleButton extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: palette.primaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 Icons.auto_awesome_rounded,
-                size: 23,
+                size: 20,
                 color: palette.primary,
               ),
             ),
             const SizedBox(width: 10),
             Flexible(
               child: Text(
-                title,
+                widget.title,
                 maxLines: 2,
                 overflow: TextOverflow.clip,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
-              Icons.expand_more_rounded,
-              size: 20,
-              color: palette.textSecondary,
+            AnimatedRotation(
+              turns: _expanded ? .5 : 0,
+              duration: AppMotion.duration(context),
+              child: Icon(
+                Icons.expand_more_rounded,
+                size: 18,
+                color: palette.textSecondary,
+              ),
             ),
           ],
         ),
@@ -153,10 +170,63 @@ class ConversationHistoryPanel extends StatefulWidget {
 
 class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
   bool _creating = false;
+  String? _deletingId;
   String? _error;
 
+  Future<void> _delete(AiConversation conversation) async {
+    if (_creating || _deletingId != null) return;
+    final copy = widget.controller.copy;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      animationStyle: AppMotion.menuStyle(context),
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(copy.localized('删除会话？', 'Delete conversation?')),
+        content: Text(
+          copy.localized(
+            '将删除“${conversation.title}”及其消息，无法撤销。',
+            'Delete “${conversation.title}” and its messages? This cannot be undone.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(copy.localized('取消', 'Cancel')),
+          ),
+          TextButton(
+            key: const ValueKey('assistant-confirm-delete'),
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.of(context).error,
+            ),
+            child: Text(copy.localized('删除', 'Delete')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _deletingId = conversation.id;
+      _error = null;
+    });
+    try {
+      await widget.controller.deleteConversation(conversation.id);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = copy.localized(
+            '删除失败，会话已保留，请重试。',
+            'Could not delete. The conversation was kept. Try again.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   Future<void> _create() async {
-    if (_creating) return;
+    if (_creating || _deletingId != null) return;
     setState(() {
       _creating = true;
       _error = null;
@@ -242,7 +312,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   key: const ValueKey('assistant-new-conversation'),
-                  onPressed: _creating ? null : _create,
+                  onPressed: _creating || _deletingId != null ? null : _create,
                   icon: _creating
                       ? const SizedBox(
                           width: 18,
@@ -341,7 +411,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
           child: InkWell(
             key: ValueKey('assistant-conversation-${conversation.id}'),
             borderRadius: BorderRadius.circular(14),
-            onTap: _creating
+            onTap: _creating || _deletingId != null
                 ? null
                 : () {
                     controller.selectConversation(conversation.id);
@@ -378,6 +448,30 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                     const SizedBox(width: 8),
                     Icon(Icons.check_rounded, size: 18, color: palette.primary),
                   ],
+                  const SizedBox(width: 4),
+                  IconButton(
+                    key: ValueKey(
+                      'assistant-delete-conversation-${conversation.id}',
+                    ),
+                    tooltip: controller.copy.localized(
+                      '删除会话',
+                      'Delete conversation',
+                    ),
+                    onPressed: _creating || _deletingId != null
+                        ? null
+                        : () => _delete(conversation),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size.square(36),
+                      padding: EdgeInsets.zero,
+                      foregroundColor: palette.textSecondary,
+                    ),
+                    icon: _deletingId == conversation.id
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.delete_outline_rounded, size: 18),
+                  ),
                 ],
               ),
             ),

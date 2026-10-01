@@ -1,9 +1,19 @@
-part of '../business_panes.dart';
+import 'dart:async';
+import 'dart:math' as math;
 
-enum _ModelPickerPage { models, reasoning }
+import 'package:app_ai_client/app_ai_client.dart';
+import 'package:flutter/material.dart';
 
-class _DesktopModelAndReasoningSelector extends StatefulWidget {
-  const _DesktopModelAndReasoningSelector({
+import '../../../app/state/app_controller.dart';
+import '../../../core/localization/app_copy.dart';
+import '../../../core/theme/app_palette.dart';
+import '../../../features/assistant/models/ai_api_config.dart';
+import '../../../features/assistant/models/ai_model_policy.dart';
+import '../../../core/theme/app_motion.dart';
+
+class AssistantModelSelector extends StatefulWidget {
+  const AssistantModelSelector({
+    super.key,
     required this.controller,
     required this.enabled,
   });
@@ -12,12 +22,10 @@ class _DesktopModelAndReasoningSelector extends StatefulWidget {
   final bool enabled;
 
   @override
-  State<_DesktopModelAndReasoningSelector> createState() =>
-      _DesktopModelAndReasoningSelectorState();
+  State<AssistantModelSelector> createState() => _AssistantModelSelectorState();
 }
 
-class _DesktopModelAndReasoningSelectorState
-    extends State<_DesktopModelAndReasoningSelector> {
+class _AssistantModelSelectorState extends State<AssistantModelSelector> {
   bool _open = false;
   bool _hovered = false;
   bool _focused = false;
@@ -27,35 +35,6 @@ class _DesktopModelAndReasoningSelectorState
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final Rect trigger = box.localToGlobal(Offset.zero) & box.size;
-    final Size viewport = MediaQuery.sizeOf(context);
-    final double width = math.min(390, math.max(240, viewport.width - 24));
-    final String currentModel = widget.controller.aiApiConfig.model.trim();
-    final int modelCount =
-        widget.controller.availableAiModels.length +
-        (AiModelPolicy.allowsModel(currentModel) &&
-                !widget.controller.availableAiModels.any(
-                  (AiModel model) => model.id == currentModel,
-                )
-            ? 1
-            : 0);
-    final double desiredHeight = math.min(
-      430,
-      math.max(330, 170 + modelCount * 47),
-    );
-    final double above = trigger.top - 16;
-    final double below = viewport.height - trigger.bottom - 16;
-    final bool openAbove = above >= 330 || above >= below;
-    final double height = math.min(
-      desiredHeight,
-      math.max(160, openAbove ? above : below),
-    );
-    final double left = (trigger.right - width).clamp(
-      12.0,
-      math.max(12.0, viewport.width - width - 12),
-    );
-    final double top = openAbove
-        ? math.max(8, trigger.top - height - 8)
-        : math.min(viewport.height - height - 8, trigger.bottom + 8);
     setState(() => _open = true);
     try {
       await showGeneralDialog<void>(
@@ -66,36 +45,74 @@ class _DesktopModelAndReasoningSelectorState
           'Close model picker',
         ),
         barrierColor: Colors.black.withValues(alpha: 0.12),
-        transitionDuration: const Duration(milliseconds: 190),
+        transitionDuration: AppMotion.duration(context, AppMotion.menu),
         pageBuilder: (BuildContext context, _, _) =>
-            _DesktopModelPickerPanel(controller: widget.controller),
-        transitionBuilder: (context, animation, _, child) {
-          final Animation<double> curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic,
-          );
-          return Stack(
-            children: <Widget>[
-              Positioned(
-                left: left,
-                top: top,
-                width: width,
-                height: height,
-                child: FadeTransition(
-                  opacity: curved,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: Offset(0, openAbove ? 0.045 : -0.045),
-                      end: Offset.zero,
-                    ).animate(curved),
-                    child: child,
+            _AssistantModelPickerPanel(controller: widget.controller),
+        transitionBuilder: (context, animation, _, child) => LayoutBuilder(
+          builder: (context, constraints) {
+            // Recompute on window resize and keyboard changes. The anchor can
+            // move with the composer while this route remains open.
+            final media = MediaQuery.of(context);
+            final viewport = constraints.biggest;
+            final anchor = box.attached && box.hasSize
+                ? box.localToGlobal(Offset.zero) & box.size
+                : trigger;
+            final safeTop = media.padding.top + 8;
+            final safeBottom = math.max(
+              safeTop + 120,
+              viewport.height -
+                  math.max(media.viewInsets.bottom, media.padding.bottom) -
+                  8,
+            );
+            final width = math.min(390.0, math.max(120.0, viewport.width - 24));
+            const desiredHeight = 430.0;
+            final above = math.max(0.0, anchor.top - safeTop - 8);
+            final below = math.max(0.0, safeBottom - anchor.bottom - 8);
+            final openAbove = above >= desiredHeight || above >= below;
+            final available = openAbove ? above : below;
+            final height = math.min(
+              desiredHeight,
+              math.min(safeBottom - safeTop, math.max(160.0, available)),
+            );
+            final left = (anchor.right - width)
+                .clamp(12.0, math.max(12.0, viewport.width - width - 12))
+                .toDouble();
+            final edge = (openAbove ? anchor.top - 8 : anchor.bottom + 8)
+                .clamp(
+                  safeTop + (openAbove ? height : 0),
+                  safeBottom - (openAbove ? 0 : height),
+                )
+                .toDouble();
+            final Animation<double> curved = CurvedAnimation(
+              parent: animation,
+              curve: AppMotion.curve,
+              reverseCurve: AppMotion.exitCurve,
+            );
+            return Stack(
+              children: <Widget>[
+                Positioned(
+                  left: left,
+                  top: openAbove ? null : edge,
+                  bottom: openAbove ? viewport.height - edge : null,
+                  width: width,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: height),
+                    child: FadeTransition(
+                      opacity: curved,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: Offset(0, (openAbove ? 6 : -6) / height),
+                          end: Offset.zero,
+                        ).animate(curved),
+                        child: child,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       );
     } finally {
       if (mounted) setState(() => _open = false);
@@ -110,7 +127,7 @@ class _DesktopModelAndReasoningSelectorState
     final AiReasoningEffort effort =
         widget.controller.aiApiConfig.reasoningEffort;
     final String modelLabel = AiModelPolicy.allowsModel(model)
-        ? _desktopModelLabel(widget.controller, model)
+        ? _modelLabel(widget.controller, model)
         : copy.desktopModel;
     final String effortLabel =
         AiModelPolicy.selectableReasoningEfforts(model)?.contains(effort) ==
@@ -132,9 +149,9 @@ class _DesktopModelAndReasoningSelectorState
           onFocusChange: (bool value) => setState(() => _focused = value),
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 170),
-            curve: Curves.easeOutCubic,
-            constraints: const BoxConstraints(maxWidth: 214, minHeight: 36),
+            duration: AppMotion.duration(context),
+            curve: AppMotion.curve,
+            constraints: const BoxConstraints(maxWidth: 310, minHeight: 36),
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
               color: _open || _hovered || _focused
@@ -150,41 +167,22 @@ class _DesktopModelAndReasoningSelectorState
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(
-                  Icons.auto_awesome_rounded,
-                  size: 16,
-                  color: palette.primary,
-                ),
-                const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     modelLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    maxLines: 2,
+                    overflow: TextOverflow.clip,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
                       color: palette.textPrimary,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
                 const SizedBox(width: 5),
-                Container(width: 1, height: 15, color: palette.outline),
-                const SizedBox(width: 5),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 76),
-                  child: Text(
-                    effortLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 3),
                 AnimatedRotation(
                   turns: _open ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 170),
+                  duration: AppMotion.duration(context),
                   child: Icon(
                     Icons.keyboard_arrow_down_rounded,
                     size: 16,
@@ -200,19 +198,19 @@ class _DesktopModelAndReasoningSelectorState
   }
 }
 
-class _DesktopModelPickerPanel extends StatefulWidget {
-  const _DesktopModelPickerPanel({required this.controller});
+class _AssistantModelPickerPanel extends StatefulWidget {
+  const _AssistantModelPickerPanel({required this.controller});
 
   final AppController controller;
 
   @override
-  State<_DesktopModelPickerPanel> createState() =>
-      _DesktopModelPickerPanelState();
+  State<_AssistantModelPickerPanel> createState() =>
+      _AssistantModelPickerPanelState();
 }
 
-class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
+class _AssistantModelPickerPanelState
+    extends State<_AssistantModelPickerPanel> {
   final TextEditingController _search = TextEditingController();
-  _ModelPickerPage _page = _ModelPickerPage.models;
   bool _busy = false;
   String? _error;
 
@@ -260,7 +258,6 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
   Future<void> _selectModel(String model) async {
     if (_busy) return;
     if (model == widget.controller.aiApiConfig.model.trim()) {
-      setState(() => _page = _ModelPickerPage.reasoning);
       return;
     }
     setState(() {
@@ -269,7 +266,6 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
     });
     try {
       await widget.controller.setAiModel(model);
-      if (mounted) setState(() => _page = _ModelPickerPage.reasoning);
     } catch (_) {
       if (mounted) {
         setState(
@@ -292,7 +288,6 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
     });
     try {
       await widget.controller.setAiReasoningEffort(effort);
-      if (mounted) Navigator.of(context).pop();
     } catch (_) {
       if (mounted) {
         setState(
@@ -309,34 +304,32 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final AppPalette palette = AppPalette.of(context);
-    final AppCopy copy = widget.controller.copy;
-    final bool canRefresh =
+    final palette = AppPalette.of(context);
+    final copy = widget.controller.copy;
+    final canRefresh =
         widget.controller.aiApiConfig.apiKey.trim().isNotEmpty &&
         widget.controller.aiApiConfig.baseUrl.trim().isNotEmpty;
     return Material(
-      key: const ValueKey<String>('desktop-model-picker-panel'),
+      key: const ValueKey('desktop-model-picker-panel'),
       color: palette.surface,
-      elevation: 18,
-      shadowColor: palette.shadow.withValues(alpha: 0.28),
-      borderRadius: BorderRadius.circular(16),
+      elevation: 14,
+      shadowColor: palette.shadow.withValues(alpha: .22),
+      borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
-      child: AnimatedBuilder(
-        animation: widget.controller,
+      child: ListenableBuilder(
+        listenable: widget.controller,
         builder: (context, _) => Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
+          children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 10, 8),
+              padding: const EdgeInsets.fromLTRB(18, 10, 8, 4),
               child: Row(
-                children: <Widget>[
+                children: [
                   Expanded(
                     child: Text(
                       copy.localized('模型与推理', 'Model & reasoning'),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: palette.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
                   IconButton(
@@ -352,24 +345,6 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              child: Row(
-                children: <Widget>[
-                  _pageButton(
-                    context,
-                    page: _ModelPickerPage.models,
-                    label: copy.desktopModel,
-                  ),
-                  const SizedBox(width: 7),
-                  _pageButton(
-                    context,
-                    page: _ModelPickerPage.reasoning,
-                    label: copy.aiApiReasoningEffortLabel,
-                  ),
-                ],
-              ),
-            ),
             if (_busy ||
                 widget.controller.aiModelLoadState == AiModelLoadState.loading)
               LinearProgressIndicator(
@@ -381,7 +356,7 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
               const SizedBox(height: 2),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 7, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 child: Text(
                   _error!,
                   style: Theme.of(
@@ -389,26 +364,41 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
                   ).textTheme.bodySmall?.copyWith(color: palette.error),
                 ),
               ),
-            Expanded(
+            Flexible(
+              fit: FlexFit.loose,
               child: AbsorbPointer(
                 absorbing: _busy,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0.025, 0),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  ),
-                  child: _page == _ModelPickerPage.models
-                      ? _modelPage(context)
-                      : _reasoningPage(context),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final hasOptions = AiModelPolicy.allowsModel(
+                      widget.controller.aiApiConfig.model,
+                    );
+                    if (constraints.maxHeight < 280 ||
+                        MediaQuery.textScalerOf(context).scale(14) > 17) {
+                      return SingleChildScrollView(
+                        key: const ValueKey('assistant-model-picker-scroll'),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _modelPage(context),
+                            if (hasOptions) _options(context),
+                          ],
+                        ),
+                      );
+                    }
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: _modelPage(context),
+                        ),
+                        if (hasOptions) _options(context),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -418,45 +408,100 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
     );
   }
 
-  Widget _pageButton(
-    BuildContext context, {
-    required _ModelPickerPage page,
-    required String label,
-  }) {
-    final AppPalette palette = AppPalette.of(context);
-    final bool selected = _page == page;
-    return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: ValueKey<String>('desktop-model-picker-tab-${page.name}'),
-          borderRadius: BorderRadius.circular(9),
-          onTap: () => setState(() {
-            _page = page;
-            _error = null;
-          }),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 170),
-            curve: Curves.easeOutCubic,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected
-                  ? palette.primaryContainer
-                  : palette.surfaceContainer,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: selected ? palette.primary : palette.textSecondary,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
+  Widget _options(BuildContext context) {
+    final copy = widget.controller.copy;
+    final palette = AppPalette.of(context);
+    final efforts = AiModelPolicy.selectableReasoningEfforts(
+      widget.controller.aiApiConfig.model,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            copy.aiApiReasoningEffortLabel,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
           ),
-        ),
+          const SizedBox(height: 7),
+          if (efforts == null)
+            Text(
+              copy.aiApiReasoningUnsupported,
+              style: Theme.of(context).textTheme.bodySmall,
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final effort in efforts)
+                  _effortOption(
+                    context,
+                    effort,
+                    effort == widget.controller.aiApiConfig.reasoningEffort,
+                  ),
+              ],
+            ),
+          const SizedBox(height: 12),
+          Text(
+            copy.aiApiResponseSpeedLabel,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+          ),
+          const SizedBox(height: 7),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final tier in AiResponseSpeed.selectableValues)
+                ChoiceChip(
+                  key: ValueKey('assistant-service-tier-${tier.name}'),
+                  label: Text(copy.aiApiResponseSpeedName(tier)),
+                  selected: widget.controller.aiApiConfig.responseSpeed == tier,
+                  onSelected: (_) => _selectTier(tier),
+                ),
+            ],
+          ),
+          if (widget.controller.aiApiConfig.responseSpeed ==
+              AiResponseSpeed.fast) ...[
+            const SizedBox(height: 6),
+            Text(
+              copy.aiApiResponseSpeedHint,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+            ),
+          ],
+        ],
       ),
     );
+  }
+
+  Future<void> _selectTier(AiResponseSpeed tier) async {
+    if (_busy || widget.controller.aiApiConfig.responseSpeed == tier) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.controller.saveAiApiConfig(
+        widget.controller.aiApiConfig.copyWith(responseSpeed: tier),
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = widget.controller.copy.localized(
+            '保存服务等级失败，请重试。',
+            'Could not save the service tier. Try again.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Widget _modelPage(BuildContext context) {
@@ -473,46 +518,47 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
         .where(
           (String id) =>
               id.toLowerCase().contains(query) ||
-              _desktopModelLabel(
-                widget.controller,
-                id,
-              ).toLowerCase().contains(query),
+              _modelLabel(widget.controller, id).toLowerCase().contains(query),
         )
         .toList(growable: false);
     return Column(
       key: const ValueKey<String>('desktop-model-picker-model-page'),
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 4, 14, 9),
-          child: SizedBox(
-            height: 38,
-            child: TextField(
-              key: const ValueKey<String>('desktop-model-picker-search'),
-              controller: _search,
-              autofocus: true,
-              onChanged: (_) => setState(() {}),
-              style: Theme.of(context).textTheme.bodySmall,
-              decoration: InputDecoration(
-                hintText: copy.localized('搜索模型', 'Search models'),
-                prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                suffixIcon: query.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: copy.localized('清除搜索', 'Clear search'),
-                        onPressed: () => setState(_search.clear),
-                        icon: const Icon(Icons.close_rounded, size: 16),
-                      ),
-                filled: true,
-                fillColor: palette.inputSurface,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 9),
+        if (all.length > 6 || query.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 9),
+            child: SizedBox(
+              height: 38,
+              child: TextField(
+                key: const ValueKey<String>('desktop-model-picker-search'),
+                controller: _search,
+                autofocus: true,
+                onChanged: (_) => setState(() {}),
+                style: Theme.of(context).textTheme.bodySmall,
+                decoration: InputDecoration(
+                  hintText: copy.localized('搜索模型', 'Search models'),
+                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: copy.localized('清除搜索', 'Clear search'),
+                          onPressed: () => setState(_search.clear),
+                          icon: const Icon(Icons.close_rounded, size: 16),
+                        ),
+                  filled: true,
+                  fillColor: palette.inputSurface,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 9),
+                ),
               ),
             ),
           ),
-        ),
-        Expanded(
+        Flexible(
+          fit: FlexFit.loose,
           child: visible.isEmpty
               ? Center(
+                  heightFactor: 1,
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
@@ -559,6 +605,7 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
                 )
               : ListView.builder(
                   key: const ValueKey<String>('desktop-model-picker-list'),
+                  shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                   itemCount: visible.length,
                   itemBuilder: (context, index) {
@@ -573,9 +620,9 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
                           onTap: () => _selectModel(id),
                           borderRadius: BorderRadius.circular(10),
                           child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            curve: Curves.easeOutCubic,
-                            height: 43,
+                            duration: AppMotion.duration(context),
+                            curve: AppMotion.curve,
+                            constraints: const BoxConstraints(minHeight: 43),
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
                               color: chosen
@@ -589,9 +636,9 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
                               children: <Widget>[
                                 Expanded(
                                   child: Text(
-                                    _desktopModelLabel(widget.controller, id),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    _modelLabel(widget.controller, id),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.clip,
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodyMedium
@@ -624,61 +671,6 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
     );
   }
 
-  Widget _reasoningPage(BuildContext context) {
-    final AppPalette palette = AppPalette.of(context);
-    final AppCopy copy = widget.controller.copy;
-    final String model = widget.controller.aiApiConfig.model.trim();
-    final AiReasoningEffort selected =
-        widget.controller.aiApiConfig.reasoningEffort;
-    final List<AiReasoningEffort>? options =
-        AiModelPolicy.selectableReasoningEfforts(model);
-    return SingleChildScrollView(
-      key: const ValueKey<String>('desktop-model-picker-reasoning-page'),
-      padding: const EdgeInsets.fromLTRB(17, 11, 17, 17),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            model.isEmpty
-                ? copy.localized('请先选择模型', 'Select a model first')
-                : model,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: palette.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            copy.localized(
-              '仅显示模型支持的推理强度',
-              'Only efforts supported by the model are shown',
-            ),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          if (options == null)
-            Text(
-              copy.aiApiReasoningUnsupported,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: palette.warning),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                for (final AiReasoningEffort effort in options)
-                  _effortOption(context, effort, effort == selected),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _effortOption(
     BuildContext context,
     AiReasoningEffort effort,
@@ -703,11 +695,10 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
           onTap: () => _selectEffort(effort),
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOutCubic,
-            constraints: const BoxConstraints(minWidth: 104),
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            duration: AppMotion.duration(context),
+            curve: AppMotion.curve,
+            constraints: const BoxConstraints(minWidth: 42, minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
               color: selected
                   ? palette.primaryContainer
@@ -737,7 +728,7 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
   }
 }
 
-String _desktopModelLabel(AppController controller, String id) {
+String _modelLabel(AppController controller, String id) {
   for (final AiModel model in controller.availableAiModels) {
     if (model.id == id) return model.label;
   }

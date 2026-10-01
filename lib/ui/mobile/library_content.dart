@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../shared/favorite_feedback.dart';
+import '../shared/content_entrance.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/ui_tokens.dart';
@@ -267,11 +269,18 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                                 mainAxisSpacing: 12,
                                 mainAxisExtent: coverHeight + infoHeight,
                               ),
-                          itemBuilder: (context, index) => _GameCard(
-                            controller: widget.controller,
-                            game: games[index],
-                            coverHeight: coverHeight,
-                            onOpen: () => widget.onOpenGame(games[index]),
+                          itemBuilder: (context, index) => ContentEntrance(
+                            key: ValueKey(
+                              'mobile-library-entrance-${games[index].id}',
+                            ),
+                            order: index,
+                            animate: index < 6,
+                            child: _GameCard(
+                              controller: widget.controller,
+                              game: games[index],
+                              coverHeight: coverHeight,
+                              onOpen: () => widget.onOpenGame(games[index]),
+                            ),
                           ),
                         );
                       },
@@ -351,7 +360,6 @@ class _GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final copy = controller.copy;
     final favorite = controller.isFavorite(game);
     final tags = _tags(game);
     return Material(
@@ -383,11 +391,14 @@ class _GameCard extends StatelessWidget {
                   Positioned(
                     right: 4,
                     top: 4,
-                    child: IconButton.filledTonal(
+                    child: FavoriteToggleButton(
                       key: ValueKey('mobile-library-favorite-${game.id}'),
-                      tooltip: favorite
-                          ? copy.localized('取消喜欢', 'Unlike')
-                          : copy.localized('喜欢', 'Like'),
+                      controller: controller,
+                      game: game,
+                      filledTonal: true,
+                      color: favorite
+                          ? AppPalette.of(context).primary
+                          : AppPalette.of(context).textSecondary,
                       style: IconButton.styleFrom(
                         backgroundColor: AppPalette.of(
                           context,
@@ -395,26 +406,6 @@ class _GameCard extends StatelessWidget {
                         foregroundColor: favorite
                             ? AppPalette.of(context).primary
                             : AppPalette.of(context).textSecondary,
-                      ),
-                      onPressed: () async {
-                        final saved = await controller.toggleFavorite(game);
-                        if (!saved && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                copy.localized(
-                                  '收藏保存失败',
-                                  'Could not save favorite',
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      icon: Icon(
-                        favorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
                       ),
                     ),
                   ),

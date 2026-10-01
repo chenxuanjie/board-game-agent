@@ -1,15 +1,17 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../shared/game_cover_motion.dart';
+import '../shared/image_reveal.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 
 /// Resolves a logical asset path through the controller's remote/cache layer.
 ///
-/// This widget is intentionally used by the Windows workspace only. It keeps
-/// the remote lookup out of the UI and always provides a visual fallback while
-/// an image is loading, unavailable, or invalid.
+/// Native workspaces use the controller's file cache; wide Web uses bundled
+/// asset URLs because browsers cannot read a native filesystem cache.
 class DesktopResolvedImage extends StatefulWidget {
   const DesktopResolvedImage({
     super.key,
@@ -36,7 +38,9 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
   @override
   void initState() {
     super.initState();
-    _pathFuture = widget.controller.resolveImagePath(widget.assetPath);
+    _pathFuture = kIsWeb
+        ? Future.value(null)
+        : widget.controller.resolveImagePath(widget.assetPath);
   }
 
   @override
@@ -44,12 +48,28 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller ||
         oldWidget.assetPath != widget.assetPath) {
-      _pathFuture = widget.controller.resolveImagePath(widget.assetPath);
+      _pathFuture = kIsWeb
+          ? Future.value(null)
+          : widget.controller.resolveImagePath(widget.assetPath);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      GameCoverSource(path: widget.assetPath, child: _image(context));
+
+  Widget _image(BuildContext context) {
+    if (kIsWeb) {
+      if (widget.assetPath.trim().isEmpty) return _placeholder(context);
+      return SizedBox.expand(
+        child: Image.asset(
+          widget.assetPath,
+          fit: widget.fit,
+          frameBuilder: revealImageFrame,
+          errorBuilder: (_, _, _) => _placeholder(context),
+        ),
+      );
+    }
     return SizedBox.expand(
       child: FutureBuilder<String?>(
         future: _pathFuture,
@@ -59,6 +79,7 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
             return _placeholder(context);
           }
           return Image.file(
+            frameBuilder: revealImageFrame,
             File(path),
             fit: widget.fit,
             errorBuilder:

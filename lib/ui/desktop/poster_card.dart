@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
@@ -175,18 +175,14 @@ class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
                   onFocusChange: (value) => setState(() => _focused = value),
                   child: AnimatedContainer(
                     key: ValueKey<String>('desktop-poster-${game.id}'),
-                    duration: const Duration(milliseconds: 380),
-                    curve: const Cubic(0.25, 1, 0.5, 1),
+                    duration: AppMotion.duration(context),
+                    curve: AppMotion.curve,
                     transformAlignment: Alignment.topCenter,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, -1 / 1200)
-                      // Keep the hover effect inside the grid cell. Scaling a
-                      // GridView child makes it overlap neighbouring children,
-                      // whose later paint order can visually cover the hovered
-                      // poster and create a one-frame "jump". The 3D tilt,
-                      // shadow, border and sheen still provide the lift effect
-                      // without changing the card's 2D footprint.
-                      ..rotateX(_hovered ? math.pi / 50 : 0.0),
+                    transform: Matrix4.translationValues(
+                      0,
+                      _hovered && !AppMotion.reduced(context) ? -2 : 0,
+                      0,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: <Color>[
@@ -200,81 +196,73 @@ class _DesktopPosterCardState extends State<DesktopLibraryPosterCard> {
                       borderRadius: BorderRadius.circular(3),
                       border: Border.all(
                         color: _highlighted
-                            ? const Color(0x94FFFFFF)
+                            ? palette.primary
                             : const Color(0x14FFFFFF),
                         width: 1,
                       ),
                       boxShadow: <BoxShadow>[
                         BoxShadow(
                           color: _hovered
-                              ? const Color(0x36000000)
+                              ? const Color(0x28000000)
                               : const Color(0x1C000000),
-                          blurRadius: _hovered ? 18 : 8,
-                          offset: Offset(0, _hovered ? 8 : 3),
+                          blurRadius: _hovered ? 14 : 8,
+                          offset: Offset(0, _hovered ? 5 : 3),
                         ),
                       ],
                     ),
-                    child: _DesktopPosterTone(
-                      active: _hovered,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: <Widget>[
-                            DesktopResolvedImage(
-                              controller: widget.controller,
-                              assetPath: game.coverAssetPath,
-                              palette: palette,
-                              fit: BoxFit.cover,
-                              placeholderBuilder: (BuildContext context) =>
-                                  DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: <Color>[
-                                          accent.withValues(alpha: 0.9),
-                                          Color.lerp(
-                                                accent,
-                                                palette.pageBackground,
-                                                0.72,
-                                              ) ??
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          DesktopResolvedImage(
+                            controller: widget.controller,
+                            assetPath: game.coverAssetPath,
+                            palette: palette,
+                            fit: BoxFit.cover,
+                            placeholderBuilder: (BuildContext context) =>
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: <Color>[
+                                        accent.withValues(alpha: 0.9),
+                                        Color.lerp(
+                                              accent,
                                               palette.pageBackground,
-                                        ],
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                      ),
-                                    ),
-                                    child: Center(
-                                      child: Icon(
-                                        _posterIcon(game),
-                                        size: 78,
-                                        color: accent,
-                                      ),
+                                              0.72,
+                                            ) ??
+                                            palette.pageBackground,
+                                      ],
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
                                     ),
                                   ),
-                            ),
-                            const IgnorePointer(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: <Color>[
-                                      Color(0x0FFFFFFF),
-                                      Colors.transparent,
-                                      Color(0x10000000),
-                                    ],
-                                    stops: <double>[0, 0.72, 1.0],
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
+                                  child: Center(
+                                    child: Icon(
+                                      _posterIcon(game),
+                                      size: 78,
+                                      color: accent,
+                                    ),
                                   ),
+                                ),
+                          ),
+                          const IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: <Color>[
+                                    Color(0x0FFFFFFF),
+                                    Colors.transparent,
+                                    Color(0x10000000),
+                                  ],
+                                  stops: <double>[0, 0.72, 1.0],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
                                 ),
                               ),
                             ),
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: _DesktopPosterSheen(active: _hovered),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -330,8 +318,8 @@ class _DesktopGameHoverPreview extends StatelessWidget {
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
+      duration: AppMotion.duration(context, AppMotion.menu),
+      curve: AppMotion.curve,
       builder: (BuildContext context, double value, Widget? child) {
         final double dx = (enterFromRight ? 6 : -6) * (1 - value);
         return Opacity(
@@ -531,135 +519,4 @@ class _DesktopGameHoverStat extends StatelessWidget {
       ],
     ),
   );
-}
-
-class _DesktopPosterTone extends StatelessWidget {
-  const _DesktopPosterTone({required this.active, required this.child});
-  final bool active;
-  final Widget child;
-  @override
-  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween<double>(begin: 0, end: active ? 1 : 0),
-    duration: const Duration(milliseconds: 280),
-    curve: Curves.ease,
-    child: child,
-    builder: (context, value, child) {
-      // CSS brightness(1.05) followed by contrast(1.02).
-      final double scale = 1 + 0.071 * value;
-      final double bias = -2.55 * value;
-      return ColorFiltered(
-        colorFilter: ColorFilter.matrix(<double>[
-          scale,
-          0,
-          0,
-          0,
-          bias,
-          0,
-          scale,
-          0,
-          0,
-          bias,
-          0,
-          0,
-          scale,
-          0,
-          bias,
-          0,
-          0,
-          0,
-          1,
-          0,
-        ]),
-        child: child,
-      );
-    },
-  );
-}
-
-// Matches test-all.html: steamSheenSweep, 800ms, with an oversized screen-blended band.
-class _DesktopPosterSheen extends StatefulWidget {
-  const _DesktopPosterSheen({required this.active});
-  final bool active;
-  @override
-  State<_DesktopPosterSheen> createState() => _DesktopPosterSheenState();
-}
-
-class _DesktopPosterSheenState extends State<_DesktopPosterSheen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _sweep = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 800),
-  );
-
-  @override
-  void didUpdateWidget(covariant _DesktopPosterSheen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.active != oldWidget.active) {
-      if (widget.active && !MediaQuery.disableAnimationsOf(context)) {
-        _sweep.forward(from: 0);
-      } else {
-        _sweep.reset();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _sweep.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => RepaintBoundary(
-    child: CustomPaint(painter: _DesktopPosterSheenPainter(_sweep)),
-  );
-}
-
-class _DesktopPosterSheenPainter extends CustomPainter {
-  _DesktopPosterSheenPainter(this.animation) : super(repaint: animation);
-  final Animation<double> animation;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double time = animation.value;
-    if (time == 0) return;
-    const Curve easing = Cubic(0.2, 0.8, 0.25, 1);
-    final double progress = easing.transform(time);
-    final double opacity = time < 0.3
-        ? 0.65 * easing.transform(time / 0.3)
-        : 0.65 - 0.23 * easing.transform((time - 0.3) / 0.7);
-    final double translation = -0.35 + 0.51 * progress;
-    final Rect band = Rect.fromCenter(
-      center: Offset.zero,
-      width: size.width * 2,
-      height: size.height * 2,
-    );
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
-    canvas.translate(
-      size.width * (0.5 + translation * 2),
-      size.height * (0.5 + translation * 2),
-    );
-    canvas.rotate(math.pi / 12);
-    final Paint paint = Paint()
-      ..blendMode = BlendMode.screen
-      ..shader = LinearGradient(
-        begin: const Alignment(-0.9063, -0.4226),
-        end: const Alignment(0.9063, 0.4226),
-        stops: const <double>[0.38, 0.46, 0.50, 0.54, 0.62],
-        colors: <Color>[
-          Colors.transparent,
-          Colors.white.withValues(alpha: 0.05 * opacity),
-          Colors.white.withValues(alpha: 0.22 * opacity),
-          const Color(0xFF66C0F4).withValues(alpha: 0.12 * opacity),
-          Colors.transparent,
-        ],
-      ).createShader(band);
-    canvas.drawRect(band, paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _DesktopPosterSheenPainter oldDelegate) =>
-      oldDelegate.animation != animation;
 }

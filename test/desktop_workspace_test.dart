@@ -31,6 +31,7 @@ import 'package:board_game_agent/features/library/models/remote_asset_file.dart'
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
 import 'package:board_game_agent/features/games/models/search_history_record.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
+import 'package:board_game_agent/features/assistant/services/conversation_store.dart';
 import 'package:board_game_agent/features/settings/services/desktop_ai_settings_service.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
@@ -50,12 +51,16 @@ import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
+import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
+import 'package:board_game_agent/ui/shared/favorite_feedback.dart';
+import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
 
 part 'desktop/desktop_settings_test_cases.dart';
 part 'desktop/desktop_shell_test_cases.dart';
 part 'desktop/desktop_library_test_cases.dart';
 part 'desktop/desktop_home_test_cases.dart';
 part 'desktop/desktop_typography_test_cases.dart';
+part 'desktop/desktop_assistant_design_test_cases.dart';
 part 'desktop/desktop_national_day_test_cases.dart';
 
 class _DesktopWorkspaceTestContext {
@@ -113,6 +118,7 @@ void main() {
 
   _registerDesktopHomeTests(workspaceContext);
   _registerDesktopTypographyTests(workspaceContext);
+  _registerAssistantDesignTests(workspaceContext);
   _registerDesktopNationalDayTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {
@@ -187,12 +193,6 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('desktop-model-picker-tab-reasoning'),
-        ),
-      );
-      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey<String>('desktop-reasoning-option-none')),
         findsNothing,
@@ -202,15 +202,6 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('desktop-model-picker-tab-models')),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey<String>('desktop-model-picker-search')),
-        'sol',
-      );
-      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('desktop-model-option-gpt-5.6-sol')),
       );
@@ -232,13 +223,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(controller.aiApiConfig.reasoningEffort, AiReasoningEffort.high);
-      expect(panel, findsNothing);
-
+      expect(panel, findsOneWidget);
       await tester.tap(
-        find.byKey(const ValueKey<String>('desktop-model-selector')),
+        find.byKey(const ValueKey('assistant-service-tier-fast')),
       );
       await tester.pumpAndSettle();
-      expect(panel, findsOneWidget);
+      expect(controller.aiApiConfig.responseSpeed, AiResponseSpeed.fast);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(panel, findsNothing);
@@ -359,6 +349,7 @@ Future<AppController> _createController({
   final AppController controller = AppController(
     preferencesService: preferencesService ?? PreferencesService(),
     aiService: aiService ?? _FakeAiService(),
+    conversationStore: _WorkspaceConversationStore(),
     gameManifestService: GameManifestService(),
     remoteAssetService: _NoNetworkAssetService(),
     speechService: SpeechService(),
@@ -593,4 +584,16 @@ class _FakeAiService implements AiService {
 
   @override
   void dispose() {}
+}
+
+class _WorkspaceConversationStore extends ConversationStore {
+  String? _payload;
+
+  @override
+  Future<String?> load() async => _payload;
+
+  @override
+  Future<void> save(String payload) async {
+    _payload = payload;
+  }
 }

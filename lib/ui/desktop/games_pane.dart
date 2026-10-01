@@ -1,5 +1,7 @@
 // Body layout adapted directly from the read-only Desktop reference.
 import 'package:flutter/material.dart';
+import '../shared/content_entrance.dart';
+import '../../core/theme/app_motion.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
 import 'poster_card.dart';
@@ -179,12 +181,7 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
       color: const Color(0xFFFFFEFC),
       elevation: 12,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      popUpAnimationStyle: const AnimationStyle(
-        duration: Duration(milliseconds: 180),
-        reverseDuration: Duration(milliseconds: 150),
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      ),
+      popUpAnimationStyle: AppMotion.menuStyle(context),
       items: [
         const PopupMenuItem<_DesktopGameSort>(
           enabled: false,
@@ -235,12 +232,7 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
       color: const Color(0xFFFFFEFC),
       elevation: 14,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      popUpAnimationStyle: const AnimationStyle(
-        duration: Duration(milliseconds: 180),
-        reverseDuration: Duration(milliseconds: 150),
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      ),
+      popUpAnimationStyle: AppMotion.menuStyle(context),
       items: [
         _FilterPopupEntry(
           player: _playerFilter,
@@ -411,14 +403,19 @@ class _LibraryMain extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   for (var index = 0; index < games.length; index++)
-                    SizedBox(
-                      width: posterWidth,
-                      height: posterWidth * 1.49,
-                      child: _LibraryGameCard(
-                        game: games[index],
-                        onTap: () => onSelectGame(index),
-                        onOpenAssistant: () =>
-                            onOpenAssistant(games[index].data),
+                    ContentEntrance(
+                      key: ValueKey('library-entrance-${games[index].data.id}'),
+                      order: index,
+                      animate: index < 6,
+                      child: SizedBox(
+                        width: posterWidth,
+                        height: posterWidth * 1.49,
+                        child: _LibraryGameCard(
+                          game: games[index],
+                          onTap: () => onSelectGame(index),
+                          onOpenAssistant: () =>
+                              onOpenAssistant(games[index].data),
+                        ),
                       ),
                     ),
                 ],
@@ -472,8 +469,8 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
       child: InkWell(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
+          duration: AppMotion.duration(context, AppMotion.menu),
+          curve: AppMotion.curve,
           height: 38,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           alignment: Alignment.center,
@@ -538,8 +535,8 @@ class _OutlineActionState extends State<_OutlineAction> {
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
+          duration: AppMotion.duration(context, AppMotion.menu),
+          curve: AppMotion.curve,
           height: 38,
           constraints: const BoxConstraints(minWidth: 104),
           padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -578,8 +575,8 @@ class _OutlineActionState extends State<_OutlineAction> {
               AnimatedRotation(
                 key: const ValueKey<String>('desktop-library-action-arrow'),
                 turns: widget.expanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
+                duration: AppMotion.duration(context, AppMotion.menu),
+                curve: AppMotion.curve,
                 child: Icon(
                   Icons.keyboard_arrow_down_rounded,
                   size: 17,
@@ -964,7 +961,7 @@ class _OptionChip extends StatelessWidget {
     onTap: onTap,
     borderRadius: BorderRadius.circular(12),
     child: AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
+      duration: AppMotion.duration(context, AppMotion.feedback),
       height: 38,
       width: expand ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 15),

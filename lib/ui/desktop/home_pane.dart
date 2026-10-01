@@ -3,6 +3,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../shared/content_entrance.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../features/games/models/game_info.dart';
@@ -327,7 +329,12 @@ class _HeroBannerState extends State<_HeroBanner> {
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(_interval, (_) {
-      if (!mounted || _showControls || !_controller.hasClients) return;
+      if (!mounted ||
+          AppMotion.reduced(context) ||
+          _showControls ||
+          !_controller.hasClients) {
+        return;
+      }
       _goTo((_page + 1) % _pageCount);
     });
   }
@@ -342,8 +349,8 @@ class _HeroBannerState extends State<_HeroBanner> {
     } else {
       await _controller.animateToPage(
         page,
-        duration: const Duration(milliseconds: 480),
-        curve: Curves.easeInOutCubic,
+        duration: AppMotion.duration(context, AppMotion.scroll),
+        curve: AppMotion.curve,
       );
     }
     if (!mounted || transition != _transition) return;
@@ -445,7 +452,10 @@ class _HeroBannerState extends State<_HeroBanner> {
                             onTap: () => _goTo(index),
                             customBorder: const CircleBorder(),
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 220),
+                              duration: AppMotion.duration(
+                                context,
+                                AppMotion.content,
+                              ),
                               width: index == _page ? 18 : 8,
                               height: 8,
                               decoration: BoxDecoration(
@@ -630,118 +640,120 @@ class _GameCard extends StatelessWidget {
     double cardFont(double value) =>
         value * (1 + math.min(0.08, math.max(0, metrics.scale - 1)));
 
-    return HoverSurface(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(metrics.radius(9)),
-      child: Container(
-        padding: EdgeInsets.all(metrics.px(4)),
-        decoration: BoxDecoration(
-          color: DesktopColors.card,
-          borderRadius: BorderRadius.circular(metrics.radius(9)),
-          border: Border.all(color: const Color(0x0D8A6044)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0B7E4D2B),
-              blurRadius: metrics.px(8),
-              offset: Offset(0, metrics.px(2)),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(metrics.radius(6)),
-              child: AspectRatio(
-                aspectRatio: 132 / 116,
-                child: SizedBox(width: double.infinity, child: game.cover()),
+    return ContentEntrance(
+      child: HoverSurface(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(metrics.radius(9)),
+        child: Container(
+          padding: EdgeInsets.all(metrics.px(4)),
+          decoration: BoxDecoration(
+            color: DesktopColors.card,
+            borderRadius: BorderRadius.circular(metrics.radius(9)),
+            border: Border.all(color: const Color(0x0D8A6044)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x0B7E4D2B),
+                blurRadius: metrics.px(8),
+                offset: Offset(0, metrics.px(2)),
               ),
-            ),
-            SizedBox(height: metrics.px(9)),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
-              child: Tooltip(
-                message: game.englishTitle == '-'
-                    ? game.title
-                    : '${game.title}\n${game.englishTitle}',
-                child: Text(
-                  game.title,
-                  maxLines: 3,
-                  style: TextStyle(
-                    fontSize: cardFont(15),
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                    color: const Color(0xFF171412),
-                  ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(metrics.radius(6)),
+                child: AspectRatio(
+                  aspectRatio: 132 / 116,
+                  child: SizedBox(width: double.infinity, child: game.cover()),
                 ),
               ),
-            ),
-            SizedBox(height: metrics.px(8)),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.star_rounded,
-                    color: const Color(0xFFFFA400),
-                    size: metrics.px(16),
-                  ),
-                  SizedBox(width: metrics.px(4)),
-                  Text(
-                    game.score,
+              SizedBox(height: metrics.px(9)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
+                child: Tooltip(
+                  message: game.englishTitle == '-'
+                      ? game.title
+                      : '${game.title}\n${game.englishTitle}',
+                  child: Text(
+                    game.title,
+                    maxLines: 3,
                     style: TextStyle(
-                      fontSize: cardFont(16),
+                      fontSize: cardFont(15),
                       fontWeight: FontWeight.w700,
-                      height: 1.15,
+                      height: 1.2,
                       color: const Color(0xFF171412),
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-            SizedBox(height: metrics.px(8)),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
-              child: Wrap(
-                spacing: metrics.px(6),
-                runSpacing: metrics.px(3),
-                children: [
-                  _Tag(game.tagA),
-                  if (game.tagB != '-') _Tag(game.tagB),
-                ],
+              SizedBox(height: metrics.px(8)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.star_rounded,
+                      color: const Color(0xFFFFA400),
+                      size: metrics.px(16),
+                    ),
+                    SizedBox(width: metrics.px(4)),
+                    Text(
+                      game.score,
+                      style: TextStyle(
+                        fontSize: cardFont(16),
+                        fontWeight: FontWeight.w700,
+                        height: 1.15,
+                        color: const Color(0xFF171412),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            SizedBox(height: metrics.px(14)),
-            const Spacer(),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                metrics.px(6),
-                0,
-                metrics.px(6),
-                metrics.px(7),
+              SizedBox(height: metrics.px(8)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
+                child: Wrap(
+                  spacing: metrics.px(6),
+                  runSpacing: metrics.px(3),
+                  children: [
+                    _Tag(game.tagA),
+                    if (game.tagB != '-') _Tag(game.tagB),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _GameCardFact(
-                    icon: Icons.group_rounded,
-                    text: cardWidth - metrics.px(20) >= metrics.px(230)
-                        ? game.players
-                        : GameMetadataText.cardPlayers(game.data.playerCount),
-                    fullText: game.players,
-                    fontSize: cardFont(10),
-                  ),
-                  SizedBox(width: metrics.px(8)),
-                  _GameCardFact(
-                    icon: Icons.schedule_rounded,
-                    text: game.duration,
-                    fullText: game.duration,
-                    fontSize: cardFont(10),
-                  ),
-                ],
+              SizedBox(height: metrics.px(14)),
+              const Spacer(),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  metrics.px(6),
+                  0,
+                  metrics.px(6),
+                  metrics.px(7),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _GameCardFact(
+                      icon: Icons.group_rounded,
+                      text: cardWidth - metrics.px(20) >= metrics.px(230)
+                          ? game.players
+                          : GameMetadataText.cardPlayers(game.data.playerCount),
+                      fullText: game.players,
+                      fontSize: cardFont(10),
+                    ),
+                    SizedBox(width: metrics.px(8)),
+                    _GameCardFact(
+                      icon: Icons.schedule_rounded,
+                      text: game.duration,
+                      fullText: game.duration,
+                      fontSize: cardFont(10),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

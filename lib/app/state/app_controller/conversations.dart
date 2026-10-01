@@ -309,16 +309,25 @@ extension AppConversationController on AppController {
     }
   }
 
-  Future<void> _persistConversations({bool throwOnError = false}) async {
+  Future<void> _persistConversations({
+    bool throwOnError = false,
+    String? excludingConversationId,
+    AiConversation? replacement,
+    String? selectionAfterDelete,
+  }) async {
     try {
       final Map<String, dynamic> payload = <String, dynamic>{
         'version': _conversationStoreVersion,
         'savedAt': DateTime.now().toIso8601String(),
-        'selectedConversationId': _selectedConversationId,
+        'selectedConversationId': excludingConversationId == null
+            ? _selectedConversationId
+            : selectionAfterDelete,
         'conversations': <String, dynamic>{
           for (final MapEntry<String, AiConversation> entry
               in _conversations.entries)
-            entry.key: entry.value.toMap(),
+            if (entry.key != excludingConversationId)
+              entry.key: entry.value.toMap(),
+          if (replacement != null) replacement.id: replacement.toMap(),
         },
       };
       await _conversationStore.save(jsonEncode(payload));

@@ -21,6 +21,11 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   final Map<String, String> _drafts = <String, String>{};
   final Map<String, GlobalKey> _messageKeys = <String, GlobalKey>{};
   Timer? _messageTimesTimer;
+  bool _creating = false;
+  final _composerKey = GlobalKey<AssistantComposerState>();
+  final Set<String> _knownMessages = {};
+  PageStorageBucket? _viewBucket;
+  bool _restoredView = false;
 
   AppController get controller => widget.controller;
 
@@ -30,14 +35,44 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     _draftController = TextEditingController();
     _scrollController = ScrollController()..addListener(_handleScrollChanged);
     _lastConversationId = controller.selectedConversationId;
+    _knownMessages.addAll(
+      controller
+          .messagesForContext(
+            useGlobalMode: controller.selectedConversationIsGlobal,
+          )
+          .map((m) => m.id),
+    );
     controller.addListener(_handleControllerChanged);
     _scheduleInitialScrollToBottom();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _viewBucket = PageStorage.maybeOf(context);
+    if (_restoredView) return;
+    _restoredView = true;
+    final saved = _viewBucket?.readState(context, identifier: controller);
+    if (saved is AssistantViewState) {
+      _drafts.addAll(saved.drafts);
+      _scrollOffsets.addAll(saved.offsets);
+      _draftController.text = _drafts[_lastConversationId] ?? '';
+    }
   }
 
   @override
   void dispose() {
     controller.removeListener(_handleControllerChanged);
     _scrollController.removeListener(_handleScrollChanged);
+    _saveScrollPosition();
+    if (_lastConversationId != null) {
+      _drafts[_lastConversationId!] = _draftController.text;
+    }
+    _viewBucket?.writeState(
+      context,
+      AssistantViewState(drafts: _drafts, offsets: _scrollOffsets),
+      identifier: controller,
+    );
     _draftController.dispose();
     _scrollController.dispose();
     _messageTimesTimer?.cancel();
@@ -83,26 +118,19 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool narrow = constraints.maxWidth < 760;
         final double contentInset = math.max(
-          17,
-          (constraints.maxWidth - 780) / 2,
+          16,
+          (constraints.maxWidth - 900) / 2,
         );
-        // The message column stays readable at 780px, while the composer
-        // follows the wider desktop reference layout. Keeping its inset
-        // independent prevents a wide window from squeezing the input row
-        // into the message column.
-        final double composerInset = math.max(
-          17,
-          (constraints.maxWidth - 1360) / 2,
-        );
+        final double composerInset = contentInset;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Container(
-              constraints: const BoxConstraints(minHeight: 79),
+              constraints: const BoxConstraints(minHeight: 68),
               padding: EdgeInsets.fromLTRB(
-                narrow ? 17 : 28,
+                narrow ? 12 : 24,
                 16,
-                narrow ? 17 : 28,
+                narrow ? 12 : 24,
                 16,
               ),
               decoration: BoxDecoration(
@@ -125,63 +153,18 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                       ],
                     ),
                   ),
-                  if (!narrow &&
-                      (!useGlobalMode ||
-                          controller.globalUseCurrentGameKnowledge)) ...[
-                    _AssistantStatusLabel(label: game.title, palette: palette),
-                    const SizedBox(width: 7),
-                  ],
-                  if (narrow)
-                    IconButton(
-                      tooltip: controller.copy.desktopContextTitle,
-                      onPressed: () => _showAssistantSheet(
-                        title: controller.copy.desktopContextTitle,
-                        child: _DesktopContextPanel(
-                          controller: controller,
-                          useGlobalMode: useGlobalMode,
-                        ),
-                      ),
-                      style: _desktopIconButtonStyle(palette),
-                      icon: const Icon(Icons.tune_rounded),
-                    ),
-                  PopupMenuButton<String>(
-                    tooltip: controller.copy.desktopMore,
-                    onSelected: (String value) {
-                      if (value == 'clear') {
-                        controller.clearConversationForContext(
-                          useGlobalMode: useGlobalMode,
-                        );
-                      }
-                      if (value == 'context') {
-                        _showAssistantSheet(
-                          title: controller.copy.desktopContextTitle,
-                          child: _DesktopContextPanel(
-                            controller: controller,
-                            useGlobalMode: useGlobalMode,
-                          ),
-                        );
-                      }
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                          PopupMenuItem<String>(
-                            value: 'clear',
-                            child: Text(
-                              controller.copy.desktopClearConversation,
-                            ),
-                          ),
-                          PopupMenuItem<String>(
-                            value: 'context',
-                            child: Text(controller.copy.desktopContextTitle),
-                          ),
-                        ],
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 34,
-                      height: 34,
-                    ),
-                    iconSize: 18,
-                    icon: const Icon(Icons.more_horiz_rounded),
+                  IconButton(
+                    key: const ValueKey('assistant-header-new-conversation'),
+                    tooltip: controller.copy.newConversation,
+                    onPressed: _creating ? null : _createConversation,
+                    style: _desktopIconButtonStyle(palette),
+                    icon: _creating
+                        ? const SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.edit_square, size: 20),
                   ),
                 ],
               ),
@@ -189,30 +172,111 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
             Expanded(
               child: Stack(
                 children: <Widget>[
-                  ListView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      contentInset,
-                      30,
-                      contentInset,
-                      16,
-                    ),
-                    children: <Widget>[
-                      if (messages.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Text(
-                            controller.copy.messageHint,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: palette.textSecondary),
+                  if (messages.isEmpty && !showRun)
+                    LayoutBuilder(
+                      builder: (context, box) => SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: box.maxHeight),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              contentInset,
+                              28,
+                              contentInset,
+                              28,
+                            ),
+                            child: AssistantWelcome(
+                              copy: controller.copy,
+                              gameTitle:
+                                  !useGlobalMode ||
+                                      controller.globalUseCurrentGameKnowledge
+                                  ? game.title
+                                  : null,
+                              onPrompt: _usePrompt,
+                            ),
                           ),
                         ),
-                      for (
-                        int index = 0;
-                        index < messages.length;
-                        index++
-                      ) ...<Widget>[
-                        if (showRun && index == lastAssistantIndex)
+                      ),
+                    )
+                  else
+                    ListView(
+                      key: const ValueKey('assistant-message-list'),
+                      controller: _scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                        contentInset,
+                        30,
+                        contentInset,
+                        16,
+                      ),
+                      children: <Widget>[
+                        for (
+                          int index = 0;
+                          index < messages.length;
+                          index++
+                        ) ...<Widget>[
+                          if (showRun && index == lastAssistantIndex)
+                            AiRunActivity(
+                              events: runEvents,
+                              isRunning: controller.isSendingForContext(
+                                useGlobalMode: useGlobalMode,
+                              ),
+                              palette: palette,
+                              copy: controller.copy,
+                              contextKey: selectedConversation.id,
+                              initialExpanded: controller
+                                  .aiRunExpandedForContext(
+                                    useGlobalMode: useGlobalMode,
+                                  ),
+                              onExpandedChanged: (bool expanded) =>
+                                  controller.setAiRunExpandedForContext(
+                                    useGlobalMode: useGlobalMode,
+                                    expanded: expanded,
+                                  ),
+                            ),
+                          if (!(messages[index].role == ChatRole.assistant &&
+                              messages[index].isStreaming &&
+                              messages[index].text.trim().isEmpty &&
+                              showRun))
+                            AssistantMessageEntrance(
+                              key: ValueKey(
+                                '${selectedConversation.id}:${messages[index].id}',
+                              ),
+                              animate: _knownMessages.add(messages[index].id),
+                              child: MessageBubble(
+                                key: _messageKeys.putIfAbsent(
+                                  messages[index].id,
+                                  GlobalKey.new,
+                                ),
+                                message: messages[index],
+                                palette: palette,
+                                copy: controller.copy,
+                                showAssistantAvatar: false,
+                                showAssistantActionLabels: true,
+                                maxWidth: 780,
+                                desktopLayout: true,
+                                onSpeak:
+                                    messages[index].role ==
+                                            ChatRole.assistant &&
+                                        controller.voiceReplyAvailable
+                                    ? () => controller.speakMessage(
+                                        messages[index].text,
+                                      )
+                                    : null,
+                                speakTooltip: controller.copy.speakAgain,
+                                onCopy: () => _copyAnswer(messages[index].text),
+                                copyTooltip: controller.copy.copyAnswer,
+                                onRetry: messages[index].canRetry
+                                    ? () => controller.retryMessage(
+                                        messages[index],
+                                        useGlobalMode: useGlobalMode,
+                                      )
+                                    : null,
+                                retryTooltip: controller.copy.retry,
+                                showTimestamp: _showMessageTimes,
+                                onTap: _toggleMessageTimes,
+                              ),
+                            ),
+                        ],
+                        if (showRun && lastAssistantIndex < 0)
                           AiRunActivity(
                             events: runEvents,
                             isRunning: controller.isSendingForContext(
@@ -230,59 +294,8 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                                   expanded: expanded,
                                 ),
                           ),
-                        if (!(messages[index].role == ChatRole.assistant &&
-                            messages[index].isStreaming &&
-                            messages[index].text.trim().isEmpty &&
-                            showRun))
-                          MessageBubble(
-                            key: _messageKeys.putIfAbsent(
-                              messages[index].id,
-                              GlobalKey.new,
-                            ),
-                            message: messages[index],
-                            palette: palette,
-                            copy: controller.copy,
-                            showAssistantAvatar: false,
-                            showAssistantActionLabels: true,
-                            maxWidth: 780,
-                            desktopLayout: true,
-                            onSpeak: messages[index].role == ChatRole.assistant
-                                ? () => controller.speakMessage(
-                                    messages[index].text,
-                                  )
-                                : () {},
-                            speakTooltip: controller.copy.speakAgain,
-                            onRetry: messages[index].canRetry
-                                ? () => controller.retryMessage(
-                                    messages[index],
-                                    useGlobalMode: useGlobalMode,
-                                  )
-                                : null,
-                            retryTooltip: controller.copy.retry,
-                            showTimestamp: _showMessageTimes,
-                            onTap: _toggleMessageTimes,
-                          ),
                       ],
-                      if (showRun && lastAssistantIndex < 0)
-                        AiRunActivity(
-                          events: runEvents,
-                          isRunning: controller.isSendingForContext(
-                            useGlobalMode: useGlobalMode,
-                          ),
-                          palette: palette,
-                          copy: controller.copy,
-                          contextKey: selectedConversation.id,
-                          initialExpanded: controller.aiRunExpandedForContext(
-                            useGlobalMode: useGlobalMode,
-                          ),
-                          onExpandedChanged: (bool expanded) =>
-                              controller.setAiRunExpandedForContext(
-                                useGlobalMode: useGlobalMode,
-                                expanded: expanded,
-                              ),
-                        ),
-                    ],
-                  ),
+                    ),
                   if (_showJumpToBottom)
                     Positioned(
                       left: 0,
@@ -314,18 +327,13 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(composerInset, 9, composerInset, 18),
-              child: _DesktopComposer(
+              child: AssistantComposer(
+                key: _composerKey,
+                desktop: true,
                 controller: controller,
-                draftController: _draftController,
+                textController: _draftController,
                 useGlobalMode: useGlobalMode,
                 onSend: _send,
-                onOpenContext: () => _showAssistantSheet(
-                  title: controller.copy.desktopContextTitle,
-                  child: _DesktopContextPanel(
-                    controller: controller,
-                    useGlobalMode: useGlobalMode,
-                  ),
-                ),
               ),
             ),
           ],
@@ -345,7 +353,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
       if (target == null || !mounted) return;
       Scrollable.ensureVisible(
         target,
-        duration: const Duration(milliseconds: 220),
+        duration: AppMotion.duration(context, AppMotion.content),
         curve: Curves.easeOut,
         alignment: 0.2,
       );
@@ -354,15 +362,26 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
 
   void _handleControllerChanged() {
     if (!mounted) return;
+    final retainedIds = controller.conversations.map((item) => item.id).toSet();
+    _drafts.removeWhere((id, _) => !retainedIds.contains(id));
+    _scrollOffsets.removeWhere((id, _) => !retainedIds.contains(id));
     final String? conversationId = controller.selectedConversationId;
     final bool contextChanged = conversationId != _lastConversationId;
     if (contextChanged) {
-      _saveScrollPosition();
-      if (_lastConversationId != null) {
+      if (_lastConversationId != null &&
+          retainedIds.contains(_lastConversationId)) {
+        _saveScrollPosition();
         _drafts[_lastConversationId!] = _draftController.text;
       }
       _draftController.text = _drafts[conversationId] ?? '';
       _lastConversationId = conversationId;
+      _knownMessages.addAll(
+        controller
+            .messagesForContext(
+              useGlobalMode: controller.selectedConversationIsGlobal,
+            )
+            .map((m) => m.id),
+      );
       _showJumpToBottom = false;
       _hasNewContent = false;
       _followNewMessages = true;
@@ -440,7 +459,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     }
     _scrollController.animateTo(
       target,
-      duration: const Duration(milliseconds: 220),
+      duration: AppMotion.duration(context, AppMotion.content),
       curve: Curves.easeOut,
     );
   }
@@ -458,40 +477,18 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
       if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      _scrollToBottom(animated: false);
-      _followNewMessages = true;
-      _showJumpToBottom = false;
+      final saved = _scrollOffsets[_lastConversationId];
+      if (saved == null) {
+        _scrollToBottom(animated: false);
+      } else {
+        _scrollController.jumpTo(
+          saved.clamp(0.0, _scrollController.position.maxScrollExtent),
+        );
+      }
+      _followNewMessages = _isNearBottom();
+      _showJumpToBottom = !_followNewMessages;
       _hasNewContent = false;
     });
-  }
-
-  Future<void> _showAssistantSheet({
-    required String title,
-    required Widget child,
-  }) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (BuildContext context) => SafeArea(
-        child: SizedBox(
-          height: math.min(MediaQuery.sizeOf(context).height * 0.72, 560),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              Expanded(child: child),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _toggleMessageTimes() {
@@ -504,6 +501,50 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     _messageTimesTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showMessageTimes = false);
     });
+  }
+
+  Future<void> _copyAnswer(String text) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(controller.copy.answerCopied)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            controller.copy.localized('复制失败，请重试', 'Could not copy. Try again.'),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _usePrompt(String prompt) {
+    _draftController.text = prompt;
+    _draftController.selection = TextSelection.collapsed(offset: prompt.length);
+    _composerKey.currentState?.focusDraft();
+  }
+
+  Future<void> _createConversation() async {
+    if (_creating) return;
+    setState(() => _creating = true);
+    try {
+      await controller.createConversation(
+        useGlobalMode: controller.selectedConversationIsGlobal,
+      );
+      if (mounted) _composerKey.currentState?.focusDraft();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(controller.copy.conversationSaveFailed)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
   }
 
   Future<void> _send() async {

@@ -2,6 +2,7 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -866,6 +867,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       });
       showDialog<void>(
         context: context,
+        animationStyle: AppMotion.menuStyle(context),
         builder: (context) {
           final palette = AppPalette.of(context);
           return AlertDialog(

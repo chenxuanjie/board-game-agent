@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 
 /// Classic edge controls, visible on pointer hover or keyboard focus.
@@ -100,9 +101,10 @@ class CarouselEdgeButton extends StatelessWidget {
     final label = previous
         ? MaterialLocalizations.of(context).previousPageTooltip
         : MaterialLocalizations.of(context).nextPageTooltip;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : Duration(milliseconds: visible ? 180 : 150);
+    final duration = AppMotion.duration(
+      context,
+      visible ? AppMotion.menu : AppMotion.exit,
+    );
     return Positioned(
       left: previous ? 0 : null,
       right: previous ? null : 0,
@@ -115,11 +117,11 @@ class CarouselEdgeButton extends StatelessWidget {
             key: ValueKey('$keyPrefix-$direction-visibility'),
             opacity: visible ? 1 : 0,
             duration: duration,
-            curve: Curves.easeOutCubic,
+            curve: AppMotion.curve,
             child: AnimatedSlide(
               offset: visible ? Offset.zero : Offset(previous ? -.2 : .2, 0),
               duration: duration,
-              curve: Curves.easeOutCubic,
+              curve: AppMotion.curve,
               child: Tooltip(
                 message: label,
                 child: SizedBox(

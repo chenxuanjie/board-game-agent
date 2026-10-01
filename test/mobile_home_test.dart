@@ -28,6 +28,7 @@ import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
 import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
 import 'package:board_game_agent/ui/mobile/settings_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_cover.dart';
+import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
 import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -476,6 +477,55 @@ void main() {
   });
   _registerMobileNationalDayTests();
   _registerContentDesignTests();
+  testWidgets(
+    'compact cover uses the same Hero into detail and returns safely',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      rootBundle.clear();
+      await tester.runAsync(controller.reloadGames);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+      await tester.pumpAndSettle();
+      final card = find.byKey(
+        ValueKey('mobile-library-game-${controller.games.first.id}'),
+      );
+      final source = find.descendant(
+        of: card,
+        matching: find.byType(GameCoverSource),
+      );
+      final sourceHero = tester.widget<Hero>(
+        find.descendant(of: source, matching: find.byType(Hero)),
+      );
+      await tester.tap(source);
+      await tester.pumpAndSettle();
+      final detail = tester.widget<GameDetailScreen>(
+        find.byType(GameDetailScreen),
+      );
+      expect(detail.coverOrigin?.tag, sourceHero.tag);
+      expect(detail.coverOrigin?.path, controller.games.first.coverAssetPath);
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is Hero && widget.tag == sourceHero.tag,
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(card, findsOneWidget);
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 AppController _controller({

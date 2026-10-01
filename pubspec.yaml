@@ -123,6 +123,7 @@ flutter:
     - assets/games/war_chest/images/
     - assets/games/war_chest/game.json
     - assets/games/war_chest/manifest.json
+    - assets/games/decrypto/images/
     - assets/games/decrypto/game.json
     - assets/games/decrypto/manifest.json
     - assets/games/seven_wonders_duel/images/
@@ -133,6 +134,7 @@ flutter:
     - assets/games/splendor/game.json
     - assets/games/splendor/manifest.json
     - assets/games/splendor/docs/local/knowledge/
+    - assets/games/splendor_duel/images/
     - assets/games/splendor_duel/game.json
     - assets/games/splendor_duel/manifest.json
     - assets/games/splendor_duel/docs/local/knowledge/

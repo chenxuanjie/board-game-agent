@@ -110,7 +110,9 @@ class PreferencesService {
 
   Future<void> saveAiApiConfig(AiApiConfig config) async {
     final prefs = await _prefs;
-    await prefs.setString(_aiApiConfigKey, config.toJson());
+    if (!await prefs.setString(_aiApiConfigKey, config.toJson())) {
+      throw StateError('AI configuration write failed');
+    }
   }
 
   Future<List<AiApiConfig>> loadAiCustomPresets() async {
@@ -146,7 +148,9 @@ class PreferencesService {
 
   Future<void> saveGameAnswerMode(AiAnswerMode mode) async {
     final prefs = await _prefs;
-    await prefs.setString(_gameAnswerModeKey, mode.code);
+    if (!await prefs.setString(_gameAnswerModeKey, mode.code)) {
+      throw StateError('Game answer mode write failed');
+    }
   }
 
   Future<AiAnswerMode> loadGlobalAnswerMode() async {
@@ -159,7 +163,9 @@ class PreferencesService {
 
   Future<void> saveGlobalAnswerMode(AiAnswerMode mode) async {
     final prefs = await _prefs;
-    await prefs.setString(_globalAnswerModeKey, mode.code);
+    if (!await prefs.setString(_globalAnswerModeKey, mode.code)) {
+      throw StateError('Global answer mode write failed');
+    }
   }
 
   Future<bool> loadGlobalUseCurrentGameKnowledge() async {

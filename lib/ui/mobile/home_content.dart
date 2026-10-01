@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/ui_tokens.dart';
@@ -13,6 +14,7 @@ import '../../core/localization/app_copy.dart';
 import '../shared/content_cards.dart';
 import 'game_content_card.dart';
 import '../shared/hover_carousel_controls.dart';
+import '../shared/content_entrance.dart';
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -55,14 +57,13 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   void initState() {
     super.initState();
     _bannerTimer = Timer.periodic(const Duration(seconds: 7), (_) {
-      if (!mounted || !_bannerController.hasClients || _bannerInteracting) {
+      if (!mounted ||
+          !_bannerController.hasClients ||
+          _bannerInteracting ||
+          AppMotion.reduced(context)) {
         return;
       }
-      _bannerController.animateToPage(
-        (_banner + 1) % 3,
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeInOut,
-      );
+      _goToBanner((_banner + 1) % 3);
     });
   }
 
@@ -136,18 +137,25 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                 metadata: ordered.map(
                   (game) => ContentCardStyle.attributes(game.categoryLine),
                 ),
-                itemBuilder: (context, index, metrics) => GameContentCard(
-                  key: ValueKey('mobile-recommendation-${ordered[index].id}'),
-                  controller: widget.controller,
-                  game: ordered[index],
-                  metrics: metrics,
-                  onTap: () => widget.onOpenGame(ordered[index]),
-                  attributesKey: ValueKey(
-                    'mobile-recommendation-attributes-${ordered[index].id}',
+                itemBuilder: (context, index, metrics) => ContentEntrance(
+                  key: ValueKey(
+                    'mobile-recommendation-entrance-${ordered[index].id}',
                   ),
-                  description: ordered[index].summary.trim().isNotEmpty
-                      ? ordered[index].summary
-                      : ordered[index].heroTagline,
+                  order: index,
+                  animate: index < 6,
+                  child: GameContentCard(
+                    key: ValueKey('mobile-recommendation-${ordered[index].id}'),
+                    controller: widget.controller,
+                    game: ordered[index],
+                    metrics: metrics,
+                    onTap: () => widget.onOpenGame(ordered[index]),
+                    attributesKey: ValueKey(
+                      'mobile-recommendation-attributes-${ordered[index].id}',
+                    ),
+                    description: ordered[index].summary.trim().isNotEmpty
+                        ? ordered[index].summary
+                        : ordered[index].heroTagline,
+                  ),
                 ),
               ),
             if (widget.controller.activities.isNotEmpty) ...[
@@ -404,18 +412,17 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                   for (var index = 0; index < pages.length; index++)
                     InkWell(
                       key: ValueKey('mobile-home-banner-dot-$index'),
-                      onTap: () => _bannerController.animateToPage(
-                        index,
-                        duration: const Duration(milliseconds: 420),
-                        curve: Curves.easeInOut,
-                      ),
+                      onTap: () => _goToBanner(index),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 12,
                           horizontal: 4,
                         ),
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
+                          duration: AppMotion.duration(
+                            context,
+                            AppMotion.content,
+                          ),
                           margin: const EdgeInsets.only(left: 4),
                           width: index == _banner ? 15 : 5,
                           height: 5,
@@ -437,15 +444,19 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     );
   }
 
-  void _stepBanner(int delta) {
+  void _stepBanner(int delta) => _goToBanner((_banner + delta + 3) % 3);
+
+  void _goToBanner(int page) {
     if (!_bannerController.hasClients) return;
-    _bannerController.animateToPage(
-      (_banner + delta + 3) % 3,
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 420),
-      curve: Curves.easeInOut,
-    );
+    if (AppMotion.reduced(context)) {
+      _bannerController.jumpToPage(page);
+    } else {
+      _bannerController.animateToPage(
+        page,
+        duration: AppMotion.scroll,
+        curve: AppMotion.curve,
+      );
+    }
   }
 
   Widget _shortcuts(AppCopy copy) {

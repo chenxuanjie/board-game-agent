@@ -38,9 +38,9 @@ void _registerDesktopTypographyTests(_DesktopWorkspaceTestContext context) {
       await tester.tap(speed);
       await tester.pumpAndSettle();
       await _captureDesktopTypography(tester, 'speed-menu');
-      expect(find.text('快速（Fast）').last.hitTestable(), findsOneWidget);
-      expect(find.text('标准（Default）').last.hitTestable(), findsOneWidget);
-      for (final label in ['标准（Default）', '快速（Fast）']) {
+      expect(find.text('快速').last.hitTestable(), findsOneWidget);
+      expect(find.text('标准').last.hitTestable(), findsOneWidget);
+      for (final label in ['标准', '快速']) {
         final rendered = tester.renderObject<RenderParagraph>(
           find.text(label).last,
         );
@@ -52,12 +52,19 @@ void _registerDesktopTypographyTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
 
       await _navigate(tester, 'AI助手');
+      final triggerRect = tester.getRect(
+        find.byKey(const ValueKey<String>('desktop-model-selector')),
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('desktop-model-selector')),
       );
       await tester.pumpAndSettle();
+      final pickerRect = tester.getRect(
+        find.byKey(const ValueKey<String>('desktop-model-picker-panel')),
+      );
+      expect((pickerRect.right - triggerRect.right).abs(), lessThan(2));
       final searchContext = tester.element(
-        find.byKey(const ValueKey<String>('desktop-model-picker-search')),
+        find.byKey(const ValueKey<String>('desktop-model-picker-panel')),
       );
       expect(
         Theme.of(searchContext).textTheme.bodySmall?.fontFamily,
@@ -68,12 +75,6 @@ void _registerDesktopTypographyTests(_DesktopWorkspaceTestContext context) {
       ).inputDecorationTheme.focusedBorder;
       expect(focused?.borderSide.color, DesktopColors.orange);
       await _captureDesktopTypography(tester, 'model-picker');
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('desktop-model-picker-tab-reasoning'),
-        ),
-      );
-      await tester.pumpAndSettle();
       await _captureDesktopTypography(tester, 'reasoning-picker');
       final xhigh = find.descendant(
         of: find.byKey(
@@ -97,6 +98,12 @@ void _registerDesktopTypographyTests(_DesktopWorkspaceTestContext context) {
 Future<void> _captureDesktopTypography(WidgetTester tester, String name) async {
   final directory = Platform.environment['DESKTOP_UI_CAPTURE_DIR'];
   if (directory == null || directory.isEmpty) return;
+  // Asset decoding uses real asynchronous work; allow it to complete before
+  // capturing an isolated test that has not warmed the image/SVG caches.
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 200)),
+  );
+  await tester.pumpAndSettle();
   final boundary = tester.renderObject<RenderRepaintBoundary>(
     find.byKey(const ValueKey<String>('desktop-test-capture')),
   );

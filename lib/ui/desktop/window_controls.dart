@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'desktop_responsive.dart';
@@ -103,16 +104,17 @@ class _WindowButton extends StatefulWidget {
 
 class _WindowButtonState extends State<_WindowButton> {
   bool hovering = false;
+  bool focused = false;
 
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
-    final bg = !hovering
+    final bg = !hovering && !focused
         ? Colors.transparent
         : widget.danger
         ? const Color(0xFFE94D4D)
         : const Color(0x11000000);
-    final fg = widget.danger && hovering
+    final fg = widget.danger && (hovering || focused)
         ? Colors.white
         : const Color(0xFF6B625A);
 
@@ -122,11 +124,11 @@ class _WindowButtonState extends State<_WindowButton> {
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => hovering = true),
         onExit: (_) => setState(() => hovering = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        child: InkWell(
           onTap: () => widget.onTap(),
+          onFocusChange: (value) => setState(() => focused = value),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 100),
+            duration: AppMotion.duration(context, AppMotion.feedback),
             width: metrics.px(50),
             height: metrics.px(32),
             alignment: Alignment.center,

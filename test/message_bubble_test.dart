@@ -10,6 +10,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('unavailable speech is hidden while copy remains usable', (
+    tester,
+  ) async {
+    var copied = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: ChatMessage(
+              id: 'available-copy',
+              role: ChatRole.assistant,
+              text: '完整回答',
+              timestamp: DateTime(2026, 10, 2),
+            ),
+            palette: PaletteRegistry.classic,
+            copy: AppCopy(AppLanguage.zhHans),
+            onSpeak: null,
+            onCopy: () => copied = true,
+            showAssistantActionLabels: true,
+            copyTooltip: '复制回答',
+          ),
+        ),
+      ),
+    );
+    expect(find.byIcon(Icons.volume_up_rounded), findsNothing);
+    await tester.tap(find.text('复制回答'));
+    expect(copied, isTrue);
+  });
   testWidgets('assistant bubble renders source, evidence and retry action', (
     WidgetTester tester,
   ) async {

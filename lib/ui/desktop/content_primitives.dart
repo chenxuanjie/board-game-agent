@@ -1,5 +1,6 @@
 // Body primitives adapted from the read-only Desktop reference layout.
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import '../../app/state/app_controller.dart';
@@ -27,6 +28,7 @@ class HoverSurface extends StatefulWidget {
 
 class _HoverSurfaceState extends State<HoverSurface> {
   bool _hovering = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -38,17 +40,28 @@ class _HoverSurfaceState extends State<HoverSurface> {
       onExit: (_) => setState(() => _hovering = false),
       child: InkWell(
         onTap: widget.onTap,
+        borderRadius: widget.borderRadius,
+        onFocusChange: (value) => setState(() => _focused = value),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 130),
-          curve: Curves.easeOut,
+          duration: AppMotion.duration(context),
+          curve: AppMotion.curve,
           transform: Matrix4.translationValues(
             0,
-            _hovering ? -widget.lift : 0,
+            _hovering && !AppMotion.reduced(context) ? -widget.lift : 0,
             0,
+          ),
+          foregroundDecoration: BoxDecoration(
+            borderRadius: widget.borderRadius,
+            border: Border.all(
+              color: _focused
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.transparent,
+              width: 2,
+            ),
           ),
           decoration: BoxDecoration(
             borderRadius: widget.borderRadius,
-            boxShadow: widget.addShadow && _hovering
+            boxShadow: widget.addShadow && (_hovering || _focused)
                 ? const [
                     BoxShadow(
                       color: Color(0x1A7D4D2C),

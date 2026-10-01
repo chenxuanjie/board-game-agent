@@ -29,6 +29,7 @@ import 'package:board_game_agent/features/settings/services/preferences_service.
 import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
+import 'package:board_game_agent/ui/shared/assistant/assistant_motion.dart';
 
 void _uiTest(String name, WidgetTesterCallback body) {
   testWidgets(name, (tester) async {
@@ -56,6 +57,42 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     rootBundle.clear();
   });
+
+  testWidgets(
+    'message motion does not restart on a delta and respects reduced motion',
+    (tester) async {
+      Widget scene(String text, {bool reduced = false}) => MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(disableAnimations: reduced),
+          child: AssistantMessageEntrance(
+            key: const ValueKey('one-message'),
+            child: Text(text),
+          ),
+        ),
+      );
+      await tester.pumpWidget(scene('第一段'));
+      await tester.pump(const Duration(milliseconds: 80));
+      final opacity = tester.widget<Opacity>(find.byType(Opacity)).opacity;
+      expect(opacity, greaterThan(0));
+      await tester.pumpWidget(scene('第一段，第二段'));
+      expect(
+        tester.widget<Opacity>(find.byType(Opacity)).opacity,
+        greaterThanOrEqualTo(opacity),
+      );
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(tester.widget<Opacity>(find.byType(Opacity)).opacity, 1);
+      await tester.pumpWidget(scene('关闭动画', reduced: true));
+      expect(
+        tester
+            .widget<TweenAnimationBuilder<double>>(
+              find.byType(TweenAnimationBuilder<double>),
+            )
+            .duration,
+        Duration.zero,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test('native snapshots commit and browser snapshots round trip', () async {
     final directory = await Directory.systemTemp.createTemp(
@@ -130,6 +167,167 @@ void main() {
       restored.dispose();
     },
   );
+
+  test(
+    'deletion is durable, keeps failed writes retryable and isolates late deltas',
+    () async {
+      final store = _MemoryStore();
+      final ai = _DelayedAi();
+      final controller = await _controller(store, ai: ai);
+      controller.openGlobalAssistant();
+      final first = controller.selectedConversationId!;
+      final current = await controller.createConversation(useGlobalMode: true);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      store.fail = true;
+      await expectLater(controller.deleteConversation(first), throwsStateError);
+      expect(controller.conversations.map((item) => item.id), contains(first));
+      expect(controller.selectedConversationId, current);
+      store.fail = false;
+      await controller.deleteConversation(first);
+      expect(controller.selectedConversationId, current);
+      final response = controller.sendPrompt('测试中途删除', useGlobalMode: true);
+      await ai.started.future;
+      ai.events.add(const BoardGameAiStreamEvent(delta: '部分内容'));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await controller.deleteConversation(current);
+      final fresh = controller.selectedConversationId!;
+      expect(fresh, isNot(current));
+      expect(controller.conversations, hasLength(1));
+      expect(controller.selectedConversation!.messages, isEmpty);
+      ai.events.add(const BoardGameAiStreamEvent(delta: '已删除请求的迟到内容'));
+      await ai.events.close();
+      await response;
+      await controller.disposeServices();
+      controller.dispose();
+      final snapshot = jsonDecode(store.value!) as Map<String, dynamic>;
+      expect((snapshot['conversations'] as Map).keys, [fresh]);
+      final restored = _buildController(store);
+      await restored.initialize();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(restored.selectedConversationId, fresh);
+      expect(restored.conversations, hasLength(1));
+      expect(restored.selectedConversation!.messages, isEmpty);
+      await restored.disposeServices();
+      restored.dispose();
+    },
+  );
+
+  for (final desktop in [false, true]) {
+    _uiTest(
+      'delete entry confirms, retries and clears deleted drafts desktop=$desktop',
+      (tester) async {
+        final store = _MemoryStore();
+        final controller = await _controller(store);
+        addTearDown(controller.dispose);
+        controller.openGlobalAssistant();
+        final deleted = controller.selectedConversationId!;
+        await _mount(
+          tester,
+          controller,
+          desktop ? const Size(1280, 800) : const Size(320, 700),
+          desktop: desktop,
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('assistant-draft')),
+          '不能恢复的已删除草稿',
+        );
+        final drawer = find.byKey(
+          const ValueKey('assistant-conversations-trigger'),
+        );
+        await tester.tap(drawer);
+        await tester.pumpAndSettle();
+        final remove = find.byKey(
+          ValueKey('assistant-delete-conversation-$deleted'),
+        );
+        await tester.tap(remove);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(controller.selectedConversationId, deleted);
+        store.fail = true;
+        await tester.tap(remove);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-confirm-delete')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('删除失败，会话已保留，请重试。'), findsOneWidget);
+        expect(controller.selectedConversationId, deleted);
+        store.fail = false;
+        await tester.tap(remove);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-confirm-delete')),
+        );
+        await tester.pumpAndSettle();
+        expect(remove, findsNothing);
+        expect(controller.selectedConversationId, isNot(deleted));
+        await _capture(
+          tester,
+          desktop
+              ? 'desktop-delete-conversation'
+              : 'compact-delete-conversation',
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        controller.openGlobalAssistant();
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TextField>(find.byKey(const ValueKey('assistant-draft')))
+              .controller!
+              .text,
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  _uiTest('desktop answer copies to clipboard and hides unavailable speech', (
+    tester,
+  ) async {
+    final ai = _DelayedAi(honorAbort: true);
+    final controller = await _controller(_MemoryStore(), ai: ai);
+    addTearDown(controller.dispose);
+    controller.openGlobalAssistant();
+    await controller.saveAiApiConfig(
+      controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+    );
+    String? clipboard;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await _mount(tester, controller, const Size(1280, 800), desktop: true);
+    final response = controller.sendPrompt('验证复制', useGlobalMode: true);
+    await ai.started.future;
+    ai.events.add(const BoardGameAiStreamEvent(delta: '保留的答案内容'));
+    await tester.pump(const Duration(milliseconds: 250));
+    await controller.stopGenerating(useGlobalMode: true);
+    await tester.pump(const Duration(milliseconds: 250));
+    await response;
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.volume_up_rounded), findsNothing);
+    await tester.tap(find.text(controller.copy.copyAnswer));
+    await tester.pumpAndSettle();
+    expect(clipboard, '保留的答案内容');
+    expect(find.text(controller.copy.answerCopied), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   _uiTest('phone drawer switches scope and restores drafts at 320px', (
     tester,
@@ -253,6 +451,110 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  for (final language in [AppLanguage.zhHans, AppLanguage.en]) {
+    _uiTest('compact assistant draft and picker adapt in $language', (
+      tester,
+    ) async {
+      final controller = await _controller(_MemoryStore());
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await controller.setLanguage(language);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await _mount(tester, controller, const Size(390, 844));
+      await _capture(tester, 'assistant-compact-${language.name}');
+      await tester.tap(find.byKey(const ValueKey('assistant-prompt-0')));
+      await tester.pumpAndSettle();
+      expect(controller.selectedConversation!.messages, isEmpty);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('assistant-draft')))
+            .controller!
+            .text,
+        isNotEmpty,
+      );
+      await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
+      await tester.pumpAndSettle();
+      final panel = find.byKey(const ValueKey('desktop-model-picker-panel'));
+      expect(panel, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('desktop-reasoning-option-none')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('desktop-reasoning-option-automatic')),
+        findsNothing,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('desktop-reasoning-option-high')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('desktop-reasoning-option-high')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.reasoningEffort, AiReasoningEffort.high);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('assistant-service-tier-fast')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-service-tier-fast')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.responseSpeed, AiResponseSpeed.fast);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 300 * tester.view.devicePixelRatio,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(panel);
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(390));
+      expect(rect.bottom, lessThanOrEqualTo(544));
+      await tester.binding.setSurfaceSize(const Size(320, 600));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(panel).right, lessThanOrEqualTo(320));
+      expect(tester.getRect(panel).bottom, lessThanOrEqualTo(300));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  _uiTest(
+    'shared composer stops a real pending stream and keeps partial text',
+    (tester) async {
+      final ai = _DelayedAi(honorAbort: true);
+      final controller = await _controller(_MemoryStore(), ai: ai);
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await _mount(tester, controller, const Size(390, 844));
+      await tester.enterText(
+        find.byKey(const ValueKey('assistant-draft')),
+        '回合顺序是什么？',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('assistant-composer-send')));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(ai.started.isCompleted, isTrue);
+      expect(controller.isSendingForContext(useGlobalMode: true), isTrue);
+      ai.events.add(const BoardGameAiStreamEvent(delta: '这是部分答案'));
+      await tester.pump(const Duration(milliseconds: 250));
+      await _capture(tester, 'assistant-compact-stream');
+      await tester.tap(find.byKey(const ValueKey('assistant-composer-send')));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(controller.isSendingForContext(useGlobalMode: true), isFalse);
+      expect(
+        controller.messagesForContext(useGlobalMode: true).last.text,
+        contains('这是部分答案'),
+      );
+      await ai.events.close();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Future<void> _mount(
@@ -337,6 +639,8 @@ class _UnusedAi extends Fake implements AiService {
 }
 
 class _DelayedAi extends _UnusedAi {
+  _DelayedAi({this.honorAbort = false});
+  final bool honorAbort;
   final events = StreamController<BoardGameAiStreamEvent>();
   final started = Completer<void>();
   String? requestedConversationId;
@@ -356,6 +660,13 @@ class _DelayedAi extends _UnusedAi {
     Future<void>? abortTrigger,
   }) {
     requestedConversationId = conversationId;
+    if (honorAbort && abortTrigger != null) {
+      unawaited(
+        abortTrigger.then((_) async {
+          if (!events.isClosed) await events.close();
+        }),
+      );
+    }
     if (!started.isCompleted) started.complete();
     return events.stream;
   }

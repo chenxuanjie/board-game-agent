@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -23,6 +24,9 @@ import 'sidebar.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 import 'window_controls.dart';
+import '../shared/app_page_transition.dart';
+import '../shared/game_cover_motion.dart';
+import 'desktop_resolved_image.dart';
 
 class DesktopWorkspace extends StatefulWidget {
   const DesktopWorkspace({
@@ -45,6 +49,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
+  final _coverLayerKey = GlobalKey();
+  final _detailHeroKey = GlobalKey();
+  CoverOrigin? _coverOrigin;
+  ({GameInfo game, Rect begin, Rect end, int generation, Size viewport})?
+  _coverFlight;
+  int _coverGeneration = 0;
+  final Set<String> _favoriteSaving = {};
   final _activityLink = LayerLink();
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
@@ -94,6 +105,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _navigate(String page) {
+    _coverGeneration++;
+    _coverFlight = null;
     _dismissSearch(clearQuery: true);
     if (page == 'assistant' && widget.controller.selectedConversation == null) {
       widget.controller.openGlobalAssistant();
@@ -125,6 +138,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _game(GameInfo game) {
+    final source = _coverOrigin;
+    _coverOrigin = null;
+    _coverFlight = null;
+    final generation = ++_coverGeneration;
     _dismissSearch(clearQuery: true);
     unawaited(widget.controller.recordRecentlyViewed(game));
     widget.controller.selectGame(game.id);
@@ -134,6 +151,36 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       _page = 'gameDetail';
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (source?.matches(game.coverAssetPath) == true &&
+        !AppMotion.reduced(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _page != 'gameDetail' ||
+            generation != _coverGeneration) {
+          return;
+        }
+        final target = _detailHeroKey.currentContext?.findRenderObject();
+        final layer = _coverLayerKey.currentContext?.findRenderObject();
+        if (target is! RenderBox ||
+            layer is! RenderBox ||
+            !target.hasSize ||
+            !layer.hasSize) {
+          return;
+        }
+        final origin = layer.localToGlobal(Offset.zero);
+        setState(
+          () => _coverFlight = (
+            game: game,
+            begin: source!.rect.shift(-origin),
+            end: (target.localToGlobal(Offset.zero) & target.size).shift(
+              -origin,
+            ),
+            generation: generation,
+            viewport: layer.size,
+          ),
+        );
+      });
+    }
   }
 
   void _openNationalDay() {
@@ -199,8 +246,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   Future<void> _toggleFavorite(GameInfo game) async {
+    if (_favoriteSaving.contains(game.id)) return;
+    setState(() => _favoriteSaving.add(game.id));
     _dismissFavoriteSnackBar();
-    final saved = await widget.controller.toggleFavorite(game);
+    var saved = false;
+    try {
+      saved = await widget.controller.toggleFavorite(game);
+    } finally {
+      if (mounted) setState(() => _favoriteSaving.remove(game.id));
+    }
     if (!mounted) return;
 
     final copy = widget.controller.copy;
@@ -232,7 +286,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       barrierColor: Colors.transparent,
       barrierDismissible: true,
       barrierLabel: widget.controller.copy.activityTitle,
-      transitionDuration: const Duration(milliseconds: 150),
+      transitionDuration: AppMotion.duration(context, AppMotion.menu),
       pageBuilder: (dialogContext, _, _) {
         if (!markedRead) {
           markedRead = true;
@@ -476,7 +530,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     ),
                   )
                 : null,
-            body: body,
+            body: GameCoverMotionScope(
+              onCapture: (origin) => _coverOrigin = origin,
+              child: body,
+            ),
           ),
         );
       },
@@ -498,186 +555,227 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       children: [
         if (_page != 'gameDetail') _topBar(compact: compact, narrow: narrow),
         Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (_featurePage)
-                Positioned.fill(
-                  child: switch (_page) {
-                    'assistant' => DesktopAssistantPane(
-                      key: _assistantPane,
-                      controller: widget.controller,
-                    ),
-                    'library' => DesktopLibraryPane(
-                      key: ValueKey(_libraryGameSlug ?? 'all-library-files'),
-                      controller: widget.controller,
-                      filter: _libraryFilter,
-                      gameSlug: _libraryGameSlug,
-                      onFilterChanged: _setLibraryFilter,
-                      onShowAllResources: () => _navigate('library'),
-                    ),
-                    _ => const SizedBox.shrink(),
-                  },
-                ),
-              if (!_featurePage)
-                Scrollbar(
-                  controller: _scroll,
-                  child: SingleChildScrollView(
+          child: AppPageTransition(
+            key: const ValueKey('desktop-page-transition'),
+            identity: (
+              _page,
+              _page == 'gameDetail' ? widget.controller.selectedGame.id : null,
+            ),
+            child: Stack(
+              key: _coverLayerKey,
+              fit: StackFit.expand,
+              children: [
+                if (_featurePage)
+                  Positioned.fill(
+                    child: switch (_page) {
+                      'assistant' => DesktopAssistantPane(
+                        key: _assistantPane,
+                        controller: widget.controller,
+                      ),
+                      'library' => DesktopLibraryPane(
+                        key: ValueKey(_libraryGameSlug ?? 'all-library-files'),
+                        controller: widget.controller,
+                        filter: _libraryFilter,
+                        gameSlug: _libraryGameSlug,
+                        onFilterChanged: _setLibraryFilter,
+                        onShowAllResources: () => _navigate('library'),
+                      ),
+                      _ => const SizedBox.shrink(),
+                    },
+                  ),
+                if (!_featurePage)
+                  Scrollbar(
                     controller: _scroll,
-                    child: Column(
-                      children: [
-                        DesktopResponsiveFrame(
-                          maxWidth: DesktopResponsive.maxContentWidthFor(_page),
-                          fluid: DesktopResponsive.usesFluidPageWidth(_page),
-                          padding: _page == 'gameDetail'
-                              ? EdgeInsets.zero
-                              : EdgeInsets.fromLTRB(
-                                  narrow ? 10 : (_page == 'games' ? 20 : 15),
-                                  0,
-                                  narrow ? 10 : (_page == 'games' ? 55 : 12),
-                                  14,
+                    child: SingleChildScrollView(
+                      controller: _scroll,
+                      child: Column(
+                        children: [
+                          DesktopResponsiveFrame(
+                            maxWidth: DesktopResponsive.maxContentWidthFor(
+                              _page,
+                            ),
+                            fluid: DesktopResponsive.usesFluidPageWidth(_page),
+                            padding: _page == 'gameDetail'
+                                ? EdgeInsets.zero
+                                : EdgeInsets.fromLTRB(
+                                    narrow ? 10 : (_page == 'games' ? 20 : 15),
+                                    0,
+                                    narrow ? 10 : (_page == 'games' ? 55 : 12),
+                                    14,
+                                  ),
+                            child: switch (_page) {
+                              'home' => DesktopHomePane(
+                                controller: widget.controller,
+                                onNavigate: _navigate,
+                                onOpenGame: _game,
+                                onOpenNationalDay: _openNationalDay,
+                              ),
+                              'games' => DesktopGamesPane(
+                                controller: widget.controller,
+                                showPreview: !narrow,
+                                onNavigate: _navigate,
+                                onOpenGame: _game,
+                                onToggleFavorite: _toggleFavorite,
+                              ),
+                              'favorites' => DesktopFavoritesPane(
+                                controller: widget.controller,
+                                showPreview: !narrow,
+                                onNavigate: _navigate,
+                                onOpenGame: _game,
+                                onToggleFavorite: _toggleFavorite,
+                              ),
+                              'gameDetail' => DesktopGameDetailPane(
+                                coverKey: _detailHeroKey,
+                                favoriteSaving: _favoriteSaving.contains(
+                                  widget.controller.selectedGame.id,
                                 ),
-                          child: switch (_page) {
-                            'home' => DesktopHomePane(
-                              controller: widget.controller,
-                              onNavigate: _navigate,
-                              onOpenGame: _game,
-                              onOpenNationalDay: _openNationalDay,
-                            ),
-                            'games' => DesktopGamesPane(
-                              controller: widget.controller,
-                              showPreview: !narrow,
-                              onNavigate: _navigate,
-                              onOpenGame: _game,
-                              onToggleFavorite: _toggleFavorite,
-                            ),
-                            'favorites' => DesktopFavoritesPane(
-                              controller: widget.controller,
-                              showPreview: !narrow,
-                              onNavigate: _navigate,
-                              onOpenGame: _game,
-                              onToggleFavorite: _toggleFavorite,
-                            ),
-                            'gameDetail' => DesktopGameDetailPane(
-                              controller: widget.controller,
-                              game: widget.controller.selectedGame,
-                              backTooltip: switch (_gameDetailReturnPage) {
-                                'home' => widget.controller.copy.localized(
-                                  '返回首页',
-                                  'Back to Home',
-                                ),
-                                'favorites' => widget.controller.copy.localized(
-                                  '返回我的喜欢',
-                                  'Back to My Likes',
-                                ),
-                                _ => widget.controller.copy.localized(
-                                  '返回游戏库',
-                                  'Back to Game Library',
-                                ),
-                              },
-                              onBack: () => _navigate(_gameDetailReturnPage),
-                              onSearch: _find,
-                              onOpenRules: () =>
-                                  _openRules(widget.controller.selectedGame),
-                              onAskAi: () =>
-                                  _askAi(widget.controller.selectedGame),
-                              onToggleFavorite: _toggleFavorite,
-                              onOpenGame: _game,
-                            ),
-                            'settings' => DesktopSettingsPane(
-                              controller: widget.controller,
-                              webDavSettingsController:
-                                  widget.webDavSettingsController,
-                              onOpenAbout: widget.onOpenAbout,
-                            ),
-                            _ => SizedBox(
-                              height: 500,
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      widget.controller.copy.localized(
-                                        '找不到这个页面',
-                                        'Page not found',
-                                      ),
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.headlineSmall,
+                                controller: widget.controller,
+                                game: widget.controller.selectedGame,
+                                backTooltip: switch (_gameDetailReturnPage) {
+                                  'home' => widget.controller.copy.localized(
+                                    '返回首页',
+                                    'Back to Home',
+                                  ),
+                                  'favorites' =>
+                                    widget.controller.copy.localized(
+                                      '返回我的喜欢',
+                                      'Back to My Likes',
                                     ),
-                                    const SizedBox(height: 12),
-                                    TextButton(
-                                      onPressed: () => _navigate('home'),
-                                      child: Text(
+                                  _ => widget.controller.copy.localized(
+                                    '返回游戏库',
+                                    'Back to Game Library',
+                                  ),
+                                },
+                                onBack: () => _navigate(_gameDetailReturnPage),
+                                onSearch: _find,
+                                onOpenRules: () =>
+                                    _openRules(widget.controller.selectedGame),
+                                onAskAi: () =>
+                                    _askAi(widget.controller.selectedGame),
+                                onToggleFavorite: _toggleFavorite,
+                                onOpenGame: _game,
+                              ),
+                              'settings' => DesktopSettingsPane(
+                                controller: widget.controller,
+                                webDavSettingsController:
+                                    widget.webDavSettingsController,
+                                onOpenAbout: widget.onOpenAbout,
+                              ),
+                              _ => SizedBox(
+                                height: 500,
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
                                         widget.controller.copy.localized(
-                                          '返回首页',
-                                          'Back to home',
+                                          '找不到这个页面',
+                                          'Page not found',
+                                        ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.headlineSmall,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextButton(
+                                        onPressed: () => _navigate('home'),
+                                        child: Text(
+                                          widget.controller.copy.localized(
+                                            '返回首页',
+                                            'Back to home',
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              if (narrow && _page == 'gameDetail')
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: IconButton(
-                    key: const ValueKey<String>('desktop-open-navigation'),
-                    tooltip: widget.controller.copy.localized(
-                      '打开导航',
-                      'Open navigation',
-                    ),
-                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                    style: IconButton.styleFrom(
-                      backgroundColor: const Color(0xCC5A4B42),
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.menu_rounded),
-                  ),
-                ),
-              if (_searchOpen)
-                Positioned(
-                  left: DesktopMetricsScope.of(context).px(18),
-                  right: DesktopMetricsScope.of(context).px(18),
-                  top: 0,
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: DesktopMetricsScope.of(context).px(780),
-                      ),
-                      child: DesktopHomeSearchOverlay(
-                        key: const ValueKey<String>(
-                          'desktop-home-search-overlay',
-                        ),
-                        query: _search.text,
-                        games: widget.controller.games,
-                        controller: widget.controller,
-                        recentQueries: widget.controller.searchHistory
-                            .map((record) => record.query)
-                            .toList(growable: false),
-                        tapRegionGroup: _searchTapRegionGroup,
-                        onSelectQuery: _setSearchQuery,
-                        onClearHistory: _clearSearchHistory,
-                        onRemoveQuery: _removeSearchHistoryEntry,
-                        onTapOutside: _closeSearch,
-                        onOpenGame: _openSearchGame,
-                        onOpenRules: _openSearchRules,
-                        onAskAi: _openSearchAi,
-                        onViewAll: _openAllSearchResults,
+                            },
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-            ],
+                if (narrow && _page == 'gameDetail')
+                  Positioned(
+                    right: 12,
+                    top: 12,
+                    child: IconButton(
+                      key: const ValueKey<String>('desktop-open-navigation'),
+                      tooltip: widget.controller.copy.localized(
+                        '打开导航',
+                        'Open navigation',
+                      ),
+                      onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xCC5A4B42),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.menu_rounded),
+                    ),
+                  ),
+                if (_coverFlight case final flight?)
+                  if (_page == 'gameDetail' &&
+                      flight.game.id == widget.controller.selectedGame.id)
+                    Positioned.fill(
+                      child: ClipRect(
+                        child: GameCoverFlight(
+                          key: ValueKey('cover-flight-${flight.generation}'),
+                          begin: flight.begin,
+                          end: flight.end,
+                          viewport: flight.viewport,
+                          child: DesktopResolvedImage(
+                            controller: widget.controller,
+                            assetPath: flight.game.coverAssetPath,
+                            palette: widget.controller.palette,
+                          ),
+                          onEnd: () =>
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted &&
+                                    _coverFlight?.generation ==
+                                        flight.generation) {
+                                  setState(() => _coverFlight = null);
+                                }
+                              }),
+                        ),
+                      ),
+                    ),
+                if (_searchOpen)
+                  Positioned(
+                    left: DesktopMetricsScope.of(context).px(18),
+                    right: DesktopMetricsScope.of(context).px(18),
+                    top: 0,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: DesktopMetricsScope.of(context).px(780),
+                        ),
+                        child: DesktopHomeSearchOverlay(
+                          key: const ValueKey<String>(
+                            'desktop-home-search-overlay',
+                          ),
+                          query: _search.text,
+                          games: widget.controller.games,
+                          controller: widget.controller,
+                          recentQueries: widget.controller.searchHistory
+                              .map((record) => record.query)
+                              .toList(growable: false),
+                          tapRegionGroup: _searchTapRegionGroup,
+                          onSelectQuery: _setSearchQuery,
+                          onClearHistory: _clearSearchHistory,
+                          onRemoveQuery: _removeSearchHistoryEntry,
+                          onTapOutside: _closeSearch,
+                          onOpenGame: _openSearchGame,
+                          onOpenRules: _openSearchRules,
+                          onAskAi: _openSearchAi,
+                          onViewAll: _openAllSearchResults,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -685,12 +783,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   );
 
   Widget _topBar({required bool compact, required bool narrow}) {
+    final assistant = _page == 'assistant';
     final metrics = DesktopMetricsScope.of(context);
     return SizedBox(
       key: const ValueKey<String>('desktop-top-bar'),
-      height: metrics.px(104),
+      height: metrics.px(assistant ? 72 : 104),
       child: Padding(
-        padding: metrics.insets(const EdgeInsets.fromLTRB(20, 30, 18, 12)),
+        padding: metrics.insets(
+          EdgeInsets.fromLTRB(20, assistant ? 26 : 30, 18, assistant ? 6 : 12),
+        ),
         child: Row(
           children: [
             if (narrow) ...[
@@ -712,13 +813,15 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: metrics.px(780)),
+                  constraints: BoxConstraints(
+                    maxWidth: metrics.px(assistant ? 460 : 780),
+                  ),
                   child: SizedBox(
                     key: const ValueKey<String>('desktop-home-search-shell'),
                     width: double.infinity,
-                    height: metrics.px(55),
+                    height: metrics.px(assistant ? 40 : 55),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
+                      duration: AppMotion.duration(context, AppMotion.feedback),
                       decoration: BoxDecoration(
                         color: _searchFocus.hasFocus
                             ? DesktopColors.card
@@ -750,7 +853,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                           onTap: _openSearch,
                           onSubmitted: _submitSearch,
                           style: TextStyle(
-                            fontSize: metrics.font(19),
+                            fontSize: metrics.font(assistant ? 14 : 19),
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF2F2924),
                           ),
@@ -764,7 +867,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             prefixIcon: Icon(
                               Icons.search_rounded,
                               color: DesktopColors.brown,
-                              size: metrics.px(25),
+                              size: metrics.px(assistant ? 20 : 25),
                             ),
                             suffixIcon: _searchOpen
                                 ? IconButton(
@@ -793,11 +896,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                             ),
                             hintStyle: TextStyle(
                               color: Color(0xFFA89C90),
-                              fontSize: metrics.font(19),
+                              fontSize: metrics.font(assistant ? 14 : 19),
                               fontWeight: FontWeight.w400,
                             ),
                             contentPadding: EdgeInsets.symmetric(
-                              vertical: metrics.px(14),
+                              vertical: metrics.px(assistant ? 9 : 14),
                             ),
                           ),
                         ),
