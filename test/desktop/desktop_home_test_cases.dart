@@ -850,7 +850,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(settingsItemRect.bottom, lessThanOrEqualTo(sidebarArtRect.top));
     expect(
       sidebarArtRect.width / sidebarArtRect.height,
-      closeTo(971 / 1619, 0.005),
+      closeTo(940 / 1672, 0.005),
     );
     for (final asset in [
       'sidebar_home.png',

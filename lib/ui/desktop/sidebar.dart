@@ -54,13 +54,13 @@ class DesktopSidebar extends StatelessWidget {
               right: 0,
               bottom: 0,
               child: AspectRatio(
-                aspectRatio: 971 / 1619,
+                aspectRatio: 940 / 1672,
                 child: ShaderMask(
                   blendMode: BlendMode.dstIn,
                   shaderCallback: (bounds) => const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    // Blend only the blank paper margin, before any lettering.
+                    // Blend the blank paper margin into the sidebar background.
                     colors: [Colors.transparent, Colors.black, Colors.black],
                     stops: [0, .08, 1],
                   ).createShader(bounds),
