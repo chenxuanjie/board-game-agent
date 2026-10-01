@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -91,11 +92,15 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
     await _save([..._slugs, game.slug]);
     await WidgetsBinding.instance.endOfFrame;
     if (mounted && _scroll.hasClients) {
-      await _scroll.animateTo(
-        _scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      if (AppMotion.reduced(context)) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      } else {
+        await _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: AppMotion.scroll,
+          curve: AppMotion.curve,
+        );
+      }
     }
   }
 

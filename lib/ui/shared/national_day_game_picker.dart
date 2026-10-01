@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
@@ -38,6 +39,7 @@ Future<GameInfo?> showNationalDayGamePicker(
   if (compact) {
     return showModalBottomSheet<GameInfo>(
       context: context,
+      sheetAnimationStyle: AppMotion.panelStyle(context),
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
@@ -51,6 +53,7 @@ Future<GameInfo?> showNationalDayGamePicker(
   }
   return showDialog<GameInfo>(
     context: context,
+    animationStyle: AppMotion.menuStyle(context),
     builder: (context) => Dialog(child: content(context)),
   );
 }

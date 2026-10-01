@@ -179,7 +179,7 @@ class _ThemePreview extends StatelessWidget {
             borderRadius: BorderRadius.circular(metrics.radius(9)),
             child: AnimatedContainer(
               key: ValueKey<String>('desktop-settings-theme-${scheme.code}'),
-              duration: const Duration(milliseconds: 160),
+              duration: AppMotion.duration(context),
               padding: EdgeInsets.all(metrics.px(5)),
               decoration: BoxDecoration(
                 color: selected ? const Color(0xFFFFF2E9) : DesktopColors.card,

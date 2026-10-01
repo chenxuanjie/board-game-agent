@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
@@ -723,8 +724,8 @@ class _DesktopDropdownOptionState extends State<_DesktopDropdownOption> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
+        duration: AppMotion.duration(context, AppMotion.feedback),
+        curve: AppMotion.curve,
         height: metrics.px(40),
         alignment: Alignment.centerLeft,
         margin: EdgeInsets.symmetric(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../features/games/models/game_info.dart';
@@ -327,7 +328,12 @@ class _HeroBannerState extends State<_HeroBanner> {
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(_interval, (_) {
-      if (!mounted || _showControls || !_controller.hasClients) return;
+      if (!mounted ||
+          AppMotion.reduced(context) ||
+          _showControls ||
+          !_controller.hasClients) {
+        return;
+      }
       _goTo((_page + 1) % _pageCount);
     });
   }
@@ -342,8 +348,8 @@ class _HeroBannerState extends State<_HeroBanner> {
     } else {
       await _controller.animateToPage(
         page,
-        duration: const Duration(milliseconds: 480),
-        curve: Curves.easeInOutCubic,
+        duration: AppMotion.duration(context, AppMotion.scroll),
+        curve: AppMotion.curve,
       );
     }
     if (!mounted || transition != _transition) return;
@@ -445,7 +451,10 @@ class _HeroBannerState extends State<_HeroBanner> {
                             onTap: () => _goTo(index),
                             customBorder: const CircleBorder(),
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 220),
+                              duration: AppMotion.duration(
+                                context,
+                                AppMotion.content,
+                              ),
                               width: index == _page ? 18 : 8,
                               height: 8,
                               decoration: BoxDecoration(

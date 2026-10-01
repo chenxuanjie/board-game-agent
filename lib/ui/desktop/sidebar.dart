@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/localization/app_copy.dart';
+import '../../core/theme/app_motion.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 
@@ -136,19 +137,46 @@ class DesktopSidebar extends StatelessWidget {
                           ],
                         ),
                 ),
-                for (var i = 0; i < _items.length; i++) ...[
-                  _NavTile(
-                    key: ValueKey<String>(
-                      'desktop-sidebar-item-${_items[i].asset}',
+                Stack(
+                  children: [
+                    AnimatedPositioned(
+                      key: const ValueKey('desktop-navigation-indicator'),
+                      duration: AppMotion.duration(context, AppMotion.content),
+                      curve: AppMotion.curve,
+                      top: metrics.px(47.0 * selectedIndex),
+                      left: 0,
+                      right: 0,
+                      height: metrics.px(44),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(11),
+                          ),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF5D45), Color(0xFFFF9D58)],
+                          ),
+                        ),
+                      ),
                     ),
-                    asset: _items[i].asset,
-                    label: copy.localized(_items[i].zh, _items[i].en),
-                    selected: i == selectedIndex,
-                    compact: compact,
-                    onTap: i == selectedIndex ? null : () => onSelect(i),
-                  ),
-                  if (i == 5) SizedBox(height: metrics.px(7)),
-                ],
+                    Column(
+                      children: [
+                        for (var i = 0; i < _items.length; i++)
+                          _NavTile(
+                            key: ValueKey<String>(
+                              'desktop-sidebar-item-${_items[i].asset}',
+                            ),
+                            asset: _items[i].asset,
+                            label: copy.localized(_items[i].zh, _items[i].en),
+                            selected: i == selectedIndex,
+                            compact: compact,
+                            onTap: () {
+                              if (i != selectedIndex) onSelect(i);
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -180,19 +208,23 @@ class _NavTile extends StatefulWidget {
 
 class _NavTileState extends State<_NavTile> {
   bool hovering = false;
+  bool focused = false;
 
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
     final active = widget.selected;
     final tile = MouseRegion(
-      cursor: active ? MouseCursor.defer : SystemMouseCursors.click,
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovering = true),
       onExit: (_) => setState(() => hovering = false),
-      child: GestureDetector(
+      child: InkWell(
         onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(metrics.radius(11)),
+        onFocusChange: (value) => setState(() => focused = value),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
+          duration: AppMotion.duration(context),
+          curve: AppMotion.curve,
           height: metrics.px(44),
           margin: EdgeInsets.only(bottom: metrics.px(3)),
           padding: EdgeInsets.symmetric(
@@ -200,12 +232,14 @@ class _NavTileState extends State<_NavTile> {
           ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(metrics.radius(11)),
-            gradient: active
-                ? const LinearGradient(
-                    colors: [Color(0xFFFF5D45), Color(0xFFFF9D58)],
-                  )
-                : null,
             color: !active && hovering ? const Color(0x0B9A5B38) : null,
+          ),
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(metrics.radius(11)),
+            border: Border.all(
+              color: focused ? DesktopColors.brown : Colors.transparent,
+              width: 2,
+            ),
           ),
           child: Row(
             mainAxisAlignment: widget.compact
@@ -228,14 +262,15 @@ class _NavTileState extends State<_NavTile> {
               if (!widget.compact) ...[
                 SizedBox(width: metrics.px(10)),
                 Expanded(
-                  child: Text(
-                    widget.label,
-                    maxLines: 2,
-                    style: TextStyle(
+                  child: AnimatedDefaultTextStyle(
+                    duration: AppMotion.duration(context),
+                    curve: AppMotion.curve,
+                    style: DefaultTextStyle.of(context).style.copyWith(
                       fontSize: metrics.font(17),
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                       color: active ? Colors.white : const Color(0xFF4B4038),
                     ),
+                    child: Text(widget.label, maxLines: 2),
                   ),
                 ),
               ],
@@ -244,6 +279,14 @@ class _NavTileState extends State<_NavTile> {
         ),
       ),
     );
-    return widget.compact ? Tooltip(message: widget.label, child: tile) : tile;
+    final accessible = Semantics(
+      selected: active,
+      button: true,
+      label: widget.compact ? widget.label : null,
+      child: tile,
+    );
+    return widget.compact
+        ? Tooltip(message: widget.label, child: accessible)
+        : accessible;
   }
 }

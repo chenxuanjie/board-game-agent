@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/games/models/game_info.dart';
@@ -116,6 +117,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
     final copy = widget.controller.copy;
     final next = await showDialog<String>(
       context: context,
+      animationStyle: AppMotion.menuStyle(context),
       builder: (context) => AlertDialog(
         title: Text(copy.localized('编辑资料', 'Edit profile')),
         content: TextField(

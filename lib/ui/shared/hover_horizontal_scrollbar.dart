@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 /// Explicit ownership keeps each horizontal strip independent of page scrolling.
 class HoverHorizontalScrollbar extends StatefulWidget {
@@ -58,7 +59,7 @@ class _HoverHorizontalScrollbarState extends State<HoverHorizontalScrollbar> {
               context,
             ).colorScheme.primary.withValues(alpha: .55),
             scrollbarOrientation: ScrollbarOrientation.bottom,
-            fadeDuration: const Duration(milliseconds: 160),
+            fadeDuration: AppMotion.duration(context),
             timeToFade: const Duration(milliseconds: 300),
             child: Padding(
               padding: const EdgeInsets.only(bottom: 12),

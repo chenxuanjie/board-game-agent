@@ -403,7 +403,9 @@ class _AiStatusLabel extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Container(
+        AnimatedContainer(
+          duration: AppMotion.duration(context),
+          curve: AppMotion.curve,
           margin: EdgeInsets.only(top: _px(context, 5)),
           width: _px(context, 7),
           height: _px(context, 7),
@@ -411,14 +413,21 @@ class _AiStatusLabel extends StatelessWidget {
         ),
         SizedBox(width: _px(context, 6)),
         Flexible(
-          child: Text(
-            fullMessage,
-            key: const ValueKey<String>('desktop-settings-ai-status'),
-            style: TextStyle(
+          child: AnimatedDefaultTextStyle(
+            duration: AppMotion.duration(context),
+            curve: AppMotion.curve,
+            style: Theme.of(context).textTheme.bodyMedium!.copyWith(
               fontSize: _font(context, 11),
               height: 1.3,
               color: color,
               fontWeight: FontWeight.w500,
+            ),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                fullMessage,
+                key: const ValueKey<String>('desktop-settings-ai-status'),
+              ),
             ),
           ),
         ),

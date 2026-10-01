@@ -2,13 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../core/models/app_activity.dart';
-import '../../features/assistant/models/ai_api_config.dart';
-import '../../features/assistant/models/ai_model_policy.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/assistant/models/ai_run.dart';
 import '../../features/assistant/models/chat_message.dart';
@@ -19,7 +17,8 @@ import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
 import '../shared/assistant/ai_run_activity.dart';
-import '../shared/assistant/assistant_feature_chip.dart';
+import '../shared/assistant/assistant_presentation.dart';
+import '../shared/assistant/assistant_view_state.dart';
 import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
 import '../shared/documents/markdown_document_screen.dart';
@@ -27,9 +26,7 @@ import '../shared/documents/pdf_document_screen.dart';
 import '../shared/documents/library_resource_document_screen.dart';
 part 'activity_popup.dart';
 part 'assistant/assistant_pane.dart';
-part 'assistant/assistant_sessions.dart';
 part 'assistant/assistant_composer.dart';
-part 'assistant/model_selector.dart';
 part 'library/library_pane.dart';
 
 ButtonStyle _desktopIconButtonStyle(AppPalette palette) => IconButton.styleFrom(

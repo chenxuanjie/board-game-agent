@@ -18,6 +18,10 @@
 
 每个 `features/` 目录只在确有对应代码时设 `models/` 或 `services/`，不为对称性建立空目录。平台外壳负责布局与导航，业务状态和持久化只保留一套。新增界面时先确定它属于桌面、手机还是共用；新增数据处理时按功能放置，不因调用它的页面位于桌面或手机而复制一份。
 
+AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效位于 `lib/ui/shared/assistant/`；桌面和紧凑页面复用这些控件并保持原有控制器、会话和草稿边界，详见 [AI 助手界面](assistant-workspace-design.md)。
+
 `AppController` 和部分桌面界面使用 Dart `part` 文件。`part` 只是把一个 library 的代码分到多个文件，仍共享私有状态；不要把文件移动误认为已经拆开职责。大型 AI 流程或页面如需继续拆分，应单独调整状态边界并验证行为，而不是仅按行数分文件。
 
 测试目前保留 `test/` 下原有的运行入口，已有 `desktop/`、`mobile/` 和 `responses_workflow/` 的 `part` 测试分组。测试用例按原功能继续维护；移动测试入口前应同时检查项目脚本对其路径的引用。
+
+应用动效令牌集中在 `lib/core/theme/app_motion.dart`，主页面过渡在 `lib/ui/shared/app_page_transition.dart`，详见 [应用动效规范](app-motion.md)。页面只挂载一个当前内容，不为淡出保留旧聊天页面。

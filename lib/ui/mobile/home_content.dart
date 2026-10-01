@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
@@ -57,14 +58,13 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   void initState() {
     super.initState();
     _bannerTimer = Timer.periodic(const Duration(seconds: 7), (_) {
-      if (!mounted || !_bannerController.hasClients || _bannerInteracting) {
+      if (!mounted ||
+          !_bannerController.hasClients ||
+          _bannerInteracting ||
+          AppMotion.reduced(context)) {
         return;
       }
-      _bannerController.animateToPage(
-        (_banner + 1) % 3,
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeInOut,
-      );
+      _goToBanner((_banner + 1) % 3);
     });
   }
 
@@ -391,18 +391,17 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                   for (var index = 0; index < pages.length; index++)
                     InkWell(
                       key: ValueKey('mobile-home-banner-dot-$index'),
-                      onTap: () => _bannerController.animateToPage(
-                        index,
-                        duration: const Duration(milliseconds: 420),
-                        curve: Curves.easeInOut,
-                      ),
+                      onTap: () => _goToBanner(index),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 12,
                           horizontal: 4,
                         ),
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
+                          duration: AppMotion.duration(
+                            context,
+                            AppMotion.content,
+                          ),
                           margin: const EdgeInsets.only(left: 4),
                           width: index == _banner ? 15 : 5,
                           height: 5,
@@ -422,15 +421,19 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     );
   }
 
-  void _stepBanner(int delta) {
+  void _stepBanner(int delta) => _goToBanner((_banner + delta + 3) % 3);
+
+  void _goToBanner(int page) {
     if (!_bannerController.hasClients) return;
-    _bannerController.animateToPage(
-      (_banner + delta + 3) % 3,
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 420),
-      curve: Curves.easeInOut,
-    );
+    if (AppMotion.reduced(context)) {
+      _bannerController.jumpToPage(page);
+    } else {
+      _bannerController.animateToPage(
+        page,
+        duration: AppMotion.scroll,
+        curve: AppMotion.curve,
+      );
+    }
   }
 
   Widget _shortcuts(AppCopy copy) {

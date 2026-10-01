@@ -29,6 +29,7 @@ import 'package:board_game_agent/features/settings/services/preferences_service.
 import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
+import 'package:board_game_agent/ui/shared/assistant/assistant_motion.dart';
 
 void _uiTest(String name, WidgetTesterCallback body) {
   testWidgets(name, (tester) async {
@@ -56,6 +57,42 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     rootBundle.clear();
   });
+
+  testWidgets(
+    'message motion does not restart on a delta and respects reduced motion',
+    (tester) async {
+      Widget scene(String text, {bool reduced = false}) => MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(disableAnimations: reduced),
+          child: AssistantMessageEntrance(
+            key: const ValueKey('one-message'),
+            child: Text(text),
+          ),
+        ),
+      );
+      await tester.pumpWidget(scene('第一段'));
+      await tester.pump(const Duration(milliseconds: 80));
+      final opacity = tester.widget<Opacity>(find.byType(Opacity)).opacity;
+      expect(opacity, greaterThan(0));
+      await tester.pumpWidget(scene('第一段，第二段'));
+      expect(
+        tester.widget<Opacity>(find.byType(Opacity)).opacity,
+        greaterThanOrEqualTo(opacity),
+      );
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(tester.widget<Opacity>(find.byType(Opacity)).opacity, 1);
+      await tester.pumpWidget(scene('关闭动画', reduced: true));
+      expect(
+        tester
+            .widget<TweenAnimationBuilder<double>>(
+              find.byType(TweenAnimationBuilder<double>),
+            )
+            .duration,
+        Duration.zero,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test('native snapshots commit and browser snapshots round trip', () async {
     final directory = await Directory.systemTemp.createTemp(
@@ -253,6 +290,110 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  for (final language in [AppLanguage.zhHans, AppLanguage.en]) {
+    _uiTest('compact assistant draft and picker adapt in $language', (
+      tester,
+    ) async {
+      final controller = await _controller(_MemoryStore());
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await controller.setLanguage(language);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await _mount(tester, controller, const Size(390, 844));
+      await _capture(tester, 'assistant-compact-${language.name}');
+      await tester.tap(find.byKey(const ValueKey('assistant-prompt-0')));
+      await tester.pumpAndSettle();
+      expect(controller.selectedConversation!.messages, isEmpty);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('assistant-draft')))
+            .controller!
+            .text,
+        isNotEmpty,
+      );
+      await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
+      await tester.pumpAndSettle();
+      final panel = find.byKey(const ValueKey('desktop-model-picker-panel'));
+      expect(panel, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('desktop-reasoning-option-none')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('desktop-reasoning-option-automatic')),
+        findsNothing,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('desktop-reasoning-option-high')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('desktop-reasoning-option-high')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.reasoningEffort, AiReasoningEffort.high);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('assistant-service-tier-fast')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-service-tier-fast')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.responseSpeed, AiResponseSpeed.fast);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 300 * tester.view.devicePixelRatio,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(panel);
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(390));
+      expect(rect.bottom, lessThanOrEqualTo(544));
+      await tester.binding.setSurfaceSize(const Size(320, 600));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(panel).right, lessThanOrEqualTo(320));
+      expect(tester.getRect(panel).bottom, lessThanOrEqualTo(300));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  _uiTest(
+    'shared composer stops a real pending stream and keeps partial text',
+    (tester) async {
+      final ai = _DelayedAi(honorAbort: true);
+      final controller = await _controller(_MemoryStore(), ai: ai);
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await _mount(tester, controller, const Size(390, 844));
+      await tester.enterText(
+        find.byKey(const ValueKey('assistant-draft')),
+        '回合顺序是什么？',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('assistant-composer-send')));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(ai.started.isCompleted, isTrue);
+      expect(controller.isSendingForContext(useGlobalMode: true), isTrue);
+      ai.events.add(const BoardGameAiStreamEvent(delta: '这是部分答案'));
+      await tester.pump(const Duration(milliseconds: 250));
+      await _capture(tester, 'assistant-compact-stream');
+      await tester.tap(find.byKey(const ValueKey('assistant-composer-send')));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(controller.isSendingForContext(useGlobalMode: true), isFalse);
+      expect(
+        controller.messagesForContext(useGlobalMode: true).last.text,
+        contains('这是部分答案'),
+      );
+      await ai.events.close();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Future<void> _mount(
@@ -337,6 +478,8 @@ class _UnusedAi extends Fake implements AiService {
 }
 
 class _DelayedAi extends _UnusedAi {
+  _DelayedAi({this.honorAbort = false});
+  final bool honorAbort;
   final events = StreamController<BoardGameAiStreamEvent>();
   final started = Completer<void>();
   String? requestedConversationId;
@@ -356,6 +499,13 @@ class _DelayedAi extends _UnusedAi {
     Future<void>? abortTrigger,
   }) {
     requestedConversationId = conversationId;
+    if (honorAbort && abortTrigger != null) {
+      unawaited(
+        abortTrigger.then((_) async {
+          if (!events.isClosed) await events.close();
+        }),
+      );
+    }
     if (!started.isCompleted) started.complete();
     return events.stream;
   }

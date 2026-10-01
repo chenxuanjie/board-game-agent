@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
@@ -16,6 +17,7 @@ import 'mine_content.dart';
 import 'universal_ai_screen.dart';
 import 'assistant_chat_screen.dart';
 import 'national_day_screen.dart';
+import '../shared/app_page_transition.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
 class HomeScreen extends StatefulWidget {
@@ -70,39 +72,43 @@ class _HomeScreenState extends State<HomeScreen> {
       key: const ValueKey('mobile-home-root'),
       backgroundColor: const Color(0xFFFFFBF7),
       body: SafeArea(
-        child: _tab == 0
-            ? MobileHomeContent(
-                controller: widget.controller,
-                onSearch: () => _openSearch(),
-                onOpenGame: _openGame,
-                onOpenConversation: _openConversation,
-                onOpenAi: _openAi,
-                onFavorites: () => _openSearch(favoritesOnly: true),
-                onSettings: _openSettings,
-                onActivities: _openActivities,
-                onRules: _openRuleMaterials,
-                onOpenNationalDay: _openNationalDay,
-              )
-            : _tab == 1
-            ? MobileLibraryContent(
-                controller: widget.controller,
-                onOpenGame: _openGame,
-                onActivities: _openActivities,
-                onProfile: _openSettings,
-              )
-            : _tab == 2
-            ? UniversalAiScreen(controller: widget.controller)
-            : _tab == 3
-            ? MobileMineContent(
-                controller: widget.controller,
-                onOpenGame: _openGame,
-                onFavorites: () => _openSearch(favoritesOnly: true),
-                onRecentAll: () => _openSearch(recentOnly: true),
-                onExplore: _openSearch,
-                onActivities: _openActivities,
-                onSettings: _openSettings,
-              )
-            : const SizedBox.shrink(),
+        child: AppPageTransition(
+          key: const ValueKey('mobile-page-transition'),
+          identity: _tab,
+          child: _tab == 0
+              ? MobileHomeContent(
+                  controller: widget.controller,
+                  onSearch: () => _openSearch(),
+                  onOpenGame: _openGame,
+                  onOpenConversation: _openConversation,
+                  onOpenAi: _openAi,
+                  onFavorites: () => _openSearch(favoritesOnly: true),
+                  onSettings: _openSettings,
+                  onActivities: _openActivities,
+                  onRules: _openRuleMaterials,
+                  onOpenNationalDay: _openNationalDay,
+                )
+              : _tab == 1
+              ? MobileLibraryContent(
+                  controller: widget.controller,
+                  onOpenGame: _openGame,
+                  onActivities: _openActivities,
+                  onProfile: _openSettings,
+                )
+              : _tab == 2
+              ? UniversalAiScreen(controller: widget.controller)
+              : _tab == 3
+              ? MobileMineContent(
+                  controller: widget.controller,
+                  onOpenGame: _openGame,
+                  onFavorites: () => _openSearch(favoritesOnly: true),
+                  onRecentAll: () => _openSearch(recentOnly: true),
+                  onExplore: _openSearch,
+                  onActivities: _openActivities,
+                  onSettings: _openSettings,
+                )
+              : const SizedBox.shrink(),
+        ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _tab,
@@ -236,6 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final copy = widget.controller.copy;
     showModalBottomSheet<void>(
       context: context,
+      sheetAnimationStyle: AppMotion.panelStyle(context),
       showDragHandle: true,
       builder: (_) => SafeArea(
         child: Padding(
@@ -305,6 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final update = widget.controller.pendingLibraryUpdate;
     final shouldUpdate = await showDialog<bool>(
       context: context,
+      animationStyle: AppMotion.menuStyle(context),
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         title: Text(copy.libraryUpdateTitle),

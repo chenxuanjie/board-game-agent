@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
@@ -95,7 +96,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                     : _tabBar(),
               ),
               AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
+                duration: AppMotion.duration(context, AppMotion.menu),
                 child: Padding(
                   key: ValueKey<int>(_tab),
                   padding: const EdgeInsets.all(16),
@@ -484,7 +485,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             key: ValueKey<String>('detail-tab-$index'),
             onTap: () => setState(() => _tab = index),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
+              duration: AppMotion.duration(context, AppMotion.exit),
               height: 57,
               alignment: Alignment.center,
               decoration: BoxDecoration(
@@ -1001,7 +1002,7 @@ class _HeroButtonState extends State<_HeroButton> {
       onTap: widget.onTap,
       borderRadius: BorderRadius.circular(11),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 130),
+        duration: AppMotion.duration(context, AppMotion.feedback),
         transform: Matrix4.translationValues(0, hover ? -2 : 0, 0),
         width: widget.width,
         height: 48,
@@ -1020,8 +1021,8 @@ class _HeroButtonState extends State<_HeroButton> {
               : null,
         ),
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          reverseDuration: const Duration(milliseconds: 150),
+          duration: AppMotion.duration(context, AppMotion.menu),
+          reverseDuration: AppMotion.duration(context, AppMotion.exit),
           switchInCurve: Curves.easeOut,
           switchOutCurve: Curves.easeIn,
           transitionBuilder: (child, animation) =>

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
@@ -67,11 +68,15 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   void _stepGalleryPage(int delta, int count) {
     if (count <= 1 || !_galleryController.hasClients) return;
     final next = (_galleryIndex + delta + count) % count;
-    _galleryController.animateToPage(
-      next,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-    );
+    if (AppMotion.reduced(context)) {
+      _galleryController.jumpToPage(next);
+    } else {
+      _galleryController.animateToPage(
+        next,
+        duration: AppMotion.scroll,
+        curve: AppMotion.curve,
+      );
+    }
   }
 
   @override
@@ -218,9 +223,10 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                                   children: List.generate(
                                                     gallery.length,
                                                     (dot) => AnimatedContainer(
-                                                      duration: const Duration(
-                                                        milliseconds: 180,
-                                                      ),
+                                                      duration:
+                                                          AppMotion.duration(
+                                                            context,
+                                                          ),
                                                       margin:
                                                           const EdgeInsets.symmetric(
                                                             horizontal: 3,

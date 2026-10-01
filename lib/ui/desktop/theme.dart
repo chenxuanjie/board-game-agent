@@ -102,6 +102,7 @@ ThemeData buildDesktopTheme() {
     splashFactory: NoSplash.splashFactory,
     highlightColor: Colors.transparent,
     hoverColor: Colors.transparent,
+    focusColor: DesktopColors.orange.withValues(alpha: .16),
     dividerColor: DesktopColors.line,
   );
 }

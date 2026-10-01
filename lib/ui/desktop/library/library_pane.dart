@@ -560,6 +560,7 @@ class _LibraryItemTile extends StatelessWidget {
                 )
               else ...<Widget>[
                 PopupMenuButton<_LibraryItemAction>(
+                  popUpAnimationStyle: AppMotion.menuStyle(context),
                   key: ValueKey<String>('library-more-${resource.id}'),
                   tooltip: copy.desktopMore,
                   onSelected: (_LibraryItemAction action) {

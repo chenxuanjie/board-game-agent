@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/theme/app_motion.dart';
 
 import '../../../features/assistant/models/ai_run.dart';
 import '../../../features/assistant/models/rule_citation.dart';
@@ -950,8 +951,8 @@ class _AiRunActivityViewState extends State<_AiRunActivityView> {
           )
         : widget.timelineBuilder(false);
     return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+      duration: AppMotion.duration(context, AppMotion.content),
+      curve: AppMotion.curve,
       alignment: Alignment.topCenter,
       child: content,
     );

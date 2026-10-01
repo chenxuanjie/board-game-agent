@@ -296,7 +296,8 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
       final AnimatedContainer hoveredPoster = tester.widget<AnimatedContainer>(
         poster,
       );
-      expect(hoveredPoster.transform!.storage[6].abs(), greaterThan(0));
+      expect(hoveredPoster.transform!.storage[13], -2);
+      expect(hoveredPoster.transform!.storage[6], 0);
       final Finder preview = find.byKey(
         ValueKey<String>('desktop-game-hover-preview-${game.id}'),
       );

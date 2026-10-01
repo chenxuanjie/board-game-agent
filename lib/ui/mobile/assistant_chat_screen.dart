@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 
 import '../../features/assistant/models/ai_run.dart';
@@ -9,7 +10,8 @@ import '../../features/assistant/models/chat_message.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../shared/assistant/ai_run_activity.dart';
-import '../shared/assistant/assistant_feature_chip.dart';
+import '../shared/assistant/assistant_presentation.dart';
+import '../shared/assistant/assistant_view_state.dart';
 import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
 
@@ -42,6 +44,11 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   final Map<String, double> _scrollOffsets = <String, double>{};
   final Map<String, String> _drafts = <String, String>{};
   Timer? _messageTimeVisibilityTimer;
+  final _composerKey = GlobalKey<AssistantComposerState>();
+  bool _creating = false;
+  final Set<String> _knownMessages = {};
+  PageStorageBucket? _viewBucket;
+  bool _restoredView = false;
 
   @override
   void initState() {
@@ -60,10 +67,29 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                 widget.controller.selectedGame.id)) {
       widget.controller.openGameAssistant(widget.controller.selectedGame.id);
     }
+    _rememberCurrentMessages();
     widget.controller.addListener(_onControllerChanged);
     _lastScrollContextKey = _conversationContextKey;
     _scrollController.addListener(_handleScrollChanged);
     _scheduleInitialScrollToBottom();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _viewBucket = PageStorage.maybeOf(context);
+    if (_restoredView) return;
+    _restoredView = true;
+    final saved = _viewBucket?.readState(
+      context,
+      identifier: widget.controller,
+    );
+    if (saved is AssistantViewState) {
+      _drafts.addAll(saved.drafts);
+      _scrollOffsets.addAll(saved.offsets);
+      _textController.text =
+          widget.initialDraft ?? _drafts[_conversationContextKey] ?? '';
+    }
   }
 
   @override
@@ -72,6 +98,13 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     widget.controller.removeListener(_onControllerChanged);
     _scrollController.removeListener(_handleScrollChanged);
     _saveScrollPosition();
+    _drafts[_lastScrollContextKey ?? _conversationContextKey] =
+        _textController.text;
+    _viewBucket?.writeState(
+      context,
+      AssistantViewState(drafts: _drafts, offsets: _scrollOffsets),
+      identifier: widget.controller,
+    );
     _textController.removeListener(_onDraftChanged);
     _textController.dispose();
     _scrollController.dispose();
@@ -84,13 +117,10 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final controller = widget.controller;
     final copy = controller.copy;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final canSend =
-        _textController.text.trim().isNotEmpty &&
-        !controller.isSendingForContext(useGlobalMode: _useGlobalMode);
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 72,
+        toolbarHeight: 68,
         titleSpacing: 6,
         title: ConversationTitleButton(
           title:
@@ -102,13 +132,58 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
               showConversationDrawer(context, controller: controller),
         ),
         actions: <Widget>[
+          IconButton(
+            key: const ValueKey('assistant-header-new-conversation'),
+            tooltip: copy.newConversation,
+            onPressed: _creating ? null : _createConversation,
+            icon: _creating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.edit_square, size: 20),
+          ),
           PopupMenuButton<String>(
+            popUpAnimationStyle: AppMotion.menuStyle(context),
             tooltip: copy.desktopMore,
             icon: const Icon(Icons.more_horiz_rounded),
-            onSelected: (_) => controller.clearConversationForContext(
-              useGlobalMode: _useGlobalMode,
-            ),
+            onSelected: (value) {
+              if (value == 'clear') {
+                controller.clearConversationForContext(
+                  useGlobalMode: _useGlobalMode,
+                );
+              }
+              if (value == 'text') {
+                _selectAssistantMode(AssistantMode.textAndDictation);
+              }
+              if (value == 'voice') {
+                _selectAssistantMode(AssistantMode.realtimeVoice);
+              }
+              if (value == 'context') _openContextSheet();
+            },
             itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'context',
+                child: Text(copy.assistantContextTitle),
+              ),
+              CheckedPopupMenuItem(
+                value: 'text',
+                checked:
+                    controller.assistantMode == AssistantMode.textAndDictation,
+                child: Text(copy.assistantTextModeLabel),
+              ),
+              PopupMenuItem(
+                value: 'voice',
+                child: Row(
+                  children: [
+                    Expanded(child: Text(copy.assistantRealtimeModeLabel)),
+                    if (!controller.realtimeVoiceAvailable)
+                      const Icon(Icons.lock_outline_rounded, size: 16),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               PopupMenuItem(value: 'clear', child: Text(copy.clearChat)),
             ],
           ),
@@ -123,18 +198,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
             ),
             child: Column(
               children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    screenWidth >= 720 ? 28 : 16,
-                    4,
-                    screenWidth >= 720 ? 28 : 16,
-                    8,
-                  ),
-                  child: _AssistantModeStrip(
-                    controller: controller,
-                    onSelect: _selectAssistantMode,
-                  ),
-                ),
                 Expanded(
                   child: Stack(
                     children: <Widget>[
@@ -162,6 +225,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                                   useGlobalMode: _useGlobalMode,
                                   expanded: expanded,
                                 ),
+                            animateMessage: _knownMessages.add,
                           );
                         },
                       ),
@@ -192,7 +256,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   child: _Composer(
                     controller: controller,
                     textController: _textController,
-                    canSend: canSend,
+                    composerKey: _composerKey,
                     useGlobalMode: _useGlobalMode,
                     onSend: _sendCurrentText,
                     onMicTap: _toggleListening,
@@ -215,6 +279,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final bool contextChanged =
         _lastScrollContextKey != null && _lastScrollContextKey != contextKey;
     if (contextChanged) {
+      _rememberCurrentMessages();
       _saveScrollPosition();
       _drafts[_lastScrollContextKey!] = _textController.text;
       _textController.text = _drafts[contextKey] ?? '';
@@ -251,6 +316,12 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       }
     });
   }
+
+  void _rememberCurrentMessages() => _knownMessages.addAll(
+    widget.controller
+        .messagesForContext(useGlobalMode: _useGlobalMode)
+        .map((m) => m.id),
+  );
 
   bool get _useGlobalMode =>
       widget.controller.selectedConversation?.isGlobal ?? widget.useGlobalMode;
@@ -300,7 +371,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     }
     _scrollController.animateTo(
       target,
-      duration: const Duration(milliseconds: 220),
+      duration: AppMotion.duration(context, AppMotion.content),
       curve: Curves.easeOut,
     );
   }
@@ -318,7 +389,16 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      _scrollToBottom(animated: false);
+      final saved = _scrollOffsets[_conversationContextKey];
+      if (saved == null) {
+        _scrollToBottom(animated: false);
+      } else {
+        _scrollController.jumpTo(
+          saved.clamp(0.0, _scrollController.position.maxScrollExtent),
+        );
+      }
+      _followNewMessages = _isNearBottom();
+      _showJumpToBottom = !_followNewMessages;
     });
   }
 
@@ -370,6 +450,25 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     });
   }
 
+  Future<void> _createConversation() async {
+    if (_creating) return;
+    setState(() => _creating = true);
+    try {
+      await widget.controller.createConversation(useGlobalMode: _useGlobalMode);
+      if (mounted) _composerKey.currentState?.focusDraft();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.controller.copy.conversationSaveFailed),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
   Future<void> _sendCurrentText() async {
     final text = _textController.text.trim();
     if (text.isEmpty ||
@@ -396,7 +495,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
 
   Future<void> _sendQuickPrompt(String prompt) async {
     _textController.text = prompt;
-    await _sendCurrentText();
+    _textController.selection = TextSelection.collapsed(offset: prompt.length);
+    _composerKey.currentState?.focusDraft();
   }
 
   Future<void> _toggleListening() async {
@@ -467,6 +567,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final copy = controller.copy;
     await showModalBottomSheet<void>(
       context: context,
+      sheetAnimationStyle: AppMotion.panelStyle(context),
       isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) {
@@ -586,133 +687,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   }
 }
 
-class _AssistantModeStrip extends StatelessWidget {
-  const _AssistantModeStrip({required this.controller, required this.onSelect});
-
-  final AppController controller;
-  final Future<void> Function(AssistantMode mode) onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final copy = controller.copy;
-    final palette = AppPalette.of(context);
-    final bool realtimeAvailable = controller.realtimeVoiceAvailable;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.76),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.outline),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: _AssistantModeChoice(
-              palette: palette,
-              selected:
-                  controller.assistantMode == AssistantMode.textAndDictation,
-              icon: Icons.keyboard_voice_rounded,
-              label: copy.assistantTextModeLabel,
-              onTap: () => onSelect(AssistantMode.textAndDictation),
-            ),
-          ),
-          const SizedBox(width: 5),
-          Expanded(
-            child: _AssistantModeChoice(
-              palette: palette,
-              selected: controller.assistantMode == AssistantMode.realtimeVoice,
-              enabled: realtimeAvailable,
-              icon: Icons.record_voice_over_rounded,
-              label: copy.assistantRealtimeModeLabel,
-              onTap: () => onSelect(AssistantMode.realtimeVoice),
-              badge: realtimeAvailable ? null : Icons.lock_outline_rounded,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AssistantModeChoice extends StatelessWidget {
-  const _AssistantModeChoice({
-    required this.palette,
-    required this.selected,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.enabled = true,
-    this.badge,
-  });
-
-  final AppPalette palette;
-  final bool selected;
-  final bool enabled;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final IconData? badge;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color foreground = !enabled
-        ? palette.textSecondary
-        : selected
-        ? palette.onPrimary
-        : palette.textPrimary;
-    final Color background = !enabled
-        ? palette.outline.withValues(alpha: 0.16)
-        : selected
-        ? palette.primary
-        : Colors.transparent;
-
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      selected: selected,
-      label: label,
-      child: Tooltip(
-        message: label,
-        child: Material(
-          color: background,
-          borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            onTap: enabled ? onTap : onTap,
-            borderRadius: BorderRadius.circular(14),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Icon(icon, size: 17, color: foreground),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: foreground,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (badge != null) ...<Widget>[
-                    const SizedBox(width: 4),
-                    Icon(badge, size: 14, color: foreground),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _MessageList extends StatelessWidget {
   const _MessageList({
     required this.controller,
@@ -726,6 +700,7 @@ class _MessageList extends StatelessWidget {
     required this.runContextKey,
     required this.runExpanded,
     required this.onRunExpandedChanged,
+    required this.animateMessage,
   });
 
   final AppController controller;
@@ -739,6 +714,7 @@ class _MessageList extends StatelessWidget {
   final String runContextKey;
   final bool? runExpanded;
   final ValueChanged<bool> onRunExpandedChanged;
+  final bool Function(String id) animateMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -752,9 +728,26 @@ class _MessageList extends StatelessWidget {
     final int lastAssistantIndex = messages.lastIndexWhere(
       (ChatMessage message) => message.role == ChatRole.assistant,
     );
-    final showQuickPrompts =
-        messages.length <= 1 &&
-        !controller.isSendingForContext(useGlobalMode: useGlobalMode);
+    if (messages.isEmpty && !showRun) {
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+              child: AssistantWelcome(
+                copy: copy,
+                gameTitle:
+                    !useGlobalMode || controller.globalUseCurrentGameKnowledge
+                    ? controller.selectedGame.title
+                    : null,
+                onPrompt: (prompt) => onQuickPrompt(prompt),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return ListView(
       controller: scrollController,
@@ -777,30 +770,34 @@ class _MessageList extends StatelessWidget {
               messages[index].isStreaming &&
               messages[index].text.trim().isEmpty &&
               showRun))
-            MessageBubble(
-              message: messages[index],
-              palette: AppPalette.of(context),
-              copy: copy,
-              onSpeak: messages[index].role == ChatRole.assistant
-                  ? () => controller.speakMessage(messages[index].text)
-                  : () {},
-              speakTooltip: copy.speakAgain,
-              onCopy:
-                  messages[index].role == ChatRole.assistant &&
-                      !messages[index].isStreaming &&
-                      !messages[index].isFailed
-                  ? () => onCopy(messages[index].text)
-                  : null,
-              copyTooltip: copy.copyAnswer,
-              onRetry: messages[index].canRetry
-                  ? () => controller.retryMessage(
-                      messages[index],
-                      useGlobalMode: useGlobalMode,
-                    )
-                  : null,
-              retryTooltip: copy.retry,
-              showTimestamp: showMessageTimes,
-              onTap: onMessageTap,
+            AssistantMessageEntrance(
+              key: ValueKey('$runContextKey:${messages[index].id}'),
+              animate: animateMessage(messages[index].id),
+              child: MessageBubble(
+                message: messages[index],
+                palette: AppPalette.of(context),
+                copy: copy,
+                onSpeak: messages[index].role == ChatRole.assistant
+                    ? () => controller.speakMessage(messages[index].text)
+                    : () {},
+                speakTooltip: copy.speakAgain,
+                onCopy:
+                    messages[index].role == ChatRole.assistant &&
+                        !messages[index].isStreaming &&
+                        !messages[index].isFailed
+                    ? () => onCopy(messages[index].text)
+                    : null,
+                copyTooltip: copy.copyAnswer,
+                onRetry: messages[index].canRetry
+                    ? () => controller.retryMessage(
+                        messages[index],
+                        useGlobalMode: useGlobalMode,
+                      )
+                    : null,
+                retryTooltip: copy.retry,
+                showTimestamp: showMessageTimes,
+                onTap: onMessageTap,
+              ),
             ),
         ],
         if (showRun && lastAssistantIndex < 0)
@@ -815,8 +812,6 @@ class _MessageList extends StatelessWidget {
             initialExpanded: runExpanded,
             onExpandedChanged: onRunExpandedChanged,
           ),
-        if (showQuickPrompts)
-          _QuickPromptCard(controller: controller, onPrompt: onQuickPrompt),
       ],
     );
   }
@@ -845,238 +840,45 @@ class _JumpToBottomButton extends StatelessWidget {
   }
 }
 
-class _QuickPromptCard extends StatelessWidget {
-  const _QuickPromptCard({required this.controller, required this.onPrompt});
-
-  final AppController controller;
-  final Future<void> Function(String prompt) onPrompt;
-
-  @override
-  Widget build(BuildContext context) {
-    final copy = controller.copy;
-    final palette = AppPalette.of(context);
-    final prompts = <String>[
-      copy.quickPromptRule,
-      copy.quickPromptFlow,
-      copy.quickPromptTerm,
-    ];
-
-    return Container(
-      margin: const EdgeInsets.only(top: 12, bottom: 10),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: palette.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            copy.quickPromptsTitle,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: prompts
-                .map(
-                  (prompt) => ActionChip(
-                    avatar: Icon(
-                      Icons.arrow_outward_rounded,
-                      size: 15,
-                      color: palette.primary,
-                    ),
-                    label: Text(prompt),
-                    onPressed: () {
-                      onPrompt(prompt);
-                    },
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.textController,
-    required this.canSend,
+    required this.composerKey,
     required this.useGlobalMode,
     required this.onSend,
     required this.onMicTap,
     required this.onOpenContext,
   });
-
   final AppController controller;
   final TextEditingController textController;
-  final bool canSend;
+  final GlobalKey<AssistantComposerState> composerKey;
   final bool useGlobalMode;
   final Future<void> Function() onSend;
   final Future<void> Function() onMicTap;
   final VoidCallback onOpenContext;
 
   @override
-  Widget build(BuildContext context) {
-    final copy = controller.copy;
-    final palette = AppPalette.of(context);
-    final bool isSending = controller.isSendingForContext(
-      useGlobalMode: useGlobalMode,
-    );
-    final smartSupplement = controller.allowSmartSupplement(
-      useGlobalMode: useGlobalMode,
-    );
-    final activeFeatures = <Widget>[
-      AssistantFeatureChip(
-        icon: smartSupplement
-            ? Icons.auto_awesome_rounded
-            : Icons.menu_book_rounded,
-        label: smartSupplement
-            ? copy.smartSupplementLabel
-            : copy.knowledgeOnlyLabel,
-        foregroundColor: smartSupplement ? palette.secondary : palette.primary,
-        backgroundColor: (smartSupplement ? palette.secondary : palette.primary)
-            .withValues(alpha: 0.14),
-        onRemove: onOpenContext,
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (controller.isListening)
+        _RecordingBanner(
+          controller: controller,
+          transcript: textController.text,
+          onStop: onMicTap,
+        ),
+      AssistantComposer(
+        key: composerKey,
+        controller: controller,
+        textController: textController,
+        useGlobalMode: useGlobalMode,
+        onSend: onSend,
+        onMicTap: onMicTap,
+        onOpenContext: onOpenContext,
       ),
-      if (controller.voiceReplyEnabled)
-        AssistantFeatureChip(
-          icon: Icons.graphic_eq_rounded,
-          label: copy.voiceReplySwitchLabel,
-          foregroundColor: palette.primary,
-          backgroundColor: palette.primary.withValues(alpha: 0.14),
-          onRemove: () {
-            controller.setVoiceReplyEnabled(false);
-          },
-        ),
-    ];
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (controller.isListening)
-          _RecordingBanner(
-            controller: controller,
-            transcript: textController.text,
-            onStop: onMicTap,
-          ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 9),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(spacing: 8, runSpacing: 8, children: activeFeatures),
-          ),
-        ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: palette.inputSurface,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: palette.outline),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: palette.shadow.withValues(alpha: 0.22),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                IconButton(
-                  tooltip: copy.assistantContextTitle,
-                  onPressed: onOpenContext,
-                  icon: const Icon(Icons.add_rounded),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: textController,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: canSend
-                        ? (_) {
-                            onSend();
-                          }
-                        : null,
-                    decoration: InputDecoration(
-                      hintText: copy.messageHint,
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 10,
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: controller.isListening
-                      ? copy.tapToStop
-                      : copy.speechReady,
-                  onPressed: isSending
-                      ? null
-                      : () {
-                          onMicTap();
-                        },
-                  style: IconButton.styleFrom(
-                    backgroundColor: controller.isListening
-                        ? palette.secondary
-                        : palette.primary,
-                    foregroundColor: palette.onPrimary,
-                  ),
-                  icon: Icon(
-                    controller.isListening
-                        ? Icons.stop_rounded
-                        : Icons.mic_rounded,
-                  ),
-                ),
-                const SizedBox(width: 5),
-                IconButton(
-                  tooltip: isSending ? copy.stopGenerating : copy.send,
-                  onPressed: isSending
-                      ? () {
-                          controller.stopGenerating(
-                            useGlobalMode: useGlobalMode,
-                          );
-                        }
-                      : canSend
-                      ? () {
-                          onSend();
-                        }
-                      : null,
-                  style: IconButton.styleFrom(
-                    backgroundColor: isSending
-                        ? palette.primary
-                        : canSend
-                        ? palette.secondary
-                        : palette.textPrimary.withValues(alpha: 0.14),
-                    foregroundColor: isSending
-                        ? palette.onPrimary
-                        : canSend
-                        ? palette.onSecondary
-                        : palette.disabledForeground,
-                  ),
-                  icon: isSending
-                      ? const Icon(Icons.stop_rounded)
-                      : const Icon(Icons.arrow_upward_rounded),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+    ],
+  );
 }
 
 class _RecordingBanner extends StatelessWidget {
