@@ -91,8 +91,13 @@ class _MobileGameCoverState extends State<MobileGameCover> {
     );
   }
 
-  Widget _placeholder() => const ColoredBox(
-    color: Color(0xFFF5E9DD),
-    child: Center(child: Icon(Icons.casino_rounded, color: Color(0xFFCE8A66))),
+  Widget _placeholder() => ColoredBox(
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    child: Center(
+      child: Icon(
+        Icons.casino_rounded,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
   );
 }

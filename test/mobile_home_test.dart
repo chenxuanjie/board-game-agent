@@ -32,8 +32,16 @@ import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/core/theme/color_scheme_option.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
+import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
+import 'package:board_game_agent/features/games/models/recent_game_record.dart';
+import 'package:board_game_agent/features/assistant/models/ai_conversation.dart';
+import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/ui/mobile/library_content.dart';
+import 'package:board_game_agent/ui/shared/content_cards.dart';
 
 part 'mobile/mobile_national_day_test_cases.dart';
+part 'mobile/mobile_content_design_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -467,6 +475,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   _registerMobileNationalDayTests();
+  _registerContentDesignTests();
 }
 
 AppController _controller({

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/ui_tokens.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
@@ -11,12 +14,8 @@ import '../shared/documents/document_viewer_launcher.dart';
 import 'assistant_chat_screen.dart';
 import 'game_cover.dart';
 import '../shared/hover_carousel_controls.dart';
-import '../shared/hover_horizontal_scrollbar.dart';
-
-const _ink = Color(0xFF271D1B);
-const _muted = Color(0xFF817B7A);
-const _orange = Color(0xFFE9772E);
-const _cream = Color(0xFFFFF3E4);
+import '../shared/content_cards.dart';
+import 'game_content_card.dart';
 
 class GameDetailScreen extends StatefulWidget {
   const GameDetailScreen({
@@ -91,7 +90,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
 
     return Scaffold(
       key: const ValueKey('mobile-game-detail'),
-      backgroundColor: const Color(0xFFFFFBF7),
+      backgroundColor: AppPalette.of(context).pageBackground,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -113,7 +112,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         icon: controller.isFavorite(game)
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
-                        iconColor: _orange,
+                        iconColor: AppPalette.of(context).primary,
                         tooltip: controller.isFavorite(game)
                             ? copy.localized('取消喜欢', 'Unlike')
                             : copy.localized('喜欢', 'Like'),
@@ -270,10 +269,12 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                       children: [
                                         TextSpan(
                                           text: game.title,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 27,
-                                            fontWeight: FontWeight.w900,
-                                            color: _ink,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppPalette.of(
+                                              context,
+                                            ).textPrimary,
                                           ),
                                         ),
                                         if (game.subtitle.trim().isNotEmpty &&
@@ -281,27 +282,29 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                                 game.title.trim())
                                           TextSpan(
                                             text: '  ${game.subtitle}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 17,
                                               fontWeight: FontWeight.w600,
-                                              color: _muted,
+                                              color: AppPalette.of(
+                                                context,
+                                              ).textSecondary,
                                             ),
                                           ),
                                       ],
                                     ),
                                   ),
                                 ),
-                                const Icon(
+                                Icon(
                                   Icons.star_rounded,
                                   size: 28,
-                                  color: _orange,
+                                  color: ContentCardStyle.ratingColor,
                                 ),
                                 Text(
                                   game.score.trim().isEmpty ? '-' : game.score,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 24,
-                                    fontWeight: FontWeight.w800,
-                                    color: _orange,
+                                    fontWeight: FontWeight.w700,
+                                    color: ContentCardStyle.ratingColor,
                                   ),
                                 ),
                               ],
@@ -313,9 +316,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                   game.scoreCountLabel,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: _muted,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppPalette.of(context).textSecondary,
                                   ),
                                 ),
                               ),
@@ -328,9 +331,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                   : game.categoryLine,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
-                                color: _muted,
+                                color: AppPalette.of(context).textSecondary,
                               ),
                             ),
                             const SizedBox(height: 14),
@@ -340,16 +343,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(15),
                                 decoration: BoxDecoration(
-                                  color: _cream,
+                                  color: AppPalette.of(
+                                    context,
+                                  ).surfaceContainer,
                                   borderRadius: BorderRadius.circular(15),
                                 ),
                                 child: Text(
                                   game.heroTagline,
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
-                                    color: Color(0xFF756B64),
+                                    color: AppPalette.of(context).textSecondary,
                                     height: 1.5,
                                   ),
                                 ),
@@ -361,10 +366,10 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                 vertical: 10,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFF8EF),
+                                color: AppPalette.of(context).surfaceContainer,
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: const Color(0xFFF4E8DA),
+                                  color: AppPalette.of(context).outline,
                                 ),
                               ),
                               child: Row(
@@ -380,7 +385,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                     Icons.schedule_rounded,
                                     GameMetadataText.playTime(game.playTime),
                                     copy.localized('游戏时长', 'Play time'),
-                                    _orange,
+                                    AppPalette.of(context).primary,
                                   ),
                                   _statDivider(),
                                   _stat(
@@ -405,15 +410,19 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                           vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: _cream,
+                                          color: AppPalette.of(
+                                            context,
+                                          ).surfaceContainer,
                                           borderRadius: BorderRadius.circular(
                                             20,
                                           ),
                                         ),
                                         child: Text(
                                           tag,
-                                          style: const TextStyle(
-                                            color: Color(0xFFD85F2B),
+                                          style: TextStyle(
+                                            color: AppPalette.of(
+                                              context,
+                                            ).primary,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -425,7 +434,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: AppPalette.of(context).surface,
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: Column(
@@ -433,19 +442,14 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                 children: [
                                   Text(
                                     copy.localized('游戏简介', 'About this game'),
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                      color: _ink,
-                                    ),
+                                    style: ContentCardStyle.section(context),
                                   ),
                                   Text(
                                     summary,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF626166),
-                                      height: 1.6,
-                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(height: 1.6),
                                   ),
                                 ],
                               ),
@@ -467,58 +471,14 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         top: false,
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 9, 16, 10),
-          decoration: const BoxDecoration(color: Color(0xFFFFFBF7)),
+          decoration: BoxDecoration(
+            color: AppPalette.of(context).pageBackground,
+          ),
           child: Center(
             heightFactor: 1,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 588),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      key: const ValueKey('mobile-detail-rules'),
-                      onPressed: _openingRulebook
-                          ? null
-                          : () => _openDocument(game),
-                      icon: _openingRulebook
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.menu_book_rounded),
-                      label: Text(copy.rulesBook),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFBA5D22),
-                        backgroundColor: _cream,
-                        side: BorderSide.none,
-                        minimumSize: const Size(0, 52),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      key: const ValueKey('mobile-detail-ask-ai'),
-                      onPressed: () {
-                        if (!controller.openGameAssistant(game.id)) return;
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                AssistantChatScreen(controller: controller),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.smart_toy_outlined),
-                      label: Text(copy.askAiAssistant),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _orange,
-                        minimumSize: const Size(0, 52),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              child: _bottomActions(game),
             ),
           ),
         ),
@@ -526,23 +486,86 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     );
   }
 
+  Widget _bottomActions(GameInfo game) => LayoutBuilder(
+    builder: (context, constraints) {
+      final controller = widget.controller;
+      final copy = controller.copy;
+      final palette = AppPalette.of(context);
+      final rules = OutlinedButton.icon(
+        key: const ValueKey('mobile-detail-rules'),
+        onPressed: _openingRulebook ? null : () => _openDocument(game),
+        icon: _openingRulebook
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.menu_book_rounded, size: 20),
+        label: Text(copy.rulesBook),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: palette.primary,
+          backgroundColor: palette.surfaceContainer,
+          side: BorderSide.none,
+          minimumSize: const Size(48, 52),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      );
+      final ai = FilledButton.icon(
+        key: const ValueKey('mobile-detail-ask-ai'),
+        onPressed: () {
+          if (!controller.openGameAssistant(game.id)) return;
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AssistantChatScreen(controller: controller),
+            ),
+          );
+        },
+        icon: const Icon(Icons.smart_toy_rounded, size: 20),
+        label: Text(copy.askAiAssistant),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 52),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      );
+      if (constraints.maxWidth < 300 ||
+          MediaQuery.textScalerOf(context).scale(14) > 18) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [rules, const SizedBox(height: 8), ai],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: rules),
+          const SizedBox(width: UiTokens.itemGap),
+          Expanded(child: ai),
+        ],
+      );
+    },
+  );
+
   Widget _roundButton({
     Key? key,
     IconData? icon,
-    Color iconColor = const Color(0xFF78431E),
+    Color? iconColor,
     String? asset,
     required String tooltip,
     required VoidCallback onTap,
   }) {
     return Material(
-      color: _cream,
+      color: AppPalette.of(context).surfaceContainer,
       borderRadius: BorderRadius.circular(18),
       child: IconButton(
         key: key,
         tooltip: tooltip,
         onPressed: onTap,
         icon: asset == null
-            ? Icon(icon, size: 21, color: iconColor)
+            ? Icon(
+                icon,
+                size: 21,
+                color: iconColor ?? AppPalette.of(context).textPrimary,
+              )
             : _assetIcon(asset, 23),
       ),
     );
@@ -562,7 +585,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   );
 
   Widget _statDivider() =>
-      Container(width: 1, height: 32, color: const Color(0xFFF0E5D9));
+      Container(width: 1, height: 32, color: AppPalette.of(context).outline);
 
   Widget _stat(IconData icon, String value, String label, Color iconColor) {
     return Expanded(
@@ -576,24 +599,18 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    value.trim().isEmpty ? '-' : value,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: _ink,
-                    ),
-                  ),
+                Text(
+                  value.trim().isEmpty ? '-' : value,
+                  style: ContentCardStyle.title(context).copyWith(fontSize: 13),
                 ),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 9, color: _muted),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppPalette.of(context).textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -616,103 +633,22 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       children: [
         Text(
           copy.localized('相关游戏', 'Related games'),
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _ink,
-          ),
+          style: ContentCardStyle.section(context),
         ),
         const SizedBox(height: 10),
-        HoverHorizontalScrollbar(
+        ContentCardStrip(
           keyPrefix: 'mobile-detail-related',
-          builder: (scrollController) => SizedBox(
-            height: 104,
-            child: ListView.separated(
-              controller: scrollController,
-              scrollDirection: Axis.horizontal,
-              itemCount: results.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final result = results[index];
-                return SizedBox(
-                  width: 225,
-                  child: Material(
-                    color: const Color(0xFFFFF8EF),
-                    borderRadius: BorderRadius.circular(14),
-                    child: InkWell(
-                      key: ValueKey('mobile-related-game-${result.game.id}'),
-                      onTap: () => _openRelatedGame(result.game),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: SizedBox(
-                                width: 63,
-                                height: 88,
-                                child: MobileGameCover(
-                                  controller: widget.controller,
-                                  game: result.game,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    result.game.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w800,
-                                      color: _ink,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    _relatedReason(result.reason),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      color: _muted,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.star_rounded,
-                                        size: 14,
-                                        color: _orange,
-                                      ),
-                                      Text(
-                                        result.game.score,
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: _orange,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+          itemCount: results.length,
+          metadata: results.map(
+            (result) => ContentCardStyle.attributes(result.game.categoryLine),
+          ),
+          itemBuilder: (context, index, metrics) => GameContentCard(
+            key: ValueKey('mobile-related-game-${results[index].game.id}'),
+            controller: widget.controller,
+            game: results[index].game,
+            metrics: metrics,
+            onTap: () => _openRelatedGame(results[index].game),
+            description: _relatedReason(results[index].reason),
           ),
         ),
       ],

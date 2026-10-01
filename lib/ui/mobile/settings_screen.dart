@@ -1,6 +1,7 @@
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/theme/ui_tokens.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -244,7 +245,9 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                       margin: const EdgeInsets.only(bottom: 10),
                                       decoration: BoxDecoration(
                                         color: palette.surfaceVariant,
-                                        borderRadius: BorderRadius.circular(18),
+                                        borderRadius: BorderRadius.circular(
+                                          UiTokens.groupRadius,
+                                        ),
                                       ),
                                       child: ListTile(
                                         contentPadding:
@@ -946,7 +949,7 @@ class _SectionTitle extends StatelessWidget {
           title,
           style: Theme.of(
             context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
       ],
     );
@@ -971,7 +974,7 @@ class _SectionCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: palette.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(UiTokens.groupRadius),
         border: Border.all(color: palette.outline),
         boxShadow: [
           BoxShadow(
@@ -1048,8 +1051,8 @@ class _ThemeChoice extends StatelessWidget {
                   textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     color: palette.textPrimary,
                   ),
                 ),

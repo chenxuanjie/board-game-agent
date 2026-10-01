@@ -3,18 +3,16 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/ui_tokens.dart';
+
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/localization/app_copy.dart';
-import 'game_cover.dart';
+import '../shared/content_cards.dart';
+import 'game_content_card.dart';
 import '../shared/hover_carousel_controls.dart';
-import '../shared/hover_horizontal_scrollbar.dart';
-
-const _ink = Color(0xFF25242B);
-const _muted = Color(0xFF85818A);
-const _orange = Color(0xFFFF673F);
-const _recommendationCardHeight = 154.0;
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -84,16 +82,6 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             .toList()
           ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
     final recommended = widget.controller.dailyRecommendedGames;
-    final viewportWidth = MediaQuery.sizeOf(context).width;
-    final contentWidth =
-        viewportWidth.clamp(0.0, kIsWeb ? 1200.0 : 560.0).toDouble() - 32;
-    final visibleRecommendations = kIsWeb && contentWidth >= 600
-        ? (contentWidth / 210).floor().clamp(3, 5)
-        : 2;
-    final recommendationWidth = kIsWeb && contentWidth >= 600
-        ? (contentWidth - 10 * (visibleRecommendations - 1)) /
-              visibleRecommendations
-        : ((contentWidth - 10) / 2).clamp(240.0, 280.0).toDouble();
     final ordered = recommended.isEmpty
         ? const <GameInfo>[]
         : <GameInfo>[
@@ -112,7 +100,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             _carousel(copy),
             const SizedBox(height: 22),
             _shortcuts(copy),
-            const SizedBox(height: 25),
+            const SizedBox(height: UiTokens.sectionGap),
             _sectionHeader(
               icon: Icons.chat_bubble_outline_rounded,
               title: copy.localized('最近AI对话', 'Recent AI chats'),
@@ -121,17 +109,13 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             if (recentConversations.isEmpty)
               _emptyAiConversations(copy)
             else
-              SizedBox(
-                height: 132,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: recentConversations.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 11),
-                  itemBuilder: (context, index) =>
-                      _conversationCard(recentConversations[index], copy),
-                ),
+              ContentCardStrip(
+                keyPrefix: 'mobile-home-recent-ai',
+                itemCount: recentConversations.length,
+                itemBuilder: (context, index, metrics) =>
+                    _conversationCard(recentConversations[index], copy),
               ),
-            const SizedBox(height: 25),
+            const SizedBox(height: UiTokens.sectionGap),
             _sectionHeader(
               icon: Icons.star_rounded,
               iconSize: 30,
@@ -145,20 +129,25 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             if (ordered.isEmpty)
               _emptyRecent(copy)
             else
-              HoverHorizontalScrollbar(
+              ContentCardStrip(
                 keyPrefix: 'mobile-home-recommendations',
-                builder: (scrollController) => SizedBox(
-                  height: _recommendationCardHeight,
-                  child: ListView.separated(
-                    controller: scrollController,
-                    scrollDirection: Axis.horizontal,
-                    itemCount: ordered.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 10),
-                    itemBuilder: (context, index) => _recommendationCard(
-                      ordered[index],
-                      recommendationWidth,
-                    ),
+                recommendation: true,
+                itemCount: ordered.length,
+                metadata: ordered.map(
+                  (game) => ContentCardStyle.attributes(game.categoryLine),
+                ),
+                itemBuilder: (context, index, metrics) => GameContentCard(
+                  key: ValueKey('mobile-recommendation-${ordered[index].id}'),
+                  controller: widget.controller,
+                  game: ordered[index],
+                  metrics: metrics,
+                  onTap: () => widget.onOpenGame(ordered[index]),
+                  attributesKey: ValueKey(
+                    'mobile-recommendation-attributes-${ordered[index].id}',
                   ),
+                  description: ordered[index].summary.trim().isNotEmpty
+                      ? ordered[index].summary
+                      : ordered[index].heroTagline,
                 ),
               ),
             if (widget.controller.activities.isNotEmpty) ...[
@@ -183,17 +172,17 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
               copy.localized('桌游伙伴', 'Board Game Buddy'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 23,
-                fontWeight: FontWeight.w900,
-                color: _ink,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.of(context).textPrimary,
               ),
             ),
             Text(
               copy.localized('好游戏 · 好伙伴 · 好时光', 'Good games · Better people'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: Color(0xFFB89176)),
+              style: const TextStyle(fontSize: 12, color: Color(0xFFB89176)),
             ),
           ],
         ),
@@ -202,7 +191,10 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
         key: const ValueKey('mobile-home-search'),
         tooltip: copy.localized('搜索游戏', 'Search games'),
         onPressed: widget.onSearch,
-        icon: const Icon(Icons.search_rounded, color: _ink),
+        icon: Icon(
+          Icons.search_rounded,
+          color: AppPalette.of(context).textPrimary,
+        ),
       ),
       Stack(
         children: [
@@ -210,13 +202,19 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             key: const ValueKey('mobile-home-activities'),
             tooltip: copy.localized('消息', 'Notifications'),
             onPressed: widget.onActivities,
-            icon: const Icon(Icons.notifications_none_rounded, color: _ink),
+            icon: Icon(
+              Icons.notifications_none_rounded,
+              color: AppPalette.of(context).textPrimary,
+            ),
           ),
           if (widget.controller.unreadActivityCount > 0)
-            const Positioned(
+            Positioned(
               right: 11,
               top: 8,
-              child: CircleAvatar(radius: 4, backgroundColor: _orange),
+              child: CircleAvatar(
+                radius: 4,
+                backgroundColor: AppPalette.of(context).primary,
+              ),
             ),
         ],
       ),
@@ -244,7 +242,18 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
       ('assets/desktop/home/banner_ai.png', '规则看不懂？\n直接问 AI', '桌游问题随时问'),
     ];
     return SizedBox(
-      height: 191,
+      height:
+          191 +
+          (MediaQuery.textScalerOf(context).scale(24) - 24).clamp(
+                0.0,
+                double.infinity,
+              ) *
+              2.4 +
+          (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(
+                0.0,
+                double.infinity,
+              ) *
+              1.4,
       child: HoverCarouselControls(
         enabled: kIsWeb,
         keyPrefix: 'mobile-home-banner',
@@ -310,7 +319,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                                 style: const TextStyle(
                                   fontSize: 24,
                                   height: 1.2,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   color: Color(0xFF5D2419),
                                 ),
                               ),
@@ -322,7 +331,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                                     'Discover your next favorite',
                                   ),
                                   style: const TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     color: Color(0xFF945C45),
                                   ),
                                 ),
@@ -335,12 +344,16 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                                     ? widget.onOpenNationalDay
                                     : widget.onSearch,
                                 style: FilledButton.styleFrom(
-                                  backgroundColor: _orange,
-                                  foregroundColor: Colors.white,
+                                  backgroundColor: AppPalette.of(
+                                    context,
+                                  ).primary,
+                                  foregroundColor: AppPalette.of(
+                                    context,
+                                  ).onPrimary,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                   ),
-                                  minimumSize: const Size(0, 39),
+                                  minimumSize: const Size(48, 48),
                                 ),
                                 icon: const Icon(
                                   Icons.arrow_forward_rounded,
@@ -407,7 +420,9 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                           width: index == _banner ? 15 : 5,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: index == _banner ? _orange : Colors.white,
+                            color: index == _banner
+                                ? AppPalette.of(context).primary
+                                : Colors.white,
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
@@ -455,7 +470,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
       ),
       (
         Icons.favorite_rounded,
-        copy.localized('我的收藏', 'Favorites'),
+        copy.localized('我的喜欢', 'Favorites'),
         const Color(0xFFFFE9EC),
         widget.onFavorites,
       ),
@@ -493,14 +508,18 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                             width: tileSize,
                             height: tileSize,
                             decoration: BoxDecoration(
-                              color: entry.$3,
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? AppPalette.of(context).surfaceContainer
+                                  : entry.$3,
                               borderRadius: BorderRadius.circular(borderRadius),
                             ),
                             alignment: Alignment.center,
                             child: Icon(
                               entry.$1,
                               size: iconSize,
-                              color: _orange,
+                              color: AppPalette.of(context).primary,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -511,8 +530,8 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: labelSize,
-                              fontWeight: FontWeight.w800,
-                              color: _ink,
+                              fontWeight: FontWeight.w700,
+                              color: AppPalette.of(context).textPrimary,
                               height: 1.2,
                             ),
                           ),
@@ -536,18 +555,9 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     VoidCallback? onAction,
   }) => Row(
     children: [
-      Icon(icon, size: iconSize, color: _orange),
+      Icon(icon, size: iconSize, color: AppPalette.of(context).primary),
       const SizedBox(width: 7),
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w900,
-            color: _ink,
-          ),
-        ),
-      ),
+      Expanded(child: Text(title, style: ContentCardStyle.section(context))),
       if (action != null && onAction != null)
         TextButton.icon(
           onPressed: onAction,
@@ -555,7 +565,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           icon: const Icon(Icons.chevron_right_rounded, size: 17),
           iconAlignment: IconAlignment.end,
           style: TextButton.styleFrom(
-            foregroundColor: _muted,
+            foregroundColor: AppPalette.of(context).textSecondary,
             padding: EdgeInsets.zero,
           ),
         ),
@@ -566,9 +576,9 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     height: 102,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(15),
-      border: Border.all(color: const Color(0xFFF4EAE1)),
+      color: AppPalette.of(context).surface,
+      borderRadius: BorderRadius.circular(UiTokens.cardRadius),
+      border: Border.all(color: AppPalette.of(context).outline),
     ),
     child: TextButton(
       onPressed: widget.onSearch,
@@ -580,9 +590,9 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     height: 102,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(15),
-      border: Border.all(color: const Color(0xFFF4EAE1)),
+      color: AppPalette.of(context).surface,
+      borderRadius: BorderRadius.circular(UiTokens.cardRadius),
+      border: Border.all(color: AppPalette.of(context).outline),
     ),
     child: TextButton(
       onPressed: widget.onOpenAi,
@@ -590,194 +600,78 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
     ),
   );
 
-  Widget _conversationCard(
-    AiConversation conversation,
-    AppCopy copy,
-  ) => SizedBox(
-    width: 176,
-    child: InkWell(
-      key: ValueKey('mobile-recent-ai-${conversation.id}'),
-      onTap: () => widget.onOpenConversation(conversation),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF2E6DE)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.smart_toy_rounded, size: 18, color: _orange),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    conversation.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
+  Widget _conversationCard(AiConversation conversation, AppCopy copy) =>
+      ContentCardSurface(
+        key: ValueKey('mobile-recent-ai-${conversation.id}'),
+        onTap: () => widget.onOpenConversation(conversation),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.smart_toy_rounded,
+                    size: 22,
+                    color: AppPalette.of(context).primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      conversation.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ContentCardStyle.title(context),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              conversation.messages.reversed
-                  .map((message) => message.text.trim())
-                  .firstWhere(
-                    (text) => text.isNotEmpty,
-                    orElse: () => copy.localized('继续对话', 'Continue chatting'),
-                  ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: _muted, height: 1.3),
-            ),
-            const Spacer(),
-            Text(
-              copy.localized(
-                '${conversation.updatedAt.month}月${conversation.updatedAt.day}日',
-                '${conversation.updatedAt.month}/${conversation.updatedAt.day}',
+                ],
               ),
-              style: const TextStyle(fontSize: 10, color: _muted),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Widget _recommendationCard(GameInfo game, double baseWidth) {
-    final attributes = game.categoryLine
-        .split(RegExp(r'\s*[/／·,，]\s*'))
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .take(2)
-        .join(' / ');
-    final painter = TextPainter(
-      text: TextSpan(text: attributes, style: const TextStyle(fontSize: 10)),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    final cardWidth = (painter.width + 112).clamp(baseWidth, 280.0);
-    painter.dispose();
-    return SizedBox(
-      width: cardWidth,
-      height: _recommendationCardHeight,
-      child: InkWell(
-        key: ValueKey('mobile-recommendation-${game.id}'),
-        onTap: () => widget.onOpenGame(game),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFF2E6DE)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: (cardWidth * 0.4).clamp(96.0, 112.0),
-                child: MobileGameCover(
-                  controller: widget.controller,
-                  game: game,
-                ),
+              const SizedBox(height: 12),
+              Text(
+                conversation.messages.reversed
+                    .map((message) => message.text.trim())
+                    .firstWhere(
+                      (text) => text.isNotEmpty,
+                      orElse: () => copy.localized('继续对话', 'Continue chatting'),
+                    ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: ContentCardStyle.body(context),
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        game.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          color: _ink,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        attributes,
-                        key: ValueKey(
-                          'mobile-recommendation-attributes-${game.id}',
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.clip,
-                        style: const TextStyle(fontSize: 10, color: _muted),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 17,
-                            color: Color(0xFFFF9F23),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            game.score,
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w900,
-                              color: _ink,
-                              height: 1.1,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      Text(
-                        game.summary.trim().isNotEmpty
-                            ? game.summary
-                            : game.heroTagline,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          color: Color(0xFF85818A),
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
+              const Spacer(),
+              Text(
+                ContentCardStyle.relativeDate(
+                  conversation.updatedAt,
+                  copy.localized('zh', 'en') == 'zh',
                 ),
+                style: ContentCardStyle.body(context),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
 
   Widget _activityCard(AppCopy copy) {
     final activity = widget.controller.activities.first;
     return InkWell(
       onTap: widget.onActivities,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(UiTokens.groupRadius),
       child: Container(
         padding: const EdgeInsets.all(17),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF2E7),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFFCE3D1)),
+          color: AppPalette.of(context).surfaceContainer,
+          borderRadius: BorderRadius.circular(UiTokens.groupRadius),
+          border: Border.all(color: AppPalette.of(context).outline),
         ),
         child: Row(
           children: [
-            const Icon(Icons.campaign_rounded, color: _orange, size: 28),
-            const SizedBox(width: 12),
+            Icon(
+              Icons.campaign_rounded,
+              color: AppPalette.of(context).primary,
+              size: 28,
+            ),
+            const SizedBox(width: UiTokens.itemGap),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -786,10 +680,10 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                     activity.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
+                      fontWeight: FontWeight.w700,
+                      color: AppPalette.of(context).textPrimary,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -797,12 +691,18 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                     activity.message,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, color: _muted),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppPalette.of(context).textSecondary,
+                    ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: _orange),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: AppPalette.of(context).primary,
+            ),
           ],
         ),
       ),

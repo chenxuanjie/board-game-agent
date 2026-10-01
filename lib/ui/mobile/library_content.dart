@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/ui_tokens.dart';
+
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import 'game_cover.dart';
-
-const _orange = Color(0xFFFF673F);
-const _ink = Color(0xFF202635);
-const _muted = Color(0xFF758197);
+import '../shared/content_cards.dart';
 
 class MobileLibraryContent extends StatefulWidget {
   const MobileLibraryContent({
@@ -114,10 +114,10 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                           copy.localized('桌游伙伴', 'Board Game Buddy'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: _ink,
+                            fontWeight: FontWeight.w700,
+                            color: AppPalette.of(context).textPrimary,
                           ),
                         ),
                       ],
@@ -128,18 +128,18 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       IconButton(
                         tooltip: copy.localized('消息', 'Notifications'),
                         onPressed: widget.onActivities,
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.notifications_none_rounded,
-                          color: _ink,
+                          color: AppPalette.of(context).textPrimary,
                         ),
                       ),
                       if (widget.controller.unreadActivityCount > 0)
-                        const Positioned(
+                        Positioned(
                           right: 10,
                           top: 9,
                           child: CircleAvatar(
                             radius: 4,
-                            backgroundColor: _orange,
+                            backgroundColor: AppPalette.of(context).primary,
                           ),
                         ),
                     ],
@@ -169,8 +169,14 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                     '搜索桌游 / 机制 / 作者',
                     'Search games / mechanics / designers',
                   ),
-                  hintStyle: const TextStyle(color: _muted, fontSize: 14),
-                  prefixIcon: const Icon(Icons.search_rounded, color: _muted),
+                  hintStyle: TextStyle(
+                    color: AppPalette.of(context).textSecondary,
+                    fontSize: 14,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: AppPalette.of(context).textSecondary,
+                  ),
                   suffixIcon: query.isEmpty
                       ? null
                       : IconButton(
@@ -179,7 +185,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                           icon: const Icon(Icons.close_rounded),
                         ),
                   filled: true,
-                  fillColor: const Color(0xFFF4F4F6),
+                  fillColor: AppPalette.of(context).inputSurface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(28),
                     borderSide: BorderSide.none,
@@ -208,10 +214,12 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                     selected: selected,
                     onSelected: (_) => setState(() => _category = index),
                     showCheckmark: false,
-                    backgroundColor: const Color(0xFFFFF1E9),
-                    selectedColor: _orange,
+                    backgroundColor: AppPalette.of(context).surfaceContainer,
+                    selectedColor: AppPalette.of(context).primary,
                     labelStyle: TextStyle(
-                      color: selected ? Colors.white : _muted,
+                      color: selected
+                          ? AppPalette.of(context).onPrimary
+                          : AppPalette.of(context).textSecondary,
                       fontWeight: FontWeight.w700,
                     ),
                     side: BorderSide.none,
@@ -230,25 +238,34 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = constraints.maxWidth < 360
-                            ? 2
-                            : constraints.maxWidth < 540
-                            ? 3
-                            : 4;
+                        final columns = ((constraints.maxWidth - 20) / 172)
+                            .floor()
+                            .clamp(2, 4);
                         final width =
-                            (constraints.maxWidth - 32 - (columns - 1) * 9) /
+                            (constraints.maxWidth - 32 - (columns - 1) * 12) /
                             columns;
-                        final coverHeight = width * 1.28;
+                        final coverHeight = width * 4 / 3;
+                        final infoHeight = games
+                            .map(
+                              (game) =>
+                                  _GameCard.infoHeight(context, game, width),
+                            )
+                            .reduce((a, b) => a > b ? a : b);
                         return GridView.builder(
                           key: const ValueKey('mobile-library-grid'),
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          padding: const EdgeInsets.fromLTRB(
+                            UiTokens.pageInset,
+                            0,
+                            UiTokens.pageInset,
+                            UiTokens.sectionGap,
+                          ),
                           itemCount: games.length,
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: columns,
-                                crossAxisSpacing: 9,
+                                crossAxisSpacing: 12,
                                 mainAxisSpacing: 12,
-                                mainAxisExtent: coverHeight + 134,
+                                mainAxisExtent: coverHeight + infoHeight,
                               ),
                           itemBuilder: (context, index) => _GameCard(
                             controller: widget.controller,
@@ -268,6 +285,51 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
 }
 
 class _GameCard extends StatelessWidget {
+  static double infoHeight(BuildContext context, GameInfo game, double width) {
+    double measure(
+      String text,
+      TextStyle style,
+      double maxWidth, {
+      int? maxLines,
+    }) {
+      if (text.isEmpty) return 0;
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: maxLines,
+      )..layout(maxWidth: maxWidth);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final body = ContentCardStyle.body(context);
+    final scoreHeight = measure(
+      game.score,
+      ContentCardStyle.score(context),
+      width - 24,
+    );
+    final iconHeight = MediaQuery.textScalerOf(context).scale(14) * 1.2;
+    final ratingHeight = scoreHeight > iconHeight ? scoreHeight : iconHeight;
+    return (52 +
+            measure(
+              game.title,
+              ContentCardStyle.title(context),
+              width - 24,
+              maxLines: 2,
+            ) +
+            ContentAttributeTags.heightFor(context, _tags(game), width - 24) +
+            ratingHeight.clamp(18.0, double.infinity) +
+            measure(
+              GameMetadataText.players(game.playerCount),
+              body,
+              width - 41,
+            ) +
+            measure(GameMetadataText.playTime(game.playTime), body, width - 41))
+        .ceilToDouble();
+  }
+
   const _GameCard({
     required this.controller,
     required this.game,
@@ -280,135 +342,114 @@ class _GameCard extends StatelessWidget {
   final double coverHeight;
   final VoidCallback onOpen;
 
+  static List<String> _tags(GameInfo game) => game.categoryLine
+      .split(RegExp(r'[/／,，·]'))
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .take(2)
+      .toList();
+
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
     final favorite = controller.isFavorite(game);
-    final tags = game.categoryLine
-        .split(RegExp(r'[/／,，·]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .take(2)
-        .toList();
+    final tags = _tags(game);
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      color: AppPalette.of(context).surface,
+      borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: ValueKey('mobile-library-game-${game.id}'),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(ContentCardStyle.radius),
         onTap: onOpen,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
               height: coverHeight,
-              width: double.infinity,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    MobileGameCover(controller: controller, game: game),
-                    Positioned(
-                      right: 3,
-                      top: 3,
-                      child: IconButton(
-                        key: ValueKey('mobile-library-favorite-${game.id}'),
-                        tooltip: favorite
-                            ? copy.localized('取消喜欢', 'Unlike')
-                            : copy.localized('喜欢', 'Like'),
-                        onPressed: () async {
-                          final saved = await controller.toggleFavorite(game);
-                          if (!saved && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  copy.localized(
-                                    '收藏保存失败',
-                                    'Could not save favorite',
-                                  ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    child: Center(
+                      child: MobileGameCover(
+                        controller: controller,
+                        game: game,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: IconButton.filledTonal(
+                      key: ValueKey('mobile-library-favorite-${game.id}'),
+                      tooltip: favorite
+                          ? copy.localized('取消喜欢', 'Unlike')
+                          : copy.localized('喜欢', 'Like'),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppPalette.of(
+                          context,
+                        ).surface.withValues(alpha: .92),
+                        foregroundColor: favorite
+                            ? AppPalette.of(context).primary
+                            : AppPalette.of(context).textSecondary,
+                      ),
+                      onPressed: () async {
+                        final saved = await controller.toggleFavorite(game);
+                        if (!saved && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                copy.localized(
+                                  '收藏保存失败',
+                                  'Could not save favorite',
                                 ),
                               ),
-                            );
-                          }
-                        },
-                        icon: Icon(
-                          favorite
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          color: Colors.white,
-                          shadows: const [
-                            Shadow(color: Colors.black54, blurRadius: 5),
-                          ],
-                        ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: Icon(
+                        favorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
                       ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      game.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: ContentCardStyle.title(context),
+                    ),
+                    const SizedBox(height: 4),
+                    if (tags.isNotEmpty) ContentAttributeTags(tags: tags),
+                    const SizedBox(height: 8),
+                    ContentRating(score: game.score),
+                    const Spacer(),
+                    _GameCardFact(
+                      icon: Icons.people_alt_rounded,
+                      text: GameMetadataText.players(game.playerCount),
+                    ),
+                    const SizedBox(height: 4),
+                    _GameCardFact(
+                      icon: Icons.schedule_rounded,
+                      text: GameMetadataText.playTime(game.playTime),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(
-                  Icons.star_rounded,
-                  size: 18,
-                  color: Color(0xFFFF9825),
-                ),
-                Text(
-                  game.score.trim().isEmpty ? '-' : game.score,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: _ink,
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              game.title,
-              maxLines: 2,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: _ink,
-              ),
-            ),
-            const SizedBox(height: 2),
-            if (tags.isNotEmpty)
-              Wrap(
-                spacing: 3,
-                runSpacing: 3,
-                children: [
-                  for (final tag in tags)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1E9),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        tag,
-                        style: const TextStyle(
-                          fontSize: 9,
-                          color: Color(0xFFD85E2E),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            const Spacer(),
-            _GameCardFact(
-              icon: Icons.people_alt_outlined,
-              text: GameMetadataText.players(game.playerCount),
-            ),
-            const SizedBox(height: 4),
-            _GameCardFact(
-              icon: Icons.schedule_outlined,
-              text: GameMetadataText.playTime(game.playTime),
             ),
           ],
         ),
@@ -427,13 +468,13 @@ class _GameCardFact extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Icon(icon, size: 12, color: _muted),
+      Icon(icon, size: 12, color: AppPalette.of(context).textSecondary),
       const SizedBox(width: 5),
       Expanded(
         child: Text(
           text,
           softWrap: true,
-          style: const TextStyle(fontSize: 10, color: _muted, height: 1.15),
+          style: ContentCardStyle.body(context),
         ),
       ),
     ],

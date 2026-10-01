@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/ui_tokens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/recent_game_record.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/localization/app_copy.dart';
+import '../shared/content_cards.dart';
+import '../shared/hover_horizontal_scrollbar.dart';
 import 'game_cover.dart';
 
-const _ink = Color(0xFF222730);
-const _muted = Color(0xFF778297);
-const _orange = Color(0xFFFF643E);
 const _assetRoot = 'assets/mobile/mine';
 
 class MobileMineContent extends StatefulWidget {
@@ -154,11 +156,14 @@ class _MobileMineContentState extends State<MobileMineContent> {
         record.normalizedGameSlug: record,
     };
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFFFF7F0), Color(0xFFFAF3EC), Color(0xFFF7EFE7)],
+          colors: [
+            AppPalette.of(context).pageBackground,
+            AppPalette.of(context).pageBackground,
+          ],
         ),
       ),
       child: Center(
@@ -169,9 +174,9 @@ class _MobileMineContentState extends State<MobileMineContent> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             children: [
               _integratedHeaderSection(copy),
-              const SizedBox(height: 13),
+              const SizedBox(height: 16),
               _shortcuts(copy),
-              const SizedBox(height: 21),
+              const SizedBox(height: UiTokens.sectionGap),
               _sectionTitle(
                 '$_assetRoot/recent_play_gamepad_icon.png',
                 copy.localized('最近浏览', 'Recently viewed'),
@@ -180,26 +185,14 @@ class _MobileMineContentState extends State<MobileMineContent> {
                     : copy.localized('查看全部', 'See all'),
                 onAction: widget.onRecentAll,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               if (recent.isEmpty)
                 _emptyRecent(copy)
               else
-                SizedBox(
-                  height: 134,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: recent.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 10),
-                    itemBuilder: (context, index) => _recentCard(
-                      recent[index],
-                      recentBySlug[recent[index].slug.toLowerCase()]?.viewedAt,
-                      copy,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 21),
+                _recentGames(recent, recentBySlug, copy),
+              const SizedBox(height: UiTokens.sectionGap),
               _sectionTitle(null, copy.localized('我的服务', 'My services')),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _services(copy),
               const SizedBox(height: 16),
               _promo(),
@@ -209,6 +202,108 @@ class _MobileMineContentState extends State<MobileMineContent> {
       ),
     );
   }
+
+  Widget _recentGames(
+    List<GameInfo> games,
+    Map<String, RecentGameRecord> records,
+    AppCopy copy,
+  ) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = ((constraints.maxWidth - 24) / 3).clamp(88.0, 112.0);
+      final coverHeight = width * 88 / 77;
+      final scaler = MediaQuery.textScalerOf(context);
+      final titleStyle = ContentCardStyle.title(context).copyWith(fontSize: 13);
+      double lineHeight(String text, TextStyle style) {
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: scaler,
+          maxLines: 1,
+        )..layout(maxWidth: width);
+        final height = painter.height;
+        painter.dispose();
+        return height;
+      }
+
+      final titleHeight = games
+          .map((game) => lineHeight(game.title, titleStyle))
+          .reduce((a, b) => a > b ? a : b);
+      final dateHeight = games
+          .map(
+            (game) => lineHeight(
+              _relativeTime(records[game.slug.toLowerCase()]?.viewedAt, copy),
+              ContentCardStyle.body(context),
+            ),
+          )
+          .reduce((a, b) => a > b ? a : b);
+      final height = coverHeight + 6 + titleHeight + dateHeight;
+      return HoverHorizontalScrollbar(
+        keyPrefix: 'mobile-mine-recent',
+        builder: (scrollController) => SizedBox(
+          height: height.ceilToDouble(),
+          child: ListView.separated(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            itemCount: games.length,
+            separatorBuilder: (_, _) =>
+                const SizedBox(width: ContentCardStyle.gap),
+            itemBuilder: (context, index) {
+              final game = games[index];
+              return SizedBox(
+                width: width,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    key: ValueKey('mobile-mine-recent-${game.id}'),
+                    borderRadius: BorderRadius.circular(UiTokens.controlRadius),
+                    onTap: () => widget.onOpenGame(game),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                            UiTokens.controlRadius,
+                          ),
+                          child: SizedBox(
+                            width: width,
+                            height: coverHeight,
+                            child: MobileGameCover(
+                              controller: widget.controller,
+                              game: game,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Tooltip(
+                          message: game.title,
+                          child: Text(
+                            game.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _relativeTime(
+                            records[game.slug.toLowerCase()]?.viewedAt,
+                            copy,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ContentCardStyle.body(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
 
   Widget _integratedHeaderSection(AppCopy copy) => LayoutBuilder(
     builder: (context, constraints) {
@@ -226,10 +321,15 @@ class _MobileMineContentState extends State<MobileMineContent> {
             left: -16,
             right: -16,
             height: imageHeight,
-            child: const DecoratedBox(
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFFFFF7EE), Color(0xFFFFE9D0)],
+                  colors: Theme.of(context).brightness == Brightness.dark
+                      ? [
+                          AppPalette.of(context).pageBackground,
+                          AppPalette.of(context).pageBackground,
+                        ]
+                      : const [Color(0xFFFFF7EE), Color(0xFFFFE9D0)],
                 ),
               ),
             ),
@@ -243,11 +343,16 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 stops: [0, 0.15, 1],
               ).createShader(bounds),
               blendMode: BlendMode.dstIn,
-              child: Image.asset(
-                '$_assetRoot/header_background_card.jpg',
-                width: imageWidth,
-                height: imageHeight,
-                fit: BoxFit.fill,
+              child: Opacity(
+                opacity: Theme.of(context).brightness == Brightness.dark
+                    ? .18
+                    : 1,
+                child: Image.asset(
+                  '$_assetRoot/header_background_card.jpg',
+                  width: imageWidth,
+                  height: imageHeight,
+                  fit: BoxFit.fill,
+                ),
               ),
             ),
           ),
@@ -299,10 +404,10 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 copy.localized('桌游伙伴', 'Board Game Buddy'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: _ink,
+                  fontWeight: FontWeight.w700,
+                  color: AppPalette.of(context).textPrimary,
                 ),
               ),
             ],
@@ -320,10 +425,13 @@ class _MobileMineContentState extends State<MobileMineContent> {
               ),
             ),
             if (widget.controller.unreadActivityCount > 0)
-              const Positioned(
+              Positioned(
                 right: 8,
                 top: 7,
-                child: CircleAvatar(radius: 4, backgroundColor: _orange),
+                child: CircleAvatar(
+                  radius: 4,
+                  backgroundColor: AppPalette.of(context).primary,
+                ),
               ),
           ],
         ),
@@ -339,7 +447,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
         clipper: clipper,
         child: Container(
           key: const ValueKey('mobile-mine-profile'),
-          color: Colors.white,
+          color: AppPalette.of(context).surface,
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
@@ -347,7 +455,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _avatarWithBadge(),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: UiTokens.itemGap),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -366,11 +474,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
                                       : _nickname,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w900,
-                                    color: _ink,
-                                  ),
+                                  style: ContentCardStyle.section(context),
                                 ),
                               ),
                               const Icon(
@@ -400,12 +504,14 @@ class _MobileMineContentState extends State<MobileMineContent> {
                                 height: 13,
                               ),
                               const SizedBox(width: 3),
-                              Text(
-                                copy.localized('桌游伙伴', 'Player'),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF8B5A2E),
+                              Flexible(
+                                child: Text(
+                                  copy.localized('桌游伙伴', 'Player'),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF8B5A2E),
+                                  ),
                                 ),
                               ),
                             ],
@@ -440,7 +546,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
                   child: Text(
                     copy.localized('编辑资料', 'Edit'),
                     style: const TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -451,7 +557,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 children: [
                   _stat(
                     '${widget.controller.favoriteCount}',
-                    copy.localized('收藏游戏', 'Liked games'),
+                    copy.localized('我的喜欢', 'Liked games'),
                     onTap: widget.onFavorites,
                   ),
                   _statDivider(),
@@ -509,7 +615,10 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 colors: [Color(0xFFFFC654), Color(0xFFFFA21E)],
               ),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.8),
+              border: Border.all(
+                color: AppPalette.of(context).surface,
+                width: 1.8,
+              ),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x24000000),
@@ -541,10 +650,10 @@ class _MobileMineContentState extends State<MobileMineContent> {
         children: [
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 19.5,
-              fontWeight: FontWeight.w900,
-              color: _ink,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.of(context).textPrimary,
               height: 1.1,
             ),
           ),
@@ -553,10 +662,10 @@ class _MobileMineContentState extends State<MobileMineContent> {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10.5,
+            style: TextStyle(
+              fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: _muted,
+              color: AppPalette.of(context).textSecondary,
             ),
           ),
         ],
@@ -565,112 +674,55 @@ class _MobileMineContentState extends State<MobileMineContent> {
   );
 
   Widget _shortcuts(AppCopy copy) {
-    final entries = <(String, IconData, String, Color, VoidCallback)>[
+    final palette = AppPalette.of(context);
+    final entries = <(IconData, String, VoidCallback)>[
       (
-        'heart_icon.png',
         Icons.favorite_rounded,
-        copy.localized('我的收藏', 'My likes'),
-        const Color(0xFFFFEDF0),
+        copy.localized('我的喜欢', 'My likes'),
         widget.onFavorites,
       ),
       (
-        'recent_play_gamepad_icon.png',
-        Icons.sports_esports_rounded,
+        Icons.history_rounded,
         copy.localized('最近浏览', 'Recent'),
-        const Color(0xFFFFEDE6),
         widget.onRecentAll,
       ),
     ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final gap = constraints.maxWidth < 340 ? 6.0 : 8.0;
-        final cardWidth =
-            (constraints.maxWidth - gap * (entries.length - 1)) /
-            entries.length;
-        final cardHeight = (cardWidth * 0.6).clamp(100.0, 112.0);
-        final iconSize = cardWidth < 180 ? 36.0 : 40.0;
-        final labelSize = cardWidth < 180 ? 13.0 : 14.0;
-        return Row(
-          children: [
-            for (var index = 0; index < entries.length; index++) ...[
-              if (index > 0) SizedBox(width: gap),
-              Expanded(
-                child: InkWell(
-                  key: ValueKey('mobile-mine-shortcut-$index'),
-                  onTap: entries[index].$5,
-                  borderRadius: BorderRadius.circular(18),
-                  child: SizedBox(
-                    height: cardHeight,
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0C7A452B),
-                            blurRadius: 10,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: entries[index].$4,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Image.asset(
-                              '$_assetRoot/${entries[index].$1}',
-                              width: iconSize,
-                              height: iconSize,
-                              errorBuilder: (_, _, _) => Icon(
-                                entries[index].$2,
-                                size: iconSize,
-                                color: _orange,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 2,
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      entries[index].$3,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: labelSize,
-                                        fontWeight: FontWeight.w800,
-                                        color: _ink,
-                                      ),
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.chevron_right_rounded,
-                                    size: labelSize + 2,
-                                    color: const Color(0xFF778297),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+    return Row(
+      children: [
+        for (var index = 0; index < entries.length; index++) ...[
+          if (index > 0) const SizedBox(width: UiTokens.itemGap),
+          Expanded(
+            child: Material(
+              color: palette.surfaceContainer,
+              borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                key: ValueKey('mobile-mine-shortcut-$index'),
+                onTap: entries[index].$3,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 22,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(entries[index].$1, size: 24, color: palette.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          entries[index].$2,
+                          maxLines: 2,
+                          style: ContentCardStyle.title(context),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ],
-        );
-      },
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -681,30 +733,23 @@ class _MobileMineContentState extends State<MobileMineContent> {
     VoidCallback? onAction,
   }) => Row(
     children: [
-      asset == null
-          ? const Icon(Icons.star_rounded, color: _orange, size: 25)
-          : Image.asset(asset, width: 25, height: 25),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w900,
-            color: _ink,
-          ),
-        ),
+      Icon(
+        asset == null ? Icons.grid_view_rounded : Icons.history_rounded,
+        size: 24,
+        color: AppPalette.of(context).primary,
       ),
+      const SizedBox(width: 8),
+      Expanded(child: Text(title, style: ContentCardStyle.section(context))),
       if (action != null)
         TextButton.icon(
           onPressed: onAction,
           style: TextButton.styleFrom(
-            foregroundColor: _muted,
+            foregroundColor: AppPalette.of(context).textSecondary,
             padding: EdgeInsets.zero,
           ),
           iconAlignment: IconAlignment.end,
           icon: const Icon(Icons.chevron_right_rounded, size: 16),
-          label: Text(action, style: const TextStyle(fontSize: 11)),
+          label: Text(action, style: ContentCardStyle.body(context)),
         ),
     ],
   );
@@ -713,7 +758,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
     height: 105,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.of(context).surface,
       borderRadius: BorderRadius.circular(16),
     ),
     child: TextButton(
@@ -724,56 +769,11 @@ class _MobileMineContentState extends State<MobileMineContent> {
     ),
   );
 
-  Widget _recentCard(GameInfo game, DateTime? viewedAt, AppCopy copy) =>
-      SizedBox(
-        width: 77,
-        child: InkWell(
-          onTap: () => widget.onOpenGame(game),
-          borderRadius: BorderRadius.circular(11),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 77,
-                  height: 88,
-                  child: MobileGameCover(
-                    controller: widget.controller,
-                    game: game,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                game.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: _ink,
-                ),
-              ),
-              Text(
-                _relativeTime(viewedAt, copy),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 9, color: _muted),
-              ),
-            ],
-          ),
-        ),
-      );
-
   String _relativeTime(DateTime? date, AppCopy copy) {
     if (date == null) return '-';
-    final days = DateTime.now().difference(date.toLocal()).inDays;
-    if (days < 1) return copy.localized('今天', 'Today');
-    if (days < 7) return copy.localized('$days 天前', '${days}d ago');
-    return copy.localized(
-      '${(days / 7).floor()} 周前',
-      '${(days / 7).floor()}w ago',
+    return ContentCardStyle.relativeDate(
+      date,
+      copy.localized('zh', 'en') == 'zh',
     );
   }
 
@@ -794,19 +794,19 @@ class _MobileMineContentState extends State<MobileMineContent> {
     ];
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFF4EBE5)),
+        color: AppPalette.of(context).surface,
+        borderRadius: BorderRadius.circular(UiTokens.groupRadius),
+        border: Border.all(color: AppPalette.of(context).outline),
       ),
       child: Column(
         children: [
           for (var index = 0; index < entries.length; index++) ...[
             if (index > 0)
-              const Divider(
+              Divider(
                 height: 1,
                 indent: 50,
                 endIndent: 15,
-                color: Color(0xFFF1EEF0),
+                color: AppPalette.of(context).outline,
               ),
             InkWell(
               key: ValueKey('mobile-mine-service-$index'),
@@ -821,33 +821,28 @@ class _MobileMineContentState extends State<MobileMineContent> {
                     Icon(
                       entries[index].$1,
                       size: 22,
-                      color: const Color(0xFF5B677D),
+                      color: AppPalette.of(context).primary,
                     ),
                     const SizedBox(width: 13),
-                    SizedBox(
-                      width: 83,
-                      child: Text(
-                        entries[index].$2,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: _ink,
-                        ),
-                      ),
-                    ),
                     Expanded(
-                      child: Text(
-                        entries[index].$3,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10, color: _muted),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            entries[index].$2,
+                            style: ContentCardStyle.title(context),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            entries[index].$3,
+                            style: ContentCardStyle.body(context),
+                          ),
+                        ],
                       ),
                     ),
-                    const Icon(
+                    Icon(
                       Icons.chevron_right_rounded,
-                      color: _muted,
+                      color: AppPalette.of(context).textSecondary,
                       size: 19,
                     ),
                   ],

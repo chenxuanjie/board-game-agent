@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_palette.dart';
+import 'ui_tokens.dart';
 
 class AppTheme {
   static ThemeData buildTheme(AppPalette palette) {
@@ -84,7 +85,7 @@ class AppTheme {
         titleLarge: TextStyle(
           fontFamily: 'Noto Sans SC',
           fontSize: 22,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
         titleMedium: TextStyle(
@@ -127,7 +128,7 @@ class AppTheme {
         titleTextStyle: TextStyle(
           fontFamily: 'Noto Sans SC',
           fontSize: 18,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
       ),
@@ -137,7 +138,7 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(UiTokens.cardRadius),
           side: BorderSide(color: palette.outline),
         ),
       ),
@@ -178,23 +179,23 @@ class AppTheme {
           vertical: 18,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           borderSide: BorderSide(color: palette.outline),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           borderSide: BorderSide(color: palette.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           borderSide: BorderSide(color: palette.focusRing, width: 1.6),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           borderSide: BorderSide(color: palette.error),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           borderSide: BorderSide(color: palette.error, width: 1.6),
         ),
       ),
@@ -217,13 +218,13 @@ class AppTheme {
         backgroundColor: palette.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(UiTokens.groupRadius),
           side: BorderSide(color: palette.outline),
         ),
         titleTextStyle: TextStyle(
           fontFamily: 'Noto Sans SC',
           fontSize: 18,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
         contentTextStyle: TextStyle(
@@ -249,20 +250,21 @@ class AppTheme {
           foregroundColor: palette.primary,
           textStyle: TextStyle(
             fontFamily: 'Noto Sans SC',
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: palette.primary,
+          minimumSize: const Size(48, 48),
           side: BorderSide(color: palette.primary),
           textStyle: TextStyle(
             fontFamily: 'Noto Sans SC',
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           ),
         ),
       ),
@@ -270,12 +272,13 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: palette.primary,
           foregroundColor: palette.onPrimary,
+          minimumSize: const Size(48, 48),
           textStyle: TextStyle(
             fontFamily: 'Noto Sans SC',
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(UiTokens.controlRadius),
           ),
         ),
       ),

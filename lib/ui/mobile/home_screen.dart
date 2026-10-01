@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../core/theme/app_palette.dart';
 
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
@@ -68,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final copy = widget.controller.copy;
     return Scaffold(
       key: const ValueKey('mobile-home-root'),
-      backgroundColor: const Color(0xFFFFFBF7),
+      backgroundColor: AppPalette.of(context).pageBackground,
       body: SafeArea(
         child: _tab == 0
             ? MobileHomeContent(
@@ -105,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
             : const SizedBox.shrink(),
       ),
       bottomNavigationBar: BottomNavigationBar(
+        elevation: 0,
         currentIndex: _tab,
         onTap: (index) {
           if (index == 2 &&
@@ -114,11 +116,11 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() => _tab = index);
         },
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: const Color(0xFFFF673F),
-        unselectedItemColor: const Color(0xFF777D8B),
-        selectedFontSize: 11,
-        unselectedFontSize: 11,
+        backgroundColor: AppPalette.of(context).surface,
+        selectedItemColor: AppPalette.of(context).primary,
+        unselectedItemColor: AppPalette.of(context).textSecondary,
+        selectedFontSize: 12,
+        unselectedFontSize: 12,
         items: [
           BottomNavigationBarItem(
             icon: const Icon(
