@@ -518,7 +518,20 @@ class _LibraryItemTile extends StatelessWidget {
                   color: palette.primary.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: palette.primary),
+                child: Tooltip(
+                  message: _formatLabel(),
+                  child: Icon(
+                    switch (resource.format) {
+                      DesktopLibraryResourceFormat.pdf =>
+                        Icons.picture_as_pdf_outlined,
+                      DesktopLibraryResourceFormat.image =>
+                        Icons.image_outlined,
+                      _ => icon,
+                    },
+                    size: 20,
+                    color: palette.primary,
+                  ),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -533,7 +546,7 @@ class _LibraryItemTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${_typeLabel()} · ${_languageLabel()} · ${_formatLabel()}',
+                      '${_typeLabel()} · ${_languageLabel()}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],

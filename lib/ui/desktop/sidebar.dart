@@ -132,25 +132,7 @@ class DesktopSidebar extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            Padding(
-                              padding: EdgeInsets.only(
-                                left: metrics.px(22),
-                                top: metrics.px(4),
-                                bottom: metrics.px(16),
-                              ),
-                              child: Text(
-                                copy.localized(
-                                  '发现更大的桌游世界',
-                                  'Discover more board games',
-                                ),
-                                style: TextStyle(
-                                  color: DesktopColors.secondaryText,
-                                  fontSize: metrics.font(
-                                    copy.isChinese ? 13 : 11,
-                                  ),
-                                ),
-                              ),
-                            ),
+                            SizedBox(height: metrics.px(16)),
                           ],
                         ),
                 ),

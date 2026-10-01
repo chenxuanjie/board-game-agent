@@ -268,26 +268,33 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            value(game.subtitle),
-                            style: TextStyle(
-                              color: Color(0xFFF2E7DF),
-                              fontSize: condensed ? 15 : 19,
-                              fontWeight: FontWeight.w600,
+                          if (game.subtitle.trim().isNotEmpty &&
+                              game.subtitle.trim() != game.title.trim()) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              value(game.subtitle),
+                              style: TextStyle(
+                                color: Color(0xFFF2E7DF),
+                                fontSize: condensed ? 15 : 19,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: condensed ? 8 : 13),
-                          Text(
-                            '“ ${value(game.heroTagline)} ”',
-                            maxLines: condensed ? 1 : 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: condensed ? 12.5 : 15,
-                              height: 1.45,
+                          ],
+                          if (game.heroTagline.trim().isNotEmpty &&
+                              game.heroTagline.trim() !=
+                                  game.summary.trim()) ...[
+                            SizedBox(height: condensed ? 8 : 13),
+                            Text(
+                              '“ ${value(game.heroTagline)} ”',
+                              maxLines: condensed ? 1 : 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: condensed ? 12.5 : 15,
+                                height: 1.45,
+                              ),
                             ),
-                          ),
+                          ],
                           SizedBox(height: condensed ? 10 : 16),
                           Row(
                             children: [
@@ -691,14 +698,20 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '规则资料',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '已接入主项目资料库，共 ${available.length} 份可阅读资料。',
-          style: const TextStyle(color: DesktopColors.secondaryText),
+        Row(
+          children: [
+            const Text(
+              '规则资料',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            if (available.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              Text(
+                '${available.length} 份',
+                style: const TextStyle(color: DesktopColors.secondaryText),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 12),
         for (final label in labels.take(5))

@@ -351,21 +351,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                   readOnly: !selectedPreset.isCustom,
                                   onChanged: _handleAiFieldChanged,
                                 ),
-                                if (_isCrossOriginWebUrl(
-                                  _urlController.text,
-                                )) ...<Widget>[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    copy.aiApiWebCorsHint,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: palette.textPrimary.withValues(
-                                            alpha: 0.72,
-                                          ),
-                                          height: 1.35,
-                                        ),
-                                  ),
-                                ],
                                 const SizedBox(height: 12),
                                 _ApiField(
                                   label: copy.aiApiKeyLabel,
@@ -409,21 +394,21 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                     }
                                   },
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  supportedReasoning.contains(
-                                        _selectedReasoningEffort,
-                                      )
-                                      ? '${copy.aiApiReasoningEffortHint} ${copy.aiApiReasoningRequestValue(_selectedReasoningEffort)}'
-                                      : copy.aiApiReasoningUnsupported,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: palette.textPrimary.withValues(
-                                          alpha: 0.68,
+                                if (!supportedReasoning.contains(
+                                  _selectedReasoningEffort,
+                                )) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    copy.aiApiReasoningUnsupported,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: palette.textPrimary.withValues(
+                                            alpha: 0.68,
+                                          ),
+                                          height: 1.35,
                                         ),
-                                        height: 1.35,
-                                      ),
-                                ),
+                                  ),
+                                ],
                                 const SizedBox(height: 14),
                                 _ApiDropdownField<AiResponseSpeed>(
                                   label: copy.aiApiResponseSpeedLabel,
@@ -438,26 +423,25 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                     }
                                   },
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  copy.aiApiResponseSpeedHint,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: palette.textPrimary.withValues(
-                                          alpha: 0.68,
-                                        ),
-                                        height: 1.35,
-                                      ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  copy.aiApiGenerationCompatibilityHint,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: palette.warning,
-                                        height: 1.35,
-                                      ),
-                                ),
+                                if (_selectedResponseSpeed ==
+                                    AiResponseSpeed.fast) ...[
+                                  const SizedBox(height: 6),
+                                  Tooltip(
+                                    message:
+                                        copy.aiApiGenerationCompatibilityHint,
+                                    child: Text(
+                                      copy.aiApiResponseSpeedHint,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: palette.textPrimary
+                                                .withValues(alpha: 0.68),
+                                            height: 1.35,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 14),
                                 Row(
                                   children: <Widget>[
@@ -514,6 +498,31 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                           ),
                                     ),
                                   ),
+                                  if (_lastTestSucceeded == false &&
+                                      RegExp(
+                                        r'cors|cross.origin|跨域|failed to fetch|xmlhttprequest',
+                                        caseSensitive: false,
+                                      ).hasMatch(_lastTestMessage!) &&
+                                      _isCrossOriginWebUrl(
+                                        _urlController.text,
+                                      )) ...[
+                                    const SizedBox(height: 8),
+                                    Tooltip(
+                                      message: copy.localized(
+                                        '请确认服务商允许浏览器跨域访问，或使用同源代理。',
+                                        'Check that your provider allows browser cross-origin requests, or use a same-origin proxy.',
+                                      ),
+                                      child: Text(
+                                        copy.localized(
+                                          '跨域访问可能受限 ⓘ',
+                                          'Cross-origin access may be restricted ⓘ',
+                                        ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ],
                             ),
@@ -1121,12 +1130,7 @@ class _ModelDiscoveryPanel extends StatelessWidget {
           ],
         );
       case AiModelLoadState.success:
-        status = Text(
-          copy.aiApiModelsLoaded(models.length),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: palette.textPrimary.withValues(alpha: 0.68),
-          ),
-        );
+        break;
       case AiModelLoadState.empty:
         status = Text(
           copy.aiApiModelsEmpty,

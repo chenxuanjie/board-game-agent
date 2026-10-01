@@ -69,7 +69,7 @@ class _SyncBackupCard extends StatelessWidget {
 
     return _SettingsCard(
       icon: Icons.cloud_outlined,
-      title: copy.localized('同步与备份', 'Sync & Backup'),
+      title: copy.localized('资料与同步', 'Resources & Sync'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -93,8 +93,8 @@ class _SyncBackupCard extends StatelessWidget {
                     SizedBox(height: _px(context, 3)),
                     Text(
                       copy.localized(
-                        '${sources.length} 个资料源；只用于游戏资源，不同步个人数据',
-                        '${sources.length} resource sources; game resources only, personal data is not synced',
+                        '${sources.length} 个资料源',
+                        '${sources.length} resource sources',
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -108,6 +108,20 @@ class _SyncBackupCard extends StatelessWidget {
                 ),
               ),
               SizedBox(width: _px(context, 8)),
+              Tooltip(
+                message: copy.localized(
+                  '资料源用于桌游资源；国庆投票使用 WebDAV 设置同步，其他个人数据不在此备份。',
+                  'Sources provide game resources. National Day votes use the WebDAV settings to sync; other personal data is not backed up here.',
+                ),
+                child: Padding(
+                  padding: EdgeInsets.only(right: _px(context, 8)),
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    size: _px(context, 18),
+                    color: DesktopColors.secondaryText,
+                  ),
+                ),
+              ),
               _StatusPill(label: stateLabel, color: stateColor),
             ],
           ),
@@ -253,49 +267,6 @@ class _AboutUpdatesCard extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-          SizedBox(height: _px(context, 8)),
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: _px(context, 11),
-              vertical: _px(context, 9),
-            ),
-            decoration: BoxDecoration(
-              color: DesktopColors.soft,
-              borderRadius: BorderRadius.circular(_px(context, 8)),
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  controller.checkForUpdates
-                      ? Icons.update_rounded
-                      : Icons.update_disabled_rounded,
-                  size: _px(context, 18),
-                  color: DesktopColors.orange,
-                ),
-                SizedBox(width: _px(context, 8)),
-                Expanded(
-                  child: Text(
-                    controller.checkForUpdates
-                        ? copy.localized(
-                            '启动检查已开启（更新源仅支持 Android APK）',
-                            'Startup checks are enabled (the update source supports Android APK only)',
-                          )
-                        : copy.localized(
-                            '启动检查已关闭',
-                            'Startup checks are disabled',
-                          ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: _font(context, 11.5),
-                      height: 1.25,
-                      color: DesktopColors.secondaryText,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
           SizedBox(height: _px(context, 11)),
           Row(

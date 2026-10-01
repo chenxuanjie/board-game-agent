@@ -314,17 +314,19 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                                   color: Color(0xFF5D2419),
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                copy.localized(
-                                  pages[index].$3,
-                                  'Discover your next favorite',
+                              if (index == 1) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  copy.localized(
+                                    pages[index].$3,
+                                    'Discover your next favorite',
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF945C45),
+                                  ),
                                 ),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF945C45),
-                                ),
-                              ),
+                              ],
                               const Spacer(),
                               FilledButton.icon(
                                 onPressed: index == 2

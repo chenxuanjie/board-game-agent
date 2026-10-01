@@ -545,7 +545,8 @@ class _SearchResultRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    if (game.subtitle.trim().isNotEmpty)
+                    if (game.subtitle.trim().isNotEmpty &&
+                        game.subtitle.trim() != game.title.trim())
                       Text(
                         game.subtitle,
                         maxLines: 1,

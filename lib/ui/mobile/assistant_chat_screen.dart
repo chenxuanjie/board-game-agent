@@ -488,11 +488,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                       copy.assistantContextTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      copy.assistantContextHint,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
                     const SizedBox(height: 12),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
@@ -501,7 +496,12 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         color: palette.primary,
                       ),
                       title: Text(copy.knowledgeOnlyLabel),
-                      subtitle: Text(copy.assistantKnowledgeHint),
+                      subtitle: Text(
+                        copy.localized(
+                          '仅依据当前桌游资料回答',
+                          'Answer only from current game sources',
+                        ),
+                      ),
                       value: !smartSupplement,
                       onChanged: (value) {
                         if (value) {
@@ -514,15 +514,21 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     ),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
-                      secondary: Icon(
-                        Icons.auto_awesome_rounded,
-                        color: palette.secondary,
+                      secondary: Tooltip(
+                        message: smartSupplement
+                            ? copy.smartSupplementSwitchHintOn
+                            : copy.smartSupplementSwitchHintOff,
+                        child: Icon(
+                          Icons.auto_awesome_rounded,
+                          color: palette.secondary,
+                        ),
                       ),
                       title: Text(copy.smartSupplementLabel),
                       subtitle: Text(
-                        smartSupplement
-                            ? copy.smartSupplementSwitchHintOn
-                            : copy.smartSupplementSwitchHintOff,
+                        copy.localized(
+                          '资料不足时补充回答',
+                          'Supplement answers when sources are insufficient',
+                        ),
                       ),
                       value: smartSupplement,
                       onChanged: (value) {
@@ -535,12 +541,20 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     if (_useGlobalMode)
                       SwitchListTile.adaptive(
                         contentPadding: EdgeInsets.zero,
-                        secondary: Icon(
-                          Icons.menu_book_rounded,
-                          color: palette.primary,
+                        secondary: Tooltip(
+                          message: copy.useCurrentGameKnowledgeHint,
+                          child: Icon(
+                            Icons.menu_book_rounded,
+                            color: palette.primary,
+                          ),
                         ),
                         title: Text(copy.useCurrentGameKnowledgeLabel),
-                        subtitle: Text(copy.useCurrentGameKnowledgeHint),
+                        subtitle: Text(
+                          copy.localized(
+                            '允许查阅当前选中的桌游',
+                            'Allow access to the selected game',
+                          ),
+                        ),
                         value: controller.globalUseCurrentGameKnowledge,
                         onChanged: controller.setGlobalUseCurrentGameKnowledge,
                       ),
@@ -551,11 +565,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         color: palette.primary,
                       ),
                       title: Text(copy.voiceReplySwitchLabel),
-                      subtitle: Text(
-                        controller.voiceReplyAvailable
-                            ? copy.voiceReplyHint
-                            : copy.voiceReplyUnavailable,
-                      ),
+                      subtitle: controller.voiceReplyAvailable
+                          ? null
+                          : Text(copy.voiceReplyUnavailable),
                       value: controller.voiceReplyEnabled,
                       onChanged: controller.voiceReplyAvailable
                           ? (value) {

@@ -180,7 +180,6 @@ class _MainColumn extends StatelessWidget {
             semanticsLabel: '热门桌游',
           ),
           title: '今日推荐',
-          subtitle: '已收录的桌游',
           onMore: () => onAction('游戏库'),
         ),
         SizedBox(height: metrics.px(10)),
@@ -524,7 +523,6 @@ class _SectionHeader extends StatelessWidget {
   final IconData? icon;
   final Color? iconColor;
   final String title;
-  final String? subtitle;
   final VoidCallback onMore;
   final FontWeight titleWeight;
   final double? titleScaleCap;
@@ -535,7 +533,6 @@ class _SectionHeader extends StatelessWidget {
     this.icon,
     this.iconColor,
     required this.title,
-    this.subtitle,
     required this.onMore,
     this.titleWeight = FontWeight.w800,
     this.titleScaleCap,
@@ -563,20 +560,7 @@ class _SectionHeader extends StatelessWidget {
             title,
             style: TextStyle(fontSize: titleSize, fontWeight: titleWeight),
           ),
-          if (subtitle != null) ...[
-            SizedBox(width: metrics.px(12)),
-            Expanded(
-              child: Text(
-                subtitle!,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: metrics.font(12),
-                  color: DesktopColors.secondaryText,
-                ),
-              ),
-            ),
-          ] else
-            const Spacer(),
+          const Spacer(),
           _TextLink(label: '查看更多', onTap: onMore),
         ],
       ),

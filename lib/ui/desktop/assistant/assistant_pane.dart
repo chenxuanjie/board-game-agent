@@ -79,9 +79,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
             orElse: () => controller.featuredGame,
           );
     final String assistantTitle = selectedConversation.title;
-    final String messageSummary = controller.copy.desktopAssistantMessages(
-      messages.length,
-    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool narrow = constraints.maxWidth < 760;
@@ -125,22 +122,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                             controller: controller,
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: <Widget>[
-                            _AssistantStatusDot(color: palette.success),
-                            const SizedBox(width: 5),
-                            Flexible(
-                              child: Text(
-                                messageSummary,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: palette.textSecondary),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),
@@ -148,11 +129,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                       (!useGlobalMode ||
                           controller.globalUseCurrentGameKnowledge)) ...[
                     _AssistantStatusLabel(label: game.title, palette: palette),
-                    const SizedBox(width: 14),
-                    _AssistantStatusLabel(
-                      label: controller.copy.desktopRulebookCached,
-                      palette: palette,
-                    ),
                     const SizedBox(width: 7),
                   ],
                   if (narrow)

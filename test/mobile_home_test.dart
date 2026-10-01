@@ -309,6 +309,8 @@ void main() {
       );
       expect(find.text('我的服务'), findsOneWidget);
       expect(find.text('我的桌游'), findsNothing);
+      expect(find.text('活动、评论、系统消息等'), findsOneWidget);
+      expect(find.text('语言、偏好设置'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
@@ -444,6 +446,19 @@ void main() {
       AiResponseSpeed.standard,
       AiResponseSpeed.fast,
     ]);
+    expect(find.text(controller.copy.aiApiResponseSpeedHint), findsNothing);
+    expect(find.textContaining('请求值：'), findsNothing);
+    final speedField = find.byType(DropdownButton<AiResponseSpeed>);
+    await tester.ensureVisible(speedField);
+    await tester.tap(speedField);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .text(controller.copy.aiApiResponseSpeedName(AiResponseSpeed.fast))
+          .last,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(controller.copy.aiApiResponseSpeedHint), findsOneWidget);
 
     final aboutEntry = find.byKey(const ValueKey('mobile-settings-about'));
     await tester.ensureVisible(aboutEntry);

@@ -131,6 +131,7 @@ class AiRunActivity extends StatelessWidget {
         completedTitle: meta.completedTitle,
         failedTitle: meta.failedTitle,
         detail: meta.runningDetail,
+        defaultDetail: meta.runningDetail,
         icon: meta.icon,
       );
       byKey[key] = step;
@@ -1051,6 +1052,7 @@ class _ActivityStep {
     required this.failedTitle,
     required this.detail,
     required this.icon,
+    this.defaultDetail,
   });
 
   final String key;
@@ -1059,6 +1061,7 @@ class _ActivityStep {
   final String failedTitle;
   final IconData icon;
   String detail;
+  final String? defaultDetail;
   String? expandedDetail;
   bool connectionActivity = false;
   _ActivityStepStatus? connectionStatus;
@@ -1186,7 +1189,9 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
     final bool running =
         widget.isRunning && step.status == _ActivityStepStatus.running;
     final bool failed = step.status == _ActivityStepStatus.failed;
+    final bool genericDetail = !failed && step.detail == step.defaultDetail;
     final bool hasDetails =
+        genericDetail ||
         step.detailLines.isNotEmpty ||
         (step.expandedDetail?.trim().isNotEmpty ?? false);
     final ThemeData theme = Theme.of(context);
@@ -1246,7 +1251,7 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
             fontWeight: FontWeight.w700,
           ),
         ),
-        subtitle: step.detail.trim().isEmpty
+        subtitle: step.detail.trim().isEmpty || genericDetail
             ? null
             : Text(
                 step.detail,
@@ -1280,9 +1285,13 @@ class _ActivityStepTileState extends State<_ActivityStepTile> {
               lines: step.expandedDetail?.trim().isNotEmpty ?? false
                   ? <String>[
                       ...step.detailLines,
+                      if (genericDetail) step.detail,
                       ...step.expandedDetail!.split('\n'),
                     ]
-                  : step.detailLines,
+                  : <String>[
+                      if (genericDetail) step.detail,
+                      ...step.detailLines,
+                    ],
               palette: palette,
             ),
         ],

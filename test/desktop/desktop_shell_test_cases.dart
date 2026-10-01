@@ -79,7 +79,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('AI 服务'), findsOneWidget);
       expect(find.text('外观与主题'), findsOneWidget);
       expect(find.text('通知设置'), findsNothing);
-      expect(find.text('同步与备份'), findsOneWidget);
+      expect(find.text('资料与同步'), findsOneWidget);
       expect(find.text('关于与更新'), findsOneWidget);
       final Finder settingsPane = find.byType(DesktopSettingsPane);
       final int columns = DesktopResponsive.settingsColumnsFor(
@@ -89,7 +89,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
         '通用',
         'AI 服务',
         '外观与主题',
-        '同步与备份',
+        '资料与同步',
         '关于与更新',
       ];
       for (int start = 0; start < cardTitles.length; start += columns) {

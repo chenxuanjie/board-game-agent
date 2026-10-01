@@ -167,11 +167,15 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text(
-                            game.subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          subtitle:
+                              game.subtitle.trim().isEmpty ||
+                                  game.subtitle.trim() == game.title.trim()
+                              ? null
+                              : Text(
+                                  game.subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                           trailing: const Icon(Icons.chevron_right_rounded),
                         );
                       },

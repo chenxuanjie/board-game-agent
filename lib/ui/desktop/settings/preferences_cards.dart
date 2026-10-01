@@ -86,7 +86,7 @@ class _GeneralCard extends StatelessWidget {
             key: const ValueKey<String>('desktop-settings-voice-reply'),
             title: copy.localized('语音朗读', 'Voice output'),
             subtitle: controller.voiceReplyAvailable
-                ? copy.localized('可按设备能力启用', 'Available on this device')
+                ? ''
                 : copy.localized('当前设备不可用', 'Unavailable on this device'),
             value: controller.voiceReplyEnabled,
             onChanged: !saving && controller.voiceReplyAvailable

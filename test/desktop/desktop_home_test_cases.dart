@@ -21,6 +21,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     }
     expect(find.text('快速查规则'), findsNothing);
     expect(find.text('桌游问题随时问'), findsNothing);
+    expect(find.text('个人中心'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

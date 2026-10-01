@@ -56,9 +56,8 @@ class AppCopy {
   }
 
   String get aiApiResponseSpeedLabel => isChinese ? '服务等级' : 'Service tier';
-  String get aiApiResponseSpeedHint => isChinese
-      ? 'Fast 会发送 service_tier=fast，可能额外计费；是否生效由服务商决定。'
-      : 'Fast sends service_tier=fast, may cost more, and depends on provider support.';
+  String get aiApiResponseSpeedHint =>
+      isChinese ? 'Fast 可能额外计费' : 'Fast may cost more';
   String aiApiReasoningEffortName(AiReasoningEffort value) {
     switch (value) {
       case AiReasoningEffort.automatic:
@@ -100,9 +99,8 @@ class AppCopy {
   String get aiApiReasoningUnsupported => isChinese
       ? '当前模型不支持所选推理强度，请重新选择'
       : 'This model does not support the selected reasoning effort';
-  String get aiApiModelsNotLoaded => isChinese
-      ? '点击“测试并保存配置”，从 /models 获取可用模型'
-      : 'Click “Test and save config” to load models from /models';
+  String get aiApiModelsNotLoaded =>
+      isChinese ? '测试并保存配置以获取模型' : 'Test and save config to load models';
   String get aiApiModelsLoading => isChinese ? '正在加载模型列表…' : 'Loading models…';
   String aiApiModelsLoaded(int count) =>
       isChinese ? '已加载 $count 个模型' : '$count models loaded';

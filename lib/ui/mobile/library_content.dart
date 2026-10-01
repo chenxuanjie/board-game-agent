@@ -120,14 +120,6 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                             color: _ink,
                           ),
                         ),
-                        Text(
-                          copy.localized(
-                            '好游戏 · 好伙伴 · 好时光',
-                            'Good games · Better people',
-                          ),
-                          maxLines: 1,
-                          style: const TextStyle(fontSize: 10, color: _orange),
-                        ),
                       ],
                     ),
                   ),

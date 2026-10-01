@@ -256,6 +256,6 @@ class _RuleMaterial {
     final source = official
         ? (zh ? '官方原件' : 'Official source')
         : (zh ? '整理资料' : 'Prepared material');
-    return '$languageLabel · $source · ${path.toLowerCase().endsWith('.pdf') ? 'PDF' : 'Markdown'}';
+    return '$languageLabel · $source';
   }
 }

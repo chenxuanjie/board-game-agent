@@ -305,12 +305,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
                   color: _ink,
                 ),
               ),
-              Text(
-                copy.localized('好游戏 · 好伙伴 · 好时光', 'Good games · Better people'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, color: Color(0xFF9E7259)),
-              ),
             ],
           ),
         ),

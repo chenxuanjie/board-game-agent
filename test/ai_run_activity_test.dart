@@ -74,6 +74,11 @@ void main() {
     expect(find.text('实时运行'), findsNothing);
     expect(find.text('连接过程'), findsNothing);
     expect(find.text('正在重连'), findsNothing);
+    await tester.tap(find.text('正在查阅官方规则'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('正在查阅官方规则'), findsOneWidget);
+    expect(find.text('从当前桌游资料中查找依据'), findsNothing);
   });
 
   testWidgets('does not show a reconnect card for a healthy response stream', (

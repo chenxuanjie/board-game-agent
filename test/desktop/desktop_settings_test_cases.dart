@@ -497,18 +497,18 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await tester.tap(find.text('English').last);
     for (int attempt = 0; attempt < 30; attempt++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('App preferences and services').evaluate().isNotEmpty) {
+      if (find.text('General').evaluate().isNotEmpty) {
         break;
       }
     }
 
     expect(context.controller.language, AppLanguage.en);
-    expect(find.text('App preferences and services'), findsOneWidget);
+    expect(find.text('App preferences and services'), findsNothing);
     expect(find.text('General'), findsOneWidget);
     expect(find.text('AI Service'), findsOneWidget);
     expect(find.text('Appearance & Theme'), findsOneWidget);
     expect(find.text('Notification Settings'), findsNothing);
-    expect(find.text('Sync & Backup'), findsOneWidget);
+    expect(find.text('Resources & Sync'), findsOneWidget);
     expect(find.text('About & Updates'), findsOneWidget);
     expect(find.text('应用偏好与服务'), findsNothing);
     expect(find.text('通知设置'), findsNothing);

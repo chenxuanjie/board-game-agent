@@ -276,7 +276,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                             color: _ink,
                                           ),
                                         ),
-                                        if (game.subtitle.trim().isNotEmpty)
+                                        if (game.subtitle.trim().isNotEmpty &&
+                                            game.subtitle.trim() !=
+                                                game.title.trim())
                                           TextSpan(
                                             text: '  ${game.subtitle}',
                                             style: const TextStyle(
@@ -332,7 +334,8 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                               ),
                             ),
                             const SizedBox(height: 14),
-                            if (game.heroTagline.trim().isNotEmpty)
+                            if (game.heroTagline.trim().isNotEmpty &&
+                                game.heroTagline.trim() != game.summary.trim())
                               Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(15),

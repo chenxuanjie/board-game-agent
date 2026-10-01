@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import '../../app/state/app_controller.dart';
@@ -322,7 +321,6 @@ class _DesktopGameHoverPreview extends StatelessWidget {
         ? game.bannerAssetPath
         : game.coverAssetPath;
     final String title = _previewTitle(game);
-    final String status = _rulebookStatus(controller, game);
     final String playTime = GameMetadataText.playTime(game.playTime);
     final String complexity = game.complexity.trim().isNotEmpty
         ? game.complexity
@@ -418,16 +416,6 @@ class _DesktopGameHoverPreview extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        status,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF66C0F4),
-                          fontSize: 11,
-                        ),
-                      ),
                       const SizedBox(height: 12),
                       const Divider(height: 1, color: Color(0x14FFFFFF)),
                       const SizedBox(height: 10),
@@ -505,27 +493,6 @@ class _DesktopGameHoverPreview extends StatelessWidget {
     final String edition = game.editionLabel?.trim() ?? '';
     if (edition.isEmpty || title.contains(edition)) return '《$title》';
     return '《$title：$edition》';
-  }
-
-  static String _rulebookStatus(AppController controller, GameInfo game) {
-    final List<DesktopLibraryResource> rulebooks = controller.libraryResources
-        .where(
-          (DesktopLibraryResource resource) =>
-              resource.gameSlug == game.slug &&
-              resource.type == DesktopLibraryResourceType.rulebook,
-        )
-        .toList(growable: false);
-    if (rulebooks.any(
-      (DesktopLibraryResource resource) =>
-          resource.canOpen && !resource.isRemote,
-    )) {
-      return '规则手册已缓存 · 离线可用';
-    }
-    if (rulebooks.any((DesktopLibraryResource resource) => resource.canOpen)) {
-      return '规则手册已同步 · 可直接打开';
-    }
-    if (rulebooks.isNotEmpty) return '规则手册已登记 · 待同步';
-    return '规则资料待补充';
   }
 }
 

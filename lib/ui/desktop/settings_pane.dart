@@ -495,17 +495,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                               color: DesktopColors.text,
                             ),
                           ),
-                          SizedBox(height: metrics.px(5)),
-                          Text(
-                            widget.controller.copy.localized(
-                              '应用偏好与服务',
-                              'App preferences and services',
-                            ),
-                            style: TextStyle(
-                              fontSize: metrics.font(13),
-                              color: DesktopColors.secondaryText,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -628,16 +617,18 @@ class _SettingSwitchRow extends StatelessWidget {
                 color: DesktopColors.text,
               ),
             ),
-            SizedBox(height: _px(context, 2)),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: _font(context, 11),
-                color: DesktopColors.secondaryText,
+            if (subtitle.isNotEmpty) ...[
+              SizedBox(height: _px(context, 2)),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: _font(context, 11),
+                  color: DesktopColors.secondaryText,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
