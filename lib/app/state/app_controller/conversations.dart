@@ -14,7 +14,9 @@ extension AppConversationController on AppController {
     final String id = useGlobalMode
         ? _globalConversationKey
         : _conversationKeyForGameId(game.id);
-    final String title = useGlobalMode ? copy.globalAiTitle : '${game.title}助手';
+    final String title = useGlobalMode
+        ? copy.globalAiTitle
+        : copy.gameAiTitle(game.title);
     final AiConversation? existing = _conversations[id];
     if (existing != null) {
       if (existing.title != title ||
@@ -58,6 +60,12 @@ extension AppConversationController on AppController {
     for (final MapEntry<String, AiConversation> entry
         in _conversations.entries.toList()) {
       final AiConversation conversation = entry.value;
+      if (conversation.id.startsWith('conversation:')) {
+        if (!conversation.hasUserMessages) {
+          conversation.title = copy.newConversation;
+        }
+        continue;
+      }
       if (conversation.isGlobal) {
         if (conversation.title != copy.globalAiTitle) {
           _conversations[entry.key] = conversation.copyWith(
@@ -79,7 +87,7 @@ extension AppConversationController on AppController {
       if (game == null) {
         continue;
       }
-      final String title = '${game.title}助手';
+      final String title = copy.gameAiTitle(game.title);
       if (conversation.title != title) {
         _conversations[entry.key] = conversation.copyWith(title: title);
       }
@@ -108,9 +116,7 @@ extension AppConversationController on AppController {
   static const int _maxMessagesPerConversation = 100;
 
   String _conversationKeyForContext({required bool useGlobalMode}) {
-    return useGlobalMode
-        ? _globalConversationKey
-        : _conversationKeyForGameId(selectedGame.id);
+    return _conversationIdForContext(useGlobalMode: useGlobalMode);
   }
 
   _ChatGenerationState _generationStateForContext({
@@ -163,6 +169,12 @@ extension AppConversationController on AppController {
   }
 
   String _conversationIdForContext({required bool useGlobalMode}) {
+    final selected = _conversations[_selectedConversationId];
+    if (selected != null &&
+        selected.isGlobal == useGlobalMode &&
+        (useGlobalMode || selected.gameId == selectedGame.id)) {
+      return selected.id;
+    }
     return useGlobalMode
         ? _globalConversationKey
         : _conversationKeyForGameId(selectedGame.id);
@@ -213,6 +225,18 @@ extension AppConversationController on AppController {
     // Replacing the model here would detach an in-flight streaming request
     // from the list that the UI and persistence queue are observing.
     conversation.updatedAt = DateTime.now();
+    if (conversation.id.startsWith('conversation:')) {
+      final question = conversation.messages
+          .where((message) => message.role == ChatRole.user)
+          .firstOrNull;
+      if (question != null) {
+        conversation.title = String.fromCharCodes(
+          question.text.replaceAll(RegExp(r'\s+'), ' ').trim().runes.take(64),
+        );
+      } else {
+        conversation.title = copy.newConversation;
+      }
+    }
   }
 
   void _queueSelectedConversationSave(String conversationId) {
@@ -237,12 +261,12 @@ extension AppConversationController on AppController {
 
   Future<void> _restoreConversations() async {
     try {
-      final File file = await _conversationStoreFile();
-      if (!await file.exists()) {
+      final stored = await _conversationStore.load();
+      if (stored == null) {
         return;
       }
       final Map<String, dynamic> json =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+          jsonDecode(stored) as Map<String, dynamic>;
       final Map<String, dynamic> conversations =
           json['conversations'] as Map<String, dynamic>? ?? <String, dynamic>{};
 
@@ -285,9 +309,8 @@ extension AppConversationController on AppController {
     }
   }
 
-  Future<void> _persistConversations() async {
+  Future<void> _persistConversations({bool throwOnError = false}) async {
     try {
-      final File file = await _conversationStoreFile();
       final Map<String, dynamic> payload = <String, dynamic>{
         'version': _conversationStoreVersion,
         'savedAt': DateTime.now().toIso8601String(),
@@ -298,19 +321,12 @@ extension AppConversationController on AppController {
             entry.key: entry.value.toMap(),
         },
       };
-      await file.parent.create(recursive: true);
-      await file.writeAsString(jsonEncode(payload), flush: true);
+      await _conversationStore.save(jsonEncode(payload));
     } catch (error, stackTrace) {
       debugPrint('[chat] persist conversations failed: $error');
       debugPrint('$stackTrace');
+      if (throwOnError) rethrow;
     }
-  }
-
-  Future<File> _conversationStoreFile() async {
-    final Directory support = await getApplicationSupportDirectory();
-    return File(
-      '${support.path}${Platform.pathSeparator}chat_conversations.json',
-    );
   }
 
   AiConversation? _conversationFromStoredEntry(String id, Object? raw) {
@@ -357,7 +373,7 @@ extension AppConversationController on AppController {
           ? copy.globalAiTitle
           : game == null
           ? '规则问答'
-          : '${game.title}助手',
+          : copy.gameAiTitle(game.title),
       scope: global ? AiConversationScope.global : AiConversationScope.game,
       gameId: game?.id ?? (global ? null : id.replaceFirst('game:', '')),
       createdAt: messages.isEmpty ? now : messages.first.timestamp,

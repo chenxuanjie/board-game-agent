@@ -80,6 +80,16 @@ class AiModelPolicy {
     ];
   }
 
+  /// Picker choices omit protocol defaults while retaining them for stored configs.
+  static List<AiReasoningEffort>? selectableReasoningEfforts(String modelId) =>
+      reasoningEfforts(modelId)
+          ?.where(
+            (effort) =>
+                effort != AiReasoningEffort.automatic &&
+                effort != AiReasoningEffort.none,
+          )
+          .toList(growable: false);
+
   static bool allowsModel(String modelId) => reasoningEfforts(modelId) != null;
 
   static AiModelResolution resolve(AiApiConfig config) {

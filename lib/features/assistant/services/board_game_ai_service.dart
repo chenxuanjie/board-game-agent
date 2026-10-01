@@ -27,7 +27,7 @@ import 'responses_rules_workflow.dart';
 /// Provider transport is delegated to [AiClient]. This service owns only the
 /// board-game workflow: retrieve local rules, answer from evidence first, and
 /// optionally fall back to general advice.
-class BoardGameAiService implements AiService {
+class BoardGameAiService implements AiService, AiConversationContextReset {
   static const int _maxKnowledgeCharsForDirectFallback = 12000;
   static const int _maxConversationMessages = 12;
 
@@ -58,6 +58,19 @@ class BoardGameAiService implements AiService {
   final BoardGameQuestionClassifier _questionClassifier;
 
   @override
+  Future<void> resetConversationContext({
+    required String conversationId,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) async {
+    await _responsesWorkflow?.clearConversationContext(
+      conversationId: conversationId,
+      game: game,
+      useGlobalMode: useGlobalMode,
+    );
+  }
+
+  @override
   Future<BoardGameAiAnswer> generateReply({
     required String prompt,
     required AppLanguage language,
@@ -68,6 +81,7 @@ class BoardGameAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
   }) async {
     _resolveAllowedModel(config);
@@ -82,6 +96,7 @@ class BoardGameAiService implements AiService {
         assetSourceConfigs: assetSourceConfigs,
         remoteAssetService: remoteAssetService,
         conversationHistory: conversationHistory,
+        conversationId: conversationId,
         useCurrentGameKnowledge: useCurrentGameKnowledge,
       );
     }
@@ -181,6 +196,7 @@ class BoardGameAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {
@@ -196,6 +212,7 @@ class BoardGameAiService implements AiService {
         assetSourceConfigs: assetSourceConfigs,
         remoteAssetService: remoteAssetService,
         conversationHistory: conversationHistory,
+        conversationId: conversationId,
         useCurrentGameKnowledge: useCurrentGameKnowledge,
         abortTrigger: abortTrigger,
       );

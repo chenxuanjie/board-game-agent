@@ -113,7 +113,8 @@ class _DesktopModelAndReasoningSelectorState
         ? _desktopModelLabel(widget.controller, model)
         : copy.desktopModel;
     final String effortLabel =
-        AiModelPolicy.reasoningEfforts(model)?.contains(effort) == true
+        AiModelPolicy.selectableReasoningEfforts(model)?.contains(effort) ==
+            true
         ? copy.aiApiReasoningEffortName(effort)
         : copy.aiApiReasoningEffortLabel;
     return Semantics(
@@ -629,9 +630,8 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
     final String model = widget.controller.aiApiConfig.model.trim();
     final AiReasoningEffort selected =
         widget.controller.aiApiConfig.reasoningEffort;
-    final List<AiReasoningEffort>? options = AiModelPolicy.reasoningEfforts(
-      model,
-    );
+    final List<AiReasoningEffort>? options =
+        AiModelPolicy.selectableReasoningEfforts(model);
     return SingleChildScrollView(
       key: const ValueKey<String>('desktop-model-picker-reasoning-page'),
       padding: const EdgeInsets.fromLTRB(17, 11, 17, 17),
@@ -650,8 +650,8 @@ class _DesktopModelPickerPanelState extends State<_DesktopModelPickerPanel> {
           const SizedBox(height: 5),
           Text(
             copy.localized(
-              '仅显示可用强度；自动不会发送强度参数',
-              'Supported efforts only; Automatic omits the parameter',
+              '仅显示模型支持的推理强度',
+              'Only efforts supported by the model are shown',
             ),
             style: Theme.of(
               context,

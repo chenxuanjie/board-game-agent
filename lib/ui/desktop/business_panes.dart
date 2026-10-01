@@ -23,6 +23,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
 import '../shared/assistant/ai_run_activity.dart';
 import '../shared/assistant/assistant_feature_chip.dart';
+import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
 import '../shared/documents/markdown_document_screen.dart';
 import '../shared/documents/pdf_document_screen.dart';

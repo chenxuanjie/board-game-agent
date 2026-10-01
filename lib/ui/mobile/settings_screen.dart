@@ -35,7 +35,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   late _AiPresetOption _selectedPreset;
   String? _selectedModel;
   AiReasoningEffort _selectedReasoningEffort = AiReasoningEffort.automatic;
-  AiResponseSpeed _selectedResponseSpeed = AiResponseSpeed.automatic;
+  AiResponseSpeed _selectedResponseSpeed = AiResponseSpeed.standard;
   bool _isTesting = false;
   bool _isTestingAssets = false;
   String? _lastTestMessage;
@@ -81,6 +81,9 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
         final List<AiReasoningEffort> supportedReasoning =
             AiModelPolicy.reasoningEfforts(_selectedModel ?? '') ??
             const <AiReasoningEffort>[AiReasoningEffort.automatic];
+        final List<AiReasoningEffort> visibleReasoning =
+            AiModelPolicy.selectableReasoningEfforts(_selectedModel ?? '') ??
+            const [];
         final List<_AiPresetOption> presetOptions = _presetOptions(controller);
         final _AiPresetOption selectedPreset = _presetForId(
           presetOptions,
@@ -394,14 +397,9 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 const SizedBox(height: 14),
                                 _ApiDropdownField<AiReasoningEffort>(
                                   label: copy.aiApiReasoningEffortLabel,
+                                  placeholder: copy.aiApiReasoningSelectHint,
                                   value: _selectedReasoningEffort,
-                                  values: <AiReasoningEffort>[
-                                    if (!supportedReasoning.contains(
-                                      _selectedReasoningEffort,
-                                    ))
-                                      _selectedReasoningEffort,
-                                    ...supportedReasoning,
-                                  ],
+                                  values: visibleReasoning,
                                   itemLabel: copy.aiApiReasoningEffortName,
                                   onChanged: (AiReasoningEffort? value) {
                                     if (value != null) {
@@ -430,7 +428,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 _ApiDropdownField<AiResponseSpeed>(
                                   label: copy.aiApiResponseSpeedLabel,
                                   value: _selectedResponseSpeed,
-                                  values: AiResponseSpeed.values,
+                                  values: AiResponseSpeed.selectableValues,
                                   itemLabel: copy.aiApiResponseSpeedName,
                                   onChanged: (AiResponseSpeed? value) {
                                     if (value != null) {
@@ -1236,6 +1234,7 @@ class _ApiField extends StatelessWidget {
 class _ApiDropdownField<T> extends StatelessWidget {
   const _ApiDropdownField({
     required this.label,
+    this.placeholder,
     required this.value,
     required this.values,
     required this.itemLabel,
@@ -1243,6 +1242,7 @@ class _ApiDropdownField<T> extends StatelessWidget {
   });
 
   final String label;
+  final String? placeholder;
   final T value;
   final List<T> values;
   final String Function(T value) itemLabel;
@@ -1265,7 +1265,8 @@ class _ApiDropdownField<T> extends StatelessWidget {
           decoration: _settingsInputDecoration(context),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<T>(
-              value: value,
+              value: values.contains(value) ? value : null,
+              hint: Text(placeholder ?? label),
               isExpanded: true,
               onChanged: onChanged,
               items: values

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:app_ai_client/app_ai_client.dart';
@@ -185,7 +186,7 @@ class _FakeResponsesClient implements ResponsesAiClient {
 
   final List<ResponsesResponse> responses;
   final List<List<ResponsesStreamEvent>> streams;
-  final ResponsesResponse Function(
+  final FutureOr<ResponsesResponse> Function(
     ResponsesRequest request,
     List<ResponsesResponse> responses,
   )?

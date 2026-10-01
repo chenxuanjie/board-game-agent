@@ -67,12 +67,14 @@ class ResponsesRulesWorkflow {
       <String, List<ResponsesInputItem>>{};
   final Map<String, String> _activeCompactionContextByScope =
       <String, String>{};
+  final Map<String, int> _compactionEpochByScope = <String, int>{};
   Future<void>? _compactionLoadFuture;
   bool _compactionLoaded = false;
 
   void close() {
     _compactionInputsByContext.clear();
     _activeCompactionContextByScope.clear();
+    _compactionEpochByScope.clear();
     _responsesClient.close();
   }
 
@@ -95,6 +97,7 @@ class ResponsesRulesWorkflow {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
   }) async {
     await _ensureCompactionLoaded();
@@ -107,6 +110,7 @@ class ResponsesRulesWorkflow {
       assetSourceConfigs: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
+      conversationId: conversationId,
       useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
 
@@ -170,6 +174,7 @@ class ResponsesRulesWorkflow {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {
@@ -183,6 +188,7 @@ class ResponsesRulesWorkflow {
       assetSourceConfigs: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversationHistory: conversationHistory,
+      conversationId: conversationId,
       useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
 
@@ -261,23 +267,29 @@ class ResponsesRulesWorkflow {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     required bool useCurrentGameKnowledge,
   }) async {
     final String contextKey = _contextKey(
       config: config,
       game: game,
       useGlobalMode: useGlobalMode,
+      conversationId: conversationId,
       useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
+    final String scope = _scopeKey(game, useGlobalMode, conversationId);
+    final int compactionEpoch = _compactionEpochByScope[scope] ?? 0;
     await _activateCompactionContext(
       contextKey: contextKey,
       game: game,
       useGlobalMode: useGlobalMode,
+      conversationId: conversationId,
     );
     final List<ResponsesInputItem> compaction = _compactionInputsFor(
       config: config,
       game: game,
       useGlobalMode: useGlobalMode,
+      conversationId: conversationId,
       useCurrentGameKnowledge: useCurrentGameKnowledge,
     );
     // A provider compaction item is a replacement snapshot, not an extra
@@ -286,7 +298,7 @@ class ResponsesRulesWorkflow {
     final List<ResponsesInputItem> conversation = compaction.isNotEmpty
         ? <ResponsesInputItem>[...compaction, ResponsesTextInput(prompt)]
         : _conversationInputs(conversationHistory, prompt);
-    final String scopeKey = useGlobalMode ? 'global' : 'game:${game.slug}';
+    final String scopeKey = _scopeKey(game, useGlobalMode, conversationId);
     return _WorkflowContext(
       prompt: prompt,
       language: language,
@@ -295,6 +307,7 @@ class ResponsesRulesWorkflow {
       useGlobalMode: useGlobalMode,
       useCurrentGameKnowledge: useCurrentGameKnowledge,
       contextKey: contextKey,
+      compactionEpoch: compactionEpoch,
       session: AiSession(
         id: contextKey,
         contextKey: contextKey,
@@ -2136,6 +2149,7 @@ class ResponsesRulesWorkflow {
     required GameInfo game,
     required bool useGlobalMode,
     required bool useCurrentGameKnowledge,
+    String? conversationId,
   }) {
     return List<ResponsesInputItem>.unmodifiable(
       _compactionInputsByContext[_contextKey(
@@ -2143,6 +2157,7 @@ class ResponsesRulesWorkflow {
             game: game,
             useGlobalMode: useGlobalMode,
             useCurrentGameKnowledge: useCurrentGameKnowledge,
+            conversationId: conversationId,
           )] ??
           const <ResponsesInputItem>[],
     );
@@ -2152,6 +2167,11 @@ class ResponsesRulesWorkflow {
     _WorkflowContext context,
     ResponsesResponse response,
   ) async {
+    final String scope = context.session.scopeKey;
+    if (context.compactionEpoch != (_compactionEpochByScope[scope] ?? 0) ||
+        _activeCompactionContextByScope[scope] != context.contextKey) {
+      return;
+    }
     final List<ResponsesInputItem> compactionItems = response.outputItems
         .where(
           (ResponsesInputItem item) =>
@@ -2174,13 +2194,42 @@ class ResponsesRulesWorkflow {
     }
   }
 
+  String _scopeKey(GameInfo game, bool useGlobalMode, String? conversationId) {
+    // Preserve existing cache keys for the original fixed game/global sessions.
+    if (conversationId != null && conversationId.startsWith('conversation:')) {
+      return conversationId;
+    }
+    return useGlobalMode ? 'global' : 'game:${game.slug}';
+  }
+
+  Future<void> clearConversationContext({
+    required String conversationId,
+    required GameInfo game,
+    required bool useGlobalMode,
+  }) async {
+    final String scope = _scopeKey(game, useGlobalMode, conversationId);
+    // Invalidate in-flight snapshots before any asynchronous store operation.
+    _compactionEpochByScope[scope] = (_compactionEpochByScope[scope] ?? 0) + 1;
+    await _ensureCompactionLoaded();
+    _activeCompactionContextByScope.remove(scope);
+    _compactionInputsByContext.removeWhere(
+      (String key, _) => key.startsWith('$scope|'),
+    );
+    try {
+      await _compactionStore.save(_compactionInputsByContext);
+    } catch (_) {
+      // The cleared in-memory context remains usable when the cache is unavailable.
+    }
+  }
+
   String _contextKey({
     required AiApiConfig config,
     required GameInfo game,
     required bool useGlobalMode,
     required bool useCurrentGameKnowledge,
+    String? conversationId,
   }) {
-    final String scope = useGlobalMode ? 'global' : 'game:${game.slug}';
+    final String scope = _scopeKey(game, useGlobalMode, conversationId);
     final String endpointFingerprint = sha256
         .convert(
           utf8.encode(
@@ -2226,8 +2275,9 @@ class ResponsesRulesWorkflow {
     required String contextKey,
     required GameInfo game,
     required bool useGlobalMode,
+    String? conversationId,
   }) async {
-    final String scopeKey = useGlobalMode ? 'global' : 'game:${game.slug}';
+    final String scopeKey = _scopeKey(game, useGlobalMode, conversationId);
     final String? previous = _activeCompactionContextByScope[scopeKey];
     if (previous == contextKey &&
         !_compactionInputsByContext.keys.any(
@@ -2572,6 +2622,7 @@ class _WorkflowContext {
     required this.useGlobalMode,
     required this.useCurrentGameKnowledge,
     required this.contextKey,
+    required this.compactionEpoch,
     required this.session,
     required this.sources,
     required this.remoteAssetService,
@@ -2586,6 +2637,7 @@ class _WorkflowContext {
   final bool useGlobalMode;
   final bool useCurrentGameKnowledge;
   final String contextKey;
+  final int compactionEpoch;
   final AiSession session;
   final List<AssetSourceConfig> sources;
   final RemoteAssetService remoteAssetService;

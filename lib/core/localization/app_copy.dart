@@ -44,9 +44,9 @@ class AppCopy {
       isChinese ? '选择 GPT-5.6 及以上模型' : 'Select a GPT-5.6+ model';
   String get aiApiReasoningEffortLabel =>
       isChinese ? '推理强度' : 'Reasoning effort';
-  String get aiApiReasoningEffortHint => isChinese
-      ? '选项按已知模型能力显示；自动模式不发送推理强度。'
-      : 'Options follow known model capabilities; Automatic omits reasoning effort.';
+  String get aiApiReasoningSelectHint => isChinese ? '选择强度' : 'Select effort';
+  String get aiApiReasoningEffortHint =>
+      isChinese ? '选项按已知模型能力显示。' : 'Options follow known model capabilities.';
   String aiApiReasoningRequestValue(AiReasoningEffort value) {
     final String? requestValue = value.requestValue;
     if (requestValue == null) {
@@ -90,8 +90,8 @@ class AppCopy {
   }
 
   String get aiApiGenerationCompatibilityHint => isChinese
-      ? '自定义接口不支持这些可选参数时，请保持“自动”，否则可能返回 400。'
-      : 'If a custom endpoint does not support these optional fields, keep Automatic or it may return 400.';
+      ? '推理强度和服务等级是否生效由服务商决定。'
+      : 'Reasoning effort and service tier support depend on the provider.';
   String get aiApiModelRequired =>
       isChinese ? '请先获取并选择一个模型' : 'Fetch and select a model first';
   String get aiApiModelNotAllowed => isChinese
@@ -290,6 +290,19 @@ class AppCopy {
   String get homeSearchHint => isChinese ? '搜索桌游...' : 'Search games...';
   String get favouritesOnly => isChinese ? '只看喜欢' : 'Show liked only';
   String get globalAiTitle => isChinese ? '通用 AI 助手' : 'Global AI Assistant';
+  String gameAiTitle(String name) => isChinese ? '$name助手' : '$name assistant';
+  String get conversationDrawerTitle => isChinese ? '对话' : 'Chats';
+  String get newConversation => isChinese ? '新对话' : 'New chat';
+  String get openConversations => isChinese ? '展开会话列表' : 'Open chat history';
+  String get closeConversations => isChinese ? '收起会话列表' : 'Close chat history';
+  String get conversationToday => isChinese ? '今天' : 'Today';
+  String get conversationYesterday => isChinese ? '昨天' : 'Yesterday';
+  String get conversationEarlier => isChinese ? '更早' : 'Earlier';
+  String get conversationGeneral => isChinese ? '通用' : 'General';
+  String get conversationEmpty =>
+      isChinese ? '还没有对话，开始一个新话题吧。' : 'Start a new chat to begin.';
+  String get conversationSaveFailed =>
+      isChinese ? '新对话未能保存，请重试。' : 'Could not save the new chat. Try again.';
   String get globalAiSubtitle => isChinese
       ? '独立 AI 入口，可切换知识库优先与智能补充'
       : 'A standalone AI entry with knowledge-first and fallback modes';

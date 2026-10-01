@@ -462,52 +462,65 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        // Keep the compact shortcut group in proportion to the banner on Web.
+        final groupWidth = constraints.maxWidth.clamp(0.0, 520.0);
         final itemWidth =
-            (constraints.maxWidth - itemGap * (entries.length - 1)) /
-            entries.length;
-        final iconSize = itemWidth * 0.48;
-        final borderRadius = itemWidth * 0.28;
+            (groupWidth - itemGap * (entries.length - 1)) / entries.length;
+        final tileSize = itemWidth.clamp(0.0, 88.0);
+        final iconSize = (tileSize * 0.48).clamp(0.0, 40.0);
+        final borderRadius = tileSize * 0.28;
+        final labelSize = groupWidth >= 480 ? 13.0 : 12.0;
 
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final entry in entries)
-              SizedBox(
-                width: itemWidth,
-                child: InkWell(
-                  onTap: entry.$4,
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: itemWidth,
-                        height: itemWidth,
-                        decoration: BoxDecoration(
-                          color: entry.$3,
-                          borderRadius: BorderRadius.circular(borderRadius),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(entry.$1, size: iconSize, color: _orange),
+        return Center(
+          child: SizedBox(
+            width: groupWidth,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final entry in entries)
+                  SizedBox(
+                    width: itemWidth,
+                    child: InkWell(
+                      onTap: entry.$4,
+                      borderRadius: BorderRadius.circular(borderRadius),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: tileSize,
+                            height: tileSize,
+                            decoration: BoxDecoration(
+                              color: entry.$3,
+                              borderRadius: BorderRadius.circular(borderRadius),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              entry.$1,
+                              size: iconSize,
+                              color: _orange,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            entry.$2,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: labelSize,
+                              fontWeight: FontWeight.w800,
+                              color: _ink,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        entry.$2,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: _ink,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         );
       },
     );

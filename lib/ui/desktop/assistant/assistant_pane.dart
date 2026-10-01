@@ -18,6 +18,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   String? _lastConversationId;
   bool _followNewMessages = true;
   final Map<String, double> _scrollOffsets = <String, double>{};
+  final Map<String, String> _drafts = <String, String>{};
   final Map<String, GlobalKey> _messageKeys = <String, GlobalKey>{};
   Timer? _messageTimesTimer;
 
@@ -77,9 +78,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
             (GameInfo item) => item.id == selectedConversation.gameId,
             orElse: () => controller.featuredGame,
           );
-    final String assistantTitle = useGlobalMode
-        ? controller.copy.globalAiTitle
-        : '${game.title}助手';
+    final String assistantTitle = selectedConversation.title;
     final String messageSummary = controller.copy.desktopAssistantMessages(
       messages.length,
     );
@@ -114,17 +113,17 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
               ),
               child: Row(
                 children: <Widget>[
-                  const _AssistantAppMark(),
-                  const SizedBox(width: 11),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(
-                          assistantTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium,
+                        ConversationTitleButton(
+                          title: assistantTitle,
+                          tooltip: controller.copy.openConversations,
+                          onPressed: () => showConversationDrawer(
+                            context,
+                            controller: controller,
+                          ),
                         ),
                         const SizedBox(height: 3),
                         Row(
@@ -158,19 +157,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                   ],
                   if (narrow)
                     IconButton(
-                      tooltip: controller.copy.desktopSessionTitle,
-                      onPressed: () => _showAssistantSheet(
-                        title: controller.copy.desktopSessionTitle,
-                        child: _DesktopAssistantSessions(
-                          controller: controller,
-                          embedded: false,
-                        ),
-                      ),
-                      style: _desktopIconButtonStyle(palette),
-                      icon: const Icon(Icons.forum_outlined),
-                    ),
-                  if (narrow)
-                    IconButton(
                       tooltip: controller.copy.desktopContextTitle,
                       onPressed: () => _showAssistantSheet(
                         title: controller.copy.desktopContextTitle,
@@ -182,17 +168,14 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                       style: _desktopIconButtonStyle(palette),
                       icon: const Icon(Icons.tune_rounded),
                     ),
-                  IconButton(
-                    tooltip: controller.copy.desktopClearConversation,
-                    onPressed: () => controller.clearConversationForContext(
-                      useGlobalMode: useGlobalMode,
-                    ),
-                    style: _desktopIconButtonStyle(palette),
-                    icon: const Icon(Icons.delete_sweep_outlined),
-                  ),
                   PopupMenuButton<String>(
                     tooltip: controller.copy.desktopMore,
                     onSelected: (String value) {
+                      if (value == 'clear') {
+                        controller.clearConversationForContext(
+                          useGlobalMode: useGlobalMode,
+                        );
+                      }
                       if (value == 'context') {
                         _showAssistantSheet(
                           title: controller.copy.desktopContextTitle,
@@ -205,6 +188,12 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                     },
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<String>>[
+                          PopupMenuItem<String>(
+                            value: 'clear',
+                            child: Text(
+                              controller.copy.desktopClearConversation,
+                            ),
+                          ),
                           PopupMenuItem<String>(
                             value: 'context',
                             child: Text(controller.copy.desktopContextTitle),
@@ -393,6 +382,10 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     final bool contextChanged = conversationId != _lastConversationId;
     if (contextChanged) {
       _saveScrollPosition();
+      if (_lastConversationId != null) {
+        _drafts[_lastConversationId!] = _draftController.text;
+      }
+      _draftController.text = _drafts[conversationId] ?? '';
       _lastConversationId = conversationId;
       _showJumpToBottom = false;
       _hasNewContent = false;

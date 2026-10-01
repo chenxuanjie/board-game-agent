@@ -287,17 +287,45 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     await tester.tap(effort);
     await tester.pumpAndSettle();
     expect(find.text('无'), findsNothing);
+    final reasoningDropdown = tester.widget<DropdownButton<AiReasoningEffort>>(
+      find.descendant(
+        of: effort,
+        matching: find.byType(DropdownButton<AiReasoningEffort>),
+      ),
+    );
+    expect(
+      reasoningDropdown.items!.map((item) => item.value),
+      isNot(contains(AiReasoningEffort.automatic)),
+    );
+    expect(
+      reasoningDropdown.items!.map((item) => item.value),
+      isNot(contains(AiReasoningEffort.none)),
+    );
     expect(find.text('最高'), findsWidgets);
     await tester.tap(find.text('最高').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('配置已修改，请保存并检测'), findsOneWidget);
     expect(find.textContaining('请求值：'), findsNothing);
 
+    final speedDropdown = tester.widget<DropdownButton<AiResponseSpeed>>(
+      find.descendant(
+        of: speed,
+        matching: find.byType(DropdownButton<AiResponseSpeed>),
+      ),
+    );
+    expect(speedDropdown.value, AiResponseSpeed.standard);
+    expect(speedDropdown.items!.map((item) => item.value), [
+      AiResponseSpeed.standard,
+      AiResponseSpeed.fast,
+    ]);
     await tester.ensureVisible(speed);
     await tester.tap(speed);
     await tester.pumpAndSettle();
     final selectedOption = find
-        .ancestor(of: find.text('自动').last, matching: find.byType(Container))
+        .ancestor(
+          of: find.text('标准（Default）').last,
+          matching: find.byType(Container),
+        )
         .first;
     final selectedDecoration =
         tester.widget<Container>(selectedOption).decoration as BoxDecoration?;

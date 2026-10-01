@@ -23,7 +23,7 @@ class AiConversation {
   }) : messages = List<ChatMessage>.from(messages);
 
   final String id;
-  final String title;
+  String title;
   final AiConversationScope scope;
   final String? gameId;
 

@@ -342,11 +342,10 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     ];
     expect(recommendationRects, hasLength(5));
     expect(recommendationRects.map((rect) => rect.top).toSet(), hasLength(1));
-    expect(recommendationRects.first.width, closeTo(175, 0.1));
-    expect(recommendationRects.first.height, closeTo(280, 0.1));
+    expect(recommendationRects.first.width, closeTo(210, 0.1));
     expect(
-      recommendationRects.first.width / recommendationRects.first.height,
-      closeTo(175 / 280, 0.001),
+      recommendationRects.map((rect) => rect.bottom).toSet(),
+      hasLength(1),
     );
 
     final firstCard = find.byKey(
@@ -359,9 +358,9 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       matching: find.text(context.controller.dailyRecommendedGames.first.title),
     );
     final titleStyle = tester.widget<Text>(title).style!;
-    expect(titleStyle.fontSize, 14);
+    expect(titleStyle.fontSize, 15);
     expect(titleStyle.fontWeight, FontWeight.w700);
-    expect(titleStyle.height, 1.12);
+    expect(titleStyle.height, 1.2);
     final categoryTags = context
         .controller
         .dailyRecommendedGames
@@ -385,7 +384,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       of: firstCard,
       matching: find.byIcon(Icons.star_rounded),
     );
-    expect(tester.widget<Icon>(ratingIcon).size, 12.5);
+    expect(tester.widget<Icon>(ratingIcon).size, 16);
 
     final GameInfo game = context.controller.dailyRecommendedGames.first;
     await tester.tap(
@@ -402,26 +401,42 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('home recommendation cards keep their ratio on wide windows', (
-    tester,
-  ) async {
-    await _mount(tester, context.controller, const Size(1920, 1080));
+  testWidgets(
+    'home recommendation cards use compact natural height on wide windows',
+    (tester) async {
+      await _mount(tester, context.controller, const Size(1920, 1080));
 
-    final card = find.byKey(
-      ValueKey<String>(
-        'desktop-home-recommendation-card-${context.controller.dailyRecommendedGames.first.id}',
-      ),
-    );
-    final rect = tester.getRect(card);
-    expect(rect.width / rect.height, closeTo(175 / 280, 0.001));
+      final card = find.byKey(
+        ValueKey<String>(
+          'desktop-home-recommendation-card-${context.controller.dailyRecommendedGames.first.id}',
+        ),
+      );
+      final rect = tester.getRect(card);
+      expect(rect.height, lessThan(rect.width * 280 / 175));
+      final tagRow = find.descendant(of: card, matching: find.byType(Wrap));
+      final footerText = find.descendant(
+        of: card,
+        matching: find.text(
+          GameMetadataText.playTime(
+            context.controller.dailyRecommendedGames.first.playTime,
+          ),
+        ),
+      );
+      expect(
+        tester.getRect(footerText).top - tester.getRect(tagRow).bottom,
+        inInclusiveRange(14, 60),
+      );
 
-    final title = find.descendant(
-      of: card,
-      matching: find.text(context.controller.dailyRecommendedGames.first.title),
-    );
-    expect(tester.widget<Text>(title).style!.fontSize, closeTo(15.12, 0.01));
-    expect(tester.takeException(), isNull);
-  });
+      final title = find.descendant(
+        of: card,
+        matching: find.text(
+          context.controller.dailyRecommendedGames.first.title,
+        ),
+      );
+      expect(tester.widget<Text>(title).style!.fontSize, closeTo(16.2, 0.01));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final size in <Size>[
     const Size(720, 700),
@@ -435,17 +450,18 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
         ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
       );
       final cardWidth = tester.getRect(card).width;
+      final metrics = DesktopMetricsScope.of(tester.element(card));
       final players = find.descendant(
         of: card,
         matching: find.text(
-          cardWidth >= 230
+          cardWidth - metrics.px(20) >= metrics.px(230)
               ? GameMetadataText.players(game.playerCount)
               : GameMetadataText.cardPlayers(game.playerCount),
         ),
       );
       final duration = find.descendant(
         of: card,
-        matching: find.text(GameMetadataText.cardPlayTime(game.playTime)),
+        matching: find.text(GameMetadataText.playTime(game.playTime)),
       );
       expect(players, findsOneWidget);
       expect(duration, findsOneWidget);
@@ -480,7 +496,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(
       find.descendant(
         of: card,
-        matching: find.text(GameMetadataText.cardPlayTime(game.playTime)),
+        matching: find.text(GameMetadataText.playTime(game.playTime)),
       ),
       findsOneWidget,
     );

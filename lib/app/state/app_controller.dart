@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path_provider/path_provider.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -37,6 +36,7 @@ import '../../features/games/models/search_history_record.dart';
 import '../../features/assistant/models/evidence_chunk.dart';
 import '../../features/assistant/models/rule_citation.dart';
 import '../../features/assistant/services/ai_service.dart';
+import '../../features/assistant/services/conversation_store.dart';
 import '../../features/settings/services/preferences_service.dart';
 import '../../features/games/services/daily_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
@@ -94,11 +94,13 @@ class AppController extends ChangeNotifier {
     RealtimeVoiceService? realtimeVoiceService,
     ColorSchemeOption? initialColorScheme,
     GameVoteService? gameVotes,
+    ConversationStore? conversationStore,
   }) : _preferencesService = preferencesService,
        gameVotes =
            gameVotes ?? GameVoteService(preferences: preferencesService),
        _colorScheme = initialColorScheme ?? defaultColorScheme,
        _aiService = aiService,
+       _conversationStore = conversationStore ?? const ConversationStore(),
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
        _speechService = speechService,
@@ -116,6 +118,7 @@ class AppController extends ChangeNotifier {
             defaultNationalDayGames.map((game) => game.slug).toList(),
       );
   final AiService _aiService;
+  final ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
   final SpeechService _speechService;
@@ -283,10 +286,8 @@ class AppController extends ChangeNotifier {
         .map((AiConversation conversation) => conversation.copyWith())
         .toList();
     result.sort((AiConversation left, AiConversation right) {
-      if (left.isGlobal != right.isGlobal) {
-        return left.isGlobal ? -1 : 1;
-      }
-      return right.updatedAt.compareTo(left.updatedAt);
+      final time = right.updatedAt.compareTo(left.updatedAt);
+      return time == 0 ? left.id.compareTo(right.id) : time;
     });
     return List<AiConversation>.unmodifiable(result);
   }
@@ -691,6 +692,7 @@ class AppController extends ChangeNotifier {
     await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
+    _refreshConversationMetadata();
     _migrateActivityTargets();
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,

@@ -189,7 +189,7 @@ class _MainColumn extends StatelessWidget {
             if (games.isEmpty) return const SizedBox.shrink();
 
             final gap = metrics.px(13);
-            final minimumCardWidth = metrics.px(175);
+            final minimumCardWidth = metrics.px(210);
             final fiveCardMinimumWidth = minimumCardWidth * 5 + gap * 4;
 
             if (constraints.maxWidth < fiveCardMinimumWidth) {
@@ -203,22 +203,26 @@ class _MainColumn extends StatelessWidget {
                     'desktop-home-recommendation-row',
                   ),
                   scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < visibleGames.length; i++) ...[
-                        if (i > 0) SizedBox(width: gap),
-                        SizedBox(
-                          width: minimumCardWidth,
-                          child: _GameCard(
-                            key: ValueKey<String>(
-                              'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < visibleGames.length; i++) ...[
+                          if (i > 0) SizedBox(width: gap),
+                          SizedBox(
+                            width: minimumCardWidth,
+                            child: _GameCard(
+                              key: ValueKey<String>(
+                                'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                              ),
+                              game: visibleGames[i],
+                              cardWidth: minimumCardWidth,
+                              onTap: () => onOpenGame(visibleGames[i].data),
                             ),
-                            game: visibleGames[i],
-                            onTap: () => onOpenGame(visibleGames[i].data),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               );
@@ -243,23 +247,27 @@ class _MainColumn extends StatelessWidget {
               minimumWidth: minimumCardWidth,
               count: fittedCount,
             );
-            return Row(
-              key: const ValueKey<String>('desktop-home-recommendation-row'),
-              children: [
-                for (var i = 0; i < visibleGames.length; i++) ...[
-                  if (i > 0) SizedBox(width: gap),
-                  SizedBox(
-                    width: cardWidth,
-                    child: _GameCard(
-                      key: ValueKey<String>(
-                        'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                key: const ValueKey<String>('desktop-home-recommendation-row'),
+                children: [
+                  for (var i = 0; i < visibleGames.length; i++) ...[
+                    if (i > 0) SizedBox(width: gap),
+                    SizedBox(
+                      width: cardWidth,
+                      child: _GameCard(
+                        key: ValueKey<String>(
+                          'desktop-home-recommendation-card-${visibleGames[i].data.id}',
+                        ),
+                        game: visibleGames[i],
+                        cardWidth: cardWidth,
+                        onTap: () => onOpenGame(visibleGames[i].data),
                       ),
-                      game: visibleGames[i],
-                      onTap: () => onOpenGame(visibleGames[i].data),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             );
           },
         ),
@@ -625,8 +633,14 @@ class _TextLinkState extends State<_TextLink> {
 class _GameCard extends StatelessWidget {
   final DesktopContentGame game;
   final VoidCallback onTap;
+  final double cardWidth;
 
-  const _GameCard({super.key, required this.game, required this.onTap});
+  const _GameCard({
+    super.key,
+    required this.game,
+    required this.onTap,
+    required this.cardWidth,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -637,34 +651,34 @@ class _GameCard extends StatelessWidget {
     return HoverSurface(
       onTap: onTap,
       borderRadius: BorderRadius.circular(metrics.radius(9)),
-      child: AspectRatio(
-        aspectRatio: 175 / 280,
-        child: Container(
-          padding: EdgeInsets.all(metrics.px(4)),
-          decoration: BoxDecoration(
-            color: DesktopColors.card,
-            borderRadius: BorderRadius.circular(metrics.radius(9)),
-            border: Border.all(color: const Color(0x0D8A6044)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x0B7E4D2B),
-                blurRadius: metrics.px(8),
-                offset: Offset(0, metrics.px(2)),
+      child: Container(
+        padding: EdgeInsets.all(metrics.px(4)),
+        decoration: BoxDecoration(
+          color: DesktopColors.card,
+          borderRadius: BorderRadius.circular(metrics.radius(9)),
+          border: Border.all(color: const Color(0x0D8A6044)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x0B7E4D2B),
+              blurRadius: metrics.px(8),
+              offset: Offset(0, metrics.px(2)),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(metrics.radius(6)),
+              child: AspectRatio(
+                aspectRatio: 132 / 116,
+                child: SizedBox(width: double.infinity, child: game.cover()),
               ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(metrics.radius(6)),
-                child: AspectRatio(
-                  aspectRatio: 132 / 116,
-                  child: SizedBox(width: double.infinity, child: game.cover()),
-                ),
-              ),
-              SizedBox(height: metrics.px(7)),
-              Tooltip(
+            ),
+            SizedBox(height: metrics.px(9)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
+              child: Tooltip(
                 message: game.englishTitle == '-'
                     ? game.title
                     : '${game.title}\n${game.englishTitle}',
@@ -672,35 +686,41 @@ class _GameCard extends StatelessWidget {
                   game.title,
                   maxLines: 3,
                   style: TextStyle(
-                    fontSize: cardFont(14),
+                    fontSize: cardFont(15),
                     fontWeight: FontWeight.w700,
-                    height: 1.12,
+                    height: 1.2,
                     color: const Color(0xFF171412),
                   ),
                 ),
               ),
-              SizedBox(height: metrics.px(5)),
-              Row(
+            ),
+            SizedBox(height: metrics.px(8)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
+              child: Row(
                 children: [
                   Icon(
                     Icons.star_rounded,
                     color: const Color(0xFFFFA400),
-                    size: metrics.px(12.5),
+                    size: metrics.px(16),
                   ),
                   SizedBox(width: metrics.px(4)),
                   Text(
                     game.score,
                     style: TextStyle(
-                      fontSize: cardFont(12),
+                      fontSize: cardFont(16),
                       fontWeight: FontWeight.w700,
-                      height: 1.0,
+                      height: 1.15,
                       color: const Color(0xFF171412),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: metrics.px(5)),
-              Wrap(
+            ),
+            SizedBox(height: metrics.px(8)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: metrics.px(6)),
+              child: Wrap(
                 spacing: metrics.px(6),
                 runSpacing: metrics.px(3),
                 children: [
@@ -708,31 +728,38 @@ class _GameCard extends StatelessWidget {
                   if (game.tagB != '-') _Tag(game.tagB),
                 ],
               ),
-              const Spacer(),
-              LayoutBuilder(
-                builder: (context, constraints) => Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _GameCardFact(
-                      icon: Icons.group_rounded,
-                      text: constraints.maxWidth >= metrics.px(230)
-                          ? game.players
-                          : GameMetadataText.cardPlayers(game.data.playerCount),
-                      fullText: game.players,
-                      fontSize: cardFont(10),
-                    ),
-                    SizedBox(width: metrics.px(8)),
-                    _GameCardFact(
-                      icon: Icons.schedule_rounded,
-                      text: GameMetadataText.cardPlayTime(game.data.playTime),
-                      fullText: game.duration,
-                      fontSize: cardFont(10),
-                    ),
-                  ],
-                ),
+            ),
+            SizedBox(height: metrics.px(14)),
+            const Spacer(),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                metrics.px(6),
+                0,
+                metrics.px(6),
+                metrics.px(7),
               ),
-            ],
-          ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _GameCardFact(
+                    icon: Icons.group_rounded,
+                    text: cardWidth - metrics.px(20) >= metrics.px(230)
+                        ? game.players
+                        : GameMetadataText.cardPlayers(game.data.playerCount),
+                    fullText: game.players,
+                    fontSize: cardFont(10),
+                  ),
+                  SizedBox(width: metrics.px(8)),
+                  _GameCardFact(
+                    icon: Icons.schedule_rounded,
+                    text: game.duration,
+                    fullText: game.duration,
+                    fontSize: cardFont(10),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -788,7 +815,7 @@ class _Tag extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: metrics.px(7),
-        vertical: metrics.px(2),
+        vertical: metrics.px(3),
       ),
       decoration: BoxDecoration(
         color: const Color(0xFFF5F2EE),
@@ -797,12 +824,9 @@ class _Tag extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          fontSize: math.min(
-            9.72,
-            9 * (1 + math.min(0.08, math.max(0, metrics.scale - 1))),
-          ),
+          fontSize: 10.5 * (1 + math.min(0.08, math.max(0, metrics.scale - 1))),
           fontWeight: FontWeight.w400,
-          height: 1.0,
+          height: 1.15,
           color: const Color(0xFF77706A),
         ),
       ),

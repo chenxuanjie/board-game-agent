@@ -10,6 +10,7 @@ import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../shared/assistant/ai_run_activity.dart';
 import '../shared/assistant/assistant_feature_chip.dart';
+import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
 
 class AssistantChatScreen extends StatefulWidget {
@@ -39,6 +40,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   bool _hasNewContent = false;
   String? _lastScrollContextKey;
   final Map<String, double> _scrollOffsets = <String, double>{};
+  final Map<String, String> _drafts = <String, String>{};
   Timer? _messageTimeVisibilityTimer;
 
   @override
@@ -84,22 +86,31 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final canSend =
         _textController.text.trim().isNotEmpty &&
-        !controller.isSendingForContext(useGlobalMode: widget.useGlobalMode);
+        !controller.isSendingForContext(useGlobalMode: _useGlobalMode);
 
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 72,
         titleSpacing: 6,
-        title: _AssistantAppBarTitle(
-          title: widget.customTitle ?? controller.featuredGame.title,
+        title: ConversationTitleButton(
+          title:
+              controller.selectedConversation?.title ??
+              widget.customTitle ??
+              copy.globalAiTitle,
+          tooltip: copy.openConversations,
+          onPressed: () =>
+              showConversationDrawer(context, controller: controller),
         ),
         actions: <Widget>[
-          IconButton(
-            tooltip: copy.clearChat,
-            onPressed: () => controller.clearConversationForContext(
-              useGlobalMode: widget.useGlobalMode,
+          PopupMenuButton<String>(
+            tooltip: copy.desktopMore,
+            icon: const Icon(Icons.more_horiz_rounded),
+            onSelected: (_) => controller.clearConversationForContext(
+              useGlobalMode: _useGlobalMode,
             ),
-            icon: const Icon(Icons.delete_outline_rounded),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'clear', child: Text(copy.clearChat)),
+            ],
           ),
           const SizedBox(width: 6),
         ],
@@ -131,7 +142,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         animation: controller,
                         builder: (context, _) {
                           final messages = controller.messagesForContext(
-                            useGlobalMode: widget.useGlobalMode,
+                            useGlobalMode: _useGlobalMode,
                           );
                           return _MessageList(
                             controller: controller,
@@ -139,16 +150,16 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                             scrollController: _scrollController,
                             onQuickPrompt: _sendQuickPrompt,
                             onCopy: _copyAssistantAnswer,
-                            useGlobalMode: widget.useGlobalMode,
+                            useGlobalMode: _useGlobalMode,
                             showMessageTimes: _showMessageTimes,
                             onMessageTap: _showMessageTimesTemporarily,
                             runContextKey: _conversationContextKey,
                             runExpanded: controller.aiRunExpandedForContext(
-                              useGlobalMode: widget.useGlobalMode,
+                              useGlobalMode: _useGlobalMode,
                             ),
                             onRunExpandedChanged: (bool expanded) =>
                                 controller.setAiRunExpandedForContext(
-                                  useGlobalMode: widget.useGlobalMode,
+                                  useGlobalMode: _useGlobalMode,
                                   expanded: expanded,
                                 ),
                           );
@@ -182,7 +193,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     controller: controller,
                     textController: _textController,
                     canSend: canSend,
-                    useGlobalMode: widget.useGlobalMode,
+                    useGlobalMode: _useGlobalMode,
                     onSend: _sendCurrentText,
                     onMicTap: _toggleListening,
                     onOpenContext: _openContextSheet,
@@ -205,6 +216,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         _lastScrollContextKey != null && _lastScrollContextKey != contextKey;
     if (contextChanged) {
       _saveScrollPosition();
+      _drafts[_lastScrollContextKey!] = _textController.text;
+      _textController.text = _drafts[contextKey] ?? '';
       _lastScrollContextKey = contextKey;
       _followNewMessages = true;
       _showJumpToBottom = false;
@@ -232,17 +245,19 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         // than animating every 16 ms batch; animation can lag behind deltas.
         _scrollToBottom(
           animated: !widget.controller.isSendingForContext(
-            useGlobalMode: widget.useGlobalMode,
+            useGlobalMode: _useGlobalMode,
           ),
         );
       }
     });
   }
 
-  String get _conversationContextKey => widget.useGlobalMode
-      ? 'global'
-      : (widget.controller.selectedConversationId ??
-            'game:${widget.controller.selectedGame.id}');
+  bool get _useGlobalMode =>
+      widget.controller.selectedConversation?.isGlobal ?? widget.useGlobalMode;
+
+  String get _conversationContextKey =>
+      widget.controller.selectedConversationId ??
+      (_useGlobalMode ? 'global' : 'game:${widget.controller.selectedGame.id}');
 
   bool _isNearBottom() {
     if (!_scrollController.hasClients) return true;
@@ -358,9 +373,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   Future<void> _sendCurrentText() async {
     final text = _textController.text.trim();
     if (text.isEmpty ||
-        widget.controller.isSendingForContext(
-          useGlobalMode: widget.useGlobalMode,
-        )) {
+        widget.controller.isSendingForContext(useGlobalMode: _useGlobalMode)) {
       return;
     }
 
@@ -378,10 +391,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     }
 
     _textController.clear();
-    await widget.controller.sendPrompt(
-      text,
-      useGlobalMode: widget.useGlobalMode,
-    );
+    await widget.controller.sendPrompt(text, useGlobalMode: _useGlobalMode);
   }
 
   Future<void> _sendQuickPrompt(String prompt) async {
@@ -468,7 +478,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
               builder: (context, _) {
                 final palette = AppPalette.of(context);
                 final smartSupplement = controller.allowSmartSupplement(
-                  useGlobalMode: widget.useGlobalMode,
+                  useGlobalMode: _useGlobalMode,
                 );
                 return Column(
                   mainAxisSize: MainAxisSize.min,
@@ -497,7 +507,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         if (value) {
                           controller.setAllowSmartSupplement(
                             false,
-                            useGlobalMode: widget.useGlobalMode,
+                            useGlobalMode: _useGlobalMode,
                           );
                         }
                       },
@@ -518,11 +528,11 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                       onChanged: (value) {
                         controller.setAllowSmartSupplement(
                           value,
-                          useGlobalMode: widget.useGlobalMode,
+                          useGlobalMode: _useGlobalMode,
                         );
                       },
                     ),
-                    if (widget.useGlobalMode)
+                    if (_useGlobalMode)
                       SwitchListTile.adaptive(
                         contentPadding: EdgeInsets.zero,
                         secondary: Icon(
@@ -560,29 +570,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
           ),
         );
       },
-    );
-  }
-}
-
-class _AssistantAppBarTitle extends StatelessWidget {
-  const _AssistantAppBarTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        const _AssistantAvatar(size: 38),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1207,31 +1194,4 @@ class _SpeechWaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SpeechWaveformPainter oldDelegate) =>
       (oldDelegate.level - level).abs() > 0.01 || oldDelegate.color != color;
-}
-
-class _AssistantAvatar extends StatelessWidget {
-  const _AssistantAvatar({this.size = 32});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.28),
-      child: Image.asset(
-        'branding/app_icon.png',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (context, error, stackTrace) => Container(
-          width: size,
-          height: size,
-          color: Theme.of(context).colorScheme.primary,
-          alignment: Alignment.center,
-          child: Icon(Icons.casino_rounded, size: size * 0.56),
-        ),
-      ),
-    );
-  }
 }

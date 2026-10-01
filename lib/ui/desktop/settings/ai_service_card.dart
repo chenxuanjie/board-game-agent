@@ -51,13 +51,9 @@ class _AiServiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppCopy copy = controller.copy;
     final bool hasKey = apiKeyController.text.trim().isNotEmpty;
-    final List<AiReasoningEffort> supportedEfforts =
-        AiModelPolicy.reasoningEfforts(modelController.text) ??
-        const <AiReasoningEffort>[AiReasoningEffort.automatic];
-    final List<AiReasoningEffort> visibleEfforts = <AiReasoningEffort>[
-      if (!supportedEfforts.contains(reasoningEffort)) reasoningEffort,
-      ...supportedEfforts,
-    ];
+    final List<AiReasoningEffort> visibleEfforts =
+        AiModelPolicy.selectableReasoningEfforts(modelController.text) ??
+        const [];
     final AiApiConfig savedConfig = controller.aiApiConfig;
     final bool draftChanged =
         providerController.text.trim() != savedConfig.name.trim() ||
@@ -153,6 +149,7 @@ class _AiServiceCard extends StatelessWidget {
                     'desktop-settings-ai-reasoning',
                   ),
                   label: copy.aiApiReasoningEffortLabel,
+                  placeholder: copy.aiApiReasoningSelectHint,
                   value: reasoningEffort,
                   values: visibleEfforts,
                   itemLabel: copy.aiApiReasoningEffortName,
@@ -168,7 +165,7 @@ class _AiServiceCard extends StatelessWidget {
                   fieldKey: const ValueKey<String>('desktop-settings-ai-speed'),
                   label: copy.aiApiResponseSpeedLabel,
                   value: responseSpeed,
-                  values: AiResponseSpeed.values,
+                  values: AiResponseSpeed.selectableValues,
                   itemLabel: copy.aiApiResponseSpeedName,
                   enabled: !saving,
                   onChanged: (AiResponseSpeed? value) {
@@ -231,6 +228,7 @@ class _AiOptionDropdownField<T> extends StatelessWidget {
   const _AiOptionDropdownField({
     required this.fieldKey,
     required this.label,
+    this.placeholder,
     required this.value,
     required this.values,
     required this.itemLabel,
@@ -240,6 +238,7 @@ class _AiOptionDropdownField<T> extends StatelessWidget {
 
   final Key fieldKey;
   final String label;
+  final String? placeholder;
   final T value;
   final List<T> values;
   final String Function(T) itemLabel;
@@ -259,8 +258,9 @@ class _AiOptionDropdownField<T> extends StatelessWidget {
           child: Theme(
             data: _dropdownTheme(context),
             child: DropdownButtonFormField<T>(
-              key: ValueKey<T>(value),
-              initialValue: value,
+              key: ValueKey<T?>(values.contains(value) ? value : null),
+              initialValue: values.contains(value) ? value : null,
+              hint: Text(placeholder ?? label),
               isExpanded: true,
               borderRadius: BorderRadius.circular(_px(context, 12)),
               dropdownColor: DesktopColors.card,

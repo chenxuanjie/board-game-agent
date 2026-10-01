@@ -36,9 +36,15 @@ extension AiReasoningEffortX on AiReasoningEffort {
 }
 
 /// A provider service-tier hint exposed as a user-friendly response-speed
-/// preference. It is only sent when the user explicitly chooses a non-default
-/// value because compatible providers are free to ignore or reject it.
-enum AiResponseSpeed { automatic, fast, standard }
+/// preference. Standard requests `default`; providers decide whether to honor it.
+/// `automatic` is retained only for legacy configuration compatibility.
+enum AiResponseSpeed {
+  automatic,
+  fast,
+  standard;
+
+  static const selectableValues = <AiResponseSpeed>[standard, fast];
+}
 
 extension AiResponseSpeedX on AiResponseSpeed {
   String get storageValue => name;
@@ -53,7 +59,7 @@ extension AiResponseSpeedX on AiResponseSpeed {
     return switch (value?.trim().toLowerCase()) {
       'fast' => AiResponseSpeed.fast,
       'standard' || 'default' => AiResponseSpeed.standard,
-      _ => AiResponseSpeed.automatic,
+      _ => AiResponseSpeed.standard,
     };
   }
 }
@@ -67,7 +73,7 @@ class AiApiConfig {
     required this.apiKeyHeader,
     this.chatPath = '/chat/completions',
     this.reasoningEffort = AiReasoningEffort.automatic,
-    this.responseSpeed = AiResponseSpeed.automatic,
+    this.responseSpeed = AiResponseSpeed.standard,
   });
 
   final String name;

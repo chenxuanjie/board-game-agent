@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_palette.dart';
 
@@ -48,11 +47,11 @@ class AppTheme {
 
     final ThemeData base = ThemeData(
       useMaterial3: true,
+      fontFamily: 'Noto Sans SC',
+      fontFamilyFallback: const ['Segoe UI Emoji'],
       brightness: brightness,
       colorScheme: colorScheme,
-      extensions: <ThemeExtension<dynamic>>[
-        AppPaletteThemeExtension(palette),
-      ],
+      extensions: <ThemeExtension<dynamic>>[AppPaletteThemeExtension(palette)],
       scaffoldBackgroundColor: palette.pageBackground,
       canvasColor: palette.pageBackground,
       cardColor: palette.surface,
@@ -60,53 +59,60 @@ class AppTheme {
       splashColor: palette.primary.withValues(alpha: 0.12),
       highlightColor: palette.primary.withValues(alpha: 0.08),
     );
-    final TextTheme bodyTextTheme = GoogleFonts.manropeTextTheme(
-      base.textTheme,
-    );
+    final TextTheme bodyTextTheme = base.textTheme;
 
     return base.copyWith(
       textTheme: bodyTextTheme.copyWith(
-        displayLarge: GoogleFonts.cormorantGaramond(
+        displayLarge: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 44,
           fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
-        displayMedium: GoogleFonts.cormorantGaramond(
+        displayMedium: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 34,
           fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
-        headlineMedium: GoogleFonts.cormorantGaramond(
+        headlineMedium: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 30,
           fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
-        titleLarge: GoogleFonts.manrope(
+        titleLarge: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 22,
           fontWeight: FontWeight.w800,
           color: palette.textPrimary,
         ),
-        titleMedium: GoogleFonts.manrope(
+        titleMedium: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 17,
           fontWeight: FontWeight.w700,
           color: palette.textPrimary,
         ),
-        bodyLarge: GoogleFonts.manrope(
+        bodyLarge: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 16,
           height: 1.45,
           color: palette.textPrimary,
         ),
-        bodyMedium: GoogleFonts.manrope(
+        bodyMedium: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 14,
           height: 1.45,
           color: palette.textSecondary,
         ),
-        bodySmall: GoogleFonts.manrope(
+        bodySmall: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 12,
           height: 1.4,
           color: palette.textSecondary,
         ),
-        labelLarge: GoogleFonts.manrope(
+        labelLarge: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontWeight: FontWeight.w700,
           letterSpacing: 0.1,
           color: palette.textPrimary,
@@ -118,7 +124,8 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.manrope(
+        titleTextStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 18,
           fontWeight: FontWeight.w800,
           color: palette.textPrimary,
@@ -143,7 +150,8 @@ class AppTheme {
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
-        labelStyle: GoogleFonts.manrope(
+        labelStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
           color: palette.onSecondaryContainer,
           fontWeight: FontWeight.w700,
         ),
@@ -155,8 +163,14 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: palette.inputSurface,
-        hintStyle: GoogleFonts.manrope(color: palette.textSecondary),
-        labelStyle: GoogleFonts.manrope(color: palette.textSecondary),
+        hintStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
+          color: palette.textSecondary,
+        ),
+        labelStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
+          color: palette.textSecondary,
+        ),
         prefixIconColor: palette.textSecondary,
         suffixIconColor: palette.textSecondary,
         contentPadding: const EdgeInsets.symmetric(
@@ -194,7 +208,10 @@ class AppTheme {
             BorderSide(color: palette.outline),
           ),
         ),
-        textStyle: GoogleFonts.manrope(color: palette.textPrimary),
+        textStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
+          color: palette.textPrimary,
+        ),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surface,
@@ -203,12 +220,14 @@ class AppTheme {
           borderRadius: BorderRadius.circular(28),
           side: BorderSide(color: palette.outline),
         ),
-        titleTextStyle: GoogleFonts.manrope(
+        titleTextStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 18,
           fontWeight: FontWeight.w800,
           color: palette.textPrimary,
         ),
-        contentTextStyle: GoogleFonts.manrope(
+        contentTextStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
           fontSize: 15,
           height: 1.5,
           color: palette.textPrimary,
@@ -216,7 +235,8 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: palette.surfaceContainer,
-        contentTextStyle: GoogleFonts.manrope(
+        contentTextStyle: TextStyle(
+          fontFamily: 'Noto Sans SC',
           color: palette.textPrimary,
           fontWeight: FontWeight.w700,
         ),
@@ -227,14 +247,20 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: palette.primary,
-          textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+          textStyle: TextStyle(
+            fontFamily: 'Noto Sans SC',
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: palette.primary,
           side: BorderSide(color: palette.primary),
-          textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+          textStyle: TextStyle(
+            fontFamily: 'Noto Sans SC',
+            fontWeight: FontWeight.w800,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -244,7 +270,10 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: palette.primary,
           foregroundColor: palette.onPrimary,
-          textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+          textStyle: TextStyle(
+            fontFamily: 'Noto Sans SC',
+            fontWeight: FontWeight.w800,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),

@@ -40,7 +40,7 @@ void _registerDesktopTypographyTests(_DesktopWorkspaceTestContext context) {
       await _captureDesktopTypography(tester, 'speed-menu');
       expect(find.text('快速（Fast）').last.hitTestable(), findsOneWidget);
       expect(find.text('标准（Default）').last.hitTestable(), findsOneWidget);
-      for (final label in ['自动', '快速（Fast）', '标准（Default）']) {
+      for (final label in ['标准（Default）', '快速（Fast）']) {
         final rendered = tester.renderObject<RenderParagraph>(
           find.text(label).last,
         );

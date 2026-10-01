@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
+import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
@@ -285,7 +286,12 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('mobile-tab-ai')));
       await tester.pumpAndSettle();
       expect(find.byType(AssistantChatScreen), findsOneWidget);
-      expect(find.byIcon(Icons.delete_outline_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
+      expect(
+        find.byKey(const ValueKey('assistant-conversations-trigger')),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
       expect(find.byIcon(Icons.delete_sweep_rounded), findsNothing);
       expect(find.text('语音已准备好'), findsNothing);
       expect(controller.selectedConversation?.isGlobal, isTrue);
@@ -418,6 +424,26 @@ void main() {
     await tester.tap(aiSection);
     await tester.pumpAndSettle();
     expect(find.text(controller.copy.aiApiPresetLabel), findsOneWidget);
+    final reasoningDropdown = tester.widget<DropdownButton<AiReasoningEffort>>(
+      find.byType(DropdownButton<AiReasoningEffort>),
+    );
+    expect(
+      reasoningDropdown.items!.map((item) => item.value),
+      isNot(contains(AiReasoningEffort.automatic)),
+    );
+    expect(
+      reasoningDropdown.items!.map((item) => item.value),
+      isNot(contains(AiReasoningEffort.none)),
+    );
+
+    final speedDropdown = tester.widget<DropdownButton<AiResponseSpeed>>(
+      find.byType(DropdownButton<AiResponseSpeed>),
+    );
+    expect(speedDropdown.value, AiResponseSpeed.standard);
+    expect(speedDropdown.items!.map((item) => item.value), [
+      AiResponseSpeed.standard,
+      AiResponseSpeed.fast,
+    ]);
 
     final aboutEntry = find.byKey(const ValueKey('mobile-settings-about'));
     await tester.ensureVisible(aboutEntry);

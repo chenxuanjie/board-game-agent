@@ -1,6 +1,42 @@
 part of '../app_controller.dart';
 
 extension AppAssistantController on AppController {
+  /// Creates an independent topic. Existing v4 records keep their original IDs.
+  /// Selection changes only after the new record has been written successfully.
+  Future<String> createConversation({required bool useGlobalMode}) async {
+    final gameId = useGlobalMode ? null : selectedGame.id;
+    if (!useGlobalMode && !hasGames) throw StateError('No game selected');
+    final now = DateTime.now();
+    var serial = now.microsecondsSinceEpoch;
+    var id = 'conversation:$serial';
+    while (_conversations.containsKey(id)) {
+      id = 'conversation:${++serial}';
+    }
+    _conversations[id] = AiConversation(
+      id: id,
+      title: copy.newConversation,
+      scope: useGlobalMode
+          ? AiConversationScope.global
+          : AiConversationScope.game,
+      gameId: gameId,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final write = _conversationSaveQueue.then(
+      (_) => _persistConversations(throwOnError: true),
+    );
+    // Keep later writes usable even if this operation fails.
+    _conversationSaveQueue = write.catchError((Object _) {});
+    try {
+      await write;
+    } catch (_) {
+      _conversations.remove(id);
+      rethrow;
+    }
+    selectConversation(id);
+    return id;
+  }
+
   void selectGame(String gameId) {
     final bool gameChanged = _selectedGameId != gameId;
     final String previousConversationId = _selectedConversationId ?? '';
@@ -54,8 +90,8 @@ extension AppAssistantController on AppController {
 
   /// Selects a persisted assistant conversation by its stable ID.
   ///
-  /// Game sessions use `game:<gameId>` and the all-knowledge session uses
-  /// `global`. Unknown IDs are ignored so stale preference data cannot point
+  /// Legacy sessions retain `game:<gameId>` and `global`; new topics use
+  /// independent IDs. Unknown IDs are ignored so stale preferences cannot point
   /// the UI at a conversation that no longer exists.
   void selectConversation(String conversationId) {
     final String normalized = conversationId.trim();
@@ -236,14 +272,22 @@ extension AppAssistantController on AppController {
       useGlobalMode: useGlobalMode,
     );
     generation.contextEpoch += 1;
-    await stopGenerating(useGlobalMode: useGlobalMode);
     final String conversationId = _conversationIdForContext(
       useGlobalMode: useGlobalMode,
     );
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
     );
+    final GameInfo contextGame = selectedGame;
+    await stopGenerating(useGlobalMode: useGlobalMode);
     messages.clear();
+    if (_aiService is AiConversationContextReset) {
+      await (_aiService as AiConversationContextReset).resetConversationContext(
+        conversationId: conversationId,
+        game: contextGame,
+        useGlobalMode: useGlobalMode,
+      );
+    }
     final AiConversation? existingConversation = _conversations[conversationId];
     if (existingConversation != null && existingConversation.lastRun != null) {
       existingConversation.lastRun = null;
@@ -353,6 +397,7 @@ extension AppAssistantController on AppController {
         config: _aiApiConfig,
         assetSourceConfigs: _assetSourceConfigs,
         remoteAssetService: _remoteAssetService,
+        conversationId: conversationId,
         conversationHistory: List<ChatMessage>.unmodifiable(
           messages.where((ChatMessage item) => item.id != draftId),
         ),

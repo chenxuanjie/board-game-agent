@@ -165,6 +165,7 @@ class _FakeAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
   }) async {
     return BoardGameAiAnswer(text: 'test', source: AnswerSource.generalAdvice);
@@ -181,6 +182,7 @@ class _FakeAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {}

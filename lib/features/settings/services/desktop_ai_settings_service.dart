@@ -10,7 +10,7 @@ class DesktopAiSettingsDraft {
     required this.apiKey,
     required this.baseUrl,
     this.reasoningEffort = AiReasoningEffort.automatic,
-    this.responseSpeed = AiResponseSpeed.automatic,
+    this.responseSpeed = AiResponseSpeed.standard,
   });
 
   final String provider;

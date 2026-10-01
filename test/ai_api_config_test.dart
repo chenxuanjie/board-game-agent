@@ -106,7 +106,7 @@ void main() {
   });
 
   test(
-    'old saved configs default optional generation controls to automatic',
+    'old saved configs use standard service tier and retain automatic reasoning',
     () {
       final AiApiConfig restored = AiApiConfig.fromJson(
         '{"name":"Gateway","baseUrl":"https://gateway.example/v1",'
@@ -114,9 +114,16 @@ void main() {
       );
 
       expect(restored.reasoningEffort, AiReasoningEffort.automatic);
-      expect(restored.responseSpeed, AiResponseSpeed.automatic);
+      expect(restored.responseSpeed, AiResponseSpeed.standard);
       expect(restored.toMap()['reasoningEffort'], 'automatic');
-      expect(restored.toMap()['responseSpeed'], 'automatic');
+      expect(restored.toMap()['responseSpeed'], 'standard');
+      expect(restored.responseSpeed.serviceTier, 'default');
+      expect(
+        AiResponseSpeedX.fromStored('automatic'),
+        AiResponseSpeed.standard,
+      );
+      expect(AiResponseSpeedX.fromStored('fast'), AiResponseSpeed.fast);
+      expect(AiApiConfig.defaultOpenAi.responseSpeed, AiResponseSpeed.standard);
     },
   );
 

@@ -218,14 +218,20 @@ void main() {
       expect(controller.aiApiConfig.model, 'gpt-5.6-sol');
       expect(
         find.byKey(const ValueKey<String>('desktop-reasoning-option-none')),
-        findsOneWidget,
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('desktop-reasoning-option-automatic'),
+        ),
+        findsNothing,
       );
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('desktop-reasoning-option-none')),
+        find.byKey(const ValueKey<String>('desktop-reasoning-option-high')),
       );
       await tester.pumpAndSettle();
-      expect(controller.aiApiConfig.reasoningEffort, AiReasoningEffort.none);
+      expect(controller.aiApiConfig.reasoningEffort, AiReasoningEffort.high);
       expect(panel, findsNothing);
 
       await tester.tap(
@@ -553,6 +559,7 @@ class _FakeAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
   }) async {
     return BoardGameAiAnswer(text: 'test', source: AnswerSource.generalAdvice);
@@ -569,6 +576,7 @@ class _FakeAiService implements AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   }) async* {}

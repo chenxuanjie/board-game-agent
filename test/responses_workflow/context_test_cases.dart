@@ -1,6 +1,142 @@
 part of '../responses_rules_workflow_test.dart';
 
 void _registerContextWorkflowTests() {
+  test(
+    'isolates new topic compaction and clears only the selected topic',
+    () async {
+      ResponsesResponse response(String id, {bool compact = false}) =>
+          ResponsesResponse(
+            text: '回答 $id',
+            model: 'test-model',
+            webSearchCitations: const [
+              ResponsesWebSearchCitation(
+                url: 'https://example.test/context',
+                title: '来源',
+              ),
+            ],
+            outputItems: compact
+                ? [
+                    ResponsesRawInput({
+                      'type': 'compaction',
+                      'id': id,
+                      'encrypted_content': 'opaque-$id',
+                    }),
+                  ]
+                : const [],
+          );
+      final client = _FakeResponsesClient(
+        responses: [
+          response('first', compact: true),
+          response('second', compact: true),
+          response('follow-first'),
+          response('cleared-first'),
+          response('follow-second'),
+        ],
+      );
+      final workflow = ResponsesRulesWorkflow(responsesClient: client);
+      Future<void> ask(String id) async {
+        await workflow.generateReply(
+          prompt: '第一问',
+          language: AppLanguage.zhHans,
+          game: _game(),
+          answerMode: AiAnswerMode.knowledgeThenDirect,
+          useGlobalMode: false,
+          config: _config(),
+          assetSourceConfigs: const [],
+          remoteAssetService: _UnavailableRemoteAssetService(),
+          conversationHistory: const [],
+          conversationId: id,
+        );
+      }
+
+      await ask('conversation:first');
+      await ask('conversation:second');
+      expect(client.requests[1].input.whereType<ResponsesRawInput>(), isEmpty);
+      await ask('conversation:first');
+      expect(
+        client.requests[2].input
+            .whereType<ResponsesRawInput>()
+            .single
+            .value['id'],
+        'first',
+      );
+      await workflow.clearConversationContext(
+        conversationId: 'conversation:first',
+        game: _game(),
+        useGlobalMode: false,
+      );
+      await ask('conversation:first');
+      expect(client.requests[3].input.whereType<ResponsesRawInput>(), isEmpty);
+      await ask('conversation:second');
+      expect(
+        client.requests[4].input
+            .whereType<ResponsesRawInput>()
+            .single
+            .value['id'],
+        'second',
+      );
+    },
+  );
+
+  test('clearing a topic rejects its late compaction snapshot', () async {
+    final started = Completer<void>();
+    final pending = Completer<ResponsesResponse>();
+    final response = ResponsesResponse(
+      text: '回答',
+      model: 'test-model',
+      webSearchCitations: const [
+        ResponsesWebSearchCitation(
+          url: 'https://example.test/context',
+          title: '来源',
+        ),
+      ],
+      outputItems: const [
+        ResponsesRawInput({
+          'type': 'compaction',
+          'id': 'late',
+          'encrypted_content': 'opaque-late',
+        }),
+      ],
+    );
+    final client = _FakeResponsesClient(
+      responses: [],
+      onComplete: (_, _) {
+        if (!started.isCompleted) {
+          started.complete();
+          return pending.future;
+        }
+        return response;
+      },
+    );
+    final workflow = ResponsesRulesWorkflow(responsesClient: client);
+    Future<void> ask() async {
+      await workflow.generateReply(
+        prompt: '第一问',
+        language: AppLanguage.zhHans,
+        game: _game(),
+        answerMode: AiAnswerMode.knowledgeThenDirect,
+        useGlobalMode: false,
+        config: _config(),
+        assetSourceConfigs: const [],
+        remoteAssetService: _UnavailableRemoteAssetService(),
+        conversationHistory: const [],
+        conversationId: 'conversation:late',
+      );
+    }
+
+    final first = ask();
+    await started.future;
+    await workflow.clearConversationContext(
+      conversationId: 'conversation:late',
+      game: _game(),
+      useGlobalMode: false,
+    );
+    pending.complete(response);
+    await first;
+    await ask();
+    expect(client.requests.last.input.whereType<ResponsesRawInput>(), isEmpty);
+  });
+
   test('normalizes file and web citations without inventing locations', () {
     const ResponsesFileInput file = ResponsesFileInput.data(
       'AQI=',

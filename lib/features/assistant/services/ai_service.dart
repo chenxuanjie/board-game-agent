@@ -58,6 +58,7 @@ abstract class AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
   });
 
@@ -71,6 +72,7 @@ abstract class AiService {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
     required List<ChatMessage> conversationHistory,
+    String? conversationId,
     bool useCurrentGameKnowledge = false,
     Future<void>? abortTrigger,
   });
@@ -78,4 +80,13 @@ abstract class AiService {
   Future<AiHealthResult> checkConnection(AiApiConfig config);
 
   void dispose();
+}
+
+/// Optional provider-owned context reset for a cleared conversation.
+abstract interface class AiConversationContextReset {
+  Future<void> resetConversationContext({
+    required String conversationId,
+    required GameInfo game,
+    required bool useGlobalMode,
+  });
 }

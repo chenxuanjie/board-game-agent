@@ -593,12 +593,9 @@ class _MobileMineContentState extends State<MobileMineContent> {
         final cardWidth =
             (constraints.maxWidth - gap * (entries.length - 1)) /
             entries.length;
-        final iconSize = (cardWidth * 0.33).clamp(22.0, 42.0);
-        final labelSize = cardWidth < 75
-            ? 9.0
-            : cardWidth < 105
-            ? 10.5
-            : 12.5;
+        final cardHeight = (cardWidth * 0.6).clamp(100.0, 112.0);
+        final iconSize = cardWidth < 180 ? 36.0 : 40.0;
+        final labelSize = cardWidth < 180 ? 13.0 : 14.0;
         return Row(
           children: [
             for (var index = 0; index < entries.length; index++) ...[
@@ -608,8 +605,8 @@ class _MobileMineContentState extends State<MobileMineContent> {
                   key: ValueKey('mobile-mine-shortcut-$index'),
                   onTap: entries[index].$5,
                   borderRadius: BorderRadius.circular(18),
-                  child: AspectRatio(
-                    aspectRatio: 1,
+                  child: SizedBox(
+                    height: cardHeight,
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
@@ -641,7 +638,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
                                 color: _orange,
                               ),
                             ),
-                            SizedBox(height: cardWidth * 0.06),
+                            const SizedBox(height: 8),
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 2,
