@@ -1,6 +1,74 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
+  testWidgets('rule links show real scoped files without the abstract drawer', (
+    tester,
+  ) async {
+    final first = context.controller.games[0];
+    final second = context.controller.games[1];
+    DesktopLibraryResource file(GameInfo game, String id) =>
+        DesktopLibraryResource(
+          id: id,
+          gameSlug: game.slug,
+          gameTitle: game.title,
+          remotePath: game.rulebookAssetPath,
+          title: '规则书',
+          language: 'cn',
+          type: DesktopLibraryResourceType.rulebook,
+          format: DesktopLibraryResourceFormat.markdown,
+          isRemote: false,
+        );
+    await tester.runAsync(() async {
+      await context.preferences.saveDesktopLibraryResources([
+        file(first, 'scoped-first'),
+        file(second, 'scoped-second'),
+      ]);
+      await context.controller.refreshLibraryResources();
+    });
+    expect(context.controller.libraryResources, isNotEmpty);
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final search = find.byKey(const ValueKey('desktop-home-search-field'));
+    await tester.tap(search);
+    await tester.enterText(search, first.title);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('查看规则资料').first);
+    await tester.pumpAndSettle();
+    final library = tester.widget<DesktopLibraryPane>(
+      find.byType(DesktopLibraryPane),
+    );
+    expect(library.gameSlug, first.slug);
+    expect(find.text('条款问答'), findsNothing);
+    expect(find.text('规则速览'), findsNothing);
+    expect(find.text('规则裁决问答'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('library-item-scoped-first')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-item-scoped-second')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('library-more-scoped-first')));
+    await tester.pumpAndSettle();
+    expect(find.text(context.controller.copy.desktopOpen), findsWidgets);
+    expect(find.text(context.controller.copy.desktopDownload), findsWidgets);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全部资料'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<DesktopLibraryPane>(find.byType(DesktopLibraryPane))
+          .gameSlug,
+      isNull,
+    );
+    expect(
+      find.byKey(const ValueKey('library-item-scoped-second')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('favorites page starts empty and links back to the library', (
     tester,
   ) async {

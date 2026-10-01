@@ -10,10 +10,7 @@ import '../../features/assistant/models/ai_conversation.dart';
 import '../../core/models/app_activity.dart';
 import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';
-import '../../features/library/models/resolved_document.dart';
 import '../../app/state/app_controller.dart';
-import '../shared/documents/markdown_document_screen.dart';
-import '../shared/documents/pdf_document_screen.dart';
 import 'business_panes.dart';
 import 'home_pane.dart';
 import 'national_day_page.dart';
@@ -57,10 +54,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   bool _searchOpen = false;
   String _page = 'home';
   String _gameDetailReturnPage = 'games';
-  bool _rulesDrawerOpen = false;
-  GameInfo? _rulesDrawerGame;
-  DesktopLibraryResource? _rulesDrawerResource;
-  int _rulesDrawerTab = 0;
+  String? _libraryGameSlug;
   DesktopLibraryResourceType? _libraryFilter;
   static const _routes = [
     'home',
@@ -104,7 +98,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     if (page == 'assistant' && widget.controller.selectedConversation == null) {
       widget.controller.openGlobalAssistant();
     }
-    setState(() => _page = page);
+    setState(() {
+      _page = page;
+      if (page == 'library') {
+        _libraryGameSlug = null;
+        _libraryFilter = null;
+      }
+    });
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
@@ -157,10 +157,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.selectGame(game.id);
     setState(() {
       _page = 'library';
-      _rulesDrawerGame = game;
-      _rulesDrawerResource = null;
-      _rulesDrawerTab = 0;
-      _rulesDrawerOpen = true;
+      _libraryGameSlug = game.slug;
+      _libraryFilter = null;
     });
   }
 
@@ -221,60 +219,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               onPressed: () => unawaited(_toggleFavorite(game)),
             ),
     );
-  }
-
-  void _openRulesForResource(DesktopLibraryResource resource) {
-    final game = widget.controller.games
-        .where((item) => item.slug == resource.gameSlug)
-        .firstOrNull;
-    if (game != null) widget.controller.selectGame(game.id);
-    setState(() {
-      _rulesDrawerGame = game;
-      _rulesDrawerResource = resource;
-      _rulesDrawerTab = 0;
-      _rulesDrawerOpen = true;
-    });
-  }
-
-  void _closeRulesDrawer() => setState(() => _rulesDrawerOpen = false);
-
-  void _openDrawerAssistant() {
-    final game = _rulesDrawerGame;
-    _closeRulesDrawer();
-    if (game != null) {
-      _askAi(game);
-    } else {
-      _navigate('assistant');
-    }
-  }
-
-  Future<void> _openDrawerResource() async {
-    final resource = _rulesDrawerResource;
-    if (resource == null || !resource.canOpen) return;
-    _closeRulesDrawer();
-    final ResolvedDocument? document = await widget.controller
-        .resolveLibraryResource(resource);
-    if (!mounted || document == null) return;
-    final title = '${resource.gameTitle} · ${resource.title}';
-    final Widget page;
-    if (document.renderType == DocumentRenderType.markdown) {
-      page = MarkdownDocumentScreen(
-        controller: widget.controller,
-        remotePath: document.remotePath,
-        title: title,
-      );
-    } else if (document.renderType == DocumentRenderType.pdf) {
-      page = PdfDocumentScreen(
-        controller: widget.controller,
-        title: title,
-        remotePath: document.remotePath,
-      );
-    } else {
-      return;
-    }
-    await Navigator.of(
-      context,
-    ).push<void>(MaterialPageRoute<void>(builder: (_) => page));
   }
 
   Future<void> _openActivityCenter() async {
@@ -565,10 +509,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                       controller: widget.controller,
                     ),
                     'library' => DesktopLibraryPane(
+                      key: ValueKey(_libraryGameSlug ?? 'all-library-files'),
                       controller: widget.controller,
                       filter: _libraryFilter,
+                      gameSlug: _libraryGameSlug,
                       onFilterChanged: _setLibraryFilter,
-                      onOpenRules: _openRulesForResource,
+                      onShowAllResources: () => _navigate('library'),
                     ),
                     _ => const SizedBox.shrink(),
                   },
@@ -731,18 +677,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     ),
                   ),
                 ),
-              DesktopRulesDrawer(
-                open: _rulesDrawerOpen,
-                tabIndex: _rulesDrawerTab,
-                game: _rulesDrawerGame,
-                resource: _rulesDrawerResource,
-                controller: widget.controller,
-                onClose: _closeRulesDrawer,
-                onTabChanged: (value) =>
-                    setState(() => _rulesDrawerTab = value),
-                onOpenAssistant: _openDrawerAssistant,
-                onOpenResource: _openDrawerResource,
-              ),
             ],
           ),
         ),

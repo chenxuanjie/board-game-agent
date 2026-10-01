@@ -4,14 +4,16 @@ class DesktopLibraryPane extends StatefulWidget {
   const DesktopLibraryPane({
     super.key,
     required this.controller,
-    this.onOpenRules,
     this.filter,
+    this.gameSlug,
+    this.onShowAllResources,
     this.onFilterChanged,
   });
 
   final AppController controller;
-  final ValueChanged<DesktopLibraryResource>? onOpenRules;
   final DesktopLibraryResourceType? filter;
+  final String? gameSlug;
+  final VoidCallback? onShowAllResources;
   final ValueChanged<DesktopLibraryResourceType?>? onFilterChanged;
 
   @override
@@ -45,13 +47,17 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
     final AppPalette palette = AppPalette.of(context);
     final List<DesktopLibraryResource> items =
         widget.controller.libraryResources;
-    final List<DesktopLibraryResource> visible = widget.filter == null
-        ? items
-        : items
-              .where(
-                (DesktopLibraryResource item) => item.type == widget.filter,
-              )
-              .toList(growable: false);
+    final List<DesktopLibraryResource> visible = items
+        .where(
+          (item) =>
+              (widget.gameSlug == null || item.gameSlug == widget.gameSlug) &&
+              (widget.filter == null || item.type == widget.filter),
+        )
+        .toList(growable: false);
+    final gameTitle = widget.controller.games
+        .where((game) => game.slug == widget.gameSlug)
+        .firstOrNull
+        ?.title;
     return CustomScrollView(
       slivers: <Widget>[
         SliverPadding(
@@ -61,13 +67,20 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    copy.desktopLibraryTitle,
+                    gameTitle == null
+                        ? copy.desktopLibraryTitle
+                        : '$gameTitle · ${copy.desktopLibraryTitle}',
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
                       color: palette.textPrimary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
+                if (widget.gameSlug != null)
+                  TextButton(
+                    onPressed: widget.onShowAllResources,
+                    child: Text(copy.localized('全部资料', 'All files')),
+                  ),
                 IconButton(
                   key: const ValueKey<String>('desktop-library-refresh'),
                   tooltip: copy.desktopRefreshLibrary,
@@ -199,9 +212,6 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
                         _downloadingItemId == resource.id,
                     isDownloading: _downloadingItemId == resource.id,
                     onOpen: () => _openItem(resource),
-                    onOpenRules: widget.onOpenRules == null
-                        ? null
-                        : () => widget.onOpenRules!(resource),
                     onDownload: () => _downloadItem(resource),
                   ),
                 );
@@ -464,7 +474,6 @@ class _LibraryItemTile extends StatelessWidget {
     required this.isLoading,
     required this.isDownloading,
     required this.onOpen,
-    this.onOpenRules,
     required this.onDownload,
   });
 
@@ -473,7 +482,6 @@ class _LibraryItemTile extends StatelessWidget {
   final bool isLoading;
   final bool isDownloading;
   final VoidCallback onOpen;
-  final VoidCallback? onOpenRules;
   final VoidCallback onDownload;
 
   @override
@@ -538,20 +546,6 @@ class _LibraryItemTile extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else ...<Widget>[
-                if (onOpenRules != null)
-                  TextButton(
-                    onPressed: onOpenRules,
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF66C0F4),
-                      minimumSize: const Size(0, 28),
-                      padding: const EdgeInsets.symmetric(horizontal: 9),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: const BorderSide(color: Color(0x4066C0F4)),
-                      ),
-                    ),
-                    child: const Text('条款问答'),
-                  ),
                 PopupMenuButton<_LibraryItemAction>(
                   key: ValueKey<String>('library-more-${resource.id}'),
                   tooltip: copy.desktopMore,
