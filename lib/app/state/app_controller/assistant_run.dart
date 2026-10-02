@@ -24,7 +24,7 @@ extension AppAssistantRunController on AppController {
         contextKey: _conversationIdForContext(
           useGlobalMode: generation.useGlobalMode,
         ),
-        model: _aiApiConfig.model,
+        model: (generation.requestConfig ?? _aiApiConfig).model,
       ),
     );
   }
@@ -92,7 +92,7 @@ extension AppAssistantRunController on AppController {
         timestamp: timestamp,
         stageId: stageId,
         contextKey: generation.contextKey,
-        model: _aiApiConfig.model,
+        model: (generation.requestConfig ?? _aiApiConfig).model,
       ),
     );
   }
@@ -110,12 +110,12 @@ extension AppAssistantRunController on AppController {
         timestamp: timestamp,
         stageId: 'answering',
         contextKey: generation.contextKey,
-        model: _aiApiConfig.model,
+        model: (generation.requestConfig ?? _aiApiConfig).model,
         stageResult: AiStageResult(
           stageId: 'answering',
           scope: const AiKnowledgeScope.general(),
           status: AiStageStatus.answered,
-          model: _aiApiConfig.model,
+          model: (generation.requestConfig ?? _aiApiConfig).model,
           startedAt: generation.runStartedAt,
           completedAt: timestamp,
         ),
@@ -159,7 +159,7 @@ extension AppAssistantRunController on AppController {
           type: type,
           timestamp: completedAt,
           contextKey: generation.contextKey,
-          model: _aiApiConfig.model,
+          model: (generation.requestConfig ?? _aiApiConfig).model,
         ),
       );
     }
@@ -196,7 +196,7 @@ extension AppAssistantRunController on AppController {
       responseId: terminal.responseId,
       sessionId: terminal.sessionId,
       contextKey: terminal.contextKey ?? conversationId,
-      model: terminal.model ?? _aiApiConfig.model,
+      model: terminal.model ?? (generation.requestConfig ?? _aiApiConfig).model,
       startedAt: generation.runStartedAt ?? first.timestamp,
       completedAt: generation.runCompletedAt ?? terminal.timestamp,
       errorCode: terminal.errorCode,

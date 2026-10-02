@@ -1,9 +1,14 @@
 part of '../business_panes.dart';
 
 class DesktopAssistantPane extends StatefulWidget {
-  const DesktopAssistantPane({super.key, required this.controller});
+  const DesktopAssistantPane({
+    super.key,
+    required this.controller,
+    this.onConfigureAi,
+  });
 
   final AppController controller;
+  final VoidCallback? onConfigureAi;
 
   @override
   State<DesktopAssistantPane> createState() => DesktopAssistantPaneState();
@@ -334,6 +339,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                 textController: _draftController,
                 useGlobalMode: useGlobalMode,
                 onSend: _send,
+                onConfigureAi: widget.onConfigureAi,
               ),
             ),
           ],

@@ -71,6 +71,26 @@ flutter test --no-pub
 
 合并结果验证：`flutter analyze --no-pub` 无问题，`flutter test --no-pub` **280 项全部通过**，差异空白检查通过。用户要求不再构建，合并后未重新构建 Windows/Web，也未推送远端。原工作区的附件目录保留，不纳入提交。
 
+## 发送期间的选项与设置定位
+
+- 共享输入区在生成过程中保留回答模式、模型、推理强度和服务等级的修改入口；菜单内提示“下次发送生效”，不以通知覆盖输入控件。重复保存仍由各选择器的保存状态阻止，失败保留旧模型并允许重试。
+- `sendPrompt` 在发送入口捕获不可变配置和回答模式。当前流式请求、合成阶段、终态和持久化 Run 的模型信息均来自该配置。模型选择路径使用 `forNextRun` 保存，不取消活动请求或清空它的真实轨迹；下一条请求使用已保存的新配置。设置页完整服务配置仍沿用原有失效边界，不新增请求协议或第二套聊天状态。
+- 模型空状态提供“前往 AI 设置”。桌面外壳切换设置页，紧凑端使用 `/settings/ai` 路由；共用 `SettingsSectionFocus` 自动滚动到 AI 区域并高亮三秒，紧凑端同时展开该区域。高亮绘制在前景，不改变卡片对齐与尺寸，并遵循减少动画设置。
+- 继续复用现有 Flutter PopupMenu、Navigator 和配置保存队列；定位直接采用 [Flutter Scrollable.ensureVisible](https://api.flutter.dev/flutter/widgets/Scrollable/ensureVisible.html)。输入工具区参考现有的 [Open WebUI v0.11.0 MessageInput.svelte](https://github.com/open-webui/open-webui/blob/v0.11.0/src/lib/components/chat/MessageInput.svelte)，其 Svelte/TypeScript 运行时不能直接用于 Flutter，本轮未复制代码或引入外部依赖。
+- 回归包含：活动流中切换模型与模式、原流继续完成且保留原模型轨迹、下一条请求配置、停止生成、模型保存失败，以及 320/1280 的桌面入口和 320/390 的紧凑路由展开与高亮。桌面工作区、移动首页和会话抽屉的 120 项回归全部通过，静态检查无问题。WebDAV 和 AI 请求验证均使用测试替身；Windows/Android 原生与真实服务未实测，现有构建产物未改变。按用户要求，后续不生成或交付测试渲染图。
+
+资料源界面的重构见 [资料源与连接界面](resource-source-settings.md)。
+
+## 紧凑输入区
+
+Android 和紧凑 Web 使用一行工具栏：回答模式仅保留图标，名称在 Tooltip、无障碍标签与菜单中提供；模型单行显示，完整名称仍在选择器中可见。模式和主按钮保留 48 dp 触控区域。桌面输入区可用宽度小于 370 dp 或文字放大时也使用该布局。
+
+主按钮在空草稿时录音、有草稿时发送、录音时停止录音、生成时停止回复。录音状态优先于已识别文字，避免点击停止时误发送；有草稿时长按可启动语音。主按钮的紧凑 Tooltip 不捕获长按，保留悬停和语义说明。继续复用原有语音错误提示、草稿、发送、取消和下一次发送配置边界。
+
+交互参考 [Open WebUI v0.11.0 MessageInput.svelte](https://raw.githubusercontent.com/open-webui/open-webui/v0.11.0/src/lib/components/chat/MessageInput.svelte) 的输入、录音和活动请求状态分离。其 Svelte/TypeScript 和浏览器录音接口无法直接用于本 Flutter 工程，保留项目已有 SpeechService 与控制器，不复制源码、不新增网络服务或依赖。
+
+布局与交互测试覆盖 280/320/390/430 dp、中英文、1/1.5/2 倍字号，以及录音识别期间停止、长按录音、发送和生成时模式菜单。测试使用语音替身，未在真实 Android 麦克风上验证。主题区分度调整见 [紧凑界面对比度](compact-interface-contrast.md)。
+
 ## 回滚
 
 本次改动保留在独立分支和 worktree 中。尚未合并时原分支不受影响；合并后可回退该界面变更。配置和会话存储格式均未升级，不需要数据迁移。

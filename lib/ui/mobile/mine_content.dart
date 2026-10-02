@@ -695,8 +695,13 @@ class _MobileMineContentState extends State<MobileMineContent> {
           if (index > 0) const SizedBox(width: UiTokens.itemGap),
           Expanded(
             child: Material(
-              color: palette.surfaceContainer,
-              borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+              color: index == 0
+                  ? palette.primaryContainer
+                  : palette.secondaryContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+                side: BorderSide(color: palette.outline),
+              ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 key: ValueKey('mobile-mine-shortcut-$index'),
@@ -708,13 +713,23 @@ class _MobileMineContentState extends State<MobileMineContent> {
                   ),
                   child: Row(
                     children: [
-                      Icon(entries[index].$1, size: 24, color: palette.primary),
+                      Icon(
+                        entries[index].$1,
+                        size: 24,
+                        color: index == 0
+                            ? palette.onPrimaryContainer
+                            : palette.onSecondaryContainer,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           entries[index].$2,
                           maxLines: 2,
-                          style: ContentCardStyle.title(context),
+                          style: ContentCardStyle.title(context).copyWith(
+                            color: index == 0
+                                ? palette.onPrimaryContainer
+                                : palette.onSecondaryContainer,
+                          ),
                         ),
                       ),
                     ],
@@ -757,11 +772,13 @@ class _MobileMineContentState extends State<MobileMineContent> {
   );
 
   Widget _emptyRecent(AppCopy copy) => Container(
+    key: const ValueKey('mobile-mine-empty-recent'),
     height: 105,
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: AppPalette.of(context).surface,
       borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppPalette.of(context).outline),
     ),
     child: TextButton(
       onPressed: widget.onExplore,

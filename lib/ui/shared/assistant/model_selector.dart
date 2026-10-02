@@ -16,10 +16,16 @@ class AssistantModelSelector extends StatefulWidget {
     super.key,
     required this.controller,
     required this.enabled,
+    this.onConfigureAi,
+    this.useGlobalMode = false,
+    this.compact = false,
   });
 
   final AppController controller;
   final bool enabled;
+  final VoidCallback? onConfigureAi;
+  final bool useGlobalMode;
+  final bool compact;
 
   @override
   State<AssistantModelSelector> createState() => _AssistantModelSelectorState();
@@ -46,8 +52,16 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
         ),
         barrierColor: Colors.black.withValues(alpha: 0.12),
         transitionDuration: AppMotion.duration(context, AppMotion.menu),
-        pageBuilder: (BuildContext context, _, _) =>
-            _AssistantModelPickerPanel(controller: widget.controller),
+        pageBuilder: (BuildContext context, _, _) => _AssistantModelPickerPanel(
+          controller: widget.controller,
+          useGlobalMode: widget.useGlobalMode,
+          onConfigureAi: widget.onConfigureAi == null
+              ? null
+              : () {
+                  Navigator.of(context).pop();
+                  widget.onConfigureAi!();
+                },
+        ),
         transitionBuilder: (context, animation, _, child) => LayoutBuilder(
           builder: (context, constraints) {
             // Recompute on window resize and keyboard changes. The anchor can
@@ -151,7 +165,10 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
           child: AnimatedContainer(
             duration: AppMotion.duration(context),
             curve: AppMotion.curve,
-            constraints: const BoxConstraints(maxWidth: 310, minHeight: 36),
+            constraints: BoxConstraints(
+              maxWidth: 310,
+              minHeight: widget.compact ? 48 : 36,
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
               color: _open || _hovered || _focused
@@ -170,8 +187,10 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
                 Flexible(
                   child: Text(
                     modelLabel,
-                    maxLines: 2,
-                    overflow: TextOverflow.clip,
+                    maxLines: widget.compact ? 1 : 2,
+                    overflow: widget.compact
+                        ? TextOverflow.ellipsis
+                        : TextOverflow.clip,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontSize: 14,
                       color: palette.textPrimary,
@@ -199,9 +218,15 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
 }
 
 class _AssistantModelPickerPanel extends StatefulWidget {
-  const _AssistantModelPickerPanel({required this.controller});
+  const _AssistantModelPickerPanel({
+    required this.controller,
+    required this.useGlobalMode,
+    this.onConfigureAi,
+  });
 
   final AppController controller;
+  final bool useGlobalMode;
+  final VoidCallback? onConfigureAi;
 
   @override
   State<_AssistantModelPickerPanel> createState() =>
@@ -345,6 +370,18 @@ class _AssistantModelPickerPanelState
                 ],
               ),
             ),
+            if (widget.controller.isSendingForContext(
+              useGlobalMode: widget.useGlobalMode,
+            ))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                child: Text(
+                  copy.localized('下次发送生效', 'Applies to your next message'),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+                ),
+              ),
             if (_busy ||
                 widget.controller.aiModelLoadState == AiModelLoadState.loading)
               LinearProgressIndicator(
@@ -489,6 +526,7 @@ class _AssistantModelPickerPanelState
     try {
       await widget.controller.saveAiApiConfig(
         widget.controller.aiApiConfig.copyWith(responseSpeed: tier),
+        forNextRun: true,
       );
     } catch (_) {
       if (mounted) {
@@ -585,6 +623,17 @@ class _AssistantModelPickerPanelState
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: palette.textSecondary),
                         ),
+                        if (query.isEmpty && widget.onConfigureAi != null) ...[
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            key: const ValueKey('assistant-configure-ai'),
+                            onPressed: widget.onConfigureAi,
+                            icon: const Icon(Icons.settings_outlined, size: 16),
+                            label: Text(
+                              copy.localized('前往 AI 设置', 'Open AI settings'),
+                            ),
+                          ),
+                        ],
                         if (query.isEmpty &&
                             widget.controller.aiApiConfig.apiKey
                                 .trim()

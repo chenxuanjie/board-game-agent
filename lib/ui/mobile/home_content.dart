@@ -525,6 +525,9 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                                   ? AppPalette.of(context).surfaceContainer
                                   : entry.$3,
                               borderRadius: BorderRadius.circular(borderRadius),
+                              border: Border.all(
+                                color: AppPalette.of(context).outline,
+                              ),
                             ),
                             alignment: Alignment.center,
                             child: Icon(

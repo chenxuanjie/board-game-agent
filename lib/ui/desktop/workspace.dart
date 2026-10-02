@@ -64,6 +64,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   Timer? _favoriteSnackBarTimer;
   bool _searchOpen = false;
   String _page = 'home';
+  bool _focusAiSettings = false;
   String _gameDetailReturnPage = 'games';
   String? _libraryGameSlug;
   DesktopLibraryResourceType? _libraryFilter;
@@ -104,7 +105,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     super.dispose();
   }
 
-  void _navigate(String page) {
+  void _navigate(String page, {bool focusAiSettings = false}) {
     _coverGeneration++;
     _coverFlight = null;
     _dismissSearch(clearQuery: true);
@@ -113,6 +114,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     }
     setState(() {
       _page = page;
+      _focusAiSettings = focusAiSettings;
       if (page == 'library') {
         _libraryGameSlug = null;
         _libraryFilter = null;
@@ -571,6 +573,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                       'assistant' => DesktopAssistantPane(
                         key: _assistantPane,
                         controller: widget.controller,
+                        onConfigureAi: () =>
+                            _navigate('settings', focusAiSettings: true),
                       ),
                       'library' => DesktopLibraryPane(
                         key: ValueKey(_libraryGameSlug ?? 'all-library-files'),
@@ -657,6 +661,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               ),
                               'settings' => DesktopSettingsPane(
                                 controller: widget.controller,
+                                focusAiSettings: _focusAiSettings,
                                 webDavSettingsController:
                                     widget.webDavSettingsController,
                                 onOpenAbout: widget.onOpenAbout,

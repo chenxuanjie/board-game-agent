@@ -356,6 +356,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                     context,
                                   ).surfaceContainer,
                                   borderRadius: BorderRadius.circular(15),
+                                  border: Border.all(
+                                    color: AppPalette.of(context).outline,
+                                  ),
                                 ),
                                 child: Text(
                                   game.heroTagline,
@@ -431,7 +434,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                           style: TextStyle(
                                             color: AppPalette.of(
                                               context,
-                                            ).primary,
+                                            ).textPrimary,
                                             fontSize: 12,
                                           ),
                                         ),

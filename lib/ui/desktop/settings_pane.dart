@@ -16,6 +16,9 @@ import '../../features/settings/services/desktop_ai_settings_service.dart';
 import '../../features/library/services/board_game_remote_layout.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
+import '../shared/resource_source_list.dart';
+import '../shared/settings_section_focus.dart';
+
 import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 import 'desktop_responsive.dart';
@@ -31,9 +34,11 @@ class DesktopSettingsPane extends StatefulWidget {
     required this.controller,
     required this.onOpenAbout,
     this.webDavSettingsController,
+    this.focusAiSettings = false,
   });
 
   final AppController controller;
+  final bool focusAiSettings;
   final VoidCallback onOpenAbout;
   final WebDavSettingsController? webDavSettingsController;
 
@@ -390,36 +395,39 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
             _save(() => widget.controller.setVoiceReplyEnabled(enabled)),
           ),
         ),
-        _AiServiceCard(
-          controller: widget.controller,
-          providerOptions: _providerOptions(),
-          selectedProviderId: _aiProviderOptionId,
-          providerController: _aiProvider,
-          modelController: _aiModel,
-          apiKeyController: _aiApiKey,
-          baseUrlController: _aiBaseUrl,
-          showApiKey: _showApiKey,
-          saving: _savingAi,
-          checkStep: _aiCheckStep,
-          reasoningEffort: _aiReasoningEffort,
-          responseSpeed: _aiResponseSpeed,
-          feedback: _aiFeedback,
-          feedbackSucceeded: _aiFeedbackSucceeded,
-          onProviderChanged: _selectAiProvider,
-          onAiFieldChanged: _invalidateAiDiscovery,
-          onModelChanged: _selectAiModel,
-          onReasoningChanged: (AiReasoningEffort value) => setState(() {
-            _aiReasoningEffort = value;
-            _aiFeedback = null;
-            _aiFeedbackSucceeded = null;
-          }),
-          onSpeedChanged: (AiResponseSpeed value) => setState(() {
-            _aiResponseSpeed = value;
-            _aiFeedback = null;
-            _aiFeedbackSucceeded = null;
-          }),
-          onToggleApiKey: () => setState(() => _showApiKey = !_showApiKey),
-          onSaveAndCheck: () => unawaited(_saveAndCheckAi()),
+        SettingsSectionFocus(
+          reveal: widget.focusAiSettings,
+          child: _AiServiceCard(
+            controller: widget.controller,
+            providerOptions: _providerOptions(),
+            selectedProviderId: _aiProviderOptionId,
+            providerController: _aiProvider,
+            modelController: _aiModel,
+            apiKeyController: _aiApiKey,
+            baseUrlController: _aiBaseUrl,
+            showApiKey: _showApiKey,
+            saving: _savingAi,
+            checkStep: _aiCheckStep,
+            reasoningEffort: _aiReasoningEffort,
+            responseSpeed: _aiResponseSpeed,
+            feedback: _aiFeedback,
+            feedbackSucceeded: _aiFeedbackSucceeded,
+            onProviderChanged: _selectAiProvider,
+            onAiFieldChanged: _invalidateAiDiscovery,
+            onModelChanged: _selectAiModel,
+            onReasoningChanged: (AiReasoningEffort value) => setState(() {
+              _aiReasoningEffort = value;
+              _aiFeedback = null;
+              _aiFeedbackSucceeded = null;
+            }),
+            onSpeedChanged: (AiResponseSpeed value) => setState(() {
+              _aiResponseSpeed = value;
+              _aiFeedback = null;
+              _aiFeedbackSucceeded = null;
+            }),
+            onToggleApiKey: () => setState(() => _showApiKey = !_showApiKey),
+            onSaveAndCheck: () => unawaited(_saveAndCheckAi()),
+          ),
         ),
         _AppearanceCard(
           controller: widget.controller,
@@ -442,6 +450,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           onSaveAndCheck: widget.webDavSettingsController == null
               ? _checkResourceSources
               : _saveAndCheckWebDav,
+          onCheckSources: _checkResourceSources,
         ),
         _AboutUpdatesCard(
           controller: widget.controller,
@@ -644,35 +653,6 @@ class _SettingSwitchRow extends StatelessWidget {
         ),
       ),
     ],
-  );
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: EdgeInsets.symmetric(
-      horizontal: _px(context, 8),
-      vertical: _px(context, 5),
-    ),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.09),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      label,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: _font(context, 11),
-        color: color,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
   );
 }
 

@@ -32,6 +32,7 @@ import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
 import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
 import 'package:board_game_agent/core/theme/color_scheme_option.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
@@ -40,12 +41,66 @@ import 'package:board_game_agent/features/assistant/models/ai_conversation.dart'
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/shared/content_cards.dart';
+import 'package:board_game_agent/ui/shared/assistant/assistant_presentation.dart';
+import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
 
 part 'mobile/mobile_national_day_test_cases.dart';
 part 'mobile/mobile_content_design_test_cases.dart';
+part 'mobile/mobile_composer_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('empty model opens and highlights expanded mobile AI settings', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = _controller(ttsService: _UnavailableTtsService());
+    addTearDown(controller.dispose);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final width in [320.0, 390.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          theme: AppTheme.buildTheme(controller.palette),
+          routes: {
+            '/settings/ai': (_) => MobileSettingsScreen(
+              controller: controller,
+              focusAiSettings: true,
+              onOpenAbout: () {},
+            ),
+          },
+          home: AssistantChatScreen(controller: controller),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('assistant-configure-ai')));
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileSettingsScreen), findsOneWidget);
+      expect(
+        tester
+            .widget<ExpansionTile>(
+              find.byKey(const ValueKey('mobile-settings-ai')),
+            )
+            .initiallyExpanded,
+        isTrue,
+      );
+      expect(find.byType(TextField).hitTestable(), findsWidgets);
+      final highlight = tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey('ai-settings-highlight')),
+      );
+      expect(
+        ((highlight.foregroundDecoration! as BoxDecoration).border! as Border)
+            .top
+            .color,
+        isNot(Colors.transparent),
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
 
   testWidgets('mobile home and settings fit phone sizes', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -477,6 +532,7 @@ void main() {
   });
   _registerMobileNationalDayTests();
   _registerContentDesignTests();
+  _registerCompactComposerTests();
   testWidgets(
     'compact cover uses the same Hero into detail and returns safely',
     (tester) async {

@@ -1,6 +1,157 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
+  _assistantDesignTest(
+    'running reply keeps its model and mode while next-send choices change',
+    (tester) async {
+      final ai = _NextSendAi();
+      final controller = await tester.runAsync(
+        () => _createController(
+          aiService: ai,
+          preferencesService: _InMemoryPreferencesService(),
+          ttsService: _UnavailableTtsService(),
+        ),
+      );
+      addTearDown(controller!.dispose);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(
+          model: 'gpt-6-astra',
+          apiKey: 'test-only',
+          baseUrl: 'https://test.example/v1',
+        ),
+      );
+      await controller.setAllowSmartSupplement(true, useGlobalMode: true);
+      controller.openGlobalAssistant();
+      await controller.refreshAiModels();
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, 'AI助手');
+      final sending = controller.sendPrompt('第一个问题', useGlobalMode: true);
+      await tester.pump();
+      expect(ai.configs.single.model, 'gpt-6-astra');
+      expect(ai.modes.single, AiAnswerMode.knowledgeThenDirect);
+      await tester.tap(
+        find.byKey(const ValueKey('desktop-answer-mode-selector')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(find.byKey(const ValueKey('assistant-mode-knowledge')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(controller.allowSmartSupplement(useGlobalMode: true), isFalse);
+      await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(
+        find.byKey(const ValueKey('desktop-model-option-gpt-5.6-sol')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(controller.aiApiConfig.model, 'gpt-5.6-sol');
+      await controller.setAiReasoningEffort(AiReasoningEffort.high);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(responseSpeed: AiResponseSpeed.fast),
+        forNextRun: true,
+      );
+      expect(controller.isSendingForContext(useGlobalMode: true), isTrue);
+      expect(ai.aborts, 0);
+      ai.streams.first.add(const BoardGameAiStreamEvent(delta: '原请求继续完成'));
+      ai.streams.first.add(
+        BoardGameAiStreamEvent(
+          answer: BoardGameAiAnswer(
+            text: '原请求继续完成',
+            source: AnswerSource.generalAdvice,
+          ),
+          isDone: true,
+        ),
+      );
+      unawaited(ai.streams.first.close());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      await sending;
+      expect(controller.selectedConversation!.messages.last.text, '原请求继续完成');
+      expect(controller.selectedConversation!.lastRun!.model, 'gpt-6-astra');
+      expect(
+        controller
+            .aiRunEventsForContext(useGlobalMode: true)
+            .where((event) => event.model != null)
+            .every((event) => event.model == 'gpt-6-astra'),
+        isTrue,
+      );
+      Navigator.of(
+        tester.element(
+          find.byKey(const ValueKey('desktop-model-picker-panel')),
+        ),
+      ).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final next = controller.sendPrompt('下一个问题', useGlobalMode: true);
+      await tester.pump();
+      expect(ai.configs.last.model, 'gpt-5.6-sol');
+      expect(ai.configs.last.reasoningEffort, AiReasoningEffort.high);
+      expect(ai.configs.last.responseSpeed, AiResponseSpeed.fast);
+      expect(ai.modes.last, AiAnswerMode.knowledgeOnly);
+      await controller.stopGenerating(useGlobalMode: true);
+      await tester.pump();
+      await next;
+      expect(ai.aborts, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  _assistantDesignTest(
+    'resource sources show individual identities and expandable WebDAV settings',
+    (tester) async {
+      final controller = _SourcePreviewController();
+      addTearDown(controller.dispose);
+      final webDav = WebDavSettingsController(
+        store: _MemoryWebDavSettingsStore(
+          const WebDavSettings(
+            mode: ExternalStorageMode.webDav,
+            baseUrl: 'https://dav.example.com/friend/',
+          ),
+        ),
+        connectionTester: const _SuccessfulWebDavConnectionTester(),
+      );
+      await webDav.load();
+      addTearDown(webDav.dispose);
+      await _mount(
+        tester,
+        controller,
+        const Size(1280, 800),
+        webDavSettingsController: webDav,
+      );
+      await _navigate(tester, '设置');
+      final card = find.byKey(const ValueKey('resource-source-lan_share'));
+      await tester.ensureVisible(card);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: card, matching: find.text('内网访问')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('已连接')),
+        findsOneWidget,
+      );
+      final remote = find.byKey(const ValueKey('resource-source-cznas_dev'));
+      expect(
+        find.descendant(of: remote, matching: find.text('cznas.dev')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: remote, matching: find.text('未连接')),
+        findsOneWidget,
+      );
+      expect(find.text('已连接 1/2'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('desktop-settings-webdav-url')).hitTestable(),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final size in const [Size(320, 600), Size(1280, 800)]) {
     _assistantDesignTest(
       'unconfigured model picker shrinks to its notice at $size',
@@ -18,6 +169,28 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
           lessThan(180),
         );
         expect(find.text('服务等级'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('assistant-configure-ai')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const ValueKey('assistant-configure-ai')));
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          tester
+              .widget<DesktopSettingsPane>(find.byType(DesktopSettingsPane))
+              .focusAiSettings,
+          isTrue,
+        );
+        final highlight = tester.widget<AnimatedContainer>(
+          find.byKey(const ValueKey('ai-settings-highlight')),
+        );
+        expect(
+          ((highlight.foregroundDecoration! as BoxDecoration).border! as Border)
+              .top
+              .color,
+          isNot(Colors.transparent),
+        );
         expect(tester.takeException(), isNull);
       },
     );
@@ -579,4 +752,61 @@ void _assistantDesignTest(String name, WidgetTesterCallback body) {
       debugDisableShadows = previous;
     }
   });
+}
+
+class _NextSendAi extends _FakeAiService {
+  final configs = <AiApiConfig>[];
+  final modes = <AiAnswerMode>[];
+  final streams = <StreamController<BoardGameAiStreamEvent>>[];
+  int aborts = 0;
+  @override
+  Stream<BoardGameAiStreamEvent> streamReply({
+    required String prompt,
+    required AppLanguage language,
+    required GameInfo game,
+    required AiAnswerMode answerMode,
+    required bool useGlobalMode,
+    required AiApiConfig config,
+    required List<AssetSourceConfig> assetSourceConfigs,
+    required RemoteAssetService remoteAssetService,
+    required List<ChatMessage> conversationHistory,
+    String? conversationId,
+    bool useCurrentGameKnowledge = false,
+    Future<void>? abortTrigger,
+  }) {
+    configs.add(config);
+    modes.add(answerMode);
+    final events = StreamController<BoardGameAiStreamEvent>();
+    streams.add(events);
+    abortTrigger?.then((_) {
+      aborts++;
+      if (!events.isClosed) unawaited(events.close());
+    });
+    return events.stream;
+  }
+}
+
+class _SourcePreviewController extends AppController {
+  _SourcePreviewController()
+    : super(
+        preferencesService: _InMemoryPreferencesService(),
+        aiService: _FakeAiService(),
+        gameManifestService: GameManifestService(),
+        speechService: SpeechService(),
+        ttsService: _UnavailableTtsService(),
+        remoteAssetService: _NoNetworkAssetService(),
+      );
+  @override
+  Map<String, ConnectivityStatus> get assetSourceStatuses => {
+    'lan_share': ConnectivityStatus(
+      state: ConnectivityState.success,
+      message: 'test',
+      checkedAt: DateTime.now(),
+    ),
+    'cznas_dev': ConnectivityStatus(
+      state: ConnectivityState.failure,
+      message: 'test',
+      checkedAt: DateTime.now(),
+    ),
+  };
 }

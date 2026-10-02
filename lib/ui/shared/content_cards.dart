@@ -260,7 +260,7 @@ class ContentCardSurface extends StatelessWidget {
       color: palette.surface,
       shape: RoundedRectangleBorder(
         borderRadius: radius,
-        side: BorderSide(color: palette.outline.withValues(alpha: .65)),
+        side: BorderSide(color: palette.outline),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(

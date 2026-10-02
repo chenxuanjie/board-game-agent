@@ -28,6 +28,7 @@ import 'core/localization/app_language.dart';
 import 'core/theme/color_scheme_option.dart';
 import 'core/theme/app_theme.dart';
 import 'ui/mobile/home_screen.dart';
+import 'ui/mobile/settings_screen.dart';
 import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
@@ -176,6 +177,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             (kIsWeb &&
                 DesktopResponsive.supportsDesktopViewport(constraints.biggest));
         return MaterialApp(
+          routes: {
+            '/settings/ai': (_) => MobileSettingsScreen(
+              controller: widget.controller,
+              focusAiSettings: true,
+              onOpenAbout: _openAbout,
+            ),
+          },
           navigatorKey: _navigatorKey,
           title: widget.controller.copy.appTitle,
           debugShowCheckedModeBanner: false,

@@ -209,6 +209,7 @@ class AssistantComposer extends StatefulWidget {
     required this.onSend,
     this.onMicTap,
     this.desktop = false,
+    this.onConfigureAi,
   });
   final AppController controller;
   final TextEditingController textController;
@@ -216,6 +217,7 @@ class AssistantComposer extends StatefulWidget {
   final Future<void> Function() onSend;
   final Future<void> Function()? onMicTap;
   final bool desktop;
+  final VoidCallback? onConfigureAi;
 
   @override
   State<AssistantComposer> createState() => AssistantComposerState();
@@ -326,11 +328,38 @@ class AssistantComposerState extends State<AssistantComposer> {
                 builder: (context, constraints) {
                   final expandedText =
                       MediaQuery.textScalerOf(context).scale(14) > 17;
-                  final stacked = constraints.maxWidth < 370 || expandedText;
+                  final compact =
+                      !widget.desktop ||
+                      constraints.maxWidth < 370 ||
+                      expandedText;
+                  final listening = compact && widget.controller.isListening;
+                  final voiceAction =
+                      compact && widget.onMicTap != null && !canSend;
+                  final actionIcon = isSending || listening
+                      ? Icons.stop_rounded
+                      : voiceAction
+                      ? Icons.mic_none_rounded
+                      : Icons.arrow_upward_rounded;
+                  final actionLabel = isSending
+                      ? copy.stopGenerating
+                      : listening
+                      ? copy.tapToStop
+                      : voiceAction
+                      ? copy.speechReady
+                      : compact && widget.onMicTap != null && canSend
+                      ? copy.localized(
+                          '发送；长按语音输入',
+                          'Send; hold for voice input',
+                        )
+                      : copy.send;
+                  final actionEnabled =
+                      isSending || listening || canSend || voiceAction;
+                  final actionSize = compact ? 48.0 : 40.0;
                   final mode = AssistantAnswerModeSelector(
                     controller: widget.controller,
                     useGlobalMode: widget.useGlobalMode,
-                    enabled: !isSending,
+                    enabled: true,
+                    iconOnly: compact,
                   );
                   final controls = Row(
                     children: [
@@ -339,11 +368,18 @@ class AssistantComposerState extends State<AssistantComposer> {
                           alignment: Alignment.centerRight,
                           child: AssistantModelSelector(
                             controller: widget.controller,
-                            enabled: !isSending,
+                            enabled: true,
+                            compact: compact,
+                            useGlobalMode: widget.useGlobalMode,
+                            onConfigureAi:
+                                widget.onConfigureAi ??
+                                () => Navigator.of(
+                                  context,
+                                ).pushNamed('/settings/ai'),
                           ),
                         ),
                       ),
-                      if (widget.onMicTap != null)
+                      if (!compact && widget.onMicTap != null)
                         IconButton(
                           tooltip: widget.controller.isListening
                               ? copy.tapToStop
@@ -359,53 +395,74 @@ class AssistantComposerState extends State<AssistantComposer> {
                           ),
                         ),
                       const SizedBox(width: 3),
-                      AnimatedContainer(
-                        duration: AppMotion.duration(context),
-                        decoration: BoxDecoration(
-                          color: isSending || canSend
-                              ? palette.primary
-                              : palette.disabledBackground,
-                          borderRadius: BorderRadius.circular(11),
+                      TooltipTheme(
+                        // Leave the hold gesture to voice input. Tooltip text
+                        // remains available to pointer hover and semantics.
+                        data: TooltipTheme.of(context).copyWith(
+                          triggerMode: compact
+                              ? TooltipTriggerMode.manual
+                              : TooltipTriggerMode.longPress,
                         ),
-                        child: IconButton(
-                          key: ValueKey(
-                            widget.desktop
-                                ? 'desktop-composer-send'
-                                : 'assistant-composer-send',
-                          ),
-                          tooltip: isSending ? copy.stopGenerating : copy.send,
-                          onPressed: isSending
-                              ? () => widget.controller.stopGenerating(
-                                  useGlobalMode: widget.useGlobalMode,
-                                )
-                              : canSend
-                              ? _send
+                        child: GestureDetector(
+                          onLongPress:
+                              compact && canSend && !isSending && !listening
+                              ? widget.onMicTap
                               : null,
-                          style: IconButton.styleFrom(
-                            foregroundColor: palette.onPrimary,
-                            disabledForegroundColor: palette.disabledForeground,
-                            minimumSize: const Size.square(40),
-                            maximumSize: const Size.square(40),
-                            padding: EdgeInsets.zero,
-                          ),
-                          icon: AnimatedSwitcher(
+                          child: AnimatedContainer(
                             duration: AppMotion.duration(context),
-                            child: Icon(
-                              isSending
-                                  ? Icons.stop_rounded
-                                  : Icons.arrow_upward_rounded,
-                              key: ValueKey(isSending),
-                              size: 21,
+                            decoration: BoxDecoration(
+                              color: actionEnabled
+                                  ? palette.primary
+                                  : palette.disabledBackground,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: IconButton(
+                              key: ValueKey(
+                                widget.desktop
+                                    ? 'desktop-composer-send'
+                                    : 'assistant-composer-send',
+                              ),
+                              tooltip: actionLabel,
+                              onPressed: isSending
+                                  ? () => widget.controller.stopGenerating(
+                                      useGlobalMode: widget.useGlobalMode,
+                                    )
+                                  : listening
+                                  ? widget.onMicTap
+                                  : canSend
+                                  ? _send
+                                  : voiceAction
+                                  ? widget.onMicTap
+                                  : null,
+                              style: IconButton.styleFrom(
+                                foregroundColor: palette.onPrimary,
+                                disabledForegroundColor:
+                                    palette.disabledForeground,
+                                minimumSize: Size.square(actionSize),
+                                maximumSize: Size.square(actionSize),
+                                padding: EdgeInsets.zero,
+                              ),
+                              icon: AnimatedSwitcher(
+                                duration: AppMotion.duration(context),
+                                child: Icon(
+                                  actionIcon,
+                                  key: ValueKey(actionIcon),
+                                  size: 21,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ],
                   );
-                  return stacked
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [mode, controls],
+                  return compact
+                      ? Row(
+                          children: [
+                            mode,
+                            const SizedBox(width: 4),
+                            Expanded(child: controls),
+                          ],
                         )
                       : Row(
                           children: [

@@ -364,7 +364,10 @@ class _GameCard extends StatelessWidget {
     final tags = _tags(game);
     return Material(
       color: AppPalette.of(context).surface,
-      borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+        side: BorderSide(color: AppPalette.of(context).outline),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: ValueKey('mobile-library-game-${game.id}'),

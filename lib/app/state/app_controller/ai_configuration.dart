@@ -1,28 +1,34 @@
 part of '../app_controller.dart';
 
 extension AppAiConfigurationController on AppController {
-  Future<void> saveAiApiConfig(AiApiConfig next) async {
+  Future<void> saveAiApiConfig(
+    AiApiConfig next, {
+    bool forNextRun = false,
+  }) async {
     final write = (_aiConfigSaveQueue ?? Future<void>.value()).then(
-      (_) => _saveAiApiConfig(next),
+      (_) => _saveAiApiConfig(next, forNextRun: forNextRun),
     );
     _aiConfigSaveQueue = write.catchError((Object _) {});
     await write;
   }
 
-  Future<void> _saveAiApiConfig(AiApiConfig next) async {
+  Future<void> _saveAiApiConfig(
+    AiApiConfig next, {
+    required bool forNextRun,
+  }) async {
     final AiApiConfig previous = _aiApiConfig;
     // Publish config/clear Run state only after the durable write succeeds.
     await _preferencesService.saveAiApiConfig(next);
     ++_aiServiceStatusGeneration;
     _aiServiceStatusRefreshFuture = null;
     final bool runContextChanged = _aiRunContextChanged(previous, next);
-    _invalidateActiveRuns();
+    if (!forNextRun) _invalidateActiveRuns();
     _aiApiConfig = next;
     if (runContextChanged) {
       // A response id, compaction snapshot, and activity timeline belong to
       // one provider/model context. Keep the conversation messages, but do
       // not show or reuse a Run produced by an incompatible endpoint.
-      _clearIncompatibleRunState();
+      _clearIncompatibleRunState(preserveActiveRuns: forNextRun);
     }
     _aiConnectivityStatus = ConnectivityStatus.unknown(
       next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
@@ -75,6 +81,7 @@ extension AppAiConfigurationController on AppController {
             ? _aiApiConfig.reasoningEffort
             : AiReasoningEffort.automatic,
       ),
+      forNextRun: true,
     );
   }
 
@@ -95,7 +102,10 @@ extension AppAiConfigurationController on AppController {
         'Unsupported reasoning effort',
       );
     }
-    await saveAiApiConfig(_aiApiConfig.copyWith(reasoningEffort: effort));
+    await saveAiApiConfig(
+      _aiApiConfig.copyWith(reasoningEffort: effort),
+      forNextRun: true,
+    );
   }
 
   bool _aiRunContextChanged(AiApiConfig previous, AiApiConfig next) {
@@ -109,11 +119,16 @@ extension AppAiConfigurationController on AppController {
         previous.responseSpeed != next.responseSpeed;
   }
 
-  void _clearIncompatibleRunState() {
+  void _clearIncompatibleRunState({bool preserveActiveRuns = false}) {
     for (final AiConversation conversation in _conversations.values) {
+      if (preserveActiveRuns &&
+          _generationStates[conversation.id]?.isSending == true) {
+        continue;
+      }
       conversation.lastRun = null;
     }
     for (final _ChatGenerationState generation in _generationStates.values) {
+      if (preserveActiveRuns && generation.isSending) continue;
       generation
         ..runEvents.clear()
         ..runId = null
@@ -126,7 +141,10 @@ extension AppAiConfigurationController on AppController {
         ..syntheticRun = false
         ..checkpointRestored = true;
     }
-    _runExpandedByContext.clear();
+    _runExpandedByContext.removeWhere(
+      (key, _) =>
+          !preserveActiveRuns || _generationStates[key]?.isSending != true,
+    );
   }
 
   bool _isSaveableCustomPreset(AiApiConfig config) {

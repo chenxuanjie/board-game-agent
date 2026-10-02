@@ -838,6 +838,7 @@ class _StreamTextBatcher {
 }
 
 class _ChatGenerationState {
+  AiApiConfig? requestConfig;
   bool isSending = false;
   Completer<void>? abort;
   bool wasStopped = false;

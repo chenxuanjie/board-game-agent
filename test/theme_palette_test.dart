@@ -11,6 +11,32 @@ import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 
 void main() {
+  test(
+    'secondary containers remain distinct and secondary text stays readable',
+    () {
+      for (final option in ColorSchemeOption.values) {
+        final palette = PaletteRegistry.of(option);
+        expect(
+          _contrast(palette.surfaceContainer, palette.pageBackground),
+          greaterThanOrEqualTo(1.12),
+        );
+        expect(
+          _contrast(palette.outline, palette.surface),
+          greaterThanOrEqualTo(1.5),
+        );
+        for (final background in [
+          palette.surface,
+          palette.surfaceContainer,
+          palette.surfaceVariant,
+        ]) {
+          expect(
+            _contrast(palette.textSecondary, background),
+            greaterThanOrEqualTo(4.5),
+          );
+        }
+      }
+    },
+  );
   test('all skins expose the same semantic palette contract', () {
     for (final ColorSchemeOption option in ColorSchemeOption.values) {
       final AppPalette palette = PaletteRegistry.of(option);

@@ -178,6 +178,13 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     );
     await _navigate(tester, '设置');
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('desktop-settings-webdav-config')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('desktop-settings-webdav-config')),
+    );
+    await tester.pumpAndSettle();
     final Finder saveButton = find.byKey(
       const ValueKey<String>('desktop-settings-check-resource-sources'),
     );

@@ -14,15 +14,19 @@ import '../../core/theme/palette_registry.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
+import '../shared/resource_source_list.dart';
+import '../shared/settings_section_focus.dart';
 
 class MobileSettingsScreen extends StatefulWidget {
   const MobileSettingsScreen({
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.focusAiSettings = false,
   });
 
   final AppController controller;
+  final bool focusAiSettings;
   final VoidCallback onOpenAbout;
 
   @override
@@ -208,99 +212,147 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       _SectionCard(
                         palette: palette,
                         padding: EdgeInsets.zero,
-                        child: ExpansionTile(
-                          key: const ValueKey('mobile-settings-sources'),
-                          maintainState: true,
-                          shape: const Border(),
-                          collapsedShape: const Border(),
-                          leading: Icon(
-                            Icons.storage_rounded,
-                            color: palette.primary,
-                          ),
-                          title: Text(copy.assetPriorityTitle),
-                          subtitle: Text(
-                            copy.localized(
-                              '${_assetSourceConfigs.length} 个资料源',
-                              '${_assetSourceConfigs.length} sources',
-                            ),
-                          ),
-                          childrenPadding: const EdgeInsets.fromLTRB(
-                            16,
-                            0,
-                            16,
-                            16,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                ReorderableListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: _assetSourceConfigs.length,
-                                  onReorder: _reorderSources,
-                                  itemBuilder: (context, index) {
-                                    final item = _assetSourceConfigs[index];
-                                    return Container(
-                                      key: ValueKey(item.id),
-                                      margin: const EdgeInsets.only(bottom: 10),
-                                      decoration: BoxDecoration(
-                                        color: palette.surfaceVariant,
-                                        borderRadius: BorderRadius.circular(
-                                          UiTokens.groupRadius,
-                                        ),
-                                      ),
-                                      child: ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 14,
-                                              vertical: 8,
-                                            ),
-                                        leading: CircleAvatar(
-                                          backgroundColor: palette.primary
-                                              .withValues(alpha: 0.16),
-                                          foregroundColor: palette.primary,
-                                          child: Text('${index + 1}'),
-                                        ),
-                                        title: Text(
-                                          item.name,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleMedium,
-                                        ),
-                                        subtitle: Text(
-                                          item.address,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.copyWith(
-                                                color: palette.textPrimary
-                                                    .withValues(alpha: 0.72),
-                                              ),
-                                        ),
-                                        trailing: ReorderableDragStartListener(
-                                          index: index,
-                                          child: Icon(
-                                            Icons.drag_handle_rounded,
-                                            color: palette.textPrimary
-                                                .withValues(alpha: 0.72),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton(
-                                    onPressed: _isTestingAssets
-                                        ? null
-                                        : _testAssets,
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                10,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.storage_rounded,
+                                    color: palette.primary,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
                                     child: Text(
-                                      _isTestingAssets ? '...' : copy.assetTest,
+                                      copy.assetPriorityTitle,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
                                     ),
                                   ),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: ResourceSourceList(
+                                sources: _assetSourceConfigs,
+                                statuses: controller.assetSourceStatuses,
+                                copy: copy,
+                                checking: _isTestingAssets,
+                              ),
+                            ),
+                            ExpansionTile(
+                              key: const ValueKey('mobile-settings-sources'),
+                              maintainState: true,
+                              shape: const Border(),
+                              collapsedShape: const Border(),
+                              leading: Icon(
+                                Icons.swap_vert_rounded,
+                                color: palette.primary,
+                              ),
+                              title: Text(
+                                copy.localized('调整优先级', 'Change priority'),
+                              ),
+                              childrenPadding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                16,
+                              ),
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    ReorderableListView.builder(
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      itemCount: _assetSourceConfigs.length,
+                                      onReorder: _reorderSources,
+                                      itemBuilder: (context, index) {
+                                        final item = _assetSourceConfigs[index];
+                                        return Container(
+                                          key: ValueKey(item.id),
+                                          margin: const EdgeInsets.only(
+                                            bottom: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: palette.surfaceVariant,
+                                            borderRadius: BorderRadius.circular(
+                                              UiTokens.groupRadius,
+                                            ),
+                                          ),
+                                          child: ListTile(
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 14,
+                                                  vertical: 8,
+                                                ),
+                                            leading: CircleAvatar(
+                                              backgroundColor: palette.primary
+                                                  .withValues(alpha: 0.16),
+                                              foregroundColor: palette.primary,
+                                              child: Text('${index + 1}'),
+                                            ),
+                                            title: Text(
+                                              item.name,
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium,
+                                            ),
+                                            subtitle: Text(
+                                              item.address,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyMedium
+                                                  ?.copyWith(
+                                                    color: palette.textPrimary
+                                                        .withValues(
+                                                          alpha: 0.72,
+                                                        ),
+                                                  ),
+                                            ),
+                                            trailing:
+                                                ReorderableDragStartListener(
+                                                  index: index,
+                                                  child: Icon(
+                                                    Icons.drag_handle_rounded,
+                                                    color: palette.textPrimary
+                                                        .withValues(
+                                                          alpha: 0.72,
+                                                        ),
+                                                  ),
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton(
+                                        onPressed: _isTestingAssets
+                                            ? null
+                                            : _testAssets,
+                                        child: Text(
+                                          _isTestingAssets
+                                              ? '...'
+                                              : copy.assetTest,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -308,133 +360,106 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _SectionCard(
-                        palette: palette,
-                        padding: EdgeInsets.zero,
-                        child: ExpansionTile(
-                          key: const ValueKey('mobile-settings-ai'),
-                          maintainState: true,
-                          shape: const Border(),
-                          collapsedShape: const Border(),
-                          leading: Icon(
-                            Icons.auto_awesome_rounded,
-                            color: palette.primary,
-                          ),
-                          title: Text(copy.aiApiTitle),
-                          subtitle: Text(selectedPreset.label),
-                          childrenPadding: const EdgeInsets.fromLTRB(
-                            16,
-                            0,
-                            16,
-                            16,
-                          ),
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                _ApiDropdownField<_AiPresetOption>(
-                                  label: copy.aiApiPresetLabel,
-                                  value: selectedPreset,
-                                  values: presetOptions,
-                                  itemLabel: (_AiPresetOption option) =>
-                                      option.label,
-                                  onChanged: _applyPreset,
-                                ),
-                                const SizedBox(height: 12),
-                                if (selectedPreset.isCustom) ...<Widget>[
-                                  _ApiField(
-                                    label: copy.aiApiProviderNameLabel,
-                                    controller: _nameController,
+                      SettingsSectionFocus(
+                        reveal: widget.focusAiSettings,
+                        child: _SectionCard(
+                          palette: palette,
+                          padding: EdgeInsets.zero,
+                          child: ExpansionTile(
+                            key: const ValueKey('mobile-settings-ai'),
+                            initiallyExpanded: widget.focusAiSettings,
+                            maintainState: true,
+                            shape: const Border(),
+                            collapsedShape: const Border(),
+                            leading: Icon(
+                              Icons.auto_awesome_rounded,
+                              color: palette.primary,
+                            ),
+                            title: Text(copy.aiApiTitle),
+                            subtitle: Text(selectedPreset.label),
+                            childrenPadding: const EdgeInsets.fromLTRB(
+                              16,
+                              0,
+                              16,
+                              16,
+                            ),
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  _ApiDropdownField<_AiPresetOption>(
+                                    label: copy.aiApiPresetLabel,
+                                    value: selectedPreset,
+                                    values: presetOptions,
+                                    itemLabel: (_AiPresetOption option) =>
+                                        option.label,
+                                    onChanged: _applyPreset,
                                   ),
                                   const SizedBox(height: 12),
-                                ],
-                                _ApiField(
-                                  label: copy.aiApiUrlLabel,
-                                  controller: _urlController,
-                                  keyboardType: TextInputType.url,
-                                  readOnly: !selectedPreset.isCustom,
-                                  onChanged: _handleAiFieldChanged,
-                                ),
-                                const SizedBox(height: 12),
-                                _ApiField(
-                                  label: copy.aiApiKeyLabel,
-                                  controller: _keyController,
-                                  obscureText: true,
-                                  onChanged: _handleAiFieldChanged,
-                                ),
-                                const SizedBox(height: 14),
-                                _ModelDiscoveryPanel(
-                                  controller: controller,
-                                  selectedModel: _selectedModel,
-                                  onChanged: (String? model) {
-                                    setState(() {
-                                      _selectedModel = model;
-                                      final supported =
-                                          AiModelPolicy.reasoningEfforts(
-                                            model ?? '',
-                                          );
-                                      if (supported != null &&
-                                          !supported.contains(
-                                            _selectedReasoningEffort,
-                                          )) {
-                                        _selectedReasoningEffort =
-                                            AiReasoningEffort.automatic;
-                                      }
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 14),
-                                _ApiDropdownField<AiReasoningEffort>(
-                                  label: copy.aiApiReasoningEffortLabel,
-                                  placeholder: copy.aiApiReasoningSelectHint,
-                                  value: _selectedReasoningEffort,
-                                  values: visibleReasoning,
-                                  itemLabel: copy.aiApiReasoningEffortName,
-                                  onChanged: (AiReasoningEffort? value) {
-                                    if (value != null) {
-                                      setState(
-                                        () => _selectedReasoningEffort = value,
-                                      );
-                                    }
-                                  },
-                                ),
-                                if (!supportedReasoning.contains(
-                                  _selectedReasoningEffort,
-                                )) ...[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    copy.aiApiReasoningUnsupported,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: palette.textPrimary.withValues(
-                                            alpha: 0.68,
-                                          ),
-                                          height: 1.35,
-                                        ),
+                                  if (selectedPreset.isCustom) ...<Widget>[
+                                    _ApiField(
+                                      label: copy.aiApiProviderNameLabel,
+                                      controller: _nameController,
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  _ApiField(
+                                    label: copy.aiApiUrlLabel,
+                                    controller: _urlController,
+                                    keyboardType: TextInputType.url,
+                                    readOnly: !selectedPreset.isCustom,
+                                    onChanged: _handleAiFieldChanged,
                                   ),
-                                ],
-                                const SizedBox(height: 14),
-                                _ApiDropdownField<AiResponseSpeed>(
-                                  label: copy.aiApiResponseSpeedLabel,
-                                  value: _selectedResponseSpeed,
-                                  values: AiResponseSpeed.selectableValues,
-                                  itemLabel: copy.aiApiResponseSpeedName,
-                                  onChanged: (AiResponseSpeed? value) {
-                                    if (value != null) {
-                                      setState(
-                                        () => _selectedResponseSpeed = value,
-                                      );
-                                    }
-                                  },
-                                ),
-                                if (_selectedResponseSpeed ==
-                                    AiResponseSpeed.fast) ...[
-                                  const SizedBox(height: 6),
-                                  Tooltip(
-                                    message:
-                                        copy.aiApiGenerationCompatibilityHint,
-                                    child: Text(
-                                      copy.aiApiResponseSpeedHint,
+                                  const SizedBox(height: 12),
+                                  _ApiField(
+                                    label: copy.aiApiKeyLabel,
+                                    controller: _keyController,
+                                    obscureText: true,
+                                    onChanged: _handleAiFieldChanged,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _ModelDiscoveryPanel(
+                                    controller: controller,
+                                    selectedModel: _selectedModel,
+                                    onChanged: (String? model) {
+                                      setState(() {
+                                        _selectedModel = model;
+                                        final supported =
+                                            AiModelPolicy.reasoningEfforts(
+                                              model ?? '',
+                                            );
+                                        if (supported != null &&
+                                            !supported.contains(
+                                              _selectedReasoningEffort,
+                                            )) {
+                                          _selectedReasoningEffort =
+                                              AiReasoningEffort.automatic;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _ApiDropdownField<AiReasoningEffort>(
+                                    label: copy.aiApiReasoningEffortLabel,
+                                    placeholder: copy.aiApiReasoningSelectHint,
+                                    value: _selectedReasoningEffort,
+                                    values: visibleReasoning,
+                                    itemLabel: copy.aiApiReasoningEffortName,
+                                    onChanged: (AiReasoningEffort? value) {
+                                      if (value != null) {
+                                        setState(
+                                          () =>
+                                              _selectedReasoningEffort = value,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  if (!supportedReasoning.contains(
+                                    _selectedReasoningEffort,
+                                  )) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      copy.aiApiReasoningUnsupported,
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall
@@ -444,93 +469,126 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                             height: 1.35,
                                           ),
                                     ),
+                                  ],
+                                  const SizedBox(height: 14),
+                                  _ApiDropdownField<AiResponseSpeed>(
+                                    label: copy.aiApiResponseSpeedLabel,
+                                    value: _selectedResponseSpeed,
+                                    values: AiResponseSpeed.selectableValues,
+                                    itemLabel: copy.aiApiResponseSpeedName,
+                                    onChanged: (AiResponseSpeed? value) {
+                                      if (value != null) {
+                                        setState(
+                                          () => _selectedResponseSpeed = value,
+                                        );
+                                      }
+                                    },
                                   ),
-                                ],
-                                const SizedBox(height: 14),
-                                Row(
-                                  children: <Widget>[
-                                    Expanded(
-                                      child: FilledButton(
-                                        onPressed: _isTesting
-                                            ? null
-                                            : _testAndSaveConfig,
-                                        child: Text(copy.aiApiSave),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: OutlinedButton(
-                                        onPressed: _resetDefault,
-                                        child: Text(copy.aiApiReset),
+                                  if (_selectedResponseSpeed ==
+                                      AiResponseSpeed.fast) ...[
+                                    const SizedBox(height: 6),
+                                    Tooltip(
+                                      message:
+                                          copy.aiApiGenerationCompatibilityHint,
+                                      child: Text(
+                                        copy.aiApiResponseSpeedHint,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: palette.textPrimary
+                                                  .withValues(alpha: 0.68),
+                                              height: 1.35,
+                                            ),
                                       ),
                                     ),
                                   ],
-                                ),
-                                const SizedBox(height: 10),
-                                if (_lastTestMessage != null) ...<Widget>[
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: <Widget>[
+                                      Expanded(
+                                        child: FilledButton(
+                                          onPressed: _isTesting
+                                              ? null
+                                              : _testAndSaveConfig,
+                                          child: Text(copy.aiApiSave),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: OutlinedButton(
+                                          onPressed: _resetDefault,
+                                          child: Text(copy.aiApiReset),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                   const SizedBox(height: 10),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: (_lastTestSucceeded ?? false)
-                                          ? palette.success.withValues(
-                                              alpha: 0.14,
-                                            )
-                                          : palette.error.withValues(
-                                              alpha: 0.14,
-                                            ),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
+                                  if (_lastTestMessage != null) ...<Widget>[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
                                         color: (_lastTestSucceeded ?? false)
                                             ? palette.success.withValues(
-                                                alpha: 0.32,
+                                                alpha: 0.14,
                                               )
                                             : palette.error.withValues(
-                                                alpha: 0.32,
+                                                alpha: 0.14,
                                               ),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      _lastTestMessage!,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: palette.textPrimary,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                  ),
-                                  if (_lastTestSucceeded == false &&
-                                      RegExp(
-                                        r'cors|cross.origin|跨域|failed to fetch|xmlhttprequest',
-                                        caseSensitive: false,
-                                      ).hasMatch(_lastTestMessage!) &&
-                                      _isCrossOriginWebUrl(
-                                        _urlController.text,
-                                      )) ...[
-                                    const SizedBox(height: 8),
-                                    Tooltip(
-                                      message: copy.localized(
-                                        '请确认服务商允许浏览器跨域访问，或使用同源代理。',
-                                        'Check that your provider allows browser cross-origin requests, or use a same-origin proxy.',
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: (_lastTestSucceeded ?? false)
+                                              ? palette.success.withValues(
+                                                  alpha: 0.32,
+                                                )
+                                              : palette.error.withValues(
+                                                  alpha: 0.32,
+                                                ),
+                                        ),
                                       ),
                                       child: Text(
-                                        copy.localized(
-                                          '跨域访问可能受限 ⓘ',
-                                          'Cross-origin access may be restricted ⓘ',
-                                        ),
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
+                                        _lastTestMessage!,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: palette.textPrimary,
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                       ),
                                     ),
+                                    if (_lastTestSucceeded == false &&
+                                        RegExp(
+                                          r'cors|cross.origin|跨域|failed to fetch|xmlhttprequest',
+                                          caseSensitive: false,
+                                        ).hasMatch(_lastTestMessage!) &&
+                                        _isCrossOriginWebUrl(
+                                          _urlController.text,
+                                        )) ...[
+                                      const SizedBox(height: 8),
+                                      Tooltip(
+                                        message: copy.localized(
+                                          '请确认服务商允许浏览器跨域访问，或使用同源代理。',
+                                          'Check that your provider allows browser cross-origin requests, or use a same-origin proxy.',
+                                        ),
+                                        child: Text(
+                                          copy.localized(
+                                            '跨域访问可能受限 ⓘ',
+                                            'Cross-origin access may be restricted ⓘ',
+                                          ),
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ],
-                              ],
-                            ),
-                          ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 24),

@@ -385,8 +385,12 @@ extension AppAssistantController on AppController {
     if (trimmed.isEmpty || generation.isSending) {
       return;
     }
+    final AiApiConfig requestConfig = _aiApiConfig;
+    final AiAnswerMode answerMode = chatAnswerMode(
+      useGlobalMode: useGlobalMode,
+    );
     final AiModelResolution modelResolution = AiModelPolicy.resolve(
-      _aiApiConfig,
+      requestConfig,
     );
     if (!modelResolution.isUsable) {
       final String notice = switch (modelResolution.issue!) {
@@ -431,6 +435,7 @@ extension AppAssistantController on AppController {
     final int contextEpoch = generation.contextEpoch;
     generation
       ..useGlobalMode = useGlobalMode
+      ..requestConfig = requestConfig
       ..contextKey = conversationId;
     _startRunPresentation(generation);
     final Completer<void> generationAbort = Completer<void>();
@@ -456,9 +461,6 @@ extension AppAssistantController on AppController {
     });
 
     final GameInfo game = featuredGame;
-    final AiAnswerMode answerMode = chatAnswerMode(
-      useGlobalMode: useGlobalMode,
-    );
     debugPrint(
       '[chat] send prompt game=${game.slug} global=$useGlobalMode mode=${answerMode.code}',
     );
@@ -473,7 +475,7 @@ extension AppAssistantController on AppController {
         game: game,
         answerMode: answerMode,
         useGlobalMode: useGlobalMode,
-        config: _aiApiConfig,
+        config: requestConfig,
         assetSourceConfigs: _assetSourceConfigs,
         remoteAssetService: _remoteAssetService,
         conversationId: conversationId,

@@ -11,10 +11,12 @@ class AssistantAnswerModeSelector extends StatefulWidget {
     required this.controller,
     required this.useGlobalMode,
     required this.enabled,
+    this.iconOnly = false,
   });
   final AppController controller;
   final bool useGlobalMode;
   final bool enabled;
+  final bool iconOnly;
   @override
   State<AssistantAnswerModeSelector> createState() =>
       _AssistantAnswerModeSelectorState();
@@ -77,7 +79,7 @@ class _AssistantAnswerModeSelectorState
     return PopupMenuButton<bool>(
       key: const ValueKey('desktop-answer-mode-selector'),
       enabled: widget.enabled && !_saving,
-      tooltip: copy.desktopAnswerModeTitle,
+      tooltip: '${copy.desktopAnswerModeTitle}: ${label(smart)}',
       popUpAnimationStyle: AppMotion.menuStyle(context),
       position: PopupMenuPosition.over,
       initialValue: smart,
@@ -95,6 +97,19 @@ class _AssistantAnswerModeSelectorState
         unawaited(_select(value));
       },
       itemBuilder: (_) => [
+        if (widget.controller.isSendingForContext(
+          useGlobalMode: widget.useGlobalMode,
+        ))
+          PopupMenuItem<bool>(
+            enabled: false,
+            height: 36,
+            child: Text(
+              copy.localized('下次发送生效', 'Applies to your next message'),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+            ),
+          ),
         for (final value in [false, true])
           _RoundedModeEntry(
             key: ValueKey(
@@ -136,6 +151,9 @@ class _AssistantAnswerModeSelectorState
       ],
       child: AnimatedContainer(
         duration: AppMotion.duration(context),
+        constraints: widget.iconOnly
+            ? const BoxConstraints.tightFor(width: 48, height: 48)
+            : null,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
           color: _open
@@ -145,6 +163,7 @@ class _AssistantAnswerModeSelectorState
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (_saving)
               SizedBox(
@@ -156,24 +175,30 @@ class _AssistantAnswerModeSelectorState
                 ),
               )
             else
-              Icon(icon(smart), color: palette.primary, size: 18),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label(smart),
-                style: textStyle?.copyWith(color: palette.textPrimary),
+              Icon(
+                icon(smart),
+                color: widget.iconOnly ? palette.textPrimary : palette.primary,
+                size: widget.iconOnly ? 22 : 18,
               ),
-            ),
-            const SizedBox(width: 5),
-            AnimatedRotation(
-              turns: _open ? .5 : 0,
-              duration: AppMotion.duration(context),
-              child: Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 16,
-                color: palette.textSecondary,
+            if (!widget.iconOnly) ...[
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label(smart),
+                  style: textStyle?.copyWith(color: palette.textPrimary),
+                ),
               ),
-            ),
+              const SizedBox(width: 5),
+              AnimatedRotation(
+                turns: _open ? .5 : 0,
+                duration: AppMotion.duration(context),
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: palette.textSecondary,
+                ),
+              ),
+            ],
           ],
         ),
       ),

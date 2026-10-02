@@ -116,6 +116,10 @@ void _registerContentDesignTests() {
           );
           expect(cardSurface.color, palette.surface);
           expect(
+            (cardSurface.shape! as RoundedRectangleBorder).side.color,
+            palette.outline,
+          );
+          expect(
             tester
                 .widget<MobileGameCover>(
                   find.descendant(
@@ -136,6 +140,37 @@ void _registerContentDesignTests() {
 
           await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
           await tester.pumpAndSettle();
+          final shortcut = find.byKey(const ValueKey('mobile-mine-shortcut-0'));
+          await tester.scrollUntilVisible(
+            shortcut,
+            100,
+            scrollable: find
+                .descendant(
+                  of: find.byKey(const ValueKey('mobile-mine-scroll')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          for (var index = 0; index < 2; index++) {
+            final panel = tester.widget<Material>(
+              find
+                  .ancestor(
+                    of: find.byKey(ValueKey('mobile-mine-shortcut-$index')),
+                    matching: find.byType(Material),
+                  )
+                  .first,
+            );
+            expect(
+              panel.color,
+              index == 0
+                  ? palette.primaryContainer
+                  : palette.secondaryContainer,
+            );
+            expect(
+              (panel.shape! as RoundedRectangleBorder).side.color,
+              palette.outline,
+            );
+          }
           final recent = find.byKey(
             ValueKey(
               'mobile-mine-recent-${controller.recentlyViewedGames.first.id}',
@@ -176,6 +211,22 @@ void _registerContentDesignTests() {
           await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
           await tester.pumpAndSettle();
           expect(find.byType(MobileLibraryContent), findsOneWidget);
+          final libraryPanel = tester.widget<Material>(
+            find
+                .ancestor(
+                  of: find.byKey(
+                    ValueKey(
+                      'mobile-library-game-${controller.games.first.id}',
+                    ),
+                  ),
+                  matching: find.byType(Material),
+                )
+                .first,
+          );
+          expect(
+            (libraryPanel.shape! as RoundedRectangleBorder).side.color,
+            palette.outline,
+          );
           final tags = tester.widgetList<ContentAttributeTags>(
             find.byType(ContentAttributeTags),
           );
