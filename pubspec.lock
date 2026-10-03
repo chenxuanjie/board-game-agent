@@ -620,14 +620,14 @@ packages:
     source: hosted
     version: "0.6.0"
   remote_update:
-    dependency: transitive
+    dependency: "direct main"
     description:
       path: "../shared_packages/remote_update"
       relative: true
     source: path
     version: "0.1.0"
   remote_update_webdav:
-    dependency: transitive
+    dependency: "direct main"
     description:
       path: "../shared_packages/remote_update_webdav"
       relative: true

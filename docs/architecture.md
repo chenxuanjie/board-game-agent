@@ -26,6 +26,8 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 
 资料源连接编辑共用 `lib/ui/shared/resource_connection_screen.dart`，手机设置与桌面资料源均可进入。地址和账号保存沿用 `SettingsTransferService` 的安全存储、资料源持久化与失败回滚，保存后用于真实资源请求和更新检查。初始连接、旧地址迁移与发布注入见 [可编辑资源连接](resource-connections.md)。
 
+Windows 更新服务及安装交接位于 `lib/features/settings/services/windows_update_service*.dart` 与 `windows_update_installer.dart`，复用现有关于页、启动提示和共享下载校验器。Android 的原服务保持原接线。独立清单、安装目录和数据保留约束见 [Windows 应用内更新](windows-updates.md)。
+
 `AppController` 和部分桌面界面使用 Dart `part` 文件。`part` 只是把一个 library 的代码分到多个文件，仍共享私有状态；不要把文件移动误认为已经拆开职责。大型 AI 流程或页面如需继续拆分，应单独调整状态边界并验证行为，而不是仅按行数分文件。
 
 测试目前保留 `test/` 下原有的运行入口，已有 `desktop/`、`mobile/` 和 `responses_workflow/` 的 `part` 测试分组。测试用例按原功能继续维护；移动测试入口前应同时检查项目脚本对其路径的引用。

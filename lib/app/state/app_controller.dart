@@ -808,6 +808,29 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Wait for durable writes before handing the app to a Windows installer.
+  Future<void> prepareForAppUpdate() async {
+    void checkIdle() {
+      if (_generationStates.values.any((state) => state.isSending) ||
+          _isListening) {
+        throw StateError('请先结束 AI 回复或语音输入，再安装更新');
+      }
+    }
+
+    checkIdle();
+    await Future.wait<void>([
+      _conversationSaveQueue,
+      ?_aiConfigSaveQueue,
+      _selectedConversationSaveQueue,
+      _activitySaveQueue,
+      _favoriteMutationQueue,
+      _searchHistoryMutationQueue,
+      _recentGamesMutationQueue,
+      _dailyRecommendationSaveQueue,
+    ]).timeout(const Duration(seconds: 15));
+    checkIdle();
+  }
+
   Future<void> disposeServices() async {
     gameVotes.dispose();
     _favoriteStatistics?.dispose();

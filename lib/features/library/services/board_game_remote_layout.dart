@@ -14,6 +14,8 @@ final class BoardGameRemoteLayout {
   );
   static const String libraryRoot = '$appRoot/board-game-lib';
   static const String updateManifestPath = '$appRoot/updates/manifest.json';
+  static const String windowsUpdateManifestPath =
+      '$appRoot/updates/windows/x64/manifest.json';
 
   static String assetPath(String logicalPath) {
     final normalized = logicalPath

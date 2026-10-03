@@ -17,6 +17,7 @@ import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
+import 'features/settings/services/windows_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
 import 'core/platform/insecure_android_certificate_trust.dart';
 import 'features/assistant/services/speech_service.dart';
@@ -331,16 +332,30 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     );
   }
 
-  AppUpdateService _createUpdateService() => createWebDavAndroidUpdateService(
-    settingsProvider: () => widget.updateSettingsController.saved,
-    config: const WebDavAndroidUpdateConfig(
-      appId: 'board_game_agent',
-      manifestPath: BoardGameRemoteLayout.updateManifestPath,
-      fallbackVersion: '1.0.0',
-      fallbackBuild: 7,
-      directoryName: 'board_game_agent_updates',
-    ),
-  );
+  AppUpdateService _createUpdateService() {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return createWindowsUpdateService(
+        settingsProvider: () => widget.updateSettingsController.saved,
+        beforeInstall: () async {
+          if (_transferService.isBusy) {
+            throw StateError('设置正在保存，请完成后重试');
+          }
+          await widget.controller.prepareForAppUpdate();
+        },
+        onInstallerLaunched: () => windowManager.destroy(),
+      );
+    }
+    return createWebDavAndroidUpdateService(
+      settingsProvider: () => widget.updateSettingsController.saved,
+      config: const WebDavAndroidUpdateConfig(
+        appId: 'board_game_agent',
+        manifestPath: BoardGameRemoteLayout.updateManifestPath,
+        fallbackVersion: '1.0.0',
+        fallbackBuild: 7,
+        directoryName: 'board_game_agent_updates',
+      ),
+    );
+  }
 
   void _handleControllerChange() {
     if (mounted) {

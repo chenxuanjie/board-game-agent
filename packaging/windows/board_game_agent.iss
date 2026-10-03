@@ -54,12 +54,14 @@ SetupIconFile={#AppIconFile}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-VersionInfoVersion={#AppVersion}.0
-VersionInfoProductVersion={#AppVersion}.0
+VersionInfoVersion={#AppVersion}.{#AppBuildNumber}
+VersionInfoProductVersion={#AppVersion}.{#AppBuildNumber}
 VersionInfoDescription={#AppName} installer
 VersionInfoProductName={#AppName}
 VersionInfoCompany={#AppPublisher}
 VersionInfoCopyright=Copyright (C) 2026 {#AppPublisher}
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
