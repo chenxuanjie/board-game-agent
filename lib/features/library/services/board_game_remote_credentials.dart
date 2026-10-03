@@ -1,12 +1,14 @@
-/// Default credentials for the configured board-game WebDAV library.
-///
-/// Resource endpoints themselves remain user-configurable through
-/// [AssetSourceConfig] and SharedPreferences. These constants only replace
-/// the old bundled storage-endpoints asset for the existing authentication
-/// fallback.
+/// First-install credentials supplied by a private release defaults file.
+/// Saved, editable secure settings take precedence; never commit seed values.
 class BoardGameRemoteCredentials {
   const BoardGameRemoteCredentials._();
 
-  static const String username = 'Shane';
-  static const String password = '1';
+  // Release seeds come from a private file outside the repository. Once saved,
+  // the editable secure WebDAV settings always take precedence.
+  static const String username = String.fromEnvironment(
+    'BOARD_GAME_WEBDAV_USERNAME',
+  );
+  static const String password = String.fromEnvironment(
+    'BOARD_GAME_WEBDAV_PASSWORD',
+  );
 }

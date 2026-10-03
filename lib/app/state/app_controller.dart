@@ -26,6 +26,8 @@ import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/daily_recommendation_record.dart';
 import '../../features/games/models/favorite_game_record.dart';
 import '../../features/games/models/game_info.dart';
+import '../../features/games/models/game_ranking_entry.dart';
+import '../../features/games/models/game_vote_record.dart';
 import '../../features/games/models/game_catalog_manifest.dart';
 import '../../features/library/models/game_resource.dart';
 import '../../features/library/models/remote_library_update.dart';
@@ -41,6 +43,8 @@ import '../../features/settings/services/preferences_service.dart';
 import '../../features/games/services/daily_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
 import '../../features/games/services/game_vote_service.dart';
+import '../../features/games/services/game_favorite_ranker.dart';
+import '../../features/games/services/webdav_game_vote_store.dart';
 import '../../features/games/services/national_day_list_controller.dart';
 import '../../features/library/services/remote_asset_service.dart';
 import '../../features/assistant/services/speech_service.dart';
@@ -52,6 +56,7 @@ import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 
 part 'app_controller/collections.dart';
+part 'app_controller/rankings.dart';
 part 'app_controller/ai_configuration.dart';
 part 'app_controller/assistant.dart';
 part 'app_controller/assistant_run.dart';
@@ -94,8 +99,12 @@ class AppController extends ChangeNotifier {
     RealtimeVoiceService? realtimeVoiceService,
     ColorSchemeOption? initialColorScheme,
     GameVoteService? gameVotes,
+    RemoteGameVoteStore? Function()? favoriteRemoteProvider,
+    String? Function()? favoriteScopeProvider,
     ConversationStore? conversationStore,
   }) : _preferencesService = preferencesService,
+       _favoriteRemoteProvider = favoriteRemoteProvider,
+       _favoriteScopeProvider = favoriteScopeProvider,
        gameVotes =
            gameVotes ?? GameVoteService(preferences: preferencesService),
        _colorScheme = initialColorScheme ?? defaultColorScheme,
@@ -110,6 +119,22 @@ class AppController extends ChangeNotifier {
 
   final PreferencesService _preferencesService;
   final GameVoteService gameVotes;
+  final RemoteGameVoteStore? Function()? _favoriteRemoteProvider;
+  final String? Function()? _favoriteScopeProvider;
+  GameVoteService? _favoriteStatistics;
+  bool _favoriteRecordsLoaded = false;
+  final Set<String> _committedFavoriteSlugs = {};
+  GameVoteService get favoriteStatistics =>
+      _favoriteStatistics ??= GameVoteService(
+        preferences: _preferencesService,
+        namespace: GameVoteBallot.favoritesNamespace,
+        remoteProvider: _favoriteRemoteProvider,
+        scopeProvider: _favoriteScopeProvider,
+        externalGames: () =>
+            _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
+        cacheLoader: _preferencesService.loadFavoriteRankingCache,
+        cacheSaver: _preferencesService.saveFavoriteRankingCache,
+      );
   NationalDayListController? _nationalDayList;
   NationalDayListController get nationalDayList =>
       _nationalDayList ??= NationalDayListController(
@@ -661,9 +686,14 @@ class AppController extends ChangeNotifier {
           ),
         )
         ..removeWhere((slug, _) => slug.isEmpty);
+      _favoriteRecordsLoaded = true;
+      _committedFavoriteSlugs
+        ..clear()
+        ..addAll(_favoriteCreatedAtBySlug.keys);
     } catch (error) {
       debugPrint('[favorites] load failed: $error');
       _favoriteCreatedAtBySlug.clear();
+      _favoriteRecordsLoaded = false;
     }
     try {
       _searchHistory = await _preferencesService.loadSearchHistory();
@@ -780,6 +810,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> disposeServices() async {
     gameVotes.dispose();
+    _favoriteStatistics?.dispose();
     _nationalDayList?.dispose();
     _assetStatusTimer?.cancel();
     for (final _ChatGenerationState generation in _generationStates.values) {
@@ -801,6 +832,12 @@ class AppController extends ChangeNotifier {
   }
 
   void _notifyListeners() => notifyListeners();
+
+  @override
+  void dispose() {
+    _favoriteStatistics?.dispose();
+    super.dispose();
+  }
 
   void _startAssetStatusPolling() {
     _assetStatusTimer?.cancel();

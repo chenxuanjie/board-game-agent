@@ -12,11 +12,13 @@ class ResourceSourceList extends StatelessWidget {
     required this.statuses,
     required this.copy,
     this.checking = false,
+    this.onEdit,
   });
   final List<AssetSourceConfig> sources;
   final Map<String, ConnectivityStatus> statuses;
   final AppCopy copy;
   final bool checking;
+  final ValueChanged<AssetSourceConfig>? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +124,13 @@ class ResourceSourceList extends StatelessWidget {
             ],
           ),
         ),
+        if (onEdit != null)
+          IconButton(
+            key: ValueKey('edit-resource-source-${source.id}'),
+            tooltip: copy.localized('编辑资料源', 'Edit source'),
+            onPressed: checking ? null : () => onEdit!(source),
+            icon: const Icon(Icons.edit_outlined, size: 19),
+          ),
       ],
     );
   }

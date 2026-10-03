@@ -136,7 +136,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       );
       final remote = find.byKey(const ValueKey('resource-source-cznas_dev'));
       expect(
-        find.descendant(of: remote, matching: find.text('cznas.dev')),
+        find.descendant(of: remote, matching: find.text('外网访问')),
         findsOneWidget,
       );
       expect(

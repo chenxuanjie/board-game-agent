@@ -27,7 +27,11 @@ class BoardGameUpdateSettingsLoader {
   static AssetSourceConfig _selectSource(List<AssetSourceConfig> sources) {
     for (final source in sources) {
       final uri = Uri.tryParse(source.testUrl);
-      if (uri?.host.toLowerCase() == 'cznas.dev') return source;
+      if (source.id == 'configured_webdav' ||
+          uri?.host.toLowerCase() ==
+              Uri.parse(BoardGameRemoteLayout.defaultBaseUrl).host) {
+        return source;
+      }
     }
     for (final source in sources) {
       final uri = Uri.tryParse(source.testUrl);

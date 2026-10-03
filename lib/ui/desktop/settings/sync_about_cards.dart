@@ -14,6 +14,8 @@ class _SyncBackupCard extends StatelessWidget {
     required this.onTogglePassword,
     required this.onSaveAndCheck,
     required this.onCheckSources,
+    this.transferMenu,
+    this.onEditSource,
   });
 
   final AppController controller;
@@ -28,6 +30,8 @@ class _SyncBackupCard extends StatelessWidget {
   final VoidCallback onTogglePassword;
   final VoidCallback onSaveAndCheck;
   final VoidCallback onCheckSources;
+  final Widget? transferMenu;
+  final ValueChanged<AssetSourceConfig>? onEditSource;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +42,7 @@ class _SyncBackupCard extends StatelessWidget {
     return _SettingsCard(
       icon: Icons.cloud_outlined,
       title: copy.localized('资料与同步', 'Resources & Sync'),
+      trailing: settingsController == null ? null : transferMenu,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -46,6 +51,7 @@ class _SyncBackupCard extends StatelessWidget {
             statuses: statuses,
             copy: copy,
             checking: checking,
+            onEdit: onEditSource,
           ),
           const SizedBox(height: 8),
           Align(

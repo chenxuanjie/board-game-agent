@@ -28,6 +28,7 @@ extension AppCollectionController on AppController {
   Future<bool> _toggleFavoriteNow(GameInfo game) async {
     final slug = game.slug.trim();
     if (slug.isEmpty) return false;
+    if (!await _ensureFavoriteRecords()) return false;
 
     final previous = Map<String, DateTime>.of(_favoriteCreatedAtBySlug);
     if (_favoriteCreatedAtBySlug.containsKey(slug)) {
@@ -44,6 +45,11 @@ extension AppCollectionController on AppController {
               FavoriteGameRecord(gameSlug: entry.key, createdAt: entry.value),
         ),
       );
+      _favoriteRecordsLoaded = true;
+      _committedFavoriteSlugs
+        ..clear()
+        ..addAll(_favoriteCreatedAtBySlug.keys);
+      favoriteStatistics.externalSelectionChanged();
       return true;
     } catch (error) {
       _favoriteCreatedAtBySlug

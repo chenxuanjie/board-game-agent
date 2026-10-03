@@ -58,9 +58,19 @@ class AssetSourceConfig {
       RegExp(r'[\\/]board-game-lib[\\/]?$'),
       '',
     );
+    final legacyDefault =
+        ['cznas_dev', 'configured_webdav'].contains(source.id) &&
+        normalizedUri?.host == 'cznas.dev' &&
+        normalizedUri?.port == 5006 &&
+        normalizedUri?.path == '/friend/';
     return source.copyWith(
-      address: normalizedAddress,
-      testUrl: normalizedUri?.toString() ?? source.testUrl,
+      name: legacyDefault && source.name == 'cznas.dev' ? '外网访问' : source.name,
+      address: legacyDefault
+          ? BoardGameRemoteLayout.defaultBaseUrl
+          : normalizedAddress,
+      testUrl: legacyDefault
+          ? BoardGameRemoteLayout.defaultBaseUrl
+          : normalizedUri?.toString() ?? source.testUrl,
     );
   }
 
@@ -73,9 +83,9 @@ class AssetSourceConfig {
     ),
     AssetSourceConfig(
       id: 'cznas_dev',
-      name: 'cznas.dev',
-      address: r'\\cznas.dev\friend',
-      testUrl: 'https://cznas.dev:5006/friend/',
+      name: '外网访问',
+      address: BoardGameRemoteLayout.defaultBaseUrl,
+      testUrl: BoardGameRemoteLayout.defaultBaseUrl,
     ),
   ];
 

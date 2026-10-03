@@ -73,7 +73,13 @@ AI 页动效统一使用快速减速曲线：快捷问题悬停/聚焦轻移 `3`
 
 紧凑 AI 输入区使用一行图标模式、单行模型与合并语音/发送按钮；模式与主按钮均为 48×48 dp。桌面可用输入宽度不足 370 dp 或文字放大时采用相同布局，避免工具栏拆行错位。正文仍支持 2–4 行。对比度使用共享主题的容器和完整描边，详见 [紧凑界面对比度](docs/compact-interface-contrast.md)。
 
+设置导入导出采用独立整页，内容最大宽度 680 dp，边距复用 UiTokens.pageInset；预览表单单列布局并纵向滚动。设置页及 AI/WebDAV 标题菜单使用 Material 图标菜单的默认触控尺寸，导出范围按钮自动换行，不增加首页或侧栏尺寸。回归覆盖 320/390/1280 dp 和 150% 字号，详见 [设置导入与导出](docs/settings-transfer.md)。
+
 实现集中在 `lib/ui/desktop/desktop_responsive.dart`、`lib/ui/desktop/workspace.dart` 与各桌面页面，相关回归断点测试位于 `test/desktop_responsive_test.dart` 和 `test/desktop_workspace_test.dart`；表中的 `752 / 282` 等主体尺寸仍只作为标准参考窗口下的基准。
+
+隐藏喜欢榜共用单列页面，内容最大宽度 800 dp，边距复用 UiTokens.pageInset；排名区宽 36 dp，封面为 64×88 dp 并完整适配，游戏名称最多两行。页面纵向滚动，不增加首页或侧栏入口。回归覆盖 320/390/1280 dp、150% 字号和桌面详情往返，见 [喜欢排行榜](docs/favorite-rankings.md)。
+
+资料源编辑采用共用整页，内容最大宽度 640 dp、单列表单、纵向滚动，密码默认隐藏。来源行的编辑按钮复用 Material 触控尺寸；窄屏设置增加 WebDAV 连接入口，保留优先级排序。回归覆盖 320/390/1280 dp 和 150% 字号，见 [可编辑资源连接](docs/resource-connections.md)。
 
 
 ## 第二阶段：共享动效与交互边界

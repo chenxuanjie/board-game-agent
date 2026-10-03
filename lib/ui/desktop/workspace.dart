@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../features/settings/services/settings_transfer_service.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -25,6 +26,7 @@ import 'desktop_responsive.dart';
 import 'theme.dart';
 import 'window_controls.dart';
 import '../shared/app_page_transition.dart';
+import '../shared/game_ranking_screen.dart';
 import '../shared/game_cover_motion.dart';
 import 'desktop_resolved_image.dart';
 
@@ -34,12 +36,16 @@ class DesktopWorkspace extends StatefulWidget {
     required this.controller,
     required this.onOpenAbout,
     this.webDavSettingsController,
+    this.transferService,
     this.enableNativeWindowControls = true,
+    this.initialPage = 'home',
   });
   final AppController controller;
   final VoidCallback onOpenAbout;
   final WebDavSettingsController? webDavSettingsController;
+  final SettingsTransferService? transferService;
   final bool enableNativeWindowControls;
+  final String initialPage;
   @override
   State<DesktopWorkspace> createState() => _DesktopWorkspaceState();
 }
@@ -79,11 +85,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       widget.enableNativeWindowControls &&
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.windows;
-  bool get _featurePage => ['assistant', 'library'].contains(_page);
+  bool get _featurePage => ['assistant', 'library', 'rankings'].contains(_page);
 
   @override
   void initState() {
     super.initState();
+    _page = widget.initialPage;
     widget.controller.addListener(_refresh);
     _search.addListener(_refreshSearch);
     _searchFocus.addListener(_handleSearchFocusChanged);
@@ -570,6 +577,17 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 if (_featurePage)
                   Positioned.fill(
                     child: switch (_page) {
+                      'rankings' => GameRankingScreen(
+                        controller: widget.controller,
+                        onOpenGame: _game,
+                        onBack: () {
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          } else {
+                            _navigate('home');
+                          }
+                        },
+                      ),
                       'assistant' => DesktopAssistantPane(
                         key: _assistantPane,
                         controller: widget.controller,
@@ -636,6 +654,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                 controller: widget.controller,
                                 game: widget.controller.selectedGame,
                                 backTooltip: switch (_gameDetailReturnPage) {
+                                  'rankings' =>
+                                    widget.controller.copy.localized(
+                                      '返回喜欢榜',
+                                      'Back to Most liked',
+                                    ),
                                   'home' => widget.controller.copy.localized(
                                     '返回首页',
                                     'Back to Home',
@@ -661,6 +684,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               ),
                               'settings' => DesktopSettingsPane(
                                 controller: widget.controller,
+                                transferService: widget.transferService,
                                 focusAiSettings: _focusAiSettings,
                                 webDavSettingsController:
                                     widget.webDavSettingsController,

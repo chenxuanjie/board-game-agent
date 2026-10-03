@@ -57,8 +57,6 @@ class RemoteAssetService {
       );
     }
 
-    final Map<String, String> headers = await _headers();
-
     for (final source in sources) {
       final Uri? uri = _buildFileUri(source, remotePath);
       if (uri == null) {
@@ -66,7 +64,7 @@ class RemoteAssetService {
       }
       try {
         final http.Response response = await _client
-            .get(uri, headers: headers)
+            .get(uri, headers: _headers(uri))
             .timeout(const Duration(seconds: 6));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           await localFile.parent.create(recursive: true);
@@ -129,7 +127,6 @@ class RemoteAssetService {
     if (!_isUsableRemotePath(remotePath)) {
       return null;
     }
-    final Map<String, String> headers = await _headers();
     for (final source in sources) {
       final Uri? uri = _buildFileUri(source, remotePath);
       if (uri == null) {
@@ -137,7 +134,7 @@ class RemoteAssetService {
       }
       try {
         final http.Response response = await _client
-            .get(uri, headers: headers)
+            .get(uri, headers: _headers(uri))
             .timeout(const Duration(seconds: 8));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response.bodyBytes;
@@ -330,7 +327,7 @@ class RemoteAssetService {
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
       throw ArgumentError.value(source.testUrl, 'source.testUrl');
     }
-    final WebDavSettings credentials = _webDavSettings();
+    final WebDavSettings credentials = _webDavSettings(parsed);
     final String username = credentials.username.trim();
     final WebDavStorageClient storage = WebDavStorageClient(
       config: WebDavConfig(
@@ -478,7 +475,6 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
-    final Map<String, String> headers = await _headers();
     for (final source in sources) {
       final Uri? uri = _buildFileUri(source, remotePath);
       if (uri == null) {
@@ -486,7 +482,7 @@ class RemoteAssetService {
       }
       try {
         final http.Response response = await _client
-            .head(uri, headers: headers)
+            .head(uri, headers: _headers(uri))
             .timeout(const Duration(seconds: 8));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return <String, dynamic>{
@@ -546,17 +542,37 @@ class RemoteAssetService {
         !isOtherStoragePath(normalized);
   }
 
-  WebDavSettings _webDavSettings() {
+  bool _belongsTo(Uri target, String baseUrl) {
+    final base = Uri.tryParse(baseUrl);
+    if (base == null ||
+        !['http', 'https'].contains(base.scheme) ||
+        base.host.isEmpty ||
+        target.origin != base.origin) {
+      return false;
+    }
+    final root = base.path.endsWith('/') ? base.path : '${base.path}/';
+    return target.path == base.path || target.path.startsWith(root);
+  }
+
+  WebDavSettings _webDavSettings(Uri target) {
     final WebDavSettings? configured = _settingsProvider?.call();
-    if (configured != null && configured.isComplete) return configured;
+    // A newly imported account must never authenticate unrelated data sources.
+    if (configured != null && _belongsTo(target, configured.baseUrl)) {
+      return configured;
+    }
+    if (!AssetSourceConfig.defaults.any(
+      (source) => _belongsTo(target, source.testUrl),
+    )) {
+      return const WebDavSettings();
+    }
     return const WebDavSettings(
       username: BoardGameRemoteCredentials.username,
       password: BoardGameRemoteCredentials.password,
     );
   }
 
-  Future<Map<String, String>> _headers() async {
-    final WebDavSettings settings = _webDavSettings();
+  Map<String, String> _headers(Uri target) {
+    final WebDavSettings settings = _webDavSettings(target);
     if (settings.username.trim().isEmpty || settings.password.isEmpty) {
       return const <String, String>{};
     }

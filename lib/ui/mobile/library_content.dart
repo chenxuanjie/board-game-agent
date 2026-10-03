@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../shared/favorite_feedback.dart';
 import '../shared/content_entrance.dart';
 
 import '../../core/theme/app_palette.dart';
@@ -360,7 +359,6 @@ class _GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final favorite = controller.isFavorite(game);
     final tags = _tags(game);
     return Material(
       color: AppPalette.of(context).surface,
@@ -378,41 +376,15 @@ class _GameCard extends StatelessWidget {
           children: [
             SizedBox(
               height: coverHeight,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    child: Center(
-                      child: MobileGameCover(
-                        controller: controller,
-                        game: game,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
+              child: ColoredBox(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                child: Center(
+                  child: MobileGameCover(
+                    controller: controller,
+                    game: game,
+                    fit: BoxFit.contain,
                   ),
-                  Positioned(
-                    right: 4,
-                    top: 4,
-                    child: FavoriteToggleButton(
-                      key: ValueKey('mobile-library-favorite-${game.id}'),
-                      controller: controller,
-                      game: game,
-                      filledTonal: true,
-                      color: favorite
-                          ? AppPalette.of(context).primary
-                          : AppPalette.of(context).textSecondary,
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppPalette.of(
-                          context,
-                        ).surface.withValues(alpha: .92),
-                        foregroundColor: favorite
-                            ? AppPalette.of(context).primary
-                            : AppPalette.of(context).textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             Expanded(

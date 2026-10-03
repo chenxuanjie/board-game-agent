@@ -12,7 +12,9 @@ import 'features/assistant/services/board_game_ai_service.dart';
 import 'features/games/services/game_manifest_service.dart';
 import 'features/games/services/game_vote_service.dart';
 import 'features/games/services/webdav_game_vote_store.dart';
+import 'features/games/models/game_vote_record.dart';
 import 'features/settings/services/preferences_service.dart';
+import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
 import 'features/library/services/board_game_remote_layout.dart';
@@ -29,6 +31,8 @@ import 'core/theme/color_scheme_option.dart';
 import 'core/theme/app_theme.dart';
 import 'ui/mobile/home_screen.dart';
 import 'ui/mobile/settings_screen.dart';
+import 'ui/mobile/game_detail_screen.dart';
+import 'ui/shared/game_ranking_screen.dart';
 import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
@@ -55,6 +59,14 @@ Future<void> main() async {
       preferences: preferencesService,
       remoteProvider: () =>
           WebDavGameVoteStore.fromSettings(updateSettingsController.saved),
+    ),
+    favoriteRemoteProvider: () => WebDavGameVoteStore.fromSettings(
+      updateSettingsController.saved,
+      namespace: GameVoteBallot.favoritesNamespace,
+    ),
+    favoriteScopeProvider: () => WebDavGameVoteStore.scopeFor(
+      updateSettingsController.saved,
+      namespace: GameVoteBallot.favoritesNamespace,
     ),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(),
@@ -116,14 +128,16 @@ Future<void> _prepareUpdateSettings(
 ) async {
   final stored = await updateStore.load();
   if (stored != null) {
-    final normalized = BoardGameRemoteLayout.normalizeSettings(stored);
+    final normalized = BoardGameRemoteLayout.migrateLegacySettings(stored);
     if (normalized.baseUrl != stored.baseUrl) {
       await updateStore.save(normalized);
     }
     return;
   }
 
-  final legacy = await BoardGameUpdateSettingsLoader.load();
+  final legacy = await BoardGameUpdateSettingsLoader.load(
+    sources: await PreferencesService().loadAssetSourceConfigs(),
+  );
   if (!legacy.isComplete) return;
   await updateStore.save(
     BoardGameRemoteLayout.normalizeSettings(
@@ -147,6 +161,10 @@ class BoardGameAgentApp extends StatefulWidget {
 }
 
 class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
+  late final SettingsTransferService _transferService = SettingsTransferService(
+    controller: widget.controller,
+    webDav: widget.updateSettingsController,
+  );
   late Future<void> _initialization;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _startupUpdateCheckScheduled = false;
@@ -178,8 +196,31 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                 DesktopResponsive.supportsDesktopViewport(constraints.biggest));
         return MaterialApp(
           routes: {
+            GameRankingScreen.routeName: (context) => desktopLayout
+                ? DesktopWorkspace(
+                    controller: widget.controller,
+                    webDavSettingsController: widget.updateSettingsController,
+                    transferService: _transferService,
+                    initialPage: 'rankings',
+                    onOpenAbout: _openAbout,
+                  )
+                : GameRankingScreen(
+                    controller: widget.controller,
+                    onOpenGame: (game) {
+                      unawaited(widget.controller.recordRecentlyViewed(game));
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => GameDetailScreen(
+                            controller: widget.controller,
+                            game: game,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
             '/settings/ai': (_) => MobileSettingsScreen(
               controller: widget.controller,
+              transferService: _transferService,
               focusAiSettings: true,
               onOpenAbout: _openAbout,
             ),
@@ -224,11 +265,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                 return DesktopWorkspace(
                   controller: widget.controller,
                   webDavSettingsController: widget.updateSettingsController,
+                  transferService: _transferService,
                   onOpenAbout: _openAbout,
                 );
               }
               return HomeScreen(
                 controller: widget.controller,
+                transferService: _transferService,
                 onOpenAbout: _openAbout,
               );
             },
@@ -241,7 +284,10 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   Future<void> _initialize() async {
     try {
       await widget.updateSettingsController.load();
+      await _transferService.recover();
       await widget.controller.initialize();
+      // Publish existing favorites too, even while the ranking entry is hidden.
+      unawaited(widget.controller.refreshFavoriteRankings());
     } catch (error, stackTrace) {
       debugPrint('[startup] initialization failed: $error');
       debugPrint('$stackTrace');

@@ -20,6 +20,12 @@
 
 AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效位于 `lib/ui/shared/assistant/`；桌面和紧凑页面复用这些控件并保持原有控制器、会话和草稿边界，详见 [AI 助手界面](assistant-workspace-design.md)。
 
+配置导入导出共用 `lib/ui/shared/settings_transfer_screen.dart`；格式识别在 `lib/features/settings/models/configuration_transfer.dart`，跨存储保存及中断恢复在 `lib/features/settings/services/settings_transfer_service.dart`。设置页只提供范围入口与应用后的表单刷新，不复制解析或存储路径。格式、依赖补丁和验收边界见 [设置导入与导出](settings-transfer.md)。
+
+喜欢排行榜共用 `lib/ui/shared/game_ranking_screen.dart`，排名规则在 `lib/features/games/services/game_favorite_ranker.dart`，收藏挂接在 `lib/app/state/app_controller/rankings.dart`。统计复用现有投票同步服务，以独立命名空间读取已保存收藏，不与国庆想玩票数混用。入口保持隐藏，数据范围、缓存与验收见 [喜欢排行榜](favorite-rankings.md)。
+
+资料源连接编辑共用 `lib/ui/shared/resource_connection_screen.dart`，手机设置与桌面资料源均可进入。地址和账号保存沿用 `SettingsTransferService` 的安全存储、资料源持久化与失败回滚，保存后用于真实资源请求和更新检查。初始连接、旧地址迁移与发布注入见 [可编辑资源连接](resource-connections.md)。
+
 `AppController` 和部分桌面界面使用 Dart `part` 文件。`part` 只是把一个 library 的代码分到多个文件，仍共享私有状态；不要把文件移动误认为已经拆开职责。大型 AI 流程或页面如需继续拆分，应单独调整状态边界并验证行为，而不是仅按行数分文件。
 
 测试目前保留 `test/` 下原有的运行入口，已有 `desktop/`、`mobile/` 和 `responses_workflow/` 的 `part` 测试分组。测试用例按原功能继续维护；移动测试入口前应同时检查项目脚本对其路径的引用。

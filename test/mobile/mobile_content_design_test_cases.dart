@@ -205,7 +205,7 @@ void _registerContentDesignTests() {
           expect(find.byType(GameDetailScreen), findsOneWidget);
           expect(tester.takeException(), isNull);
 
-          // Library keeps full covers and exposes favorite as a separate action.
+          // Library keeps unobstructed covers; favorites stay on the detail page.
           await tester.tap(find.byTooltip('返回'));
           await tester.pumpAndSettle();
           await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
@@ -233,14 +233,30 @@ void _registerContentDesignTests() {
           expect(tags, isNotEmpty);
           expect(tags.every((item) => item.tags.length <= 2), isTrue);
           expect(tester.takeException(), isNull);
-          final favorite = find.byKey(
-            ValueKey('mobile-library-favorite-${controller.games.first.id}'),
+          expect(
+            find.byKey(
+              ValueKey('mobile-library-favorite-${controller.games.first.id}'),
+            ),
+            findsNothing,
           );
           final before = controller.isFavorite(controller.games.first);
-          await tester.tap(favorite);
+          await tester.tap(
+            find.byKey(
+              ValueKey('mobile-library-game-${controller.games.first.id}'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(GameDetailScreen), findsOneWidget);
+          await tester.tap(
+            find.byKey(
+              ValueKey('mobile-detail-favorite-${controller.games.first.id}'),
+            ),
+          );
           await tester.pumpAndSettle();
           expect(controller.isFavorite(controller.games.first), !before);
           expect(tester.takeException(), isNull);
+          await tester.tap(find.byTooltip('返回'));
+          await tester.pumpAndSettle();
         }
       }
     }

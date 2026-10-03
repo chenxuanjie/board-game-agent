@@ -23,6 +23,7 @@ class _AiServiceCard extends StatelessWidget {
     required this.onSpeedChanged,
     required this.onToggleApiKey,
     required this.onSaveAndCheck,
+    this.transferMenu,
   });
 
   final AppController controller;
@@ -46,6 +47,7 @@ class _AiServiceCard extends StatelessWidget {
   final ValueChanged<AiResponseSpeed> onSpeedChanged;
   final VoidCallback onToggleApiKey;
   final VoidCallback onSaveAndCheck;
+  final Widget? transferMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +68,7 @@ class _AiServiceCard extends StatelessWidget {
     return _SettingsCard(
       icon: Icons.auto_awesome_rounded,
       title: copy.localized('AI 服务', 'AI Service'),
+      trailing: transferMenu,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

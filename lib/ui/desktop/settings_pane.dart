@@ -17,7 +17,11 @@ import '../../features/library/services/board_game_remote_layout.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../shared/resource_source_list.dart';
+import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
+import '../shared/settings_transfer_screen.dart';
+import '../../features/settings/models/configuration_transfer.dart';
+import '../../features/settings/services/settings_transfer_service.dart';
 
 import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
@@ -35,18 +39,68 @@ class DesktopSettingsPane extends StatefulWidget {
     required this.onOpenAbout,
     this.webDavSettingsController,
     this.focusAiSettings = false,
+    this.transferService,
   });
 
   final AppController controller;
   final bool focusAiSettings;
   final VoidCallback onOpenAbout;
   final WebDavSettingsController? webDavSettingsController;
+  final SettingsTransferService? transferService;
 
   @override
   State<DesktopSettingsPane> createState() => _DesktopSettingsPaneState();
 }
 
 class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
+  late final SettingsTransferService _transfer =
+      widget.transferService ??
+      SettingsTransferService(
+        controller: widget.controller,
+        webDav: widget.webDavSettingsController,
+      );
+
+  void _importApplied() {
+    if (!mounted) return;
+    final ai = widget.controller.aiApiConfig;
+    final dav = widget.webDavSettingsController?.saved;
+    setState(() {
+      _aiProvider.text = ai.name;
+      _aiModel.text = ai.model;
+      _aiApiKey.text = ai.apiKey;
+      _aiBaseUrl.text = ai.baseUrl;
+      _aiReasoningEffort = ai.reasoningEffort;
+      _aiResponseSpeed = ai.responseSpeed;
+      _aiProviderOptionId = _providerOptionId(ai);
+      if (dav != null) {
+        _webDavUrl.text = dav.baseUrl;
+        _webDavUsername.text = dav.username;
+        _webDavPassword.text = dav.password;
+      }
+      _aiFeedback = null;
+      _webDavFeedback = null;
+    });
+  }
+
+  Widget _transferMenu(ConfigurationScope scope) => SettingsTransferMenu(
+    service: _transfer,
+    scope: scope,
+    onApplied: _importApplied,
+    enabled: !_savingAi && !_checkingSources,
+  );
+  Future<void> _editResourceConnection(AssetSourceConfig source) async {
+    if (_transfer.webDav == null || _transfer.isBusy || _checkingSources) {
+      return;
+    }
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ResourceConnectionScreen(service: _transfer, source: source),
+      ),
+    );
+    if (saved == true && mounted) _importApplied();
+  }
+
   late final Future<String> _version = _loadVersion();
   late final DesktopAiSettingsService _desktopAiSettings;
   late final TextEditingController _aiProvider;
@@ -398,6 +452,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
         SettingsSectionFocus(
           reveal: widget.focusAiSettings,
           child: _AiServiceCard(
+            transferMenu: _transferMenu(ConfigurationScope.ai),
             controller: widget.controller,
             providerOptions: _providerOptions(),
             selectedProviderId: _aiProviderOptionId,
@@ -436,6 +491,10 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
               unawaited(_save(() => widget.controller.setColorScheme(scheme))),
         ),
         _SyncBackupCard(
+          onEditSource: _transfer.webDav == null
+              ? null
+              : _editResourceConnection,
+          transferMenu: _transferMenu(ConfigurationScope.webDav),
           controller: widget.controller,
           settingsController: widget.webDavSettingsController,
           urlController: _webDavUrl,
@@ -517,6 +576,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                           color: DesktopColors.orange,
                         ),
                       ),
+                    _transferMenu(ConfigurationScope.all),
                   ],
                 ),
                 SizedBox(height: metrics.px(16)),
@@ -545,11 +605,13 @@ class _SettingsCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.child,
+    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final Widget child;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -588,6 +650,7 @@ class _SettingsCard extends StatelessWidget {
                   ),
                 ),
               ),
+              ?trailing,
             ],
           ),
           SizedBox(height: metrics.px(13)),

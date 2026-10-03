@@ -4,9 +4,14 @@ extension AppAiConfigurationController on AppController {
   Future<void> saveAiApiConfig(
     AiApiConfig next, {
     bool forNextRun = false,
+    bool rememberPreset = true,
   }) async {
     final write = (_aiConfigSaveQueue ?? Future<void>.value()).then(
-      (_) => _saveAiApiConfig(next, forNextRun: forNextRun),
+      (_) => _saveAiApiConfig(
+        next,
+        forNextRun: forNextRun,
+        rememberPreset: rememberPreset,
+      ),
     );
     _aiConfigSaveQueue = write.catchError((Object _) {});
     await write;
@@ -15,6 +20,7 @@ extension AppAiConfigurationController on AppController {
   Future<void> _saveAiApiConfig(
     AiApiConfig next, {
     required bool forNextRun,
+    required bool rememberPreset,
   }) async {
     final AiApiConfig previous = _aiApiConfig;
     // Publish config/clear Run state only after the durable write succeeds.
@@ -38,7 +44,7 @@ extension AppAiConfigurationController on AppController {
     if (_aiModelSignature(previous) != _aiModelSignature(next)) {
       invalidateAiModels();
     }
-    if (_isSaveableCustomPreset(next)) {
+    if (rememberPreset && _isSaveableCustomPreset(next)) {
       final presets = _upsertCustomPreset(_customAiPresets, next);
       try {
         await _preferencesService.saveAiCustomPresets(presets);
@@ -252,8 +258,20 @@ extension AppAiConfigurationController on AppController {
   }
 
   Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> next) async {
-    _assetSourceConfigs = List<AssetSourceConfig>.from(next);
-    await _preferencesService.saveAssetSourceConfigs(_assetSourceConfigs);
+    final saved = List<AssetSourceConfig>.from(next);
+    await _preferencesService.saveAssetSourceConfigs(saved);
+    final changedIds = <String>{
+      for (final source in saved)
+        if (!_assetSourceConfigs.any(
+          (old) => old.id == source.id && old.testUrl == source.testUrl,
+        ))
+          source.id,
+    };
+    _assetSourceConfigs = saved;
+    _assetSourceStatuses.removeWhere(
+      (id, _) =>
+          !saved.any((source) => source.id == id) || changedIds.contains(id),
+    );
     for (final source in _assetSourceConfigs) {
       _assetSourceStatuses.putIfAbsent(
         source.id,

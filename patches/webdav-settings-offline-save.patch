@@ -1,0 +1,44 @@
+diff --git a/lib/src/webdav_settings_controller.dart b/lib/src/webdav_settings_controller.dart
+index 93b0318..f6c5712 100644
+--- a/lib/src/webdav_settings_controller.dart
++++ b/lib/src/webdav_settings_controller.dart
+@@ -62,12 +62,15 @@ class WebDavSettingsController extends ChangeNotifier {
+     _testResult = null;
+     notifyListeners();
+     final fingerprint = _draft.connectionFingerprint;
+-    final result = await connectionTester.test(_draft);
+-    _isTesting = false;
+-    _testResult = result;
+-    _testedFingerprint = result.isSuccess ? fingerprint : null;
+-    notifyListeners();
+-    return result;
++    try {
++      final result = await connectionTester.test(_draft);
++      _testResult = result;
++      _testedFingerprint = result.isSuccess ? fingerprint : null;
++      return result;
++    } finally {
++      _isTesting = false;
++      notifyListeners();
++    }
+   }
+ 
+   Future<WebDavSettings> enableWebDav() async {
+@@ -81,6 +84,17 @@ class WebDavSettingsController extends ChangeNotifier {
+     return _save(_draft.copyWith(mode: ExternalStorageMode.localOnly));
+   }
+ 
++  /// Persists an explicitly imported configuration without issuing a request.
++  /// A changed connection is unverified; callers can test and enable it later.
++  Future<WebDavSettings> saveConfiguration(WebDavSettings settings) async {
++    if (_isSaving || _isTesting) {
++      throw StateError('WebDAV configuration is busy');
++    }
++    _testResult = null;
++    _testedFingerprint = null;
++    return _save(settings);
++  }
++
+   Future<WebDavSettings> _save(WebDavSettings settings) async {
+     _isSaving = true;
+     notifyListeners();

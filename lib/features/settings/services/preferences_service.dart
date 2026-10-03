@@ -45,6 +45,15 @@ class PreferencesService {
   Future<String?> loadGameVoteCache() async =>
       (await _prefs).getString(_gameVoteCacheKey);
 
+  Future<String?> loadFavoriteRankingCache() async =>
+      (await _prefs).getString('game_favorite_ranking_v1');
+
+  Future<void> saveFavoriteRankingCache(String value) async {
+    if (!await (await _prefs).setString('game_favorite_ranking_v1', value)) {
+      throw StateError('Favorite ranking cache write failed');
+    }
+  }
+
   Future<void> saveGameVoteCache(String value) async {
     if (!await (await _prefs).setString(_gameVoteCacheKey, value)) {
       throw StateError('Game votes could not be saved');
@@ -132,10 +141,11 @@ class PreferencesService {
 
   Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> configs) async {
     final prefs = await _prefs;
-    await prefs.setString(
+    final saved = await prefs.setString(
       _assetSourceOrderKey,
       AssetSourceConfig.encodeList(configs),
     );
+    if (!saved) throw StateError('Resource sources could not be saved');
   }
 
   Future<AiAnswerMode> loadGameAnswerMode() async {
@@ -303,21 +313,28 @@ class PreferencesService {
           ? decoded['records']
           : decoded;
       if (rawRecords is! List<Object?>) {
-        return const <FavoriteGameRecord>[];
+        throw const FormatException('Invalid favorites data');
       }
-      return rawRecords
-          .whereType<Map<String, dynamic>>()
-          .map(FavoriteGameRecord.tryFromMap)
-          .whereType<FavoriteGameRecord>()
-          .toList(growable: false);
+      final records = <FavoriteGameRecord>[];
+      for (final raw in rawRecords) {
+        final record = raw is Map<String, dynamic>
+            ? FavoriteGameRecord.tryFromMap(raw)
+            : null;
+        if (record == null) {
+          throw const FormatException('Invalid favorites data');
+        }
+        records.add(record);
+      }
+      return records;
     } catch (_) {
-      return const <FavoriteGameRecord>[];
+      // A damaged source must not be uploaded as an empty favorites snapshot.
+      throw const FormatException('Invalid favorites data');
     }
   }
 
   Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
     final prefs = await _prefs;
-    await prefs.setString(
+    final saved = await prefs.setString(
       _favoriteGamesKey,
       jsonEncode(<String, dynamic>{
         'schemaVersion': 1,
@@ -326,6 +343,7 @@ class PreferencesService {
             .toList(growable: false),
       }),
     );
+    if (!saved) throw StateError('Favorites could not be saved');
   }
 
   Future<List<SearchHistoryRecord>> loadSearchHistory() async {

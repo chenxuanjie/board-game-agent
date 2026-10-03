@@ -18,27 +18,48 @@ abstract interface class RemoteGameVoteStore {
 
 /// Uses the existing shared WebDAV client and browser proxy configuration.
 class WebDavGameVoteStore implements RemoteGameVoteStore {
-  WebDavGameVoteStore(this.settings, {http.Client? httpClient})
-    : _httpClient = httpClient;
+  WebDavGameVoteStore(
+    this.settings, {
+    http.Client? httpClient,
+    this.namespace = GameVoteBallot.campaign,
+  }) : _httpClient = httpClient;
 
   final WebDavSettings settings;
+  final String namespace;
   final http.Client? _httpClient;
   static const directory =
       '${BoardGameRemoteLayout.appRoot}/votes/${GameVoteBallot.campaign}';
+  String get _directory => '${BoardGameRemoteLayout.appRoot}/votes/$namespace';
   WebDavStorageClient? _client;
   bool _closed = false;
 
-  static RemoteGameVoteStore? fromSettings(WebDavSettings settings) =>
-      settings.mode == ExternalStorageMode.webDav && settings.isComplete
-      ? WebDavGameVoteStore(BoardGameRemoteLayout.normalizeSettings(settings))
+  static RemoteGameVoteStore? fromSettings(
+    WebDavSettings settings, {
+    String namespace = GameVoteBallot.campaign,
+  }) => settings.mode == ExternalStorageMode.webDav && settings.isComplete
+      ? WebDavGameVoteStore(
+          BoardGameRemoteLayout.normalizeSettings(settings),
+          namespace: namespace,
+        )
       : null;
 
   @override
-  String get scope => sha256
-      .convert(
-        utf8.encode('${settings.baseUrl.trim()}\n${settings.username.trim()}'),
-      )
-      .toString();
+  String get scope => scopeFor(settings, namespace: namespace)!;
+
+  static String? scopeFor(
+    WebDavSettings settings, {
+    String namespace = GameVoteBallot.campaign,
+  }) {
+    if (settings.baseUrl.trim().isEmpty) return null;
+    final normalized = BoardGameRemoteLayout.normalizeSettings(settings);
+    return sha256
+        .convert(
+          utf8.encode(
+            '${normalized.baseUrl.trim()}\n${normalized.username.trim()}${namespace == GameVoteBallot.campaign ? '' : '\n$namespace'}',
+          ),
+        )
+        .toString();
+  }
 
   WebDavStorageClient get _storage {
     if (_closed) throw StateError('Vote store is closed');
@@ -58,10 +79,14 @@ class WebDavGameVoteStore implements RemoteGameVoteStore {
 
   @override
   Future<void> upload(GameVoteBallot ballot) async {
-    await _storage.ensureDirectory(directory);
+    if (!GameVoteBallot.namespacePattern.hasMatch(namespace) ||
+        ballot.namespace != namespace) {
+      throw const FormatException('Reaction namespace mismatch');
+    }
+    await _storage.ensureDirectory(_directory);
     if (_closed) throw StateError('Vote store is closed');
     await _storage.uploadText(
-      '$directory/${ballot.deviceId}.json',
+      '$_directory/${ballot.deviceId}.json',
       ballot.encode(),
       contentType: 'application/json; charset=utf-8',
     );
@@ -69,7 +94,10 @@ class WebDavGameVoteStore implements RemoteGameVoteStore {
 
   @override
   Future<List<GameVoteBallot>> readBallots() async {
-    final entries = (await _storage.list(directory))
+    if (!GameVoteBallot.namespacePattern.hasMatch(namespace)) {
+      throw const FormatException('Invalid reaction namespace');
+    }
+    final entries = (await _storage.list(_directory))
         .where(
           (entry) =>
               !entry.isCollection &&
@@ -90,7 +118,8 @@ class WebDavGameVoteStore implements RemoteGameVoteStore {
         await Future.wait(
           batch.map((entry) async {
             final ballot = GameVoteBallot.decode(
-              await _storage.downloadText('$directory/${entry.name}'),
+              await _storage.downloadText('$_directory/${entry.name}'),
+              namespace: namespace,
             );
             if ('${ballot.deviceId}.json' != entry.name) {
               throw const FormatException('Ballot filename mismatch');

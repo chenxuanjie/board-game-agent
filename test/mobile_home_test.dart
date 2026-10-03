@@ -242,13 +242,12 @@ void main() {
         findsOneWidget,
       );
       if (size.width == 390) {
-        await tester.tap(
+        expect(
           find.byKey(
             ValueKey('mobile-library-favorite-${controller.games.first.id}'),
           ),
+          findsNothing,
         );
-        await tester.pumpAndSettle();
-        expect(controller.isFavorite(controller.games.first), isTrue);
         await tester.enterText(
           find.byKey(const ValueKey('mobile-library-search')),
           'no-such-game-123',

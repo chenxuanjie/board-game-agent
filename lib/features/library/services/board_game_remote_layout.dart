@@ -8,6 +8,10 @@ final class BoardGameRemoteLayout {
   const BoardGameRemoteLayout._();
 
   static const String appRoot = 'apps/board_game_agent';
+  static const String defaultBaseUrl = String.fromEnvironment(
+    'BOARD_GAME_WEBDAV_URL',
+    defaultValue: 'https://cznas.dpdns.org:5006/friend/',
+  );
   static const String libraryRoot = '$appRoot/board-game-lib';
   static const String updateManifestPath = '$appRoot/updates/manifest.json';
 
@@ -33,6 +37,17 @@ final class BoardGameRemoteLayout {
     final normalized = normalizeBaseUri(uri).toString();
     if (normalized == raw) return settings;
     return settings.copyWith(baseUrl: normalized);
+  }
+
+  /// Migrate only the obsolete shipped endpoint; preserve custom servers.
+  static WebDavSettings migrateLegacySettings(WebDavSettings settings) {
+    final normalized = normalizeSettings(settings);
+    final uri = Uri.tryParse(normalized.baseUrl);
+    return uri?.host == 'cznas.dev' &&
+            uri?.port == 5006 &&
+            uri?.path == '/friend/'
+        ? normalized.copyWith(baseUrl: defaultBaseUrl)
+        : normalized;
   }
 
   static Uri normalizeBaseUri(Uri source) {

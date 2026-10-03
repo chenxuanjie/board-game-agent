@@ -11,9 +11,29 @@ enum GameVoteSyncStatus { localOnly, syncing, synced, pending }
 
 /// Durable local votes are independent from favorites and remote availability.
 class GameVoteService extends ChangeNotifier {
-  GameVoteService({required this.preferences, this.remoteProvider});
+  GameVoteService({
+    required this.preferences,
+    this.remoteProvider,
+    this.namespace = GameVoteBallot.campaign,
+    this.externalGames,
+    this.scopeProvider,
+    this.cacheLoader,
+    this.cacheSaver,
+  });
   final PreferencesService preferences;
   final RemoteGameVoteStore? Function()? remoteProvider;
+  final String namespace;
+
+  /// Favorites use the controller's durable collection as their source of truth.
+  /// Null means that collection failed to load and must not be uploaded empty.
+  final Iterable<String>? Function()? externalGames;
+  final String? Function()? scopeProvider;
+  final Future<String?> Function()? cacheLoader;
+  final Future<void> Function(String value)? cacheSaver;
+  Future<String?> _readCache() =>
+      (cacheLoader ?? preferences.loadGameVoteCache)();
+  Future<void> _saveCache(String value) =>
+      (cacheSaver ?? preferences.saveGameVoteCache)(value);
   GameVoteCache? _cache;
   Future<void>? _loadFuture;
   Future<void>? _syncFuture;
@@ -28,18 +48,31 @@ class GameVoteService extends ChangeNotifier {
   int _retryCount = 0;
   GameVoteSyncStatus status = GameVoteSyncStatus.localOnly;
   bool get ready => _cache != null && loadError == null;
-  bool hasVoted(String slug) => _cache?.ballot.games.contains(slug) ?? false;
+  bool get hasCachedRemoteCounts =>
+      _cache?.remoteCounts.containsKey(scopeProvider?.call() ?? _scope) ??
+      false;
+  bool hasVoted(String slug) =>
+      (externalGames?.call() ?? _cache?.ballot.games)?.contains(slug) ?? false;
   int count(String slug) =>
-      (_cache?.remoteCounts[_scope]?[slug] ?? 0) + (hasVoted(slug) ? 1 : 0);
+      (_cache?.remoteCounts[scopeProvider?.call() ?? _scope]?[slug] ?? 0) +
+      (hasVoted(slug) ? 1 : 0);
+
+  void externalSelectionChanged() {
+    if (_disposed || externalGames == null) return;
+    _revision++;
+    _retryCount = 0;
+    _notify();
+    unawaited(sync());
+  }
 
   Future<void> load() => _loadFuture ??= _load();
 
   Future<void> _load() async {
     try {
-      final raw = await preferences.loadGameVoteCache();
+      final raw = await _readCache();
       if (_disposed) return;
       if (raw != null) {
-        _cache = GameVoteCache.decode(raw);
+        _cache = GameVoteCache.decode(raw, namespace: namespace);
       } else {
         final random = Random.secure();
         final id = List.generate(
@@ -47,13 +80,16 @@ class GameVoteService extends ChangeNotifier {
           (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
         ).join();
         final initial = GameVoteCache(
-          ballot: GameVoteBallot(deviceId: id, games: []),
+          ballot: GameVoteBallot(deviceId: id, games: [], namespace: namespace),
         );
-        await preferences.saveGameVoteCache(initial.encode());
+        await _saveCache(initial.encode());
         if (_disposed) return;
         _cache = initial;
       }
       loadError = null;
+      if (externalGames != null) {
+        _scope = scopeProvider?.call() ?? _cache?.lastScope;
+      }
     } catch (_) {
       loadError = '投票读取失败，请重试';
       _loadFuture = null;
@@ -70,6 +106,7 @@ class GameVoteService extends ChangeNotifier {
   /// The pressed state changes only after the local write succeeds.
   Future<bool> toggle(String slug) async {
     if (_disposed ||
+        externalGames != null ||
         saving ||
         !ready ||
         !GameVoteBallot.slugPattern.hasMatch(slug)) {
@@ -88,10 +125,12 @@ class GameVoteService extends ChangeNotifier {
           ballot: GameVoteBallot(
             deviceId: current.ballot.deviceId,
             games: games,
+            namespace: namespace,
           ),
           remoteCounts: current.remoteCounts,
+          lastScope: current.lastScope,
         );
-        await preferences.saveGameVoteCache(next.encode());
+        await _saveCache(next.encode());
         if (_disposed) return;
         _cache = next;
         _revision++;
@@ -129,8 +168,42 @@ class GameVoteService extends ChangeNotifier {
     final revision = _revision;
     var changedEndpoint = false;
     try {
+      final selection = externalGames?.call();
+      if (externalGames != null && selection == null) {
+        status = GameVoteSyncStatus.pending;
+        _notify();
+        return;
+      }
       remote = remoteProvider?.call();
-      _scope = remote?.scope;
+      _scope =
+          remote?.scope ??
+          scopeProvider?.call() ??
+          (externalGames != null ? _cache?.lastScope : null);
+      final own = externalGames == null
+          ? _cache!.ballot
+          : GameVoteBallot(
+              deviceId: _cache!.ballot.deviceId,
+              games: selection!,
+              namespace: namespace,
+            );
+      if (own.games.any((slug) => !GameVoteBallot.slugPattern.hasMatch(slug)) ||
+          own.games.length >
+              (namespace == GameVoteBallot.favoritesNamespace ? 2048 : 256)) {
+        throw const FormatException('Invalid reaction selection');
+      }
+      if (externalGames != null) {
+        await _serialize(() async {
+          if (_disposed) return;
+          final next = GameVoteCache(
+            ballot: own,
+            remoteCounts: _cache!.remoteCounts,
+            lastScope: _scope,
+          );
+          await _saveCache(next.encode());
+          if (!_disposed) _cache = next;
+        });
+        if (_disposed) return;
+      }
       if (remote == null) {
         status = GameVoteSyncStatus.localOnly;
         _notify();
@@ -139,7 +212,6 @@ class GameVoteService extends ChangeNotifier {
       _activeRemote = remote;
       status = GameVoteSyncStatus.syncing;
       _notify();
-      final own = _cache!.ballot;
       final ballots = await (() async {
         await remote!.upload(own);
         return remote.readBallots();
@@ -152,11 +224,16 @@ class GameVoteService extends ChangeNotifier {
       final totals = <String, int>{};
       final seen = <String>{};
       for (final ballot in ballots) {
-        if (ballot.deviceId == own.deviceId || !seen.add(ballot.deviceId)) {
+        if (ballot.namespace != namespace ||
+            ballot.deviceId == own.deviceId ||
+            !seen.add(ballot.deviceId)) {
           continue;
         }
         for (final slug in ballot.games) {
           totals[slug] = (totals[slug] ?? 0) + 1;
+          if (totals.length > 32768) {
+            throw StateError('Reaction count limit exceeded');
+          }
         }
       }
       final scope = remote.scope;
@@ -165,8 +242,9 @@ class GameVoteService extends ChangeNotifier {
         final next = GameVoteCache(
           ballot: _cache!.ballot,
           remoteCounts: {..._cache!.remoteCounts, scope: totals},
+          lastScope: scope,
         );
-        await preferences.saveGameVoteCache(next.encode());
+        await _saveCache(next.encode());
         if (!_disposed) _cache = next;
       });
       if (_disposed) return;

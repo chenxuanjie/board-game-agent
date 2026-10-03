@@ -15,7 +15,11 @@ import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
 import '../shared/resource_source_list.dart';
+import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
+import '../shared/settings_transfer_screen.dart';
+import '../../features/settings/models/configuration_transfer.dart';
+import '../../features/settings/services/settings_transfer_service.dart';
 
 class MobileSettingsScreen extends StatefulWidget {
   const MobileSettingsScreen({
@@ -23,17 +27,69 @@ class MobileSettingsScreen extends StatefulWidget {
     required this.controller,
     required this.onOpenAbout,
     this.focusAiSettings = false,
+    this.transferService,
   });
 
   final AppController controller;
   final bool focusAiSettings;
   final VoidCallback onOpenAbout;
+  final SettingsTransferService? transferService;
 
   @override
   State<MobileSettingsScreen> createState() => _MobileSettingsScreenState();
 }
 
 class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
+  late final SettingsTransferService _transfer =
+      widget.transferService ??
+      SettingsTransferService(controller: widget.controller);
+  void _importApplied() {
+    if (!mounted) return;
+    final config = widget.controller.aiApiConfig;
+    setState(() {
+      _nameController.text = config.name;
+      _urlController.text = config.baseUrl;
+      _keyController.text = config.apiKey;
+      _selectedPreset = _presetForConfig(
+        _presetOptions(widget.controller),
+        config,
+      );
+      _selectedModel = config.model.isEmpty ? null : config.model;
+      _selectedReasoningEffort = config.reasoningEffort;
+      _selectedResponseSpeed = config.responseSpeed;
+      _assetSourceConfigs = widget.controller.assetSourceConfigs;
+      _lastTestMessage = null;
+    });
+  }
+
+  Widget _transferMenu(ConfigurationScope scope) => SettingsTransferMenu(
+    service: _transfer,
+    scope: scope,
+    onApplied: _importApplied,
+    enabled: !_isTesting && !_isTestingAssets,
+  );
+  Future<void> _editResourceConnection([AssetSourceConfig? source]) async {
+    if (_transfer.webDav == null || _isTestingAssets || _transfer.isBusy) {
+      return;
+    }
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ResourceConnectionScreen(service: _transfer, source: source),
+      ),
+    );
+    if (saved == true && mounted) {
+      _importApplied();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.controller.copy.localized('连接设置已保存', 'Connection saved'),
+          ),
+        ),
+      );
+    }
+  }
+
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _keyController;
@@ -99,6 +155,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
           key: const ValueKey('mobile-settings-screen'),
           backgroundColor: palette.pageBackground,
           appBar: AppBar(
+            actions: [_transferMenu(ConfigurationScope.all)],
             title: Text(copy.localized('设置', 'Settings')),
             backgroundColor: palette.pageBackground,
             surfaceTintColor: Colors.transparent,
@@ -238,6 +295,8 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                       ).textTheme.titleMedium,
                                     ),
                                   ),
+                                  if (_transfer.webDav != null)
+                                    _transferMenu(ConfigurationScope.webDav),
                                 ],
                               ),
                             ),
@@ -250,8 +309,31 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 statuses: controller.assetSourceStatuses,
                                 copy: copy,
                                 checking: _isTestingAssets,
+                                onEdit: _transfer.webDav == null
+                                    ? null
+                                    : _editResourceConnection,
                               ),
                             ),
+                            if (_transfer.webDav != null)
+                              ListTile(
+                                key: const ValueKey(
+                                  'mobile-settings-webdav-connection',
+                                ),
+                                leading: Icon(
+                                  Icons.cloud_outlined,
+                                  color: palette.primary,
+                                ),
+                                title: Text(
+                                  copy.localized(
+                                    'WebDAV 连接设置',
+                                    'WebDAV connection',
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: _editResourceConnection,
+                              ),
                             ExpansionTile(
                               key: const ValueKey('mobile-settings-sources'),
                               maintainState: true,
@@ -375,7 +457,12 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                               Icons.auto_awesome_rounded,
                               color: palette.primary,
                             ),
-                            title: Text(copy.aiApiTitle),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(copy.aiApiTitle)),
+                                _transferMenu(ConfigurationScope.ai),
+                              ],
+                            ),
                             subtitle: Text(selectedPreset.label),
                             childrenPadding: const EdgeInsets.fromLTRB(
                               16,

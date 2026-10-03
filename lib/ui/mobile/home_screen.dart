@@ -8,6 +8,7 @@ import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
 import '../../app/state/app_controller.dart';
+import '../../features/settings/services/settings_transfer_service.dart';
 import 'settings_screen.dart';
 import 'game_detail_screen.dart';
 import 'game_search_screen.dart';
@@ -27,10 +28,12 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.transferService,
   });
 
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final SettingsTransferService? transferService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -245,6 +248,7 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute<void>(
         builder: (_) => MobileSettingsScreen(
           controller: widget.controller,
+          transferService: widget.transferService,
           onOpenAbout: widget.onOpenAbout,
         ),
       ),
