@@ -1,46 +1,36 @@
-# 三端账户接线与验收
+# 群晖账号登录
 
-本次新增群晖 SSO Server → Supabase Auth 登录接线。代码与本地测试不等同于真实服务部署；真实 issuer、Supabase 项目、OIDC 应用注册与同源 HTTPS 尚未提供，`Shane` 的完整登录链路未验证。
+当前方案：三端账号/密码 → 应用会话服务 → `SYNO.API.Auth` v6 → 群晖验证。
+群晖要求双重验证时才显示验证码。普通用户不填写 Supabase、OIDC、客户端 ID 或回调地址。
 
-最新测试、三端构建产物和未验收边界见 [本地验收记录](identity-validation.md)。
+公共包 API 版本为 `app_identity` 0.2.0，Git 提交 `56fe682`；应用采用相邻路径依赖。复现时需将该包切到 `codex/synology-auth`，不能只切主项目而仍使用旧 0.1.0 包。
 
-## 实现归属
+## 代码归属
 
-| 位置 | 职责 |
-| --- | --- |
-| `../shared_packages/app_identity` | 公共身份状态、Supabase 适配器、安全存储与 Web Cookie 适配器 |
-| `lib/features/identity` | 公开配置、恢复/登录/取消/退出、数据作用域切换 |
-| `lib/ui/shared/account_screen.dart` | 三端共用的整页账户界面 |
-| `server/identity_web` | Web 同源 HttpOnly Cookie 服务；使用官方 Supabase JS SDK |
-| `scripts/identity` | TLS 严格的兼容性检查及显式提供方注册工具 |
-| Android manifest、Windows runner / installer | 本机浏览器回调与有界窗口转交 |
+- 公共包 `../shared_packages/app_identity`：认证状态机、可取消请求、Web Cookie/CSRF、原生安全存储、恢复和退出。
+- `lib/features/identity/`：可信登录服务地址发现、生命周期验证、应用个人数据命名空间切换。
+- `lib/ui/shared/account_screen.dart`：三端共用账号页，设置/“我的”的账号入口进入。
+- `server/identity_web/`：三端共同使用的 Node 24 会话服务，不仅服务 Web。
+- `scripts/identity/probe_auth.mjs`：操作员真实 NAS 集成验证，不是应用登录页面。
 
-本机使用 Supabase Flutter 2.17.2 的 PKCE 和加密持久化，安全存储兼容当前工程的 flutter_secure_storage 9.2.4。会话和 PKCE 分应用、部署命名空间，不使用整个安全存储的 deleteAll。取消登录有期限与持久化标记；退出分别呈现本机清理与服务端撤销未确认。
+服务通过 `SYNO.API.Info` 发现接口路径，密码只在 HTTPS POST 请求体中提交。
+成功后用 `SYNO.FileStation.Info.get` 验证真实 UID，并以固定 NAS 标识和 UID 生成应用用户 ID。
+输入的用户名仅作显示名，不能用于决定数据归属。当前 NAS 的会话验证/退出需 GET `_sid`；禁止将完整出站 URI 写入日志。
 
-Web 使用同源 BFF；浏览器只保留公开用户提示及离线退出标记，不保存 access/refresh token。提示仅可用于离线本机展示，不能授权远端请求。离线退出不自动恢复 Cookie 会话，重新登录前补做服务端退出。参见 [Web 会话服务](identity-web-session.md)。
+## 数据与权限
 
-取消登录不会关闭系统浏览器。退出应用会话不等于退出 NAS 浏览器会话，也不会退出其他设备。群晖已有 SSO Cookie 时，再登录可能无需再次填写密码。
+收藏、浏览、AI 会话等沿用现有账号命名空间；切换前排空上一账号的写入，完成后才展示新账号数据。
+访客数据不会自动并入账号，旧 Supabase 用户也不会按相同用户名自动匹配。
+旧认证配置保留但不参与新登录；新配置键和安全存储使用独立版本/服务命名空间。
 
-旧 Android 全局接受任意 HTTPS 证书的代码已移除；资源传输也使用正常证书校验。Android 关闭系统自动备份，避免会话密文与设备密钥分离后错误恢复；既有配置导入导出仍可用。
+此功能验证群晖账号并管理应用会话，不等于已有跨端个人数据云同步，也不自动授予 NAS/WebDAV 资料权限。
+WebDAV/AI 连接设置保持原有功能，不能用共享 WebDAV 密码代替每个用户的登录身份。
+服务只调用认证和 UID 接口，不获取用户文件内容。用户必须有 FileStation Info API 权限；无权限则拒绝登录。
+NAS 删除并重建用户时 UID 可能被复用，管理员须先撤销旧绑定/处理旧数据，不能直接把旧数据交给新用户。
 
-## 个人数据边界
+## 保存点与回滚
 
-个人数据按部署和 Supabase 用户 UUID 生成哈希命名空间。喜欢、浏览、搜索、活动、对话/选择、AI 回答偏好、国庆清单/票数缓存及推荐记录隔离。旧数据只属于访客，不复制给第一个登录者。AI compaction 和诊断账本也隔离。
+见 [认证保存点](identity-preservation.md)。恢复时同时切换主项目与公共 `app_identity` 到对应保存分支，执行 `flutter pub get`。
+不要复用当前加密会话数据库或迁移登录凭据；其他公共包保持保存提交。
 
-切换前停止 AI/听写/TTS，等待旧写入完成。切换期间移除旧界面、导航与草稿，失败保持遮挡并提供重试；迟到结果不能写进新账户。
-
-主题、语言、资料源、AI 服务凭据和更新 WebDAV 仍是设备应用配置。本次没有实现三端业务数据同步；账户业务数据仍在本机。原 DAV 设备票箱继续供访客使用，登录账户不复用该匿名协议，避免把设备票数冒充账户票数。
-
-## 真实配置与验收
-
-应用仅接收 Supabase HTTPS 根地址、publishable/anon 公钥、`custom:synology` 和 Web 回调。应用不接收群晖密码、OIDC client secret 或 Supabase 管理密钥。
-
-普通账户页不显示部署表单，仅提供登录、取消、退出及必要的重试。公开配置由部署维护：Android / Windows 从发布构建的外置运行文件注入，Web 从同源 `/api/identity/configuration` 获取。配置未就绪时明确显示服务不可用，点击登录会重新检查配置，不将技术参数填写交给用户。配置完成后的流程是点击登录 → 群晖登录页（用户名、密码及账号要求的验证）→ 自动返回应用；验证步骤和页面样式以实际群晖策略为准。
-
-使用 [部署指南](identity-deployment.md) 的私有文件示例。Well-known URL 从 SSO Server 复制，不能从 WebDAV 地址或 DSM API 登录结果推断。群晖登记 Supabase `/auth/v1/callback`；Supabase 另登记 Web `/auth/callback` 和本机 `org.dpdns.cznas.boardgame://auth/callback`。
-
-私有配置留在仓库外的受限文件中，通过文件路径提供，不能放入 Flutter 资源、公开构建参数或 Git。缺少管理连接时不猜测提供方或虚构账号。
-
-本地测试覆盖取消、超时、迟到事件、退出清理失败、数据切换故障、账户账本、Cookie/CSRF、PKCE、刷新、过期、重启与撤销重试，不生成渲染图。真实验收仍需正确/错误密码、真实回调、冷启动、过期刷新、断网退出、两个账户、NAS 禁用与撤销延迟。当前不能报告 `Shane` 登录成功或失败。
-
-回滚先停 Web 服务，恢复旧客户端及兼容 BFF 数据快照/密钥。旧客户端继续读取访客数据，新账户命名空间保留，不删除聊天或个人数据。撤销新提供方须使用服务端正式流程，单独处理已签发会话；删本机配置不等于远端全部退出。
+协议参考：[DSM 登录 API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Os/DSM/All/enu/DSM_Login_Web_API_Guide_enu.pdf)、[File Station API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)。

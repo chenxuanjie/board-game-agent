@@ -37,7 +37,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _mount(tester, service, textScale: 1.5);
       expect(find.byKey(const ValueKey('account-sign-in')), findsOneWidget);
-      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(TextFormField), findsNWidgets(2));
       expect(find.textContaining('Supabase'), findsNothing);
       expect(find.byKey(const ValueKey('account-configure')), findsNothing);
       expect(
@@ -48,47 +48,67 @@ void main() {
     });
   }
 
-  testWidgets('unavailable login fails honestly and stays retryable', (
+  testWidgets('unavailable login stays retryable without deployment fields', (
     tester,
   ) async {
     final service = _service();
     await _mount(tester, service);
-    await tester.tap(find.byKey(const ValueKey('account-sign-in')));
+    await tester.enterText(
+      find.byKey(const ValueKey('account-username')),
+      'Shane',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('account-password')),
+      'fixture-password',
+    );
+    await _tapAccountAction(tester, 'account-sign-in');
     await tester.pumpAndSettle();
     expect(service.error, '登录服务尚未就绪，请稍后重试');
     expect(find.byKey(const ValueKey('account-error')), findsOneWidget);
-    expect(find.byKey(const ValueKey('account-sign-out')), findsNothing);
-    expect(find.byType(TextFormField), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const ValueKey('account-sign-in')))
-          .onPressed,
-      isNotNull,
-    );
+    expect(find.byType(TextFormField), findsNWidgets(2));
+    expect(find.textContaining('Supabase'), findsNothing);
   });
 
-  testWidgets('configured login waits for Synology and permits cancellation', (
-    tester,
-  ) async {
-    final (service, gateway) = await _configuredService(tester);
-    await _mount(tester, service);
-    await _tapAccountAction(tester, 'account-sign-in');
-    await tester.pump();
-    expect(gateway.signInCalls, 1);
-    expect(find.byKey(const ValueKey('account-loading')), findsOneWidget);
-    expect(find.byKey(const ValueKey('account-cancel')), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const ValueKey('account-sign-in')))
-          .onPressed,
-      isNull,
-    );
-    await _tapAccountAction(tester, 'account-cancel');
-    await tester.pumpAndSettle();
-    expect(service.isAwaitingBrowser, isFalse);
-    expect(find.byKey(const ValueKey('account-loading')), findsNothing);
-    expect(find.byType(TextFormField), findsNothing);
-  });
+  testWidgets(
+    'OTP appears only when NAS requests it and password clears after success',
+    (tester) async {
+      final (service, gateway) = await _configuredService(tester);
+      await _mount(tester, service);
+      expect(find.byKey(const ValueKey('account-otp')), findsNothing);
+      await tester.enterText(
+        find.byKey(const ValueKey('account-username')),
+        'Shane',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('account-password')),
+        'fixture-password',
+      );
+      await _tapAccountAction(tester, 'account-sign-in');
+      await tester.pumpAndSettle();
+      expect(service.needsOtp, isTrue);
+      expect(find.byKey(const ValueKey('account-otp')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('account-otp')),
+        '123456',
+      );
+      await _tapAccountAction(tester, 'account-sign-in');
+      await tester.pumpAndSettle();
+      expect(gateway.signInCalls, 2);
+      expect(find.byKey(const ValueKey('account-sign-out')), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+      await _tapAccountAction(tester, 'account-sign-out');
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const ValueKey('account-password')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+    },
+  );
 
   testWidgets('signed-in account displays name and signs out', (tester) async {
     final (service, gateway) = await _configuredService(tester, signedIn: true);
@@ -99,7 +119,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(gateway.signOutCalls, 1);
     expect(find.byKey(const ValueKey('account-sign-in')), findsOneWidget);
-    expect(find.byType(TextFormField), findsNothing);
+    expect(find.byType(TextFormField), findsNWidgets(2));
   });
 
   testWidgets('offline account retains reconnect and sign-out actions', (
@@ -351,9 +371,8 @@ Future<(AccountService, _UiGateway)> _configuredService(
     );
     await service.saveConfiguration(
       AccountConfiguration.fromFields(
-        supabaseUrl: 'https://project.example.test',
-        publishableKey: 'sb_publishable_abcdefghijklmnop',
-        webCallback: 'https://app.example.test/auth/callback',
+        serviceUrl: 'https://app.example.test',
+        nasId: 'nas_fixture_identity_2026',
       ),
     );
     return (service, gateway, controller);
@@ -368,6 +387,8 @@ Future<(AccountService, _UiGateway)> _configuredService(
 }
 
 Future<void> _tapAccountAction(WidgetTester tester, String key) async {
+  await tester.ensureVisible(find.byKey(ValueKey(key)));
+  await tester.pumpAndSettle();
   await tester.runAsync(() async {
     await tester.tap(find.byKey(ValueKey(key)));
     await Future<void>.delayed(Duration.zero);
@@ -389,9 +410,19 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
   Stream<IdentityEvent> get changes => events.stream;
 
   @override
-  Future<bool> beginSignIn(IdentityProvider provider) async {
+  Future<IdentityUser> signIn({
+    required String account,
+    required String password,
+    String? otp,
+  }) async {
     signInCalls++;
-    return true;
+    if (otp == null) {
+      throw const IdentityFailure(IdentityFailureCode.otpRequired);
+    }
+    return current = const IdentityUser(
+      id: 'fixture-user',
+      displayName: 'Shane',
+    );
   }
 
   @override
@@ -412,4 +443,9 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
     current = null;
     events.add(const IdentityEvent(type: IdentityEventType.signedOut));
   }
+
+  @override
+  void cancelRequests() {}
+  @override
+  Future<void> dispose() async {}
 }

@@ -2,7 +2,7 @@
 
 2026-10-05 按用户要求，在改用 `SYNO.API.Auth` 前保存 Supabase / 群晖 OIDC 实现。这里保存的是代码，不代表远端 SSO 已部署或真实登录已通过。
 
-主项目保存分支：`codex/supabase-identity-archive`。新实现从该提交创建 `codex/synology-auth`，不修改保存分支。
+主项目保存分支：`codex/supabase-identity-archive`，提交 `ee490d7`。新实现从该提交创建 `codex/synology-auth`，不修改保存分支。
 
 公共包均为独立 Git 仓库，保存分支为 `codex/pre-syno-auth-20261005`：
 
@@ -20,3 +20,5 @@
 恢复旧认证方案时，主项目切回保存分支，`app_identity` 切回自己的保存分支，再执行 `flutter pub get`。其余公共包保留在表中提交即可。两套认证使用独立配置键与会话命名空间，不自动迁移登录凭据或把群晖账号名匹配成旧 Supabase 用户。
 
 保存前执行了主项目与认证包的 diff 检查；本机 Flutter 测试启动遭遇 localhost WebSocket 代理错误，未据此标记验证通过。已有验证记录见 `identity-validation.md`；切换后将重新验证新认证链路。
+
+后续排查将 localhost 代理绕过限制在测试进程内，原保存点账号与数据隔离回归 39 项通过。新 Auth 方案验证结果见当前分支的 `identity-validation.md`。

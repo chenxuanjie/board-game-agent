@@ -1,93 +1,51 @@
 import 'dart:convert';
-
 import 'package:crypto/crypto.dart';
 
-/// Public connection metadata. Never accepts NAS passwords or admin keys.
+/// Public application service metadata. No NAS credentials or OIDC settings.
 final class AccountConfiguration {
-  AccountConfiguration({
-    required this.supabaseUrl,
-    required this.publishableKey,
-    this.providerId = 'custom:synology',
-    required this.webCallback,
-  }) {
-    _validateHttps(supabaseUrl, 'Supabase 地址');
-    _validateHttps(webCallback, 'Web 回调地址');
-    if (supabaseUrl.path != '' && supabaseUrl.path != '/') {
-      throw const FormatException('Supabase 地址应为项目根地址');
+  AccountConfiguration({required this.serviceUrl, required this.nasId}) {
+    validateOrigin(serviceUrl);
+    if (!RegExp(r'^[A-Za-z0-9_-]{16,100}$').hasMatch(nasId)) {
+      throw const FormatException('登录服务标识无效');
     }
-    if (!RegExp(r'^custom:[a-z0-9][a-z0-9:-]{0,42}$').hasMatch(providerId)) {
-      throw const FormatException('登录提供方应为 custom: 开头的标识');
-    }
-    _validatePublicKey(publishableKey);
   }
-
   factory AccountConfiguration.fromFields({
-    required String supabaseUrl,
-    required String publishableKey,
-    String providerId = 'custom:synology',
-    required String webCallback,
+    required String serviceUrl,
+    required String nasId,
   }) => AccountConfiguration(
-    supabaseUrl: Uri.parse(supabaseUrl.trim()),
-    publishableKey: publishableKey.trim(),
-    providerId: providerId.trim(),
-    webCallback: Uri.parse(webCallback.trim()),
+    serviceUrl: Uri.parse(serviceUrl.trim()),
+    nasId: nasId,
   );
-
-  factory AccountConfiguration.fromJson(Map<String, dynamic> json) =>
-      AccountConfiguration.fromFields(
-        supabaseUrl: json['supabaseUrl'] as String,
-        publishableKey: json['publishableKey'] as String,
-        providerId: json['providerId'] as String? ?? 'custom:synology',
-        webCallback: json['webCallback'] as String,
-      );
-
-  final Uri supabaseUrl;
-  final String publishableKey;
-  final String providerId;
-  final Uri webCallback;
-  static final Uri callback = Uri.parse(
-    'org.dpdns.cznas.boardgame://auth/callback',
-  );
-  Uri get nativeCallback => callback;
+  factory AccountConfiguration.fromJson(Map<String, dynamic> json) {
+    if (json['version'] != 2 || json['authType'] != 'synology-api-auth') {
+      throw const FormatException('登录服务协议不匹配');
+    }
+    return AccountConfiguration.fromFields(
+      serviceUrl: json['serviceUrl'] as String,
+      nasId: json['nasId'] as String,
+    );
+  }
+  final Uri serviceUrl;
+  final String nasId;
   String get environmentId => sha256
-      .convert(utf8.encode('${supabaseUrl.origin}|$providerId'))
+      .convert(utf8.encode('synology-auth-v1|${serviceUrl.origin}|$nasId'))
       .toString();
   String accountScope(String userId) =>
       sha256.convert(utf8.encode('$environmentId|$userId')).toString();
-
   Map<String, dynamic> toJson() => {
-    'version': 1,
-    'supabaseUrl': supabaseUrl.toString(),
-    'publishableKey': publishableKey,
-    'providerId': providerId,
-    'webCallback': webCallback.toString(),
+    'version': 2,
+    'authType': 'synology-api-auth',
+    'serviceUrl': serviceUrl.origin,
+    'nasId': nasId,
   };
-
-  static void _validateHttps(Uri uri, String label) {
+  static void validateOrigin(Uri uri) {
     if (uri.scheme != 'https' ||
         uri.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
         uri.hasQuery ||
-        uri.hasFragment) {
-      throw FormatException('$label需要不含账号、查询参数的 HTTPS 地址');
+        uri.hasFragment ||
+        !['', '/'].contains(uri.path)) {
+      throw const FormatException('需要不含账号和路径的 HTTPS 登录服务地址');
     }
-  }
-
-  static void _validatePublicKey(String value) {
-    if (RegExp(r'^sb_publishable_[A-Za-z0-9_-]{16,}$').hasMatch(value)) {
-      return;
-    }
-    try {
-      final parts = value.split('.');
-      if (parts.length == 3) {
-        final claims = jsonDecode(
-          utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
-        );
-        if (claims is Map && claims['role'] == 'anon') return;
-      }
-    } catch (_) {
-      // Reject rather than exposing the supplied key in an exception.
-    }
-    throw const FormatException('请填写 publishable 或 anon 公钥，不接受管理密钥');
   }
 }

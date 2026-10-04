@@ -26,7 +26,16 @@ export class SessionStore {
         CREATE TABLE IF NOT EXISTS revocations (
           id TEXT PRIMARY KEY, payload BLOB NOT NULL, attempts INTEGER NOT NULL,
           next_attempt INTEGER NOT NULL, expires INTEGER NOT NULL
-        );`);
+        ); CREATE TABLE IF NOT EXISTS login_limits (
+          id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, expires INTEGER NOT NULL
+        ); CREATE TABLE IF NOT EXISTS registration (id TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      const pin = sidHash(`${config.nasId}|${config.nasOrigin}|${config.encryptionKey.toString('base64')}`);
+      const registration = this.db.prepare('SELECT value FROM registration WHERE id=?').get('synology-auth-v1');
+      if (registration && registration.value !== pin) throw new Error('Registration mismatch');
+      if (!registration) {
+        if (this.db.prepare('SELECT count(*) AS n FROM sessions').get().n) throw new Error('Separate authentication database required');
+        this.db.prepare('INSERT INTO registration VALUES (?, ?)').run('synology-auth-v1', pin);
+      }
       this.cleanup();
     } catch (error) {
       this.close();
@@ -37,7 +46,7 @@ export class SessionStore {
   seal(id, data) {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.config.encryptionKey, iv);
-    cipher.setAAD(Buffer.from(`identity-web-v1:${id}`));
+    cipher.setAAD(Buffer.from(`synology-auth-v1:${id}`));
     const ciphertext = Buffer.concat([cipher.update(JSON.stringify(data), 'utf8'), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]);
   }
@@ -45,25 +54,30 @@ export class SessionStore {
   open(id, blob) {
     const bytes = Buffer.from(blob);
     const cipher = createDecipheriv('aes-256-gcm', this.config.encryptionKey, bytes.subarray(0, 12));
-    cipher.setAAD(Buffer.from(`identity-web-v1:${id}`));
+    cipher.setAAD(Buffer.from(`synology-auth-v1:${id}`));
     cipher.setAuthTag(bytes.subarray(12, 28));
     return JSON.parse(Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString('utf8'));
   }
 
   cleanup() {
-    this.db.prepare('DELETE FROM sessions WHERE expires <= ? OR seen <= ?').run(this.now(), this.now() - this.config.idleMs);
+    const expired = this.db.prepare('SELECT * FROM sessions WHERE expires <= ? OR seen <= ? LIMIT 1000').all(this.now(), this.now() - this.config.idleMs);
+    for (const row of expired) {
+      try { this.revokeAndDelete({ ...row, data: this.open(row.id, row.payload) }); }
+      catch { this.delete(row.id); }
+    }
     this.db.prepare('DELETE FROM revocations WHERE expires <= ?').run(this.now());
+    this.db.prepare('DELETE FROM login_limits WHERE expires <= ?').run(this.now());
   }
 
-  create(authenticated = false, sdk = {}) {
-    this.cleanup();
-    if (this.db.prepare('SELECT (SELECT count(*) FROM sessions) + (SELECT count(*) FROM revocations) AS n').get().n >= this.config.maxSessions) throw new Error('Session capacity');
+  create(authenticated = false, nas = {}, user = null, mode = 'web', cleanup = true) {
+    if (cleanup) this.cleanup();
+    if (!this.capacityAvailable()) throw new Error('Session capacity');
     const sid = randomToken();
     const now = this.now();
     const row = {
       id: sidHash(sid), created: now, seen: now,
       expires: now + (authenticated ? this.config.absoluteMs : Math.min(this.config.anonymousMs, this.config.absoluteMs)),
-      data: { authenticated, csrf: randomToken(), sdk, loginExpires: null, userId: null },
+      data: { authenticated, csrf: randomToken(), nas, user, mode },
     };
     this.save(row);
     return { sid, row };
@@ -74,7 +88,8 @@ export class SessionStore {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id);
     if (!row) return null;
     if (row.expires <= this.now() || row.seen + this.config.idleMs <= this.now()) {
-      this.delete(id);
+      try { this.revokeAndDelete({ ...row, data: this.open(id, row.payload) }); }
+      catch { this.delete(id); }
       return null;
     }
     try {
@@ -100,13 +115,16 @@ export class SessionStore {
 
   has(sid) { return !!this.db.prepare('SELECT id FROM sessions WHERE id=?').get(sidHash(sid)); }
 
-  rotate(oldRow, sdk, userId) {
+  capacityAvailable() {
+    return this.db.prepare('SELECT (SELECT count(*) FROM sessions) + (SELECT count(*) FROM revocations) AS n').get().n < this.config.maxSessions;
+  }
+
+  rotate(oldRow, nas, user, mode) {
+    this.cleanup();
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.delete(oldRow.id);
-      const next = this.create(true, sdk);
-      next.row.data.userId = userId;
-      this.save(next.row);
+      if (oldRow) this.delete(oldRow.id);
+      const next = this.create(true, nas, user, mode, false);
       this.db.exec('COMMIT');
       return next;
     } catch (error) {
@@ -117,17 +135,35 @@ export class SessionStore {
 
   delete(id) { this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id); }
 
+  enqueueRevocation(id, nas) {
+    this.db.prepare('INSERT OR IGNORE INTO revocations VALUES (?, ?, 0, ?, ?)')
+      .run(id, this.seal(id, nas), this.now(), this.now() + 86400_000);
+  }
+
   revokeAndDelete(row) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      if (row.data.sdk['bga-supabase']) {
+      if (row.data.nas?.sid) {
         this.db.prepare(`INSERT OR IGNORE INTO revocations VALUES (?, ?, 0, ?, ?)`)
-          .run(row.id, this.seal(row.id, row.data.sdk), this.now(), this.now() + 86400_000);
+          .run(row.id, this.seal(row.id, row.data.nas), this.now(), this.now() + 86400_000);
       }
       this.delete(row.id);
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
+
+  consumeLogin(account) {
+    this.db.prepare('DELETE FROM login_limits WHERE expires <= ?').run(this.now());
+    const id = sidHash(`${this.config.nasId}|${account.toLowerCase()}`);
+    const existing = this.db.prepare('SELECT * FROM login_limits WHERE id=?').get(id);
+    if (!existing && this.db.prepare('SELECT count(*) AS n FROM login_limits').get().n >= this.config.maxSessions) return false;
+    if (existing && existing.expires > this.now() && existing.attempts >= 5) return false;
+    if (!existing || existing.expires <= this.now()) {
+      this.db.prepare('INSERT OR REPLACE INTO login_limits VALUES (?, 1, ?)').run(id, this.now() + 900000);
+    } else this.db.prepare('UPDATE login_limits SET attempts=attempts+1 WHERE id=?').run(id);
+    return true;
+  }
+  clearLoginLimit(account) { this.db.prepare('DELETE FROM login_limits WHERE id=?').run(sidHash(`${this.config.nasId}|${account.toLowerCase()}`)); }
 
   pendingRevocations() {
     this.cleanup();

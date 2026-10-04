@@ -31,9 +31,6 @@
 #ifndef AppIconFile
   #define AppIconFile "..\\..\\windows\\runner\\resources\\app_icon.ico"
 #endif
-#ifndef LoginProtocol
-  #define LoginProtocol "org.dpdns.cznas.boardgame"
-#endif
 
 [Setup]
 AppId={#AppId}
@@ -75,8 +72,3 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
-
-[Registry]
-Root: HKCU; Subkey: "Software\Classes\{#LoginProtocol}"; ValueType: string; ValueName: ""; ValueData: "URL:Board Game Agent Login"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\{#LoginProtocol}"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
-Root: HKCU; Subkey: "Software\Classes\{#LoginProtocol}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""

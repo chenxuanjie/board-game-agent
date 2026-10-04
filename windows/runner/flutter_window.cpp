@@ -1,7 +1,6 @@
 #include "flutter_window.h"
 
 #include <optional>
-#include <string_view>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -52,22 +51,6 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  bool login_callback = false;
-  if (message == WM_COPYDATA) {
-    const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
-    if (!data) return 0;
-    if (data->dwData == WM_USER + 2) {
-      if (!data->lpData || data->cbData < 2 || data->cbData > 8193) return 0;
-      const auto* bytes = static_cast<const char*>(data->lpData);
-      if (bytes[data->cbData - 1] != '\0') return 0;
-      const std::string_view link(bytes, data->cbData - 1);
-      constexpr std::string_view prefix = "org.dpdns.cznas.boardgame://auth/callback?";
-      if (link.substr(0, prefix.size()) != prefix ||
-          link.find('\0') != std::string_view::npos ||
-          link.find('#') != std::string_view::npos) return 0;
-      login_callback = true;
-    }
-  }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
@@ -77,8 +60,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       return *result;
     }
   }
-
-  if (login_callback) return flutter_controller_ ? 1 : 0;
 
   switch (message) {
     case WM_FONTCHANGE:

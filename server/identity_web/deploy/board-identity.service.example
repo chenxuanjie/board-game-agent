@@ -1,5 +1,5 @@
 [Unit]
-Description=Board game Web identity session service
+Description=Board game Synology application session service
 After=network.target
 
 [Service]

@@ -13,6 +13,7 @@
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 | AI 请求及状态模型 |
 | `lib/features/settings/` | 偏好、桌面 AI 设置与更新配置 | 设置的保存与读取 |
 | `lib/features/identity/` | 三端账号连接、认证恢复和个人数据切换 | 公共认证包与应用业务的接线 |
+| `server/identity_web/` | 群晖 Auth 验证、加密会话与退出补偿 | Web、Android、Windows 共用会话服务 |
 | `lib/ui/desktop/` | 桌面及宽屏 Web 的外壳、页面 | 桌面布局与交互 |
 | `lib/ui/mobile/` | Android 及窄屏 Web 的外壳、页面 | 手机布局与交互 |
 | `lib/ui/shared/` | 共用的文档、AI 展示、清单选游、轮播与横向滚动组件 | 共用 UI |
