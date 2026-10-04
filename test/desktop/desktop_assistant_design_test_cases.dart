@@ -49,11 +49,18 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(controller.aiApiConfig.model, 'gpt-5.6-sol');
-      await controller.setAiReasoningEffort(AiReasoningEffort.high);
-      await controller.saveAiApiConfig(
+      final changingEffort = controller.setAiReasoningEffort(
+        AiReasoningEffort.high,
+      );
+      // Drain fake-zone completion callbacks before awaiting the queued write.
+      await tester.pump();
+      await changingEffort;
+      final changingSpeed = controller.saveAiApiConfig(
         controller.aiApiConfig.copyWith(responseSpeed: AiResponseSpeed.fast),
         forNextRun: true,
       );
+      await tester.pump();
+      await changingSpeed;
       expect(controller.isSendingForContext(useGlobalMode: true), isTrue);
       expect(ai.aborts, 0);
       ai.streams.first.add(const BoardGameAiStreamEvent(delta: '原请求继续完成'));

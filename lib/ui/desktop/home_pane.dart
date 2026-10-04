@@ -4,6 +4,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -1206,6 +1208,7 @@ class _ProfilePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
     final typography = _HomePanelTypography(context, metrics);
+    final account = AccountScope.maybeOf(context);
     final stats = [
       (
         value: '${controller.favoriteCount}',
@@ -1233,8 +1236,36 @@ class _ProfilePanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Expanded(child: Text('你好！', style: typography.heading)),
-                  Text('个人中心', style: typography.caption),
+                  Expanded(
+                    child: Text(
+                      account?.isSignedIn == true
+                          ? account!.displayName
+                          : '你好！',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: typography.heading,
+                    ),
+                  ),
+                  if (account == null)
+                    Text('个人中心', style: typography.caption)
+                  else
+                    TextButton(
+                      key: const ValueKey('desktop-home-account-entry'),
+                      style: TextButton.styleFrom(
+                        textStyle: typography.caption,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: metrics.px(8),
+                        ),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => const AccountScreen(),
+                        ),
+                      ),
+                      child: const Text('个人中心'),
+                    ),
                 ],
               ),
               SizedBox(height: metrics.px(10)),

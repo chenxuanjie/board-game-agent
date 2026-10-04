@@ -74,6 +74,8 @@ assets/games/**/docs/*.txt
 
 # Optional local notes / logs
 /last-build.log
+# Codex conversation attachments are local input, not application source.
+/.codex-remote-attachments/
 # Local Flutter release materials
 /android/key.properties
 /android/keystore/

@@ -15,6 +15,8 @@ import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
 import '../shared/resource_source_list.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
@@ -177,6 +179,15 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
+                      if (AccountScope.maybeOf(context) != null) ...[
+                        _SectionCard(
+                          palette: palette,
+                          child: AccountEntry(
+                            title: copy.localized('账户', 'Account'),
+                          ),
+                        ),
+                        const SizedBox(height: UiTokens.sectionGap),
+                      ],
                       _SectionTitle(
                         title: copy.languageTitle,
                         icon: Icons.translate_rounded,

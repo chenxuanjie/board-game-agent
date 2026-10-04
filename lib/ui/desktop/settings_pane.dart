@@ -17,6 +17,8 @@ import '../../features/library/services/board_game_remote_layout.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../shared/resource_source_list.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
@@ -437,6 +439,17 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     builder: (context, _) {
       final DesktopMetrics metrics = DesktopMetricsScope.of(context);
       final List<Widget> cards = <Widget>[
+        if (AccountScope.maybeOf(context) != null)
+          _SettingsCard(
+            icon: Icons.account_circle_outlined,
+            title: widget.controller.copy.localized('账户', 'Account'),
+            child: AccountEntry(
+              title: widget.controller.copy.localized(
+                '个人中心',
+                'Account details',
+              ),
+            ),
+          ),
         _GeneralCard(
           controller: widget.controller,
           saving: _saving,

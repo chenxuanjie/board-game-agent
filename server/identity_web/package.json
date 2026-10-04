@@ -1,0 +1,13 @@
+{
+  "name": "board-game-identity-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.19.0 <25" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/config.js && node --check src/store.js && node --check src/server.js && node --check src/main.js"
+  },
+  "dependencies": { "@supabase/supabase-js": "2.117.2" }
+}

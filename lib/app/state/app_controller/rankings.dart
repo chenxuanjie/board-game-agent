@@ -3,8 +3,10 @@ part of '../app_controller.dart';
 extension AppRankingController on AppController {
   Future<bool> _ensureFavoriteRecords() async {
     if (_favoriteRecordsLoaded) return true;
+    final epoch = _identityScopeEpoch;
     try {
       final records = await _preferencesService.loadFavoriteGames();
+      if (epoch != _identityScopeEpoch) return false;
       _favoriteCreatedAtBySlug
         ..clear()
         ..addEntries(
@@ -24,6 +26,8 @@ extension AppRankingController on AppController {
       GameFavoriteRanker.rank(_games, favoriteStatistics.count);
 
   Future<void> refreshFavoriteRankings() async {
+    if (_switchingIdentityScope) return;
+    final epoch = _identityScopeEpoch;
     if (!_favoriteRecordsLoaded) {
       final read = _favoriteMutationQueue.catchError((Object _) {}).then<bool>((
         _,
@@ -35,6 +39,7 @@ extension AppRankingController on AppController {
       _favoriteMutationQueue = read.then<void>((_) {});
       if (!await read) return;
     }
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     await favoriteStatistics.sync();
   }
 

@@ -10,6 +10,8 @@ import '../../features/games/models/recent_game_record.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/localization/app_copy.dart';
 import '../shared/content_cards.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import 'game_cover.dart';
 
@@ -37,6 +39,56 @@ class MobileMineContent extends StatefulWidget {
 
   @override
   State<MobileMineContent> createState() => _MobileMineContentState();
+}
+
+class _GuestNicknameDialog extends StatefulWidget {
+  const _GuestNicknameDialog({required this.nickname, required this.copy});
+
+  final String nickname;
+  final AppCopy copy;
+
+  @override
+  State<_GuestNicknameDialog> createState() => _GuestNicknameDialogState();
+}
+
+class _GuestNicknameDialogState extends State<_GuestNicknameDialog> {
+  late final TextEditingController _input;
+
+  @override
+  void initState() {
+    super.initState();
+    _input = TextEditingController(text: widget.nickname);
+  }
+
+  @override
+  void dispose() {
+    // The route keeps this widget mounted throughout its exit transition.
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.copy.localized('编辑资料', 'Edit profile')),
+    content: TextField(
+      controller: _input,
+      maxLength: 24,
+      autofocus: true,
+      decoration: InputDecoration(
+        labelText: widget.copy.localized('昵称', 'Nickname'),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(widget.copy.localized('取消', 'Cancel')),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _input.text.trim()),
+        child: Text(widget.copy.localized('保存', 'Save')),
+      ),
+    ],
+  );
 }
 
 class _ProfileCardClipper extends CustomClipper<Path> {
@@ -99,54 +151,103 @@ class _ProfileCardShadowPainter extends CustomPainter {
 class _MobileMineContentState extends State<MobileMineContent> {
   static const _nicknameKey = 'mobile_profile_nickname';
   String _nickname = '';
+  String? _activeNicknameKey;
+  bool _signedIn = false;
+  int _nicknameGeneration = 0;
+  BuildContext? _profileDialogContext;
 
   @override
-  void initState() {
-    super.initState();
-    _loadNickname();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final account = AccountScope.maybeOf(context);
+    final key = account?.nicknameKey ?? _nicknameKey;
+    final signedIn = account?.isSignedIn ?? false;
+    if (_activeNicknameKey == key && _signedIn == signedIn) return;
+    _activeNicknameKey = key;
+    _signedIn = signedIn;
+    _nickname = '';
+    final generation = ++_nicknameGeneration;
+    if (_profileDialogContext != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final dialog = _profileDialogContext;
+        if (mounted &&
+            dialog != null &&
+            dialog.mounted &&
+            ModalRoute.of(dialog)?.isCurrent == true) {
+          _profileDialogContext = null;
+          Navigator.of(dialog).pop();
+        }
+      });
+    }
+    if (!signedIn) _loadNickname(key, generation);
   }
 
-  Future<void> _loadNickname() async {
-    final preferences = await SharedPreferences.getInstance();
-    final saved = preferences.getString(_nicknameKey)?.trim();
-    if (mounted && saved != null && saved.isNotEmpty) {
-      setState(() => _nickname = saved);
+  Future<void> _loadNickname(String key, int generation) async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = preferences.getString(key)?.trim() ?? '';
+      if (mounted && generation == _nicknameGeneration && !_signedIn) {
+        setState(() => _nickname = saved);
+      }
+    } catch (_) {
+      // A device nickname must not prevent the account entry from opening.
     }
   }
 
+  void _openAccount() {
+    Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
+  }
+
   Future<void> _editProfile() async {
-    final input = TextEditingController(text: _nickname);
+    if (_signedIn) {
+      _openAccount();
+      return;
+    }
+    final key = _activeNicknameKey ?? _nicknameKey;
+    final generation = _nicknameGeneration;
     final copy = widget.controller.copy;
     final next = await showDialog<String>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
-      builder: (context) => AlertDialog(
-        title: Text(copy.localized('编辑资料', 'Edit profile')),
-        content: TextField(
-          controller: input,
-          maxLength: 24,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: copy.localized('昵称', 'Nickname'),
-          ),
+      builder: (context) {
+        _profileDialogContext = context;
+        return _GuestNicknameDialog(nickname: _nickname, copy: copy);
+      },
+    );
+    _profileDialogContext = null;
+    if (!mounted ||
+        next == null ||
+        next.isEmpty ||
+        _signedIn ||
+        generation != _nicknameGeneration) {
+      return;
+    }
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      if (!mounted || _signedIn || generation != _nicknameGeneration) return;
+      final saved = await preferences.setString(key, next);
+      if (mounted && !_signedIn && generation == _nicknameGeneration) {
+        if (saved) {
+          setState(() => _nickname = next);
+        } else {
+          _nicknameFailure(copy);
+        }
+      }
+    } catch (_) {
+      if (mounted && generation == _nicknameGeneration) _nicknameFailure(copy);
+    }
+  }
+
+  void _nicknameFailure(AppCopy copy) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          copy.localized('昵称未保存，请重试', 'Could not save nickname. Retry.'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(copy.localized('取消', 'Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: Text(copy.localized('保存', 'Save')),
-          ),
-        ],
       ),
     );
-    input.dispose();
-    if (!mounted || next == null || next.isEmpty) return;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_nicknameKey, next);
-    if (mounted) setState(() => _nickname = next);
   }
 
   @override
@@ -443,6 +544,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
 
   Widget _profileCard(AppCopy copy) {
     const clipper = _ProfileCardClipper();
+    final account = AccountScope.maybeOf(context);
     return CustomPaint(
       painter: const _ProfileCardShadowPainter(clipper: clipper),
       child: ClipPath(
@@ -464,14 +566,16 @@ class _MobileMineContentState extends State<MobileMineContent> {
                       children: [
                         const SizedBox(height: 2),
                         InkWell(
-                          onTap: _editProfile,
+                          onTap: account == null ? _editProfile : _openAccount,
                           borderRadius: BorderRadius.circular(6),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Flexible(
                                 child: Text(
-                                  _nickname.isEmpty
+                                  account?.isSignedIn == true
+                                      ? account!.displayName
+                                      : _nickname.isEmpty
                                       ? copy.localized('设置昵称', 'Set nickname')
                                       : _nickname,
                                   maxLines: 1,
@@ -531,7 +635,9 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 alignment: Alignment.centerRight,
                 child: OutlinedButton(
                   key: const ValueKey('mobile-mine-edit-profile'),
-                  onPressed: _editProfile,
+                  onPressed: account?.isSignedIn == true
+                      ? _openAccount
+                      : _editProfile,
                   style: OutlinedButton.styleFrom(
                     backgroundColor: const Color(0xFFF9F7F5),
                     foregroundColor: const Color(0xFF6F7788),
@@ -546,7 +652,9 @@ class _MobileMineContentState extends State<MobileMineContent> {
                     ),
                   ),
                   child: Text(
-                    copy.localized('编辑资料', 'Edit'),
+                    account?.isSignedIn == true
+                        ? copy.localized('账户', 'Account')
+                        : copy.localized('编辑资料', 'Edit'),
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -554,6 +662,16 @@ class _MobileMineContentState extends State<MobileMineContent> {
                   ),
                 ),
               ),
+              if (account != null && !account.isSignedIn)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    key: const ValueKey('mobile-mine-account-entry'),
+                    onPressed: _openAccount,
+                    icon: const Icon(Icons.account_circle_outlined, size: 18),
+                    label: Text(copy.localized('登录账户', 'Sign in')),
+                  ),
+                ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -576,69 +694,80 @@ class _MobileMineContentState extends State<MobileMineContent> {
     );
   }
 
-  Widget _avatarWithBadge() => SizedBox(
-    width: 64,
-    height: 64,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
+  Widget _avatarWithBadge() => _signedIn
+      ? CircleAvatar(
+          key: ValueKey(_activeNicknameKey),
+          radius: 32,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+          child: const Icon(Icons.person_outline_rounded, size: 32),
+        )
+      : SizedBox(
           width: 64,
           height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFFFFE8D1), width: 2.5),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x187A452B),
-                blurRadius: 8,
-                offset: Offset(0, 3),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFFFE8D1),
+                    width: 2.5,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x187A452B),
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/desktop/warmwood/avatar.png',
+                    fit: BoxFit.cover,
+                    width: 64,
+                    height: 64,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: Container(
+                  width: 21,
+                  height: 21,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFC654), Color(0xFFFFA21E)],
+                    ),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppPalette.of(context).surface,
+                      width: 1.8,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x24000000),
+                        blurRadius: 3,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Image.asset(
+                    '$_assetRoot/crown_badge_icon.png',
+                    width: 12,
+                    height: 12,
+                  ),
+                ),
               ),
             ],
           ),
-          child: ClipOval(
-            child: Image.asset(
-              'assets/desktop/warmwood/avatar.png',
-              fit: BoxFit.cover,
-              width: 64,
-              height: 64,
-            ),
-          ),
-        ),
-        Positioned(
-          right: -1,
-          bottom: -1,
-          child: Container(
-            width: 21,
-            height: 21,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFC654), Color(0xFFFFA21E)],
-              ),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppPalette.of(context).surface,
-                width: 1.8,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 3,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              '$_assetRoot/crown_badge_icon.png',
-              width: 12,
-              height: 12,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
+        );
 
   Widget _statDivider() =>
       Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));

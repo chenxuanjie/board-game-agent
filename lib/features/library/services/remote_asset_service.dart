@@ -26,11 +26,7 @@ class RemoteAssetService {
            client ??
            (kIsWeb
                ? http.Client()
-               : IOClient(
-                   HttpClient()
-                     ..badCertificateCallback =
-                         (X509Certificate cert, String host, int port) => true,
-                 ));
+               : IOClient(HttpClient()));
 
   final http.Client _client;
   final WebDavSettings Function()? _settingsProvider;

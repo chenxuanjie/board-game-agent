@@ -19,13 +19,13 @@ import 'features/library/services/remote_asset_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
 import 'features/settings/services/windows_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
-import 'core/platform/insecure_android_certificate_trust.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
 import 'features/assistant/services/realtime_voice_service.dart';
 import 'features/assistant/services/responses_compaction_store.dart';
 import 'features/assistant/services/ai_run_telemetry.dart';
 import 'features/assistant/services/responses_rules_workflow.dart';
+import 'features/identity/services/account_service.dart';
 import 'app/state/app_controller.dart';
 import 'core/localization/app_language.dart';
 import 'core/theme/color_scheme_option.dart';
@@ -34,12 +34,12 @@ import 'ui/mobile/home_screen.dart';
 import 'ui/mobile/settings_screen.dart';
 import 'ui/mobile/game_detail_screen.dart';
 import 'ui/shared/game_ranking_screen.dart';
+import 'ui/shared/account_scope.dart';
 import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
 
 Future<void> main() async {
-  enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
   await _configureWindowsWindow();
 
@@ -90,6 +90,7 @@ Future<void> main() async {
     BoardGameAgentApp(
       controller: controller,
       updateSettingsController: updateSettingsController,
+      accountService: AccountService(controller: controller),
     ),
   );
 }
@@ -152,10 +153,12 @@ class BoardGameAgentApp extends StatefulWidget {
     super.key,
     required this.controller,
     required this.updateSettingsController,
+    this.accountService,
   });
 
   final AppController controller;
   final WebDavSettingsController updateSettingsController;
+  final AccountService? accountService;
 
   @override
   State<BoardGameAgentApp> createState() => _BoardGameAgentAppState();
@@ -169,17 +172,21 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   late Future<void> _initialization;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _startupUpdateCheckScheduled = false;
+  String? _lastAccountKey;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_handleControllerChange);
+    widget.accountService?.addListener(_handleAccountChange);
     _initialization = _initialize();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleControllerChange);
+    widget.accountService?.removeListener(_handleAccountChange);
+    widget.accountService?.dispose();
     widget.controller.disposeServices();
     widget.updateSettingsController.dispose();
     super.dispose();
@@ -187,6 +194,12 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
 
   @override
   Widget build(BuildContext context) {
+    final app = _buildApplication(context);
+    final accounts = widget.accountService;
+    return accounts == null ? app : AccountScope(service: accounts, child: app);
+  }
+
+  Widget _buildApplication(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Theme and workspace must use the same decision, including after a
@@ -196,6 +209,32 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             (kIsWeb &&
                 DesktopResponsive.supportsDesktopViewport(constraints.biggest));
         return MaterialApp(
+          builder: (context, child) {
+            final accounts = widget.accountService;
+            if (accounts == null || accounts.dataScopeReady) {
+              return child ?? const SizedBox.shrink();
+            }
+            // Remove the prior account's UI from the tree while its writes drain.
+            return Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (accounts.error == null)
+                      const CircularProgressIndicator()
+                    else ...[
+                      const Text('账号数据切换未完成'),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => unawaited(accounts.restore()),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
           routes: {
             GameRankingScreen.routeName: (context) => desktopLayout
                 ? DesktopWorkspace(
@@ -264,6 +303,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
               _scheduleStartupUpdateCheck(context);
               if (desktopLayout) {
                 return DesktopWorkspace(
+                  key: ValueKey(widget.accountService?.nicknameKey),
                   controller: widget.controller,
                   webDavSettingsController: widget.updateSettingsController,
                   transferService: _transferService,
@@ -271,6 +311,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                 );
               }
               return HomeScreen(
+                key: ValueKey(widget.accountService?.nicknameKey),
                 controller: widget.controller,
                 transferService: _transferService,
                 onOpenAbout: _openAbout,
@@ -287,6 +328,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       await widget.updateSettingsController.load();
       await _transferService.recover();
       await widget.controller.initialize();
+      await widget.accountService?.initialize();
       // Publish existing favorites too, even while the ranking entry is hidden.
       unawaited(widget.controller.refreshFavoriteRankings());
     } catch (error, stackTrace) {
@@ -361,6 +403,20 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _handleAccountChange() {
+    if (!mounted) return;
+    final key = widget.accountService?.nicknameKey;
+    if (_lastAccountKey != null && key != _lastAccountKey) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+        }
+      });
+    }
+    _lastAccountKey = key;
+    setState(() {});
   }
 }
 

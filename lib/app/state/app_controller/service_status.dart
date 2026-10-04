@@ -139,6 +139,7 @@ extension AppServiceStatusController on AppController {
   }
 
   Future<void> _refreshServiceStatuses() async {
+    final identityEpoch = _identityScopeEpoch;
     final DateTime startedAt = DateTime.now();
     _aiConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.loading,
@@ -165,6 +166,7 @@ extension AppServiceStatusController on AppController {
         refreshAssetAccessStatus(),
       ]);
       _recordActivity(
+        identityEpoch: identityEpoch,
         kind: AppActivityKind.serviceRefresh,
         title: copy.activityServiceRefreshTitle,
         message: copy.activityServiceRefreshMessage(
@@ -174,6 +176,7 @@ extension AppServiceStatusController on AppController {
       );
     } catch (error) {
       _recordActivity(
+        identityEpoch: identityEpoch,
         kind: AppActivityKind.serviceRefresh,
         title: copy.activityServiceRefreshFailedTitle,
         message: _safeStatusError(error),

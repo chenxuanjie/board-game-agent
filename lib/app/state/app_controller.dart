@@ -65,6 +65,7 @@ part 'app_controller/service_status.dart';
 part 'app_controller/library.dart';
 part 'app_controller/library_updates.dart';
 part 'app_controller/documents.dart';
+part 'app_controller/identity_scope.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
 
@@ -105,8 +106,11 @@ class AppController extends ChangeNotifier {
   }) : _preferencesService = preferencesService,
        _favoriteRemoteProvider = favoriteRemoteProvider,
        _favoriteScopeProvider = favoriteScopeProvider,
-       gameVotes =
+       _gameVotes =
            gameVotes ?? GameVoteService(preferences: preferencesService),
+       _basePreferencesService = preferencesService,
+       _guestVoteTemplate = gameVotes,
+       _baseConversationStore = conversationStore ?? const ConversationStore(),
        _colorScheme = initialColorScheme ?? defaultColorScheme,
        _aiService = aiService,
        _conversationStore = conversationStore ?? const ConversationStore(),
@@ -115,10 +119,33 @@ class AppController extends ChangeNotifier {
        _speechService = speechService,
        _ttsService = ttsService,
        _realtimeVoiceService =
-           realtimeVoiceService ?? const UnconfiguredRealtimeVoiceService();
+           realtimeVoiceService ?? const UnconfiguredRealtimeVoiceService() {
+    _conversationStore = _conversationStore.forIdentityScope(identityUserId);
+    if (identityUserId != null) {
+      _gameVotes.dispose();
+      _gameVotes = GameVoteService(preferences: _preferencesService);
+    }
+  }
 
-  final PreferencesService _preferencesService;
-  final GameVoteService gameVotes;
+  PreferencesService _preferencesService;
+  final PreferencesService _basePreferencesService;
+  final ConversationStore _baseConversationStore;
+  GameVoteService _gameVotes;
+  final GameVoteService? _guestVoteTemplate;
+  GameVoteService get gameVotes => _gameVotes;
+  String? get identityUserId => _preferencesService.identityUserId;
+  bool _switchingIdentityScope = false;
+  bool get isSwitchingIdentityScope => _switchingIdentityScope;
+  int _identityScopeEpoch = 0;
+  Future<void> _identityScopeQueue = Future<void>.value();
+  int _identityScopeRequests = 0;
+  Future<void>? _initializationFuture;
+  final List<Future<void>> _voiceOperations = [];
+  final Set<Future<void>> _providerCleanups = {};
+  bool get anonymousReactionPublishingEnabled =>
+      identityUserId == null && !_switchingIdentityScope;
+  String? get identityReactionSyncNotice =>
+      identityUserId == null ? null : '账号收藏和投票仅保存在本机；账号同步服务尚未配置。';
   final RemoteGameVoteStore? Function()? _favoriteRemoteProvider;
   final String? Function()? _favoriteScopeProvider;
   GameVoteService? _favoriteStatistics;
@@ -128,8 +155,12 @@ class AppController extends ChangeNotifier {
       _favoriteStatistics ??= GameVoteService(
         preferences: _preferencesService,
         namespace: GameVoteBallot.favoritesNamespace,
-        remoteProvider: _favoriteRemoteProvider,
-        scopeProvider: _favoriteScopeProvider,
+        remoteProvider: () => anonymousReactionPublishingEnabled
+            ? _favoriteRemoteProvider?.call()
+            : null,
+        scopeProvider: () => anonymousReactionPublishingEnabled
+            ? _favoriteScopeProvider?.call()
+            : null,
         externalGames: () =>
             _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
         cacheLoader: _preferencesService.loadFavoriteRankingCache,
@@ -143,7 +174,7 @@ class AppController extends ChangeNotifier {
             defaultNationalDayGames.map((game) => game.slug).toList(),
       );
   final AiService _aiService;
-  final ConversationStore _conversationStore;
+  ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
   final SpeechService _speechService;
@@ -203,8 +234,10 @@ class AppController extends ChangeNotifier {
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
+  bool _conversationDirty = false;
   Future<void>? _aiConfigSaveQueue;
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
+  bool _selectedConversationDirty = false;
   Future<void> _activitySaveQueue = Future<void>.value();
   Future<void> _favoriteMutationQueue = Future<void>.value();
   Future<void> _searchHistoryMutationQueue = Future<void>.value();
@@ -219,6 +252,7 @@ class AppController extends ChangeNotifier {
   List<DailyRecommendationRecord> _dailyRecommendationHistory =
       <DailyRecommendationRecord>[];
   Future<void> _dailyRecommendationSaveQueue = Future<void>.value();
+  bool _dailyRecommendationsDirty = false;
   String? _selectedConversationId;
   final Map<String, _ChatGenerationState> _generationStates =
       <String, _ChatGenerationState>{};
@@ -263,6 +297,7 @@ class AppController extends ChangeNotifier {
     required bool useGlobalMode,
     required bool expanded,
   }) {
+    if (_switchingIdentityScope) return;
     final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
     if (_runExpandedByContext[key] == expanded) return;
     _runExpandedByContext[key] = expanded;
@@ -330,6 +365,7 @@ class AppController extends ChangeNotifier {
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
   List<GameInfo> get dailyRecommendedGames {
+    if (_switchingIdentityScope) return const <GameInfo>[];
     final today = DailyGameRecommender.localDateKey(DateTime.now());
     final before = _dailyRecommendationHistory
         .where((record) => record.date == today)
@@ -345,8 +381,13 @@ class AppController extends ChangeNotifier {
     if (current != null &&
         (before == null || !listEquals(before.gameIds, current.gameIds))) {
       _dailyRecommendationHistory = next;
+      _dailyRecommendationsDirty = true;
+      final preferences = _preferencesService;
       _dailyRecommendationSaveQueue = _dailyRecommendationSaveQueue
-          .then((_) => _preferencesService.saveDailyRecommendations(next))
+          .then((_) async {
+            await preferences.saveDailyRecommendations(next);
+            _dailyRecommendationsDirty = false;
+          })
           .catchError((Object error) {
             debugPrint('[recommendations] save failed: $error');
           });
@@ -442,7 +483,12 @@ class AppController extends ChangeNotifier {
     DateTime? createdAt,
     String? conversationId,
     String? messageId,
+    int? identityEpoch,
   }) {
+    if (_switchingIdentityScope ||
+        (identityEpoch != null && identityEpoch != _identityScopeEpoch)) {
+      return;
+    }
     final DateTime occurredAt = createdAt ?? DateTime.now();
     final AppActivity? existing = _activities
         .where((AppActivity activity) => activity.kind == kind)
@@ -468,10 +514,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _recordLibraryLoadFailure(String message) {
+  void _recordLibraryLoadFailure(String message, {int? identityEpoch}) {
     final String normalized = message.trim();
     if (normalized.isEmpty) return;
     _recordActivity(
+      identityEpoch: identityEpoch,
       kind: AppActivityKind.libraryLoadFailed,
       title: copy.activityLibraryLoadFailedTitle,
       message: copy.activityLibraryLoadFailedMessage(normalized),
@@ -479,13 +526,18 @@ class AppController extends ChangeNotifier {
   }
 
   void _queueActivitySave() {
+    final preferences = _preferencesService;
     final List<AppActivity> snapshot = List<AppActivity>.from(_activities);
     _activitySaveQueue = _activitySaveQueue
         .catchError((Object _) {})
-        .then((_) => _preferencesService.saveActivities(snapshot));
+        .then((_) => preferences.saveActivities(snapshot));
+    _activitySaveQueue.catchError((Object error) {
+      debugPrint('[activities] save failed: $error');
+    });
   }
 
   Future<void> markActivitiesRead() async {
+    if (_switchingIdentityScope) return;
     final bool hasUnread = _activities.any(
       (AppActivity activity) => !activity.isRead,
     );
@@ -502,6 +554,7 @@ class AppController extends ChangeNotifier {
   /// Marks one notification as read without changing the rest of the center.
   /// This is used when a user follows a notification into its target session.
   Future<void> markActivityRead(String activityId) async {
+    if (_switchingIdentityScope) return;
     final AppActivity? target = _activities
         .where((AppActivity activity) => activity.id == activityId)
         .cast<AppActivity?>()
@@ -629,7 +682,10 @@ class AppController extends ChangeNotifier {
     return nearest ?? conversation.updatedAt.difference(createdAt).abs();
   }
 
-  void _setPendingLibraryUpdate(RemoteLibraryUpdate update) {
+  void _setPendingLibraryUpdate(
+    RemoteLibraryUpdate update, {
+    int? identityEpoch,
+  }) {
     final RemoteLibraryUpdate? previous = _pendingLibraryUpdate;
     _pendingLibraryUpdate = update;
     _libraryUpdatePromptSeen = false;
@@ -640,6 +696,7 @@ class AppController extends ChangeNotifier {
         update.changedPaths.toSet().containsAll(previous.changedPaths);
     if (!isSame) {
       _recordActivity(
+        identityEpoch: identityEpoch,
         kind: AppActivityKind.libraryUpdate,
         title: copy.activityLibraryUpdateTitle,
         message: copy.activityLibraryUpdateMessage(update.changedCount),
@@ -647,7 +704,9 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize() => _initializationFuture ??= _initialize();
+
+  Future<void> _initialize() async {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
@@ -766,8 +825,10 @@ class AppController extends ChangeNotifier {
     }
 
     _language = next;
+    final epoch = _identityScopeEpoch;
     _games = await _loadGamesForLanguage(_language);
     _refreshLibraryGameTitles();
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -780,8 +841,10 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> reloadGames() async {
+    final epoch = _identityScopeEpoch;
     _games = await _loadGamesForLanguage(_language);
     _refreshLibraryGameTitles();
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -898,6 +961,7 @@ class _StreamTextBatcher {
 }
 
 class _ChatGenerationState {
+  Completer<void>? finished;
   AiApiConfig? requestConfig;
   bool isSending = false;
   Completer<void>? abort;

@@ -181,6 +181,7 @@ extension AppConversationController on AppController {
   }
 
   List<ChatMessage> _messagesForContext({required bool useGlobalMode}) {
+    if (_switchingIdentityScope) return <ChatMessage>[];
     final String key = _conversationIdForContext(useGlobalMode: useGlobalMode);
     final AiConversation? existing = _conversations[key];
     if (existing != null) {
@@ -205,6 +206,7 @@ extension AppConversationController on AppController {
   }
 
   void _queueConversationSave({String? conversationId}) {
+    _conversationDirty = true;
     if (conversationId != null) {
       _touchConversation(conversationId);
     }
@@ -240,10 +242,13 @@ extension AppConversationController on AppController {
   }
 
   void _queueSelectedConversationSave(String conversationId) {
+    _selectedConversationDirty = true;
+    final preferences = _preferencesService;
     _selectedConversationSaveQueue = _selectedConversationSaveQueue
-        .then(
-          (_) => _preferencesService.saveSelectedConversationId(conversationId),
-        )
+        .then((_) async {
+          await preferences.saveSelectedConversationId(conversationId);
+          _selectedConversationDirty = false;
+        })
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint('[chat] persist selected conversation failed: $error');
           debugPrint('$stackTrace');
@@ -254,15 +259,20 @@ extension AppConversationController on AppController {
     final String? id = _selectedConversationId;
     if (id == null || id.isEmpty) {
       await _preferencesService.clearSelectedConversationId();
+      _selectedConversationDirty = false;
       return;
     }
     await _preferencesService.saveSelectedConversationId(id);
+    _selectedConversationDirty = false;
   }
 
-  Future<void> _restoreConversations() async {
+  Future<void> _restoreConversations({bool throwOnError = false}) async {
+    final epoch = _identityScopeEpoch;
     try {
-      final stored = await _conversationStore.load();
-      if (stored == null) {
+      final stored = await _conversationStore.load().timeout(
+        const Duration(seconds: 8),
+      );
+      if (epoch != _identityScopeEpoch || stored == null) {
         return;
       }
       final Map<String, dynamic> json =
@@ -306,6 +316,7 @@ extension AppConversationController on AppController {
     } catch (error, stackTrace) {
       debugPrint('[chat] restore conversations failed: $error');
       debugPrint('$stackTrace');
+      if (throwOnError) rethrow;
     }
   }
 
@@ -331,6 +342,7 @@ extension AppConversationController on AppController {
         },
       };
       await _conversationStore.save(jsonEncode(payload));
+      _conversationDirty = false;
     } catch (error, stackTrace) {
       debugPrint('[chat] persist conversations failed: $error');
       debugPrint('$stackTrace');

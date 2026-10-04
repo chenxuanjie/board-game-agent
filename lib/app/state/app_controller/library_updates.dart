@@ -19,6 +19,7 @@ extension AppLibraryUpdateController on AppController {
   }
 
   Future<void> checkForLibraryUpdates({bool forcePromptReset = false}) async {
+    final identityEpoch = _identityScopeEpoch;
     if (_checkingLibraryUpdate) {
       return;
     }
@@ -60,6 +61,7 @@ extension AppLibraryUpdateController on AppController {
             changedPaths: changedPaths,
             changedGameTitles: titles,
           ),
+          identityEpoch: identityEpoch,
         );
         debugPrint('[updates] pending update titles: ${titles.join(', ')}');
         return;
@@ -93,6 +95,7 @@ extension AppLibraryUpdateController on AppController {
             changedPaths: changedPaths,
             changedGameTitles: titles,
           ),
+          identityEpoch: identityEpoch,
         );
         debugPrint('[updates] pending update titles: ${titles.join(', ')}');
       } else {

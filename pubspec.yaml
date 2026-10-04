@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 2.1.0+24
+version: 2.2.0+25
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
@@ -15,6 +15,8 @@ dependencies:
     path: ../shared_packages/app_about
   app_ai_client:
     path: ../shared_packages/app_ai_client
+  app_identity:
+    path: ../shared_packages/app_identity
   crypto: ^3.0.7
   flutter_secure_storage: ^9.2.4
   flutter_svg: ^2.3.0
@@ -29,6 +31,7 @@ dependencies:
   pdfrx: ^2.3.2
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
+  supabase_flutter: 2.17.2
   speech_to_text: ^7.3.0
   file_picker: ^10.3.10
   webdav_settings:

@@ -1,0 +1,10 @@
+{
+  "supabaseUrl": "https://supabase.example.invalid",
+  "supabasePublishableKey": "REPLACE_WITH_PUBLISHABLE_OR_LEGACY_ANON_KEY",
+  "provider": "custom:synology",
+  "authFlow": "pkce",
+  "webRedirectTo": "https://app.example.invalid/auth/callback",
+  "nativeRedirectTo": "com.example.boardgameagent://login-callback/",
+  "webSessionMode": "sdk-browser-storage-development-only",
+  "productionWebBffUrl": null
+}

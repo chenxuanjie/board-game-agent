@@ -1,0 +1,8 @@
+{
+  "issuer": "https://nas.example.invalid/webman/sso",
+  "discoveryUrl": "https://nas.example.invalid/REPLACE_WITH_EXACT_SSO_SERVER_WELL_KNOWN_PATH",
+  "supabaseUrl": "https://supabase.example.invalid",
+  "clientId": "",
+  "clientSecret": "",
+  "adminKey": ""
+}
