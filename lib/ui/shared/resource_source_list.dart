@@ -13,18 +13,51 @@ class ResourceSourceList extends StatelessWidget {
     required this.copy,
     this.checking = false,
     this.onEdit,
+    this.onReorder,
   });
   final List<AssetSourceConfig> sources;
   final Map<String, ConnectivityStatus> statuses;
   final AppCopy copy;
   final bool checking;
   final ValueChanged<AssetSourceConfig>? onEdit;
+  final void Function(int, int)? onReorder;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     if (sources.isEmpty) {
       return Text(copy.localized('尚未配置资料源', 'No sources configured'));
+    }
+    if (onReorder != null) {
+      return ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        itemCount: sources.length,
+        onReorder: (from, to) {
+          if (!checking) onReorder!(from, to);
+        },
+        itemBuilder: (context, index) => Padding(
+          key: ValueKey(sources[index].id),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Expanded(child: _row(context, sources[index])),
+              ReorderableDragStartListener(
+                index: index,
+                enabled: !checking,
+                child: Tooltip(
+                  message: copy.localized('拖动排序', 'Drag to reorder'),
+                  child: const SizedBox.square(
+                    dimension: 48,
+                    child: Icon(Icons.drag_handle_rounded, size: 20),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     return Column(
       children: [
@@ -96,34 +129,36 @@ class ResourceSourceList extends StatelessWidget {
                   color: palette.textSecondary,
                 ),
               ),
+              const SizedBox(height: 4),
+              Semantics(
+                label: '${source.name}: $label',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      state == ConnectivityState.success
+                          ? Icons.check_circle_outline_rounded
+                          : state == ConnectivityState.failure
+                          ? Icons.error_outline_rounded
+                          : Icons.circle_outlined,
+                      size: 14,
+                      color: color,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
         const SizedBox(width: 8),
-        Semantics(
-          label: '${source.name}: $label',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                state == ConnectivityState.success
-                    ? Icons.check_circle_outline_rounded
-                    : state == ConnectivityState.failure
-                    ? Icons.error_outline_rounded
-                    : Icons.circle_outlined,
-                size: 14,
-                color: color,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontSize: 11, color: color),
-              ),
-            ],
-          ),
-        ),
         if (onEdit != null)
           IconButton(
             key: ValueKey('edit-resource-source-${source.id}'),

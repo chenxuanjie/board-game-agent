@@ -74,13 +74,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     if (_transfer.webDav == null || _isTestingAssets || _transfer.isBusy) {
       return;
     }
-    final saved = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) =>
             ResourceConnectionScreen(service: _transfer, source: source),
       ),
     );
-    if (saved == true && mounted) {
+    if (mounted) {
       _importApplied();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -320,6 +320,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 statuses: controller.assetSourceStatuses,
                                 copy: copy,
                                 checking: _isTestingAssets,
+                                onReorder: _reorderSources,
                                 onEdit: _transfer.webDav == null
                                     ? null
                                     : _editResourceConnection,
@@ -336,8 +337,8 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 ),
                                 title: Text(
                                   copy.localized(
-                                    'WebDAV 连接设置',
-                                    'WebDAV connection',
+                                    '服务器与资料',
+                                    'Servers & resources',
                                   ),
                                 ),
                                 trailing: const Icon(
@@ -345,109 +346,10 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 ),
                                 onTap: _editResourceConnection,
                               ),
-                            ExpansionTile(
-                              key: const ValueKey('mobile-settings-sources'),
-                              maintainState: true,
-                              shape: const Border(),
-                              collapsedShape: const Border(),
-                              leading: Icon(
-                                Icons.swap_vert_rounded,
-                                color: palette.primary,
-                              ),
-                              title: Text(
-                                copy.localized('调整优先级', 'Change priority'),
-                              ),
-                              childrenPadding: const EdgeInsets.fromLTRB(
-                                16,
-                                0,
-                                16,
-                                16,
-                              ),
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    ReorderableListView.builder(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      itemCount: _assetSourceConfigs.length,
-                                      onReorder: _reorderSources,
-                                      itemBuilder: (context, index) {
-                                        final item = _assetSourceConfigs[index];
-                                        return Container(
-                                          key: ValueKey(item.id),
-                                          margin: const EdgeInsets.only(
-                                            bottom: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: palette.surfaceVariant,
-                                            borderRadius: BorderRadius.circular(
-                                              UiTokens.groupRadius,
-                                            ),
-                                          ),
-                                          child: ListTile(
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 14,
-                                                  vertical: 8,
-                                                ),
-                                            leading: CircleAvatar(
-                                              backgroundColor: palette.primary
-                                                  .withValues(alpha: 0.16),
-                                              foregroundColor: palette.primary,
-                                              child: Text('${index + 1}'),
-                                            ),
-                                            title: Text(
-                                              item.name,
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.titleMedium,
-                                            ),
-                                            subtitle: Text(
-                                              item.address,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodyMedium
-                                                  ?.copyWith(
-                                                    color: palette.textPrimary
-                                                        .withValues(
-                                                          alpha: 0.72,
-                                                        ),
-                                                  ),
-                                            ),
-                                            trailing:
-                                                ReorderableDragStartListener(
-                                                  index: index,
-                                                  child: Icon(
-                                                    Icons.drag_handle_rounded,
-                                                    color: palette.textPrimary
-                                                        .withValues(
-                                                          alpha: 0.72,
-                                                        ),
-                                                  ),
-                                                ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: OutlinedButton(
-                                        onPressed: _isTestingAssets
-                                            ? null
-                                            : _testAssets,
-                                        child: Text(
-                                          _isTestingAssets
-                                              ? '...'
-                                              : copy.assetTest,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                            TextButton.icon(
+                              onPressed: _isTestingAssets ? null : _testAssets,
+                              icon: const Icon(Icons.network_check_rounded),
+                              label: Text(copy.assetTest),
                             ),
                           ],
                         ),
@@ -983,16 +885,50 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   }
 
   Future<void> _reorderSources(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) {
-      newIndex -= 1;
+    if (_isTestingAssets) return;
+    if (newIndex > oldIndex) newIndex--;
+    final next = List<AssetSourceConfig>.from(
+      widget.controller.assetSourceConfigs,
+    );
+    next.insert(newIndex, next.removeAt(oldIndex));
+    setState(() => _isTestingAssets = true);
+    try {
+      final account = AccountScope.maybeOf(context);
+      if (account?.configuration != null) {
+        final config = account!.configuration!;
+        await account.saveConfiguration(
+          config.edited(
+            servers: next
+                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
+                .toList(),
+            folder: config.storageFolder,
+          ),
+        );
+        if (account.error != null) throw StateError('Connection pending');
+      } else {
+        await widget.controller.saveAssetSourceConfigs(next);
+      }
+      if (mounted) {
+        setState(
+          () => _assetSourceConfigs = widget.controller.assetSourceConfigs,
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.localized(
+                '顺序保存失败，请重试',
+                'Could not save order. Retry',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingAssets = false);
     }
-    final next = List<AssetSourceConfig>.from(_assetSourceConfigs);
-    final item = next.removeAt(oldIndex);
-    next.insert(newIndex, item);
-    setState(() {
-      _assetSourceConfigs = next;
-    });
-    await widget.controller.saveAssetSourceConfigs(next);
   }
 
   Future<void> _testAssets() async {

@@ -106,6 +106,7 @@ void main() {
     );
     addTearDown(service.dispose);
     addTearDown(app.dispose);
+    await tester.runAsync(service.initialize);
     await _mount(tester, service);
     await tester.enterText(
       find.byKey(const ValueKey('account-username')),
@@ -117,7 +118,7 @@ void main() {
     );
     await _tapAccountAction(tester, 'account-sign-in');
     await tester.pumpAndSettle();
-    expect(service.error, '账号连接未完成，请重试');
+    expect(service.error, '账号或资料连接未完成，请重试');
     expect(find.byKey(const ValueKey('account-error')), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
     expect(find.textContaining('Supabase'), findsNothing);
@@ -446,7 +447,12 @@ Future<void> _tapAccountAction(WidgetTester tester, String key) async {
   await tester.pumpAndSettle();
   await tester.runAsync(() async {
     await tester.tap(find.byKey(ValueKey(key)));
-    await Future<void>.delayed(Duration.zero);
+    final service = AccountScope.maybeOf(
+      tester.element(find.byKey(ValueKey(key))),
+    );
+    for (var i = 0; i < 100 && service?.isBusy == true; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
   });
   await tester.pump();
 }

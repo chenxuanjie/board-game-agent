@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/ui_tokens.dart';
 import 'account_scope.dart';
+import 'nas_connection_section.dart';
 import '../../features/identity/services/account_cloud_sync.dart';
 import '../../features/identity/services/account_service.dart';
 
@@ -38,7 +39,8 @@ class AccountEntry extends StatelessWidget {
 }
 
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key});
+  const AccountScreen({super.key, this.showConnections = false});
+  final bool showConnections;
   @override
   State<AccountScreen> createState() => _AccountScreenState();
 }
@@ -485,6 +487,13 @@ class _AccountScreenState extends State<AccountScreen> {
                                       ),
                                 child: Text(_text('重试连接', 'Reconnect')),
                               ),
+                          ],
+                          if (service != null) ...[
+                            const SizedBox(height: UiTokens.sectionGap),
+                            NasConnectionSection(
+                              service: service,
+                              expanded: widget.showConnections,
+                            ),
                           ],
                         ],
                       ),

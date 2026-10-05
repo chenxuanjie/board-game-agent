@@ -4,16 +4,21 @@ import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webdav_settings/webdav_settings.dart';
+import 'package:crypto/crypto.dart';
 // Existing native transport supports the app's Windows/system proxy policy.
 // ignore: implementation_imports
 import 'package:app_ai_client/src/default_http_client.dart';
 import '../../../app/state/app_controller.dart';
 import '../models/account_configuration.dart';
+import '../../settings/services/preferences_service.dart';
 import 'account_cloud_sync.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
     required AppController controller,
+    this.webDav,
+    @visibleForTesting IdentitySessionStorage Function(String)? credentialStore,
     @visibleForTesting
     Future<IdentityGateway> Function(AccountConfiguration)? gatewayFactory,
     @visibleForTesting Future<void> Function(String?)? switchScope,
@@ -24,9 +29,124 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
        _gatewayFactory = gatewayFactory,
        _switchScope = switchScope,
        _privateFilesFactory = privateFilesFactory,
+       _credentialStore = credentialStore,
        supportsSignIn = signInSupported ?? !kIsWeb;
   static const _configurationKey =
       'board_game_agent.identity.synology.direct.configuration.v3';
+  final WebDavSettingsController? webDav;
+  final IdentitySessionStorage Function(String)? _credentialStore;
+  final Map<String, IdentitySessionStorage> _credentialStores = {};
+  Future<void> _resourceQueue = Future.value();
+  bool _signingIn = false;
+  String? _resourceUserId;
+  int _loginGeneration = 0;
+  IdentitySessionStorage _credentials(String scope) =>
+      _credentialStores.putIfAbsent(
+        scope,
+        () =>
+            _credentialStore?.call(scope) ??
+            SecureIdentitySessionStorage(
+              appId: 'board_game_agent_resources',
+              environment: scope,
+            ),
+      );
+  bool get resourceCredentialsReady =>
+      isSignedIn &&
+      _resourceUserId == user?.id &&
+      webDav?.saved.username.isNotEmpty == true &&
+      webDav?.saved.password.isNotEmpty == true;
+  WebDavSettings settingsForResource(Uri target) {
+    final config = _configuration;
+    if (config == null || !resourceCredentialsReady) {
+      return const WebDavSettings();
+    }
+    for (final server in config.servers) {
+      final root = server.webDavRoot(config.storageFolder);
+      if (target.origin == root.origin && target.path.startsWith(root.path)) {
+        return webDav!.saved.copyWith(baseUrl: root.toString());
+      }
+    }
+    return const WebDavSettings();
+  }
+
+  Future<void> _projectResources() {
+    if (webDav == null || _configuration == null) return Future.value();
+    final work = _resourceQueue.then((_) async {
+      if (_disposed) return;
+      final config = _configuration!;
+      final identity = user;
+      final generation = _loginGeneration;
+      String username = '', password = '';
+      if (identity != null) {
+        final raw = await _credentials(config.accountScope(identity.id)).read();
+        if (raw != null) {
+          final value = jsonDecode(raw) as Map<String, dynamic>;
+          if (value['userId'] == identity.id &&
+              value['environment'] == config.environmentId) {
+            username = value['username'] as String;
+            password = value['password'] as String;
+          }
+        }
+      }
+      if (_disposed ||
+          generation != _loginGeneration ||
+          user?.id != identity?.id ||
+          !identical(config, _configuration)) {
+        return;
+      }
+      await webDav!.saveConfiguration(
+        WebDavSettings(
+          mode: ExternalStorageMode.webDav,
+          baseUrl: config.activeServer
+              .webDavRoot(config.storageFolder)
+              .toString(),
+          username: username,
+          password: password,
+        ),
+      );
+      _resourceUserId = identity?.id;
+      await _controller.saveAssetSourceConfigs(config.resourceSources);
+    });
+    _resourceQueue = work.catchError((Object _) {});
+    return work;
+  }
+
+  Future<void> _persistConfiguration() async {
+    if (!await (await SharedPreferences.getInstance()).setString(
+      _configurationKey,
+      jsonEncode(_configuration!.toJson()),
+    )) {
+      throw StateError('Configuration persistence failed');
+    }
+  }
+
+  Future<void> _migrateResourceCredential() async {
+    final identity = user;
+    final config = _configuration;
+    final legacy = webDav?.saved;
+    if (identity == null ||
+        config == null ||
+        legacy == null ||
+        legacy.username != identity.displayName ||
+        legacy.password.isEmpty ||
+        !config.resourceSources.any((s) => s.testUrl == legacy.baseUrl)) {
+      return;
+    }
+    final store = _credentials(config.accountScope(identity.id));
+    if (await store.read() != null || _disposed || user?.id != identity.id) {
+      return;
+    }
+    await store.write(
+      jsonEncode({
+        'version': 1,
+        'userId': identity.id,
+        'environment': config.environmentId,
+        'username': legacy.username,
+        'password': legacy.password,
+      }),
+    );
+  }
+
   final bool supportsSignIn;
   final AppController _controller;
   final Future<IdentityGateway> Function(AccountConfiguration)? _gatewayFactory;
@@ -57,7 +177,10 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     IdentityFailureCode.invalidOtp,
   }.contains(_identity?.failure?.code);
   bool get isBusy =>
-      _initializing || _scopeChanging || (_identity?.busy ?? false);
+      _initializing ||
+      _signingIn ||
+      _scopeChanging ||
+      (_identity?.busy ?? false);
   bool get dataScopeReady => !_scopeChanging && _scopeError == null;
   String? get error =>
       _scopeError ?? _setupError ?? _localizedFailure(_identity?.failure);
@@ -107,8 +230,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       : 'identity.profile.${_configuration!.accountScope(user!.id)}.nickname';
   Future<void> initialize() async {
     if (_initializing || _disposed) return;
-    if (!supportsSignIn) return;
-    if (!_observing) {
+    if (!_observing && supportsSignIn) {
       WidgetsBinding.instance.addObserver(this);
       _observing = true;
     }
@@ -123,10 +245,19 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           jsonDecode(saved) as Map<String, dynamic>,
         );
       }
-      _configuration ??= AccountConfiguration.defaults;
+      if (_configuration == null ||
+          (saved != null && jsonDecode(saved)['version'] == 3)) {
+        _configuration = AccountConfiguration.fromResources(
+          sources: await PreferencesService().loadAssetSourceConfigs(),
+          previous: _configuration,
+        );
+        await _persistConfiguration();
+      }
       if (_configuration != null) {
         await _disconnect();
-        await _connect();
+        if (supportsSignIn) await _connect();
+        await _migrateResourceCredential();
+        await _projectResources();
       }
     } catch (_) {
       _setupError = '无法读取账号配置或安全存储，请重试';
@@ -136,7 +267,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _connect() async {
+  Future<void> _connect({bool restoreSession = true}) async {
     final config = _configuration!;
     IdentityGateway gateway;
     if (_gatewayFactory != null) {
@@ -144,11 +275,14 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       final adapter = SynologyIdentityGateway(
         origin: config.nasOrigin,
+        identityOrigin: config.identityOrigin,
         environment: config.environmentId,
         client: createDefaultAiHttpClient(),
         storage: SecureIdentitySessionStorage(
           appId: 'board_game_agent',
-          environment: config.environmentId,
+          environment: config.nasOrigin == config.identityOrigin
+              ? config.environmentId
+              : '${config.environmentId}_${sha256.convert(utf8.encode(config.nasOrigin.origin)).toString().substring(0, 16)}',
         ),
       );
       try {
@@ -166,7 +300,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _gateway = gateway;
     _identity = IdentityController(gateway: gateway)
       ..addListener(_identityChanged);
-    await _identity!.initialize();
+    if (restoreSession) await _identity!.initialize();
     _identityChanged();
     await _scopeQueue;
     _verificationTimer?.cancel();
@@ -177,6 +311,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   void _identityChanged() {
     if (_disposed) return;
+    if (_resourceUserId != user?.id) _resourceUserId = null;
     final target = user == null ? null : _configuration!.accountScope(user!.id);
     if (target != _requestedScope ||
         target != _appliedScope && !_scopeChanging) {
@@ -244,6 +379,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _identity!.restore();
     await _scopeQueue;
+    await _projectResources();
   }
 
   Future<void> signIn({
@@ -263,38 +399,105 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_identity == null) await restore();
-    if (_disposed) return;
-    if (_identity == null) {
-      _setupError = '账号连接未完成，请重试';
-      notifyListeners();
-      return;
-    }
+    if (_disposed || _configuration == null) return;
+    final generation = ++_loginGeneration;
+    _signingIn = true;
     _setupError = null;
-    await _identity!.signIn(
-      account: account.trim(),
-      password: password,
-      otp: otp,
-    );
-    await _scopeQueue;
+    notifyListeners();
+    final original = _configuration!;
+    // OTP retries stay on the NAS that issued the challenge.
+    final addresses = needsOtp ? [original.activeServer] : original.servers;
+    try {
+      for (final server in addresses) {
+        if (_disposed || generation != _loginGeneration) return;
+        if (_gateway == null || _configuration!.activeServer.id != server.id) {
+          await _disconnect();
+          _configuration = original.withServer(server.id);
+          await _connect(restoreSession: false);
+        }
+        if (_disposed || generation != _loginGeneration) return;
+        if (_gateway?.cachedUser != null) await _identity!.signOut();
+        if (_disposed || generation != _loginGeneration) return;
+        await _identity!.signIn(
+          account: account.trim(),
+          password: password,
+          otp: otp,
+        );
+        await _scopeQueue;
+        if (_disposed || generation != _loginGeneration) return;
+        if (isSignedIn) {
+          await _persistConfiguration();
+          if (webDav != null) {
+            await _credentials(_configuration!.accountScope(user!.id)).write(
+              jsonEncode({
+                'version': 1,
+                'userId': user!.id,
+                'environment': _configuration!.environmentId,
+                'username': account.trim(),
+                'password': password,
+              }),
+            );
+            if (_disposed || generation != _loginGeneration) return;
+            await _projectResources();
+          }
+          return;
+        }
+        if (!const {
+          IdentityFailureCode.network,
+          IdentityFailureCode.timeout,
+          IdentityFailureCode.providerUnavailable,
+        }.contains(_identity?.failure?.code)) {
+          break;
+        }
+      }
+    } catch (_) {
+      _setupError = '账号或资料连接未完成，请重试';
+      if (isSignedIn) await _identity?.signOut();
+      if (_identity != null) await _scopeQueue;
+      await _projectResources();
+    } finally {
+      _signingIn = false;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   Future<void> cancelSignIn() async {
+    ++_loginGeneration;
+    if (isSignedIn) {
+      await signOut();
+      return;
+    }
     await _identity?.cancelSignIn();
     await _scopeQueue;
+    await _projectResources();
   }
 
   Future<void> signOut() async {
+    ++_loginGeneration;
+    final scope = user == null ? null : _configuration!.accountScope(user!.id);
+    if (scope != null && webDav != null) await _credentials(scope).delete();
     await _identity?.signOut();
     await _scopeQueue;
+    await _projectResources();
   }
 
   Future<void> saveConfiguration(AccountConfiguration next) async {
-    if (!supportsSignIn) throw StateError('网页版暂不支持账号登录');
-    if (isBusy || isSignedIn) throw StateError('请先退出账号');
+    if (isBusy) throw StateError('连接正在处理中');
+    final current = _configuration;
+    final keepsIdentity =
+        current != null &&
+        next.identityOrigin == current.identityOrigin &&
+        next.servers.length == current.servers.length &&
+        next.servers.every(
+          (s) => current.servers.any(
+            (old) => old.id == s.id && old.loginOrigin == s.loginOrigin,
+          ),
+        );
+    if (isSignedIn && !keepsIdentity) throw StateError('修改登录地址前请先退出账号');
     _initializing = true;
     notifyListeners();
     try {
-      await _disconnect();
+      if (!isSignedIn) await _disconnect();
       final prefs = await SharedPreferences.getInstance();
       if (!await prefs.setString(
         _configurationKey,
@@ -304,13 +507,28 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       }
       _configuration = next;
       _setupError = null;
-      await _connect();
+      if (_identity == null && supportsSignIn) await _connect();
+      await _projectResources();
     } catch (_) {
       _setupError = '登录连接未完成，请重试';
     } finally {
       _initializing = false;
       if (!_disposed) notifyListeners();
     }
+  }
+
+  /// Recovery runs before app initialization; do not restore an identity or switch
+  /// personal data scopes until the normal startup order has completed.
+  Future<void> recoverConnectionConfiguration(
+    AccountConfiguration original,
+  ) async {
+    if (_configuration != null) {
+      await saveConfiguration(original);
+      return;
+    }
+    if (isBusy || _disposed) throw StateError('Configuration is busy');
+    _configuration = original;
+    await _persistConfiguration();
   }
 
   Future<void> clearConfiguration() async {
@@ -321,6 +539,10 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       throw StateError('Configuration persistence failed');
     }
     _configuration = null;
+    _resourceUserId = null;
+    if (webDav != null) {
+      await webDav!.saveConfiguration(const WebDavSettings());
+    }
     _setupError = null;
     notifyListeners();
   }
@@ -365,6 +587,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       };
   @override
   void dispose() {
+    ++_loginGeneration;
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_disconnect());

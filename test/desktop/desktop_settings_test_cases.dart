@@ -152,78 +152,40 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('desktop WebDAV settings save into the shared backend', (
-    tester,
-  ) async {
-    final _MemoryWebDavSettingsStore store = _MemoryWebDavSettingsStore(
-      const WebDavSettings(
-        mode: ExternalStorageMode.webDav,
-        baseUrl: 'https://old.example.com/friend/',
-        username: 'old-user',
-        password: 'old-password',
-      ),
-    );
-    final WebDavSettingsController webDav = WebDavSettingsController(
-      store: store,
-      connectionTester: const _SuccessfulWebDavConnectionTester(),
-    );
-    await webDav.load();
-    addTearDown(webDav.dispose);
-
-    await _mount(
-      tester,
-      context.controller,
-      const Size(1280, 800),
-      webDavSettingsController: webDav,
-    );
-    await _navigate(tester, '设置');
-
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('desktop-settings-webdav-config')),
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('desktop-settings-webdav-config')),
-    );
-    await tester.pumpAndSettle();
-    final Finder saveButton = find.byKey(
-      const ValueKey<String>('desktop-settings-check-resource-sources'),
-    );
-    await tester.ensureVisible(saveButton);
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('desktop-settings-webdav-url')),
-      'https://dav.example.com/friend/',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('desktop-settings-webdav-username')),
-      'desktop-user',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('desktop-settings-webdav-password')),
-      'desktop-password',
-    );
-    await tester.tap(saveButton);
-    await tester.pump();
-    for (
-      int attempt = 0;
-      attempt < 20 &&
-          find
-              .byKey(const ValueKey<String>('desktop-settings-webdav-feedback'))
-              .evaluate()
-              .isEmpty;
-      attempt++
-    ) {
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-
-    expect(store.value?.baseUrl, 'https://dav.example.com/friend/');
-    expect(store.value?.username, 'desktop-user');
-    expect(store.value?.password, 'desktop-password');
-    expect(context.controller.assetSourceConfigs, hasLength(1));
-    expect(
-      context.controller.assetSourceConfigs.single.testUrl,
-      'https://dav.example.com/friend/',
-    );
-  });
+  testWidgets(
+    'desktop resources route to account settings instead of duplicating credentials',
+    (tester) async {
+      final webDav = WebDavSettingsController(
+        store: _MemoryWebDavSettingsStore(const WebDavSettings()),
+        connectionTester: const _SuccessfulWebDavConnectionTester(),
+      );
+      await webDav.load();
+      addTearDown(webDav.dispose);
+      await _mount(
+        tester,
+        context.controller,
+        const Size(1280, 800),
+        webDavSettingsController: webDav,
+      );
+      await _navigate(tester, '设置');
+      final entry = find.byKey(
+        const ValueKey('desktop-settings-webdav-config'),
+      );
+      await tester.ensureVisible(entry);
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('account-screen')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('desktop-settings-webdav-username')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('desktop-settings-webdav-password')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test(
     'desktop AI settings service persists and checks all card fields',
@@ -509,7 +471,7 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     expect(find.text('AI Service'), findsOneWidget);
     expect(find.text('Appearance & Theme'), findsOneWidget);
     expect(find.text('Notification Settings'), findsNothing);
-    expect(find.text('Resources & Sync'), findsOneWidget);
+    expect(find.text('Servers & resources'), findsOneWidget);
     expect(find.text('About & Updates'), findsOneWidget);
     expect(find.text('应用偏好与服务'), findsNothing);
     expect(find.text('通知设置'), findsNothing);

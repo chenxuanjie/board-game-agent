@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -5,7 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
+// ignore: implementation_imports
+import 'package:app_ai_client/src/default_http_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_storage/webdav_storage.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -15,21 +17,19 @@ import '../models/cached_asset.dart';
 import '../models/game_resource.dart';
 import '../models/remote_asset_file.dart';
 import 'board_game_remote_layout.dart';
-import 'board_game_remote_credentials.dart';
 
 class RemoteAssetService {
   RemoteAssetService({
     http.Client? client,
     WebDavSettings Function()? settingsProvider,
+    WebDavSettings Function(Uri)? resourceSettingsProvider,
   }) : _settingsProvider = settingsProvider,
-       _client =
-           client ??
-           (kIsWeb
-               ? http.Client()
-               : IOClient(HttpClient()));
+       _resourceSettingsProvider = resourceSettingsProvider,
+       _client = client ?? createDefaultAiHttpClient();
 
   final http.Client _client;
   final WebDavSettings Function()? _settingsProvider;
+  final WebDavSettings Function(Uri)? _resourceSettingsProvider;
 
   static const String _versionManifestFileName = '_asset_versions.json';
 
@@ -59,9 +59,10 @@ class RemoteAssetService {
         continue;
       }
       try {
-        final http.Response response = await _client
-            .get(uri, headers: _headers(uri))
-            .timeout(const Duration(seconds: 6));
+        final http.Response response = await _request(
+          'GET',
+          uri,
+        ).timeout(const Duration(seconds: 6));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           await localFile.parent.create(recursive: true);
           await localFile.writeAsBytes(response.bodyBytes, flush: true);
@@ -129,9 +130,10 @@ class RemoteAssetService {
         continue;
       }
       try {
-        final http.Response response = await _client
-            .get(uri, headers: _headers(uri))
-            .timeout(const Duration(seconds: 8));
+        final http.Response response = await _request(
+          'GET',
+          uri,
+        ).timeout(const Duration(seconds: 8));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response.bodyBytes;
         }
@@ -477,9 +479,10 @@ class RemoteAssetService {
         continue;
       }
       try {
-        final http.Response response = await _client
-            .head(uri, headers: _headers(uri))
-            .timeout(const Duration(seconds: 8));
+        final http.Response response = await _request(
+          'HEAD',
+          uri,
+        ).timeout(const Duration(seconds: 8));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return <String, dynamic>{
             'sourceId': source.id,
@@ -551,20 +554,30 @@ class RemoteAssetService {
   }
 
   WebDavSettings _webDavSettings(Uri target) {
+    if (_resourceSettingsProvider != null) {
+      return _resourceSettingsProvider(target);
+    }
     final WebDavSettings? configured = _settingsProvider?.call();
     // A newly imported account must never authenticate unrelated data sources.
     if (configured != null && _belongsTo(target, configured.baseUrl)) {
       return configured;
     }
-    if (!AssetSourceConfig.defaults.any(
-      (source) => _belongsTo(target, source.testUrl),
-    )) {
-      return const WebDavSettings();
+    return const WebDavSettings();
+  }
+
+  Future<http.Response> _request(String method, Uri target) async {
+    final abort = Completer<void>();
+    final request =
+        http.AbortableRequest(method, target, abortTrigger: abort.future)
+          ..followRedirects = false
+          ..headers.addAll(_headers(target));
+    try {
+      return await (() async => http.Response.fromStream(
+        await _client.send(request),
+      ))().timeout(const Duration(seconds: 8));
+    } finally {
+      if (!abort.isCompleted) abort.complete();
     }
-    return const WebDavSettings(
-      username: BoardGameRemoteCredentials.username,
-      password: BoardGameRemoteCredentials.password,
-    );
   }
 
   Map<String, String> _headers(Uri target) {

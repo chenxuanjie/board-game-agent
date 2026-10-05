@@ -50,7 +50,12 @@ abstract final class ConfigurationTransfer {
     'reasoningEffort',
     'responseSpeed',
   ];
-  static const webDavFields = ['baseUrl', 'username', 'password'];
+  static const webDavFields = [
+    'baseUrl',
+    'username',
+    'password',
+    'connections',
+  ];
 
   static String label(String key, AppCopy copy) => switch (key) {
     'name' => copy.localized('服务名称', 'Service name'),
@@ -63,6 +68,7 @@ abstract final class ConfigurationTransfer {
     'responseSpeed' => copy.localized('服务等级', 'Service tier'),
     'username' => copy.localized('账号', 'Username'),
     'password' => copy.localized('密码', 'Password'),
+    'connections' => copy.localized('服务器配置', 'Server configuration'),
     _ => key,
   };
 
@@ -353,6 +359,8 @@ abstract final class ConfigurationTransfer {
   static String _normalizeKey(String key) =>
       key.toLowerCase().replaceAll(RegExp(r'[\s._-]'), '');
   static const _aliases = {
+    'connections': 'connections',
+    '服务器配置': 'connections',
     'name': 'name',
     '服务名称': 'name',
     'servicename': 'name',
@@ -413,6 +421,7 @@ abstract final class ConfigurationTransfer {
       'baseUrl': current.baseUrl,
       'username': current.username,
       'password': current.password,
+      'connections': '',
     }..addAll(patch);
     if (patch.containsKey('baseUrl') &&
         patch['baseUrl']!.trim() != current.baseUrl.trim()) {

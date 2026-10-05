@@ -53,6 +53,7 @@ Future<void> main() async {
     connectionTester: DefaultWebDavConnectionTester(appId: 'board_game_agent'),
   );
 
+  late final AccountService accountService;
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
@@ -80,17 +81,23 @@ Future<void> main() async {
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(
       settingsProvider: () => updateSettingsController.saved,
+      resourceSettingsProvider: (target) =>
+          accountService.settingsForResource(target),
     ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
   );
 
+  accountService = AccountService(
+    controller: controller,
+    webDav: updateSettingsController,
+  );
   runApp(
     BoardGameAgentApp(
       controller: controller,
       updateSettingsController: updateSettingsController,
-      accountService: AccountService(controller: controller),
+      accountService: accountService,
     ),
   );
 }
@@ -168,11 +175,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   late final SettingsTransferService _transferService = SettingsTransferService(
     controller: widget.controller,
     webDav: widget.updateSettingsController,
+    account: widget.accountService,
   );
   late Future<void> _initialization;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _startupUpdateCheckScheduled = false;
   String? _lastAccountKey;
+  String? _lastResourceConnection;
 
   @override
   void initState() {
@@ -367,6 +376,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             appIcon: _BoardGameAppMark(),
             fallbackVersion: '1.0.0',
             fallbackBuild: '7',
+            updateCheckSubtitle: '检查应用新版本',
           ),
           updateService: _createUpdateService(),
         ),
@@ -416,6 +426,19 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       });
     }
     _lastAccountKey = key;
+    final account = widget.accountService;
+    if (account != null &&
+        !account.isBusy &&
+        account.resourceCredentialsReady) {
+      final connection =
+          '${account.nicknameKey}|${account.configuration!.resourceSources.map((s) => s.testUrl).join('|')}';
+      if (_lastResourceConnection != connection) {
+        _lastResourceConnection = connection;
+        unawaited(widget.controller.refreshLibraryResources(force: true));
+      }
+    } else if (account?.isSignedIn == false) {
+      _lastResourceConnection = null;
+    }
     setState(() {});
   }
 }

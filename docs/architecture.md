@@ -37,3 +37,5 @@ Windows 更新服务及安装交接位于 `lib/features/settings/services/window
 应用动效令牌集中在 `lib/core/theme/app_motion.dart`，主页面过渡在 `lib/ui/shared/app_page_transition.dart`，详见 [应用动效规范](app-motion.md)。页面只挂载一个当前内容，不为淡出保留旧聊天页面。
 
 封面衔接、首屏内容入场、图片解码反馈和收藏确认图标分别在 `lib/ui/shared/game_cover_motion.dart`、`content_entrance.dart`、`image_reveal.dart`、`favorite_feedback.dart`。平台外壳只负责源位置和导航，收藏仍复用同一个 AppController 写入队列与失败回滚；不创建新业务状态或持久化格式。
+
+账号页的服务器配置现统一管理 NAS 地址、登录/WebDAV 端口与知识库目录。AccountService 负责优先级认证、稳定身份、按用户保存的安全资源凭据和派生资源配置；NasConnectionSection 是移动/桌面共享编辑器，原 ResourceConnectionScreen 只路由到账户页。详见 [账号与资源连接](resource-connections.md)。

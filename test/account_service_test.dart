@@ -25,7 +25,7 @@ void main() {
         },
       );
       await service.initialize();
-      expect(service.isConfigured, isFalse);
+      expect(service.isConfigured, isTrue);
       await service.signIn(account: 'User', password: 'fixture');
       expect(constructed, isFalse);
       expect(service.user, isNull);
@@ -108,7 +108,7 @@ void main() {
       expect(service.error, isNull);
       expect(
         service.configuration!.nasOrigin.origin,
-        'https://cznas.dpdns.org:5001',
+        'https://192.168.1.55:5001',
       );
       expect(service.user?.id, 'first');
       expect(service.dataScopeReady, isTrue, reason: service.error);

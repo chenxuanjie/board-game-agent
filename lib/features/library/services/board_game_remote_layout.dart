@@ -58,7 +58,9 @@ final class BoardGameRemoteLayout {
         .where((segment) => segment.isNotEmpty)
         .toList();
     final friendIndex = segments.indexOf('friend');
-    final rootSegments = friendIndex >= 0
+    // Trim legacy full library locations; preserve intentionally configured subfolders.
+    final libraryIndex = segments.indexOf('board-game-lib');
+    final rootSegments = friendIndex >= 0 && libraryIndex > friendIndex
         ? segments.take(friendIndex + 1).toList()
         : segments;
     final path = rootSegments.isEmpty ? '/' : '/${rootSegments.join('/')}/';
