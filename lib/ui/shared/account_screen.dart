@@ -19,7 +19,11 @@ class AccountEntry extends StatelessWidget {
       subtitle: Text(
         account.isSignedIn
             ? account.displayName
-            : (english ? 'Sign in with Synology' : '登录群晖账号'),
+            : (!account.supportsSignIn
+                  ? (english
+                        ? 'Sign-in is available in the app'
+                        : '请使用 App 或桌面端登录')
+                  : (english ? 'Sign in with Synology' : '登录群晖账号')),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -171,10 +175,10 @@ class _AccountScreenState extends State<AccountScreen> {
                                           'You are offline. Reconnect when online.',
                                         )
                                       : _text('已登录', 'Signed in'))
-                                : !service.isConfigured
+                                : !service.supportsSignIn
                                 ? _text(
-                                    '登录服务尚未就绪，请稍后重试。',
-                                    'Sign-in is not ready yet. Please retry later.',
+                                    '网页版暂不支持账号登录，可继续以访客使用。',
+                                    'Web sign-in is unavailable. You can continue as a guest.',
                                   )
                                 : _text(
                                     '使用你的群晖账号和密码。',
@@ -185,7 +189,9 @@ class _AccountScreenState extends State<AccountScreen> {
                             ),
                           ),
                           const SizedBox(height: UiTokens.sectionGap),
-                          if (!signedIn && service != null) ...[
+                          if (!signedIn &&
+                              service != null &&
+                              service.supportsSignIn) ...[
                             TextFormField(
                               key: const ValueKey('account-username'),
                               controller: _account,
@@ -321,7 +327,7 @@ class _AccountScreenState extends State<AccountScreen> {
                             ),
                             const SizedBox(height: UiTokens.itemGap),
                           ],
-                          if (service != null) ...[
+                          if (service != null && service.supportsSignIn) ...[
                             FilledButton.icon(
                               key: ValueKey(
                                 signedIn

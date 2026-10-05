@@ -72,6 +72,10 @@ assets/games/**/docs/*.txt
 # Local scratch/cache files
 /tmp/
 
+# Local remnants of the archived service-based authentication branch.
+# Active native authentication has no server process or session database.
+/server/identity_web/
+
 # Optional local notes / logs
 /last-build.log
 # Codex conversation attachments are local input, not application source.

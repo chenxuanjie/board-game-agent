@@ -20,6 +20,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'unsupported Web hides credential fields and sign-in action while keeping guest access',
+    (tester) async {
+      final app = _MineFixture();
+      final service = AccountService(controller: app, signInSupported: false);
+      addTearDown(service.dispose);
+      addTearDown(app.dispose);
+      await _mount(tester, service);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byKey(const ValueKey('account-sign-in')), findsNothing);
+      expect(find.textContaining('Web sign-in is unavailable'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('account tolerates missing scope and theme extension', (
     tester,
@@ -41,7 +55,7 @@ void main() {
       expect(find.textContaining('Supabase'), findsNothing);
       expect(find.byKey(const ValueKey('account-configure')), findsNothing);
       expect(
-        find.text('Sign-in is not ready yet. Please retry later.'),
+        find.text('Use your Synology account and password.'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
@@ -51,7 +65,15 @@ void main() {
   testWidgets('unavailable login stays retryable without deployment fields', (
     tester,
   ) async {
-    final service = _service();
+    final app = _MineFixture();
+    final service = AccountService(
+      controller: app,
+      gatewayFactory: (_) async =>
+          throw const IdentityFailure(IdentityFailureCode.storage),
+      switchScope: (_) async {},
+    );
+    addTearDown(service.dispose);
+    addTearDown(app.dispose);
     await _mount(tester, service);
     await tester.enterText(
       find.byKey(const ValueKey('account-username')),
@@ -63,7 +85,7 @@ void main() {
     );
     await _tapAccountAction(tester, 'account-sign-in');
     await tester.pumpAndSettle();
-    expect(service.error, '登录服务尚未就绪，请稍后重试');
+    expect(service.error, '账号连接未完成，请重试');
     expect(find.byKey(const ValueKey('account-error')), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
     expect(find.textContaining('Supabase'), findsNothing);
@@ -370,10 +392,7 @@ Future<(AccountService, _UiGateway)> _configuredService(
       switchScope: (_) async {},
     );
     await service.saveConfiguration(
-      AccountConfiguration.fromFields(
-        serviceUrl: 'https://app.example.test',
-        nasId: 'nas_fixture_identity_2026',
-      ),
+      AccountConfiguration.fromFields(nasUrl: 'https://nas.example.test:5001'),
     );
     return (service, gateway, controller);
   });

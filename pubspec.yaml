@@ -46,6 +46,8 @@ dependency_overrides:
     path: packages/speech_to_text_windows
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter

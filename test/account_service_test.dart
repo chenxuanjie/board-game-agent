@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/identity/models/account_configuration.dart';
@@ -8,13 +7,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 AccountConfiguration configuration([String host = 'app.example.test']) =>
-    AccountConfiguration.fromFields(
-      serviceUrl: 'https://$host',
-      nasId: 'nas_fixture_identity_2026',
-    );
+    AccountConfiguration.fromFields(nasUrl: 'https://$host');
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'Web stays guest and never creates a native gateway or prompts for credentials',
+    () async {
+      final app = FixtureApp();
+      var constructed = false;
+      final service = AccountService(
+        controller: app,
+        signInSupported: false,
+        gatewayFactory: (_) async {
+          constructed = true;
+          return FixtureGateway();
+        },
+      );
+      await service.initialize();
+      expect(service.isConfigured, isFalse);
+      await service.signIn(account: 'User', password: 'fixture');
+      expect(constructed, isFalse);
+      expect(service.user, isNull);
+      expect(service.error, contains('网页版暂不支持'));
+      service.dispose();
+      app.dispose();
+    },
+  );
   test('connection metadata roundtrip and NAS/user scopes remain isolated', () {
     final config = configuration();
     expect(
@@ -27,16 +46,12 @@ void main() {
       isNot(config.accountScope('first')),
     );
     expect(
-      () => AccountConfiguration.fromFields(
-        serviceUrl: 'http://app.example.test',
-        nasId: config.nasId,
-      ),
+      () => AccountConfiguration.fromFields(nasUrl: 'http://app.example.test'),
       throwsFormatException,
     );
     expect(
       () => AccountConfiguration.fromFields(
-        serviceUrl: 'https://user:password@app.example.test',
-        nasId: config.nasId,
+        nasUrl: 'https://user:password@app.example.test',
       ),
       throwsFormatException,
     );
@@ -56,9 +71,18 @@ void main() {
             '{"supabaseUrl":"https://old.example.test"}',
       });
       final app = FixtureApp();
-      final service = AccountService(controller: app);
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        switchScope: (_) async {},
+      );
       await service.initialize();
-      expect(service.isConfigured, isFalse);
+      expect(service.isConfigured, isTrue);
+      expect(
+        service.configuration!.nasOrigin.origin,
+        'https://cznas.dpdns.org:5001',
+      );
+      expect(service.user, isNull);
       expect(service.dataScopeReady, isTrue);
       expect(
         (await SharedPreferences.getInstance()).getString(
@@ -71,7 +95,7 @@ void main() {
     },
   );
   test(
-    'unconfigured login stays guest and can retry new deployment configuration',
+    'native default configuration signs in without a bridge or setup form',
     () async {
       final app = FixtureApp(), gateway = FixtureGateway();
       final service = AccountService(
@@ -81,14 +105,11 @@ void main() {
       );
       await service.initialize();
       await service.signIn(account: 'first', password: 'fixture');
-      expect(service.error, '登录服务尚未就绪，请稍后重试');
-      expect(service.user, isNull);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        'board_game_agent.identity.synology.configuration.v2',
-        jsonEncode(configuration().toJson()),
+      expect(service.error, isNull);
+      expect(
+        service.configuration!.nasOrigin.origin,
+        'https://cznas.dpdns.org:5001',
       );
-      await service.signIn(account: 'first', password: 'fixture');
       expect(service.user?.id, 'first');
       expect(service.dataScopeReady, isTrue, reason: service.error);
       service.dispose();

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 // Existing native transport supports the app's Windows/system proxy policy.
 // ignore: implementation_imports
@@ -17,11 +16,14 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     @visibleForTesting
     Future<IdentityGateway> Function(AccountConfiguration)? gatewayFactory,
     @visibleForTesting Future<void> Function(String?)? switchScope,
+    @visibleForTesting bool? signInSupported,
   }) : _controller = controller,
        _gatewayFactory = gatewayFactory,
-       _switchScope = switchScope;
+       _switchScope = switchScope,
+       supportsSignIn = signInSupported ?? !kIsWeb;
   static const _configurationKey =
-      'board_game_agent.identity.synology.configuration.v2';
+      'board_game_agent.identity.synology.direct.configuration.v3';
+  final bool supportsSignIn;
   final AppController _controller;
   final Future<IdentityGateway> Function(AccountConfiguration)? _gatewayFactory;
   final Future<void> Function(String?)? _switchScope;
@@ -57,6 +59,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       : 'identity.profile.${_configuration!.accountScope(user!.id)}.nickname';
   Future<void> initialize() async {
     if (_initializing || _disposed) return;
+    if (!supportsSignIn) return;
     if (!_observing) {
       WidgetsBinding.instance.addObserver(this);
       _observing = true;
@@ -72,80 +75,16 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           jsonDecode(saved) as Map<String, dynamic>,
         );
       }
-      if (_gatewayFactory == null) {
-        final address = kIsWeb
-            ? Uri.base.origin
-            : (_configuration?.serviceUrl.origin ??
-                  const String.fromEnvironment('IDENTITY_SERVICE_URL'));
-        if (address.isNotEmpty) {
-          try {
-            _configuration = await _discover(Uri.parse(address));
-          } catch (_) {
-            if (_configuration == null || kIsWeb) rethrow;
-          }
-        }
-      }
+      _configuration ??= AccountConfiguration.defaults;
       if (_configuration != null) {
         await _disconnect();
         await _connect();
       }
     } catch (_) {
-      _setupError = '无法连接登录服务，请稍后重试';
+      _setupError = '无法读取账号配置或安全存储，请重试';
     } finally {
       _initializing = false;
       if (!_disposed) notifyListeners();
-    }
-  }
-
-  Future<AccountConfiguration> _discover(Uri origin) async {
-    AccountConfiguration.validateOrigin(origin);
-    final client = kIsWeb ? http.Client() : createDefaultAiHttpClient();
-    final abort = Completer<void>();
-    try {
-      final request =
-          http.AbortableRequest(
-              'GET',
-              origin.resolve('/api/identity/configuration'),
-              abortTrigger: abort.future,
-            )
-            ..followRedirects = false
-            ..maxRedirects = 0;
-      if (!kIsWeb) request.headers['X-Identity-Client'] = 'native-v1';
-      final payload = await (() async {
-        final response = await client.send(request);
-        if (response.statusCode != 200) {
-          throw const FormatException('登录服务未就绪');
-        }
-        final bytes = <int>[];
-        await for (final chunk in response.stream) {
-          if (_disposed || bytes.length + chunk.length > 8192) {
-            throw const FormatException('登录服务未就绪');
-          }
-          bytes.addAll(chunk);
-        }
-        return utf8.decode(bytes);
-      })().timeout(const Duration(seconds: 8));
-      final next = AccountConfiguration.fromJson(
-        jsonDecode(payload) as Map<String, dynamic>,
-      );
-      if (next.serviceUrl.origin != origin.origin ||
-          (_configuration != null && _configuration!.nasId != next.nasId)) {
-        throw const FormatException('登录服务不匹配');
-      }
-      if (_disposed) {
-        throw StateError('Disposed');
-      }
-      final prefs = await SharedPreferences.getInstance();
-      if (!await prefs.setString(
-        _configurationKey,
-        jsonEncode(next.toJson()),
-      )) {
-        throw StateError('Configuration persistence failed');
-      }
-      return next;
-    } finally {
-      if (!abort.isCompleted) abort.complete();
-      client.close();
     }
   }
 
@@ -156,19 +95,20 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       gateway = await _gatewayFactory(config);
     } else {
       final adapter = SynologyIdentityGateway(
-        origin: config.serviceUrl,
-        nasId: config.nasId,
+        origin: config.nasOrigin,
         environment: config.environmentId,
-        cookieOnly: kIsWeb,
-        client: kIsWeb ? null : createDefaultAiHttpClient(),
-        storage: kIsWeb
-            ? null
-            : SecureIdentitySessionStorage(
-                appId: 'board_game_agent',
-                environment: config.environmentId,
-              ),
+        client: createDefaultAiHttpClient(),
+        storage: SecureIdentitySessionStorage(
+          appId: 'board_game_agent',
+          environment: config.environmentId,
+        ),
       );
-      await adapter.initialize();
+      try {
+        await adapter.initialize();
+      } catch (_) {
+        await adapter.dispose();
+        rethrow;
+      }
       gateway = adapter;
     }
     if (_disposed) {
@@ -239,6 +179,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     required String password,
     String? otp,
   }) async {
+    if (!supportsSignIn) {
+      _setupError = '网页版暂不支持账号登录，可继续以访客使用';
+      notifyListeners();
+      return;
+    }
     if (isBusy || _disposed || isSignedIn) return;
     if (account.trim().isEmpty || password.isEmpty) {
       _setupError = '请输入账号和密码';
@@ -248,7 +193,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     if (_identity == null) await restore();
     if (_disposed) return;
     if (_identity == null) {
-      _setupError = '登录服务尚未就绪，请稍后重试';
+      _setupError = '账号连接未完成，请重试';
       notifyListeners();
       return;
     }
@@ -272,6 +217,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> saveConfiguration(AccountConfiguration next) async {
+    if (!supportsSignIn) throw StateError('网页版暂不支持账号登录');
     if (isBusy || isSignedIn) throw StateError('请先退出账号');
     _initializing = true;
     notifyListeners();
@@ -327,7 +273,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   static String? _localizedFailure(IdentityFailure? failure) =>
       switch (failure?.code) {
         null => null,
-        IdentityFailureCode.network => '无法连接登录服务，请检查网络后重试',
+        IdentityFailureCode.network => '无法连接群晖，请检查网络后重试',
         IdentityFailureCode.timeout => '请求超时，请重试',
         IdentityFailureCode.sessionRejected => '登录已过期，请重新登录',
         IdentityFailureCode.rateLimited => '尝试过于频繁，请稍后重试',
@@ -342,6 +288,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         IdentityFailureCode.remoteSignOutUnconfirmed => '已退出本机，请联网确认服务端退出',
         IdentityFailureCode.storage => '无法访问账号安全存储，请重试',
         IdentityFailureCode.unknown => '登录未完成，请重试',
+        IdentityFailureCode.unsupportedPlatform => '网页版暂不支持账号登录，可继续以访客使用',
       };
   @override
   void dispose() {

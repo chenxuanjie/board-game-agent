@@ -1,5 +1,9 @@
 # 认证方案保存点
 
+当前工作分支为 `codex/synology-direct-auth`，主项目与公共 `app_identity` 同名。它直接访问 DSM，不部署应用会话服务。
+
+上一个会话服务方案另外保留：主项目 `codex/synology-auth` 的 `e4e5955`，公共 `app_identity` 同名分支的 `56fe682`。原 Node 服务与三端 Cookie/应用令牌实现只在保存分支保留，不在直连分支并存使用。
+
 2026-10-05 按用户要求，在改用 `SYNO.API.Auth` 前保存 Supabase / 群晖 OIDC 实现。这里保存的是代码，不代表远端 SSO 已部署或真实登录已通过。
 
 主项目保存分支：`codex/supabase-identity-archive`，提交 `ee490d7`。新实现从该提交创建 `codex/synology-auth`，不修改保存分支。

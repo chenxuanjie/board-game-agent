@@ -1,36 +1,51 @@
-# 群晖账号登录
+# 群晖直连登录
 
-当前方案：三端账号/密码 → 应用会话服务 → `SYNO.API.Auth` v6 → 群晖验证。
-群晖要求双重验证时才显示验证码。普通用户不填写 Supabase、OIDC、客户端 ID 或回调地址。
+Android / Windows → HTTPS `SYNO.API.Auth` v6 → NAS 验证账号密码。
+无需 Supabase、SSO 应用注册或新增会话服务。群晖要求双重验证时才显示验证码。
+Web 不尝试直连认证，继续使用访客功能。
 
-公共包 API 版本为 `app_identity` 0.2.0，Git 提交 `56fe682`；应用采用相邻路径依赖。复现时需将该包切到 `codex/synology-auth`，不能只切主项目而仍使用旧 0.1.0 包。
+公共包 `app_identity` 0.3.0 与主项目均使用 `codex/synology-direct-auth` 分支。
+运行路径依赖时必须同步切换公共包；只切主项目会造成接口不兼容。
+
+## 入口与默认连接
+
+手机“我的” → 账号，或三端设置 → 账号。原生端填写群晖用户名、密码即可。
+默认 DSM 地址 `https://cznas.dpdns.org:5001`；5006 是 WebDAV，不用于账号认证。
+公开地址可由编译参数 `SYNOLOGY_ORIGIN` 指定，不包含账号密码。
+用户账号密码不作为程序默认配置或构建参数，不写入 Git。
 
 ## 代码归属
 
-- 公共包 `../shared_packages/app_identity`：认证状态机、可取消请求、Web Cookie/CSRF、原生安全存储、恢复和退出。
-- `lib/features/identity/`：可信登录服务地址发现、生命周期验证、应用个人数据命名空间切换。
-- `lib/ui/shared/account_screen.dart`：三端共用账号页，设置/“我的”的账号入口进入。
-- `server/identity_web/`：三端共同使用的 Node 24 会话服务，不仅服务 Web。
-- `scripts/identity/probe_auth.mjs`：操作员真实 NAS 集成验证，不是应用登录页面。
+- 公共包 `../shared_packages/app_identity`：直连接口、状态机、取消请求、安全存储、恢复与退出。
+- `lib/features/identity/`：默认 NAS 配置、平台能力、生命周期验证与个人数据作用域。
+- `lib/ui/shared/account_screen.dart`：共用账号页；Web 显示不支持登录并保留访客访问。
+- `integration_test/direct_synology_auth_test.dart`：真实原生网络、系统安全存储、重建适配器恢复、退出后旧会话失效验证。
 
-服务通过 `SYNO.API.Info` 发现接口路径，密码只在 HTTPS POST 请求体中提交。
-成功后用 `SYNO.FileStation.Info.get` 验证真实 UID，并以固定 NAS 标识和 UID 生成应用用户 ID。
-输入的用户名仅作显示名，不能用于决定数据归属。当前 NAS 的会话验证/退出需 GET `_sid`；禁止将完整出站 URI 写入日志。
+先用 `SYNO.API.Info` 发现接口。密码只放在 HTTPS POST 请求体中，禁止重定向。
+登录后用 `SYNO.FileStation.Info.get` 获取并验证数值 UID；控制器再次独立验证才进入正式登录状态。
+当前 NAS 的验证与退出需要 GET `_sid`，完整 URI 含凭据，不写入诊断日志。错误使用固定、脱敏的类型与文案。
+单请求限时 12 秒，响应上限 64 KiB，安全存储等待限时 10 秒；登录不自动重试。
 
-## 数据与权限
+## 数据与会话
 
-收藏、浏览、AI 会话等沿用现有账号命名空间；切换前排空上一账号的写入，完成后才展示新账号数据。
-访客数据不会自动并入账号，旧 Supabase 用户也不会按相同用户名自动匹配。
-旧认证配置保留但不参与新登录；新配置键和安全存储使用独立版本/服务命名空间。
+应用身份以固定 HTTPS NAS origin 与验证后的 UID 生成。账号名仅作显示，不用于认领旧数据。
+收藏、最近浏览、AI 会话使用独立账号命名空间；切换前排空旧写入，完成后展示新账号数据。
+访客和此前 Supabase / 服务方案的数据不自动合并。登录也不等于个人数据已跨设备同步。
+新配置使用 v3 键，系统安全存储使用 synology-direct:v1 命名空间；旧配置不参与直连登录。
 
-此功能验证群晖账号并管理应用会话，不等于已有跨端个人数据云同步，也不自动授予 NAS/WebDAV 资料权限。
-WebDAV/AI 连接设置保持原有功能，不能用共享 WebDAV 密码代替每个用户的登录身份。
-服务只调用认证和 UID 接口，不获取用户文件内容。用户必须有 FileStation Info API 权限；无权限则拒绝登录。
-NAS 删除并重建用户时 UID 可能被复用，管理员须先撤销旧绑定/处理旧数据，不能直接把旧数据交给新用户。
+SID、SynoToken、UID 仅写系统安全存储，密码与 OTP 不保存。安全存储不可用时拒绝登录，不回退明文。
+重启 / 返回前台时验证会话，前台每分钟验证一次。离线缓存身份仅供本机显示，不构成服务端权限证明。
+退出先持久化退出标记、撤掉本地身份；断网时只保留加密会话用于下次前台补偿，重启不得恢复旧身份。
 
-## 保存点与回滚
+## 直连方案限制
 
-见 [认证保存点](identity-preservation.md)。恢复时同时切换主项目与公共 `app_identity` 到对应保存分支，执行 `flutter pub get`。
-不要复用当前加密会话数据库或迁移登录凭据；其他公共包保持保存提交。
+- NAS 必须能通过有效 TLS 证书的 HTTPS 地址访问；NAS 不可用时不能建立新登录。
+- 保存的是群晖会话，权限来自 NAS 账号，不是权限受限的应用令牌。普通账号须有 FileStation Info 权限；应用不自动提升权限，也不读取用户文件。
+- 会话过期需重新输入密码；未实现独立应用刷新令牌、应用级角色、全设备退出或后台撤销服务。一个设备退出不影响其他设备。
+- 断网退出的远端撤销在程序再次运行并联网后完成。如果登录响应丢失而 NAS 已创建会话，客户端不知道 SID，只能等 NAS 过期或管理员撤销。
+- NAS origin 改变会形成新数据命名空间；删除重建 NAS 用户时 UID 可能复用，不能在未处理旧数据时把同一 UID 当成新用户。
+- 当前 Web 被禁用。原生共享逻辑不能绕过浏览器 CORS；不将 NAS token 放入浏览器 localStorage。
+
+保存 / 回滚见 [认证保存点](identity-preservation.md)，验收范围见 [验证记录](identity-validation.md)。
 
 协议参考：[DSM 登录 API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Os/DSM/All/enu/DSM_Login_Web_API_Guide_enu.pdf)、[File Station API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)。
