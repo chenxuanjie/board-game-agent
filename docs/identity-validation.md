@@ -84,4 +84,13 @@ Android 实机登录、Keystore、真实网络切换与未知来源安装交互�
 
 使用仓库外发布 profile 中的 Shane 账号进行真实 NAS 验证：优先入口不可达后回退外网入口，SYNO.API.Auth 验证登录，认证读取资料目录 catalog.json，恢复会话及资料凭据，再退出撤销会话并清理缓存，均通过。此验证使用独立内存存储，并未访问或更改个人云同步文件；不能替代 Android Keystore 或实机网络验收。
 
-不生成渲染图，不重新构建 Windows/Web。新版客户端不内置共享 WebDAV 凭据，登录后派生资料及更新连接。APK 的升级安装和发布结果在完成后补录。
+不生成渲染图，不重新构建 Windows/Web。新版客户端不内置共享 WebDAV 凭据，登录后派生资料及更新连接。
+
+### 2.2.0+27 Android 发布
+
+- 固定发布入口 android 和正式 release --bump-build 均成功，远端原为 build 26，正式构建保留已提交的 build 27；发布源码提交为 617b68c。APK 为 release/board_game_agent-2.2.0+27.apk，249613837 字节，SHA-256 为 22c127e3d62ba05ffaefb16f3fd0bc96051ea57479ed7cfe28b04e298ec569f6。
+- 沿用证书 SHA-256 e124b4a9841453ecb5543cc29d2880051a404400fa2e46c5b9fb830b6446951a，apksigner 验证成功。API 36 模拟器从 build 26 覆盖安装 27，启动和重启无 AndroidRuntime 崩溃；从验证渠道下载回来的 APK 再次覆盖安装和启动通过。
+- 公共更新引擎在 validation-27-manifest.json 渠道检出、下载并完整校验新版，9 项更新引擎测试通过，包括 SHA-256 错误拒绝、Android 安装器交接和未知来源安装权限错误。验证渠道通过后才发布 stable。
+- 正式 APK 已完整 SHA-256 回读验证，不可变发布记录已上传且逐字回读匹配，最后更新 apps/board_game_agent/updates/manifest.json。正式清单再次回读与本地一致，Android 当前为 stable / 2.2.0+27；Windows 保持 build 26。
+
+Android 物理设备上的原生 Keystore、真实网络切换及系统安装确认交互未验收。真实登录与资料访问由独立原生网络测试验证，模拟器覆盖升级由 adb install -r 验证，没有将模拟器启动冒烟测试描述为完整实机验证。
