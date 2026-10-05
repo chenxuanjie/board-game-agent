@@ -15,7 +15,7 @@ import '../../core/models/connectivity_status.dart';
 import '../../features/settings/services/desktop_ai_settings_service.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
-import '../shared/resource_source_list.dart';
+import '../shared/resource_access_summary.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';

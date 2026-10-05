@@ -248,10 +248,18 @@ void main() {
         ),
         'rule',
       );
-      expect(requests.single.url.host, 'dav.example');
+      final authenticated = requests.singleWhere(
+        (r) => r.url.host == 'dav.example',
+      );
       expect(
-        requests.single.headers['Authorization'],
+        authenticated.headers['Authorization'],
         'Basic ${base64Encode(utf8.encode('${_newDav.username}:${_newDav.password}'))}',
+      );
+      expect(
+        requests
+            .where((r) => r.url.host != 'dav.example')
+            .every((r) => !r.headers.containsKey('Authorization')),
+        isTrue,
       );
     },
   );

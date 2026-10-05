@@ -234,6 +234,8 @@ class AppController extends ChangeNotifier {
   final Map<String, String> _resolvedAssetPaths = <String, String>{};
   Timer? _assetStatusTimer;
   Future<void>? _assetStatusRefreshFuture;
+  int _assetStatusGeneration = 0;
+  Completer<void>? _assetStatusAbort;
   Future<void>? _serviceStatusRefreshFuture;
   Future<void>? _aiServiceStatusRefreshFuture;
   int _aiServiceStatusGeneration = 0;
@@ -935,6 +937,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _controllerDisposed = true;
+    _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
     super.dispose();
   }

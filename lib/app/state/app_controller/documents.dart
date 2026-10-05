@@ -375,7 +375,10 @@ extension AppDocumentController on AppController {
         )
         .toList();
     if (successful.isNotEmpty) {
-      return successful;
+      return [
+        ...successful,
+        ..._assetSourceConfigs.where((source) => !successful.contains(source)),
+      ];
     }
     // At startup every source may still be unknown, and the first source is
     // not necessarily reachable. Try the full configured list so a healthy

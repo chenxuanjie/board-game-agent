@@ -267,6 +267,12 @@ extension AppAiConfigurationController on AppController {
         ))
           source.id,
     };
+    if (changedIds.isNotEmpty ||
+        _assetSourceConfigs.any(
+          (old) => !saved.any((source) => source.id == old.id),
+        )) {
+      _invalidateAssetAccessStatus();
+    }
     _assetSourceConfigs = saved;
     _assetSourceStatuses.removeWhere(
       (id, _) =>

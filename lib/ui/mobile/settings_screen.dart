@@ -2,7 +2,6 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
-import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -14,7 +13,7 @@ import '../../core/theme/palette_registry.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
-import '../shared/resource_source_list.dart';
+import '../shared/resource_access_summary.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';
@@ -59,7 +58,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       _selectedModel = config.model.isEmpty ? null : config.model;
       _selectedReasoningEffort = config.reasoningEffort;
       _selectedResponseSpeed = config.responseSpeed;
-      _assetSourceConfigs = widget.controller.assetSourceConfigs;
       _lastTestMessage = null;
     });
   }
@@ -95,7 +93,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _keyController;
-  late List<AssetSourceConfig> _assetSourceConfigs;
   late _AiPresetOption _selectedPreset;
   String? _selectedModel;
   AiReasoningEffort _selectedReasoningEffort = AiReasoningEffort.automatic;
@@ -123,7 +120,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     _selectedModel = config.model.trim().isEmpty ? null : config.model.trim();
     _selectedReasoningEffort = config.reasoningEffort;
     _selectedResponseSpeed = config.responseSpeed;
-    _assetSourceConfigs = widget.controller.assetSourceConfigs;
   }
 
   @override
@@ -315,11 +311,8 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                               ),
-                              child: ResourceSourceList(
-                                sources: _assetSourceConfigs,
-                                statuses: controller.assetSourceStatuses,
-                                copy: copy,
-                                checking: _isTestingAssets,
+                              child: ResourceAccessSummary(
+                                controller: controller,
                                 onReorder: _reorderSources,
                                 onEdit: _transfer.webDav == null
                                     ? null
@@ -337,8 +330,8 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                 ),
                                 title: Text(
                                   copy.localized(
-                                    '服务器与资料',
-                                    'Servers & resources',
+                                    '账号与连接',
+                                    'Account & connections',
                                   ),
                                 ),
                                 trailing: const Icon(
@@ -908,11 +901,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       } else {
         await widget.controller.saveAssetSourceConfigs(next);
       }
-      if (mounted) {
-        setState(
-          () => _assetSourceConfigs = widget.controller.assetSourceConfigs,
-        );
-      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -932,88 +920,25 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   }
 
   Future<void> _testAssets() async {
+    if (_isTestingAssets) return;
     setState(() => _isTestingAssets = true);
     try {
       await widget.controller.refreshAssetAccessStatus();
-      if (!mounted) {
-        return;
-      }
-      final statuses = widget.controller.assetSourceStatuses;
-      final lines = _assetSourceConfigs
-          .map((source) {
-            final status = statuses[source.id];
-            final stateLabel = _stateLabel(
-              status?.state,
-              widget.controller.copy,
-            );
-            return '${source.name}: $stateLabel${status == null ? '' : ' · ${status.message}'}';
-          })
-          .join('\n');
-      final hasFailure = _assetSourceConfigs.any((source) {
-        final status = statuses[source.id];
-        return status == null || status.state == ConnectivityState.failure;
-      });
-      final hasSuccess = _assetSourceConfigs.any((source) {
-        final status = statuses[source.id];
-        return status?.state == ConnectivityState.success;
-      });
-      showDialog<void>(
-        context: context,
-        animationStyle: AppMotion.menuStyle(context),
-        builder: (context) {
-          final palette = AppPalette.of(context);
-          return AlertDialog(
-            title: Text(widget.controller.copy.assetStatusDialogTitle),
-            content: Text(
-              lines,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: palette.textPrimary.withValues(alpha: 0.88),
-                height: 1.5,
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(widget.controller.copy.dialogClose),
-              ),
-            ],
-          );
-        },
-      );
+      if (!mounted) return;
+      final available =
+          widget.controller.assetConnectivityStatus.state ==
+          ConnectivityState.success;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(widget.controller.copy.assetTestDone),
-          backgroundColor: hasFailure
-              ? (hasSuccess
-                    ? AppPalette.of(context).warning
-                    : AppPalette.of(context).error)
-              : AppPalette.of(context).success,
+          content: Text(widget.controller.assetConnectivityStatus.message),
+          backgroundColor: available
+              ? AppPalette.of(context).success
+              : AppPalette.of(context).error,
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isTestingAssets = false);
-      }
+      if (mounted) setState(() => _isTestingAssets = false);
     }
-  }
-
-  String _stateLabel(ConnectivityState? state, AppCopy copy) {
-    if (state == null) {
-      return copy.localized('未检测', 'Not checked');
-    }
-    if (state == ConnectivityState.success) {
-      return copy.localized('成功', 'Available');
-    }
-    if (state == ConnectivityState.failure) {
-      return copy.localized('失败', 'Failed');
-    }
-    if (state == ConnectivityState.warning) {
-      return copy.localized('受限', 'Limited');
-    }
-    if (state == ConnectivityState.loading) {
-      return copy.localized('加载中', 'Checking');
-    }
-    return copy.localized('未检测', 'Not checked');
   }
 }
 

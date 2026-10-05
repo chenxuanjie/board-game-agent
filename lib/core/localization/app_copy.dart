@@ -160,11 +160,10 @@ class AppCopy {
   String get evidenceTitle => isChinese ? '参考来源' : 'Sources';
   String get streaming => isChinese ? '正在回答…' : 'Answering…';
   String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
-  String get assetPriorityTitle =>
-      isChinese ? '资源访问优先级' : 'Asset Source Priority';
+  String get assetPriorityTitle => isChinese ? '服务器与资料' : 'Servers & resources';
   String get assetPriorityHint => isChinese
-      ? '拖动排序，越靠上越优先使用'
-      : 'Drag to reorder. Higher items are preferred first.';
+      ? '拖动调整登录顺序，资源访问会同时尝试这些入口'
+      : 'Drag to reorder sign-in attempts. Resource access tries these entrances together.';
   String get aiStatusTitle => isChinese ? 'AI接口' : 'AI API';
   String get assetStatusTitle => isChinese ? '资源访问' : 'Assets';
   String get aiStatusDialogTitle => isChinese ? 'AI 接口状态' : 'AI API Status';

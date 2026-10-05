@@ -4,7 +4,7 @@ import '../../core/models/connectivity_status.dart';
 import '../../core/theme/app_palette.dart';
 import '../../features/library/models/asset_source_config.dart';
 
-/// Source identities and individual results, rather than an aggregate fraction.
+/// Entrance identities and individual results, used in the access detail view.
 class ResourceSourceList extends StatelessWidget {
   const ResourceSourceList({
     super.key,
@@ -14,6 +14,7 @@ class ResourceSourceList extends StatelessWidget {
     this.checking = false,
     this.onEdit,
     this.onReorder,
+    this.showDetails = false,
   });
   final List<AssetSourceConfig> sources;
   final Map<String, ConnectivityStatus> statuses;
@@ -21,6 +22,7 @@ class ResourceSourceList extends StatelessWidget {
   final bool checking;
   final ValueChanged<AssetSourceConfig>? onEdit;
   final void Function(int, int)? onReorder;
+  final bool showDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -82,9 +84,7 @@ class ResourceSourceList extends StatelessWidget {
               .split('#')
               .first
         : source.address;
-    final state = checking
-        ? ConnectivityState.loading
-        : statuses[source.id]?.state ?? ConnectivityState.unknown;
+    final state = statuses[source.id]?.state ?? ConnectivityState.unknown;
     final label = switch (state) {
       ConnectivityState.success => copy.localized('已连接', 'Connected'),
       ConnectivityState.failure => copy.localized('未连接', 'Unavailable'),
@@ -155,6 +155,31 @@ class ResourceSourceList extends StatelessWidget {
                   ],
                 ),
               ),
+              if (showDetails && statuses[source.id] != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  copy.localized(
+                    statuses[source.id]!.message,
+                    switch (statuses[source.id]!.message) {
+                      '知识库可读取' => 'Knowledge catalog is readable',
+                      '知识库目录内容无效' => 'Invalid knowledge catalog',
+                      '需要重新登录' => 'Sign in again',
+                      '没有资料访问权限' => 'Resource access denied',
+                      '找不到知识库目录' => 'Knowledge directory not found',
+                      '资料服务不可用' => 'Resource service unavailable',
+                      '连接超时' => 'Connection timed out',
+                      '地址无效' => 'Invalid address',
+                      '正在检测' => 'Checking',
+                      '未检测' => 'Not checked',
+                      '地址暂时无法访问' => 'Entrance temporarily unreachable',
+                      _ => statuses[source.id]!.message,
+                    },
+                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+                ),
+              ],
             ],
           ),
         ),

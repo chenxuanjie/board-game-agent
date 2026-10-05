@@ -27,11 +27,8 @@ class _SyncBackupCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ResourceSourceList(
-            sources: controller.assetSourceConfigs,
-            statuses: controller.assetSourceStatuses,
-            copy: copy,
-            checking: checking,
+          ResourceAccessSummary(
+            controller: controller,
             onEdit: onEditSource,
             onReorder: onReorder,
           ),
@@ -43,7 +40,7 @@ class _SyncBackupCard extends StatelessWidget {
                 key: const ValueKey('desktop-settings-test-sources'),
                 onPressed: checking ? null : onCheckSources,
                 icon: const Icon(Icons.refresh_rounded, size: 16),
-                label: Text(copy.localized('检测资料源', 'Check sources')),
+                label: Text(copy.localized('检测资源访问', 'Check resource access')),
               ),
               if (onEditSource != null &&
                   controller.assetSourceConfigs.isNotEmpty)

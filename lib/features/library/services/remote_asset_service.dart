@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 // ignore: implementation_imports
@@ -17,12 +17,14 @@ import '../models/cached_asset.dart';
 import '../models/game_resource.dart';
 import '../models/remote_asset_file.dart';
 import 'board_game_remote_layout.dart';
+import '../../../core/models/connectivity_status.dart';
 
 class RemoteAssetService {
   RemoteAssetService({
     http.Client? client,
     WebDavSettings Function()? settingsProvider,
     WebDavSettings Function(Uri)? resourceSettingsProvider,
+    this.requestTimeout = const Duration(seconds: 8),
   }) : _settingsProvider = settingsProvider,
        _resourceSettingsProvider = resourceSettingsProvider,
        _client = client ?? createDefaultAiHttpClient();
@@ -30,6 +32,7 @@ class RemoteAssetService {
   final http.Client _client;
   final WebDavSettings Function()? _settingsProvider;
   final WebDavSettings Function(Uri)? _resourceSettingsProvider;
+  final Duration requestTimeout;
 
   static const String _versionManifestFileName = '_asset_versions.json';
 
@@ -53,35 +56,24 @@ class RemoteAssetService {
       );
     }
 
-    for (final source in sources) {
-      final Uri? uri = _buildFileUri(source, remotePath);
-      if (uri == null) {
-        continue;
-      }
-      try {
-        final http.Response response = await _request(
-          'GET',
-          uri,
-        ).timeout(const Duration(seconds: 6));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          await localFile.parent.create(recursive: true);
-          await localFile.writeAsBytes(response.bodyBytes, flush: true);
-          await _saveVersionInfo(
-            remotePath: remotePath,
-            sourceId: source.id,
-            headers: response.headers,
-          );
-          return CachedAsset(
-            remotePath: remotePath,
-            localPath: localFile.path,
-            exists: true,
-            fromRemote: true,
-            sourceId: source.id,
-          );
-        }
-      } catch (_) {
-        continue;
-      }
+    final result = await _firstResponse(sources, remotePath, 'GET');
+    if (result != null) {
+      final response = result.response;
+      final source = result.source;
+      await localFile.parent.create(recursive: true);
+      await localFile.writeAsBytes(response.bodyBytes, flush: true);
+      await _saveVersionInfo(
+        remotePath: remotePath,
+        sourceId: source.id,
+        headers: response.headers,
+      );
+      return CachedAsset(
+        remotePath: remotePath,
+        localPath: localFile.path,
+        exists: true,
+        fromRemote: true,
+        sourceId: source.id,
+      );
     }
 
     if (allowCachedFallback && await localFile.exists()) {
@@ -124,24 +116,99 @@ class RemoteAssetService {
     if (!_isUsableRemotePath(remotePath)) {
       return null;
     }
-    for (final source in sources) {
-      final Uri? uri = _buildFileUri(source, remotePath);
-      if (uri == null) {
-        continue;
+    return (await _firstResponse(
+      sources,
+      remotePath,
+      'GET',
+    ))?.response.bodyBytes;
+  }
+
+  /// A real, uncached knowledge-catalog read, independent of local game data.
+  Future<ConnectivityStatus> checkAccess(
+    AssetSourceConfig source, {
+    Completer<void>? abort,
+  }) async {
+    ConnectivityStatus status(ConnectivityState state, String message) =>
+        ConnectivityStatus(
+          state: state,
+          message: message,
+          checkedAt: DateTime.now(),
+        );
+    final uri = _buildFileUri(source, 'assets/catalog.json');
+    if (uri == null) return status(ConnectivityState.failure, '地址无效');
+    try {
+      final response = await _request('GET', uri, abort: abort);
+      final message = switch (response.statusCode) {
+        401 => '需要重新登录',
+        403 => '没有资料访问权限',
+        404 => '找不到知识库目录',
+        _ => '资料服务不可用',
+      };
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return status(ConnectivityState.failure, message);
       }
-      try {
-        final http.Response response = await _request(
-          'GET',
-          uri,
-        ).timeout(const Duration(seconds: 8));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response.bodyBytes;
-        }
-      } catch (_) {
-        continue;
+      final catalog = jsonDecode(utf8.decode(response.bodyBytes));
+      if (catalog is! Map || catalog['games'] is! List) {
+        return status(ConnectivityState.failure, '知识库目录内容无效');
       }
+      return status(ConnectivityState.success, '知识库可读取');
+    } on TimeoutException {
+      return status(ConnectivityState.failure, '连接超时');
+    } on FormatException {
+      return status(ConnectivityState.failure, '知识库目录内容无效');
+    } catch (_) {
+      return status(ConnectivityState.failure, '地址暂时无法访问');
     }
-    return null;
+  }
+
+  /// Entrances share the same files: the first successful read wins. Only that
+  /// response may write the cache; aborting losing requests avoids double writes.
+  Future<_RemoteAssetResponse?> _firstResponse(
+    List<AssetSourceConfig> sources,
+    String path,
+    String method,
+  ) {
+    final seen = <Uri>{};
+    final entries = <(AssetSourceConfig, Uri)>[];
+    for (final source in sources) {
+      final uri = _buildFileUri(source, path);
+      if (uri != null && seen.add(uri)) entries.add((source, uri));
+    }
+    if (entries.isEmpty) return Future.value(null);
+    final result = Completer<_RemoteAssetResponse?>();
+    final aborts = [for (final _ in entries) Completer<void>()];
+    var remaining = entries.length;
+    for (var index = 0; index < entries.length; index++) {
+      final entry = entries[index];
+      unawaited(() async {
+        try {
+          final response = await _request(
+            method,
+            entry.$2,
+            abort: aborts[index],
+          );
+          if (!result.isCompleted &&
+              response.statusCode >= 200 &&
+              response.statusCode < 300) {
+            result.complete(_RemoteAssetResponse(entry.$1, response));
+            for (final abort in aborts) {
+              if (!abort.isCompleted) abort.complete();
+            }
+          }
+        } catch (_) {
+          // Every entrance settles independently; a failure cannot win the race.
+        } finally {
+          remaining--;
+          if (remaining == 0) {
+            if (!result.isCompleted) result.complete(null);
+            for (final abort in aborts) {
+              if (!abort.isCompleted) abort.complete();
+            }
+          }
+        }
+      }());
+    }
+    return result.future;
   }
 
   Future<String?> loadCachedOrBundledText({required String remotePath}) async {
@@ -290,29 +357,36 @@ class RemoteAssetService {
       throw ArgumentError.value(maxEntries, 'maxEntries');
     }
 
-    Object? lastError;
-    for (final AssetSourceConfig source in sources) {
-      try {
-        final List<RemoteAssetFile> files = await _listFromSource(
-          source: source,
-          remotePath: remotePath,
-          maxDepth: maxDepth,
-          maxEntries: maxEntries,
-        );
-        debugPrint(
-          '[assets] listed ${files.length} files below $remotePath from ${source.id}',
-        );
-        return files;
-      } catch (error) {
-        lastError = error;
-        debugPrint('[assets] list failed for ${source.id}: $error');
-      }
+    final result = Completer<List<RemoteAssetFile>>();
+    final aborts = [for (final _ in sources) Completer<void>()];
+    var remaining = sources.length;
+    for (var index = 0; index < sources.length; index++) {
+      unawaited(() async {
+        try {
+          final files = await _listFromSource(
+            source: sources[index],
+            remotePath: remotePath,
+            maxDepth: maxDepth,
+            maxEntries: maxEntries,
+            abort: aborts[index],
+          ).timeout(const Duration(minutes: 1));
+          if (!result.isCompleted) {
+            result.complete(files);
+            for (final abort in aborts) {
+              if (!abort.isCompleted) abort.complete();
+            }
+          }
+        } catch (_) {
+          if (!aborts[index].isCompleted) aborts[index].complete();
+          if (remaining == 1 && !result.isCompleted) {
+            result.completeError(StateError('资料目录暂时无法读取，请重试'));
+          }
+        } finally {
+          remaining--;
+        }
+      }());
     }
-
-    if (lastError != null) {
-      throw lastError;
-    }
-    return const <RemoteAssetFile>[];
+    return result.future;
   }
 
   Future<List<RemoteAssetFile>> _listFromSource({
@@ -320,6 +394,7 @@ class RemoteAssetService {
     required String remotePath,
     required int maxDepth,
     required int maxEntries,
+    required Completer<void> abort,
   }) async {
     final Uri? parsed = Uri.tryParse(source.testUrl.trim());
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
@@ -332,9 +407,9 @@ class RemoteAssetService {
         baseUri: BoardGameRemoteLayout.normalizeBaseUri(parsed),
         username: username.isEmpty ? null : username,
         password: username.isEmpty ? null : credentials.password,
-        timeout: const Duration(seconds: 8),
+        timeout: requestTimeout,
       ),
-      httpClient: _client,
+      httpClient: _EntranceListClient(_client, abort),
     );
 
     final List<RemoteAssetFile> files = <RemoteAssetFile>[];
@@ -344,6 +419,7 @@ class RemoteAssetService {
     final Set<String> visited = <String>{};
     try {
       while (pending.isNotEmpty && files.length < maxEntries) {
+        if (abort.isCompleted) throw StateError('Directory read cancelled');
         final _RemoteDirectoryRequest request = pending.removeAt(0);
         if (!visited.add(request.path)) {
           continue;
@@ -473,27 +549,15 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
-    for (final source in sources) {
-      final Uri? uri = _buildFileUri(source, remotePath);
-      if (uri == null) {
-        continue;
-      }
-      try {
-        final http.Response response = await _request(
-          'HEAD',
-          uri,
-        ).timeout(const Duration(seconds: 8));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return <String, dynamic>{
-            'sourceId': source.id,
-            'etag': response.headers['etag'],
-            'lastModified': response.headers['last-modified'],
-            'contentLength': response.headers['content-length'],
-          };
-        }
-      } catch (_) {
-        continue;
-      }
+    final result = await _firstResponse(sources, remotePath, 'HEAD');
+    if (result != null) {
+      final response = result.response;
+      return <String, dynamic>{
+        'sourceId': result.source.id,
+        'etag': response.headers['etag'],
+        'lastModified': response.headers['last-modified'],
+        'contentLength': response.headers['content-length'],
+      };
     }
     return null;
   }
@@ -565,18 +629,25 @@ class RemoteAssetService {
     return const WebDavSettings();
   }
 
-  Future<http.Response> _request(String method, Uri target) async {
-    final abort = Completer<void>();
+  Future<http.Response> _request(
+    String method,
+    Uri target, {
+    Completer<void>? abort,
+  }) async {
+    final requestAbort = Completer<void>();
+    abort?.future.then((_) {
+      if (!requestAbort.isCompleted) requestAbort.complete();
+    });
     final request =
-        http.AbortableRequest(method, target, abortTrigger: abort.future)
+        http.AbortableRequest(method, target, abortTrigger: requestAbort.future)
           ..followRedirects = false
           ..headers.addAll(_headers(target));
     try {
       return await (() async => http.Response.fromStream(
         await _client.send(request),
-      ))().timeout(const Duration(seconds: 8));
+      ))().timeout(requestTimeout);
     } finally {
-      if (!abort.isCompleted) abort.complete();
+      if (!requestAbort.isCompleted) requestAbort.complete();
     }
   }
 
@@ -590,6 +661,39 @@ class RemoteAssetService {
     );
     return <String, String>{'Authorization': 'Basic $encoded'};
   }
+}
+
+/// The shared WebDAV parser keeps owning PROPFIND/XML. This transport adapter
+/// only adds per-entrance cancellation; it never closes the shared HTTP client.
+class _EntranceListClient extends http.BaseClient {
+  _EntranceListClient(this.delegate, this.abort);
+  final http.Client delegate;
+  final Completer<void> abort;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (request is! http.Request) {
+      throw StateError('Unsupported directory request');
+    }
+    final cancellable =
+        http.AbortableRequest(
+            request.method,
+            request.url,
+            abortTrigger: abort.future,
+          )
+          ..followRedirects = false
+          ..headers.addAll(request.headers)
+          ..bodyBytes = request.bodyBytes;
+    return delegate.send(cancellable);
+  }
+
+  @override
+  void close() {}
+}
+
+class _RemoteAssetResponse {
+  const _RemoteAssetResponse(this.source, this.response);
+  final AssetSourceConfig source;
+  final http.Response response;
 }
 
 class _RemoteDirectoryRequest {

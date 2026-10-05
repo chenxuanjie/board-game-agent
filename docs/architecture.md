@@ -39,3 +39,5 @@ Windows 更新服务及安装交接位于 `lib/features/settings/services/window
 封面衔接、首屏内容入场、图片解码反馈和收藏确认图标分别在 `lib/ui/shared/game_cover_motion.dart`、`content_entrance.dart`、`image_reveal.dart`、`favorite_feedback.dart`。平台外壳只负责源位置和导航，收藏仍复用同一个 AppController 写入队列与失败回滚；不创建新业务状态或持久化格式。
 
 账号页的服务器配置现统一管理 NAS 地址、登录/WebDAV 端口与知识库目录。AccountService 负责优先级认证、稳定身份、按用户保存的安全资源凭据和派生资源配置；NasConnectionSection 是移动/桌面共享编辑器，原 ResourceConnectionScreen 只路由到账户页。详见 [账号与资源连接](resource-connections.md)。
+
+ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppController 的 service_status 并发检测、聚合状态与丢弃过期结果；RemoteAssetService 负责目录探测、资源读取竞速及取消，PROPFIND/XML 仍复用 webdav_storage。登录有序回退与资源并发入口访问是两个独立策略。
