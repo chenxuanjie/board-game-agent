@@ -12,7 +12,7 @@
 | `lib/features/library/` | 资料、资源源、WebDAV 与缓存 | 资料获取及打开前的数据处理 |
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 | AI 请求及状态模型 |
 | `lib/features/settings/` | 偏好、桌面 AI 设置与更新配置 | 设置的保存与读取 |
-| `lib/features/identity/` | 原生群晖直连认证、恢复和个人数据切换；Web 访客模式 | 公共认证包与应用业务的接线 |
+| `lib/features/identity/` | 原生群晖直连认证、恢复、个人数据切换与账号云同步；Web 访客模式 | 公共认证包与应用业务的接线 |
 | `integration_test/` | 实际 Windows 登录、安全存储、恢复与退出验证 | 仅在私有测试环境提供凭据时运行 |
 | `lib/ui/desktop/` | 桌面及宽屏 Web 的外壳、页面 | 桌面布局与交互 |
 | `lib/ui/mobile/` | Android 及窄屏 Web 的外壳、页面 | 手机布局与交互 |

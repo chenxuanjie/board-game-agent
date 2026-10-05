@@ -1,10 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:board_game_agent/features/identity/services/account_sync_store.dart';
+import 'support/account_sync_fixture.dart';
+import 'account_service_test.dart' show FixtureGateway;
+import 'package:board_game_agent/features/identity/services/account_service.dart';
+import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -533,6 +539,180 @@ void main() {
       await app.switchIdentityScope(null);
       await app.nationalDayList.load();
       expect(app.nationalDayList.slugs, [app.games.first.slug]);
+    },
+  );
+  test(
+    'account lifecycle wires automatic cloud sync, pause, resume and logout',
+    () async {
+      final app = await _app(), files = MemoryPrivateFiles();
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => files,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      final cloud = service.cloud!;
+      await cloud.synchronize();
+      expect(cloud.status, AccountCloudStatus.synced);
+      expect(await app.toggleFavorite(app.games.first), isTrue);
+      await cloud.synchronize();
+      expect(files.objects, isNotEmpty);
+      await cloud.setEnabled(false);
+      final count = files.objects.length;
+      expect(await app.toggleFavorite(app.games.last), isTrue);
+      expect(
+        await PreferencesService(
+          identityUserId: app.identityUserId,
+        ).loadFavoriteGames(),
+        hasLength(2),
+      );
+      await cloud.synchronize();
+      expect(files.objects.length, count);
+      await cloud.setEnabled(true);
+      await cloud.synchronize();
+      expect(cloud.status, AccountCloudStatus.synced, reason: cloud.error);
+      expect(files.objects.length, greaterThan(count));
+      expect(cloud.status, AccountCloudStatus.synced);
+      await service.signOut();
+      expect(service.cloud, isNull);
+      expect(app.identityUserId, isNull);
+      expect(await PreferencesService().loadFavoriteGames(), isEmpty);
+    },
+  );
+  test(
+    'cloud projection persists personal stores and excludes credentials',
+    () async {
+      final app = await _app();
+      await app.switchIdentityScope('a');
+      await app.toggleFavorite(app.games.first);
+      final prefs = PreferencesService(identityUserId: 'a');
+      await prefs.saveVoiceReplyEnabled(true);
+      final local = AccountSyncLocalStore(
+        datasetId: 'a',
+        transaction: <T>(work) => app.accountCloudTransaction<T>('a', work),
+      );
+      await local.initialize();
+      await local.capture();
+      final outbox = await local.pendingOperations(afterSequence: 0);
+      expect(outbox.any((op) => op.entityType == 'favorite'), isTrue);
+      expect(outbox.any((op) => op.entityType == 'preference'), isTrue);
+      expect(
+        outbox.every(
+          (op) =>
+              !op.canonicalJson.contains('apiKey') &&
+              !op.canonicalJson.contains('lastRun'),
+        ),
+        isTrue,
+      );
+      await app.accountCloudTransaction<void>('a', (current, project) async {
+        final projected = cloneEntities(current);
+        projected['nickname|profile'] = {'value': 'cloud nickname'};
+        projected['recent|${app.games.last.slug}'] = RecentGameRecord(
+          gameSlug: app.games.last.slug,
+          viewedAt: DateTime.utc(2026, 10, 5),
+        ).toMap();
+        projected['conversation|conversation:cloud-chat'] = {
+          'id': 'conversation:cloud-chat',
+          'title': 'From cloud',
+          'scope': 'global',
+          'opened': true,
+          'createdAt': '2026-10-05T00:00:00Z',
+          'updatedAt': '2026-10-05T00:00:00Z',
+          'messages': [
+            {
+              'role': 'user',
+              'text': 'Question',
+              'timestamp': '2026-10-05T00:00:00Z',
+            },
+          ],
+        };
+        await project(projected);
+      });
+      expect(
+        (await prefs.loadRecentGames()).single.gameSlug,
+        app.games.last.slug,
+      );
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          'identity.profile.a.nickname',
+        ),
+        'cloud nickname',
+      );
+      expect(
+        jsonDecode(
+          (await const ConversationStore(
+            browserStorage: true,
+            identityUserId: 'a',
+          ).load())!,
+        )['conversations']['conversation:cloud-chat']['title'],
+        'From cloud',
+      );
+      expect(
+        app.conversations
+            .singleWhere((chat) => chat.id == 'conversation:cloud-chat')
+            .title,
+        'From cloud',
+      );
+      await app.switchIdentityScope('b');
+      expect(
+        await PreferencesService(identityUserId: 'b').loadFavoriteGames(),
+        isEmpty,
+      );
+    },
+  );
+  test(
+    'invalid cloud preferences fail before any business store is changed',
+    () async {
+      final app = await _app();
+      await app.switchIdentityScope('a');
+      await app.toggleFavorite(app.games.first);
+      await expectLater(
+        app.accountCloudTransaction<void>('a', (current, project) async {
+          await project({
+            'preference|voice_reply_enabled': {'value': 'wrong type'},
+          });
+        }),
+        throwsFormatException,
+      );
+      expect(
+        await PreferencesService(identityUserId: 'a').loadFavoriteGames(),
+        hasLength(1),
+      );
+      expect(app.accountCloudIdle, isTrue);
+    },
+  );
+  test(
+    'account transition cancels a pending projection before adopting another scope',
+    () async {
+      final app = await _app();
+      await app.switchIdentityScope('a');
+      final entered = Completer<void>(), release = Completer<void>();
+      final transaction = app.accountCloudTransaction<void>('a', (
+        current,
+        project,
+      ) async {
+        entered.complete();
+        await release.future;
+        await project({
+          'nickname|profile': {'value': 'late value'},
+        });
+      });
+      await entered.future;
+      final rejected = expectLater(transaction, throwsStateError);
+      final transition = app.switchIdentityScope('b');
+      release.complete();
+      await rejected;
+      await transition;
+      expect(app.identityUserId, 'b');
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          'identity.profile.b.nickname',
+        ),
+        isNull,
+      );
+      expect(app.accountCloudIdle, isTrue);
     },
   );
 }

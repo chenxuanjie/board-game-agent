@@ -803,6 +803,14 @@ packages:
       relative: true
     source: path
     version: "1.0.0+beta.8"
+  sqlite3:
+    dependency: transitive
+    description:
+      name: sqlite3
+      sha256: "4c7fe79840389aaeaf05fd093f795b631b5a98e2bd28d54e555c100f4a9c7a1c"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "3.5.2"
   stack_trace:
     dependency: transitive
     description:
@@ -1001,6 +1009,13 @@ packages:
       relative: true
     source: path
     version: "0.3.0"
+  webdav_sync:
+    dependency: "direct main"
+    description:
+      path: "../shared_packages/webdav_sync"
+      relative: true
+    source: path
+    version: "0.1.0"
   webdriver:
     dependency: transitive
     description:

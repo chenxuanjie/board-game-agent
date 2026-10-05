@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/ui_tokens.dart';
 import 'account_scope.dart';
+import '../../features/identity/services/account_cloud_sync.dart';
+import '../../features/identity/services/account_service.dart';
 
 class AccountEntry extends StatelessWidget {
   const AccountEntry({super.key, required this.title});
@@ -107,11 +109,30 @@ class _AccountScreenState extends State<AccountScreen> {
     super.dispose();
   }
 
+  Future<void> _editNickname(AccountService service) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _AccountNicknameDialog(
+        nickname: service.displayName,
+        title: _text('修改昵称', 'Edit nickname'),
+        cancel: _text('取消', 'Cancel'),
+        save: _text('保存', 'Save'),
+      ),
+    );
+    if (value != null && mounted) {
+      await _run(
+        () => service.saveNickname(value),
+        _text('昵称保存失败，请重试', 'Could not save nickname. Retry.'),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = AccountScope.maybeOf(context);
     final theme = Theme.of(context), colors = Theme.of(context).colorScheme;
     final signedIn = service?.isSignedIn ?? false;
+    final cloud = service?.cloud;
     final busy = _working || (service?.isBusy ?? false);
     final otp = _otpShown || (service?.needsOtp ?? false);
     final error = _failure ?? service?.error;
@@ -189,6 +210,91 @@ class _AccountScreenState extends State<AccountScreen> {
                             ),
                           ),
                           const SizedBox(height: UiTokens.sectionGap),
+                          if (signedIn && cloud != null) ...[
+                            SwitchListTile.adaptive(
+                              key: const ValueKey('account-cloud-enabled'),
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(_text('账号云同步', 'Account cloud sync')),
+                              subtitle: Text(
+                                _text(
+                                  '收藏、浏览记录、AI 对话和个人偏好',
+                                  'Favorites, history, AI chats and preferences',
+                                ),
+                              ),
+                              value: cloud.enabled,
+                              onChanged: busy
+                                  ? null
+                                  : (value) => _run(
+                                      () => cloud.setEnabled(value),
+                                      _text(
+                                        '同步设置保存失败，请重试',
+                                        'Could not save sync setting. Retry.',
+                                      ),
+                                    ),
+                            ),
+                            Row(
+                              children: [
+                                Icon(
+                                  cloud.status == AccountCloudStatus.synced
+                                      ? Icons.cloud_done_outlined
+                                      : Icons.cloud_sync_outlined,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(switch (cloud.status) {
+                                    AccountCloudStatus.syncing => _text(
+                                      '正在同步…',
+                                      'Syncing…',
+                                    ),
+                                    AccountCloudStatus.synced => _text(
+                                      '已同步',
+                                      'Synced',
+                                    ),
+                                    AccountCloudStatus.pending => _text(
+                                      '等待重试',
+                                      'Retry needed',
+                                    ),
+                                    AccountCloudStatus.paused => _text(
+                                      '已暂停',
+                                      'Paused',
+                                    ),
+                                    AccountCloudStatus.idle => _text(
+                                      '等待同步',
+                                      'Ready to sync',
+                                    ),
+                                  }),
+                                ),
+                                TextButton(
+                                  key: const ValueKey('account-cloud-sync'),
+                                  onPressed:
+                                      !cloud.enabled ||
+                                          cloud.status ==
+                                              AccountCloudStatus.syncing
+                                      ? null
+                                      : cloud.synchronize,
+                                  child: Text(_text('立即同步', 'Sync now')),
+                                ),
+                              ],
+                            ),
+                            if (cloud.error != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Text(
+                                  cloud.error!,
+                                  style: TextStyle(color: colors.error),
+                                ),
+                              ),
+                            TextButton.icon(
+                              key: const ValueKey('account-edit-nickname'),
+                              onPressed: busy
+                                  ? null
+                                  : () => _editNickname(service!),
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              label: Text(_text('修改昵称', 'Edit nickname')),
+                            ),
+                            const SizedBox(height: UiTokens.itemGap),
+                          ],
                           if (!signedIn &&
                               service != null &&
                               service.supportsSignIn) ...[
@@ -392,4 +498,46 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
     );
   }
+}
+
+class _AccountNicknameDialog extends StatefulWidget {
+  const _AccountNicknameDialog({
+    required this.nickname,
+    required this.title,
+    required this.cancel,
+    required this.save,
+  });
+  final String nickname, title, cancel, save;
+  @override
+  State<_AccountNicknameDialog> createState() => _AccountNicknameDialogState();
+}
+
+class _AccountNicknameDialogState extends State<_AccountNicknameDialog> {
+  late final _input = TextEditingController(text: widget.nickname);
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      controller: _input,
+      maxLength: 80,
+      autofocus: true,
+      onSubmitted: (value) => Navigator.pop(context, value.trim()),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(widget.cancel),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _input.text.trim()),
+        child: Text(widget.save),
+      ),
+    ],
+  );
 }

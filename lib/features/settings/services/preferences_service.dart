@@ -102,6 +102,40 @@ class PreferencesService {
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
+  static const accountCloudPreferenceKeys = <String>{
+    _voiceReplyKey,
+    _assistantModeKey,
+    _gameAnswerModeKey,
+    _globalAnswerModeKey,
+    _globalUseCurrentGameKnowledgeKey,
+  };
+  Future<Map<String, Object>> accountCloudPreferences() async {
+    final prefs = await _prefs;
+    return {
+      for (final key in accountCloudPreferenceKeys)
+        if (prefs.get(_personalKey(key)) case final Object value) key: value,
+    };
+  }
+
+  Future<void> applyAccountCloudPreferences(Map<String, Object> values) =>
+      _trackPersonalWrite(() async {
+        final prefs = await _prefs;
+        for (final key in accountCloudPreferenceKeys) {
+          final value = values[key];
+          final boolean =
+              key == _voiceReplyKey || key == _globalUseCurrentGameKnowledgeKey;
+          if (value != null && (boolean ? value is! bool : value is! String)) {
+            throw const FormatException('个人偏好格式错误');
+          }
+          final saved = value == null
+              ? await prefs.remove(_personalKey(key))
+              : value is bool
+              ? await prefs.setBool(_personalKey(key), value)
+              : await prefs.setString(_personalKey(key), value as String);
+          if (!saved) throw StateError('个人偏好保存失败');
+        }
+      });
+
   Future<String?> loadGameVoteCache() async =>
       (await _prefs).getString(_personalKey(_gameVoteCacheKey));
 

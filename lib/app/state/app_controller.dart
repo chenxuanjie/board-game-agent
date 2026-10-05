@@ -6,6 +6,9 @@ import 'dart:io';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webdav_sync/webdav_sync.dart' show canonicalJson;
+import '../../features/identity/services/account_sync_store.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -66,6 +69,7 @@ part 'app_controller/library.dart';
 part 'app_controller/library_updates.dart';
 part 'app_controller/documents.dart';
 part 'app_controller/identity_scope.dart';
+part 'app_controller/account_cloud.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
 
@@ -139,13 +143,20 @@ class AppController extends ChangeNotifier {
   int _identityScopeEpoch = 0;
   Future<void> _identityScopeQueue = Future<void>.value();
   int _identityScopeRequests = 0;
+  Future<void>? _accountCloudWork;
+  bool _controllerDisposed = false;
+  bool get accountCloudIdle =>
+      !_controllerDisposed &&
+      !_switchingIdentityScope &&
+      !_generationStates.values.any((state) => state.isSending) &&
+      !_isListening;
   Future<void>? _initializationFuture;
   final List<Future<void>> _voiceOperations = [];
   final Set<Future<void>> _providerCleanups = {};
   bool get anonymousReactionPublishingEnabled =>
       identityUserId == null && !_switchingIdentityScope;
   String? get identityReactionSyncNotice =>
-      identityUserId == null ? null : '账号收藏和投票仅保存在本机；账号同步服务尚未配置。';
+      identityUserId == null ? null : '个人收藏通过账号云同步保存；公共排行与投票统计单独计算。';
   final RemoteGameVoteStore? Function()? _favoriteRemoteProvider;
   final String? Function()? _favoriteScopeProvider;
   GameVoteService? _favoriteStatistics;
@@ -917,10 +928,13 @@ class AppController extends ChangeNotifier {
     _aiService.dispose();
   }
 
-  void _notifyListeners() => notifyListeners();
+  void _notifyListeners() {
+    if (!_controllerDisposed) notifyListeners();
+  }
 
   @override
   void dispose() {
+    _controllerDisposed = true;
     _favoriteStatistics?.dispose();
     super.dispose();
   }

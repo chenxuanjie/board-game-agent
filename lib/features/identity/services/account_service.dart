@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_ai_client/src/default_http_client.dart';
 import '../../../app/state/app_controller.dart';
 import '../models/account_configuration.dart';
+import 'account_cloud_sync.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
@@ -17,9 +18,12 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     Future<IdentityGateway> Function(AccountConfiguration)? gatewayFactory,
     @visibleForTesting Future<void> Function(String?)? switchScope,
     @visibleForTesting bool? signInSupported,
+    @visibleForTesting
+    AccountPrivateFiles Function(IdentityGateway)? privateFilesFactory,
   }) : _controller = controller,
        _gatewayFactory = gatewayFactory,
        _switchScope = switchScope,
+       _privateFilesFactory = privateFilesFactory,
        supportsSignIn = signInSupported ?? !kIsWeb;
   static const _configurationKey =
       'board_game_agent.identity.synology.direct.configuration.v3';
@@ -27,6 +31,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   final AppController _controller;
   final Future<IdentityGateway> Function(AccountConfiguration)? _gatewayFactory;
   final Future<void> Function(String?)? _switchScope;
+  final AccountPrivateFiles Function(IdentityGateway)? _privateFilesFactory;
   AccountConfiguration? _configuration;
   IdentityController? _identity;
   IdentityGateway? _gateway;
@@ -38,6 +43,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   int _scopeGeneration = 0;
   Future<void> _scopeQueue = Future.value();
   Timer? _verificationTimer;
+  AccountCloudSync? _cloud;
+  String? _nickname;
+  AccountCloudSync? get cloud => _cloud;
   AccountConfiguration? get configuration => _configuration;
   IdentityUser? get user => _identity?.user;
   bool get isConfigured => _configuration != null;
@@ -53,7 +61,47 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   bool get dataScopeReady => !_scopeChanging && _scopeError == null;
   String? get error =>
       _scopeError ?? _setupError ?? _localizedFailure(_identity?.failure);
-  String get displayName => user?.displayName ?? user?.email ?? '群晖账号';
+  String get displayName => _nickname?.trim().isNotEmpty == true
+      ? _nickname!
+      : user?.displayName ?? user?.email ?? '群晖账号';
+  Future<void> saveNickname(String nickname) async {
+    if (user == null || isBusy || nickname.trim().length > 80) return;
+    final key = nicknameKey;
+    if (!await (await SharedPreferences.getInstance()).setString(
+      key,
+      nickname.trim(),
+    )) {
+      throw StateError('昵称保存失败');
+    }
+    if (user != null && nicknameKey == key) {
+      _nickname = nickname.trim();
+      notifyListeners();
+      await _cloud?.synchronize();
+    }
+  }
+
+  void _cloudChanged() {
+    if (_disposed) return;
+    unawaited(_refreshNickname());
+    notifyListeners();
+  }
+
+  Future<void> _refreshNickname() async {
+    final key = nicknameKey;
+    final nickname = (await SharedPreferences.getInstance()).getString(key);
+    if (!_disposed && key == nicknameKey && _nickname != nickname) {
+      _nickname = nickname;
+      notifyListeners();
+    }
+  }
+
+  void _stopCloud() {
+    _cloud?.removeListener(_cloudChanged);
+    _cloud?.dispose();
+    _cloud = null;
+    _nickname = null;
+  }
+
   String get nicknameKey => user == null
       ? 'mobile_profile_nickname'
       : 'identity.profile.${_configuration!.accountScope(user!.id)}.nickname';
@@ -142,6 +190,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     final generation = ++_scopeGeneration;
     _scopeChanging = true;
     _scopeError = null;
+    _stopCloud();
     _scopeQueue = _scopeQueue.then((_) async {
       if (_disposed || generation != _scopeGeneration) return;
       try {
@@ -149,6 +198,29 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         if (_disposed || generation != _scopeGeneration) return;
         _appliedScope = target;
         _scopeChanging = false;
+        if (target != null &&
+            (_gateway is SynologyIdentityGateway ||
+                _privateFilesFactory != null)) {
+          final files = _privateFilesFactory != null
+              ? _privateFilesFactory(_gateway!)
+              : (_gateway as SynologyIdentityGateway).privateFiles(
+                  appId: 'board_game_agent',
+                );
+          final identityId = user!.id;
+          final cloud = AccountCloudSync(
+            controller: _controller,
+            scope: target,
+            files: files,
+            isActive: () =>
+                !_disposed &&
+                user?.id == identityId &&
+                !isOffline &&
+                dataScopeReady,
+          );
+          _cloud = cloud..addListener(_cloudChanged);
+          await cloud.initialize();
+          await _refreshNickname();
+        }
       } catch (_) {
         if (!_disposed && generation == _scopeGeneration) {
           _scopeError = '账号数据切换未完成，请重试';
@@ -254,6 +326,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _disconnect() async {
+    _stopCloud();
     _verificationTimer?.cancel();
     _identity?.removeListener(_identityChanged);
     _identity?.dispose();

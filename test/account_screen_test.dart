@@ -17,6 +17,7 @@ import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'support/account_sync_fixture.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -45,6 +46,37 @@ void main() {
   });
 
   for (final width in [320.0, 640.0, 1440.0]) {
+    testWidgets('cloud controls stay usable with large text at $width', (
+      tester,
+    ) async {
+      final files = MemoryPrivateFiles();
+      final (service, _) = await _configuredService(
+        tester,
+        signedIn: true,
+        files: files,
+      );
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _mount(tester, service, textScale: 1.5);
+      expect(
+        find.byKey(const ValueKey('account-cloud-enabled')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('account-cloud-sync')), findsOneWidget);
+      await _tapAccountAction(tester, 'account-cloud-enabled');
+      await tester.pumpAndSettle();
+      expect(service.cloud?.enabled, isFalse);
+      await _tapAccountAction(tester, 'account-edit-nickname');
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'My name');
+      await tester.tap(find.text('Save'));
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(service.displayName, 'My name');
+      expect(tester.takeException(), isNull);
+      expect(files.objects, isEmpty);
+    });
     testWidgets('account hides deployment fields at $width', (tester) async {
       final service = _service();
       await tester.binding.setSurfaceSize(Size(width, 800));
@@ -358,6 +390,8 @@ MobileMineContent _mine(AppController controller) => MobileMineContent(
 
 class _MineFixture extends ChangeNotifier implements AppController {
   @override
+  bool get accountCloudIdle => false;
+  @override
   AppCopy get copy => AppCopy(AppLanguage.zhHans);
   @override
   List<GameInfo> get recentlyViewedGames => [];
@@ -378,6 +412,7 @@ Future<(AccountService, _UiGateway)> _configuredService(
   WidgetTester tester, {
   bool signedIn = false,
   bool offline = false,
+  AccountPrivateFiles? files,
 }) async {
   final result = await tester.runAsync(() async {
     final controller = _MineFixture();
@@ -390,6 +425,7 @@ Future<(AccountService, _UiGateway)> _configuredService(
       controller: controller,
       gatewayFactory: (_) async => gateway,
       switchScope: (_) async {},
+      privateFilesFactory: files == null ? null : (_) => files,
     );
     await service.saveConfiguration(
       AccountConfiguration.fromFields(nasUrl: 'https://nas.example.test:5001'),

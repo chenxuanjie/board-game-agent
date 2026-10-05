@@ -45,7 +45,10 @@ extension AppIdentityScopeController on AppController {
     _favoriteStatistics?.dispose();
     final operation = _identityScopeQueue
         .catchError((Object _) {})
-        .then((_) => _switchIdentityScopeNow(userId))
+        .then((_) async {
+          await _accountCloudWork;
+          await _switchIdentityScopeNow(userId);
+        })
         .whenComplete(() => _identityScopeRequests--);
     _identityScopeQueue = operation;
     return operation;

@@ -3,19 +3,19 @@
 2026-10-05，主项目与公共 `app_identity` 工作分支均为 `codex/synology-direct-auth`。
 旧服务方案结果保存在 `codex/synology-auth`；不得将旧构建当成本次直连构建。
 
-## 已验证
+## 直连登录基线（账号云同步改动前）
 
 - Windows 实际原生客户端：Shane 登录成功；使用应用相同的原生 HTTP 客户端直接连接 NAS，TLS 校验开启，不经过 Node / Supabase。
 - Windows 系统安全存储：真实插件写入和读取会话成功，不保存密码 / OTP；销毁并重新创建客户端后再次向 NAS 验证身份成功。
 - NAS 退出：系统存储清空；重新提交旧会话验证为未登录，旧 SID 无法恢复身份。探测使用独立临时存储命名空间并清理，没有改变正常应用个人数据。
 - 公共认证包 25 项测试通过：验证码、错误码、独立 UID 验证、重启恢复、会话撤销、UID 变化、缺少权限、安全存储失败、迟到取消结果、断网退出、超时、坏 JSON、接口路径与 origin 限制。
 - 账号页面 15 项测试通过：窄 / 中 / 宽窗口、验证码、登录退出、访客昵称、入口与 Web 隐藏登录字段。
-- 主项目完整回归 405 项测试通过，主项目及公共包静态分析无问题。三端最新构建结果见下文。
+- 主项目完整回归 405 项测试通过，主项目及公共包静态分析无问题。这是账号云同步改动前的基线。
 - Web：只读 API.Info Origin 探测没有允许本机 Web origin 的 CORS 响应头。该版本显式禁用 Web 登录；验证 Web 平台分支不创建原生网关、不发送登录凭据并保持访客身份。
 
 没有生成或交付渲染测试图片。真实 Windows 验证只断言认证与存储行为。
 
-## 本地构建
+## 直连登录基线构建
 
 已通过登记的 flutter-release-publisher 固定 `all` 流程：405 项主项目回归通过，Web / APK / Windows Release 均构建成功。
 版本保持 2.2.0+25，没有发布或上传，也没有生成新安装器。
@@ -45,3 +45,35 @@ flutter test integration_test/direct_synology_auth_test.dart -d windows
 常规 `flutter test` 不依赖 NAS 或真实凭据。localhost WebSocket 的代理绕过仅限测试进程，未修改系统代理。
 数据隔离验收包括：切换账号等待上一账号写入排空、收藏 / 最近浏览 / AI 会话不混用、退出后原访客数据保留。
 回滚同时切换主项目和公共包，见 [保存点](identity-preservation.md)。
+
+## 账号云同步验证与最新构建
+
+2026-10-05，在同一工作分支新增账号云同步，范围与实现见 [账号云同步](account-cloud-sync.md)。
+
+- 主项目完整回归 420 项通过，`app_identity` 29 项通过，`webdav_sync` 19 项通过；主项目及认证公共包静态分析无问题。
+- Windows 真实原生客户端使用 Shane 账号验证私有 home 目录：上传、第二个独立本地存储读取、删除同步、重启读取均通过。使用独立临时目录和合成数据，测试结束删除该目录并退出，没有改变已有个人文件、NAS 权限或系统配置。
+- 实际业务存储测试覆盖收藏、最近浏览、AI 会话与标题、昵称、个人偏好投影，账号隔离，以及暂停后恢复、离线重试、删除墓碑、并发对话冲突副本、损坏数据拒绝和投影失败后的恢复。
+- 固定发布工具的 `all` 流程通过：Android APK、Windows Release、Web JavaScript 均构建成功，版本仍为 2.2.0+25；未上传发布，未生成新 Windows 安装器。
+- 最新 APK：`build/app/outputs/flutter-apk/app-release.apk`，249515581 字节，apksigner v2 签名校验通过。
+- 最新 Windows Dart 产物：`build/windows/x64/runner/Release/data/app.so`，12288944 字节；分发仍需包含 EXE、DLL、插件与 data。
+- 最新 Web：`build/web/main.dart.js`，5348027 字节；Web 保持访客模式。既有 Wasm 预检与 Cupertino 字体依赖告警仍在，不声称完成 Wasm 或渲染验收。
+
+Android 尚未进行实机网络、Keystore、进程重启和跨设备同步验收。Windows 的 NAS 验证不能替代 Android 实机验收。没有生成渲染测试图片。
+
+原生 NAS 同步验证入口为 `integration_test/account_cloud_sync_test.dart`，使用私有进程环境提供测试凭据，临时目录严格限制于本应用独立测试命名空间并在结束后清理。普通单元测试无需 NAS 或凭据。
+
+## 2.2.0+26 APK / Windows 发布验证
+
+2026-10-05，已将包含当前账号登录、个人数据云同步改动的 APK 和 Windows 完整安装包推送至 WebDAV。此节取代上文构建基线中“未推送、未生成安装器”的状态；Web 本次未发布。
+
+- APK：`release/board_game_agent-2.2.0+26.apk`，249515581 字节；沿用旧版应用签名，v2 校验通过。API 36 模拟器从 build 23 覆盖安装至 26，通过启动与重启检查；独立验证清单经公共更新引擎完成发现新版、下载和完整 SHA-256 校验，回读 APK 再安装通过。
+- Windows：`release/board_game_agent-2.2.0+26-windows-x64-setup.exe`，161491344 字节，安装器版本 2.2.0.26，Authenticode 状态为 `NotSigned`。隔离 AppId、临时目录中的安装、升级、快捷方式、卸载与 AppData 保留检查通过，未改变正在使用的真实安装。
+- 主项目 420 项回归通过。公共发布工具 39 项测试与静态分析通过；认证、同步包验证沿用本节前列明的 29 / 19 项结果。
+- Windows 应用自身的更新服务从 NAS 检出 build 26，下载并完整校验安装器后才交接；此项用验收接收器替代真正启动安装器，实际安装与卸载由上面的独立 Inno 验证覆盖，避免退出当前使用中的程序。
+- 两端安装包均通过远端完整 SHA-256 校验，发布记录上传后才切换各自正式清单；再次读取远端清单及不可变发布记录，与本地逐项一致。
+
+正式更新入口为 `apps/board_game_agent/updates/manifest.json` 与 `apps/board_game_agent/updates/windows/x64/manifest.json`。两者均为 stable / 2.2.0+26。发布记录保留 `includesUncommittedChanges: true` 与应用、认证包、同步包的源文件摘要，没有把未提交功能伪称为已存在于 Git HEAD 中；本次没有额外 Git 提交。
+
+发布阻塞的处理：原生库复用本机已有缓存（SQLite 构建钩子仍校验固定 SHA-256）；运行中的 EXE 占用通过独立源文件与资源副本构建解决；MSBuild 路径长度问题使用短路径目录解决。公共发布工具新增按包大小计算的三至十五分钟请求上限，并在远端包已存在时先完整校验后复用；同大小但内容变化的不可变包会阻止清单发布，重试不再重复发送整个大文件。
+
+Android 实机登录、Keystore、真实网络切换与未知来源安装交互仍未验收，模拟器结果不能替代这些边界。没有生成渲染测试图片。Windows 尚无 Authenticode 签名。需要回滚时以更高 build 发布恢复版，保留远端历史包与发布记录。
