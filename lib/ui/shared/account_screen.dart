@@ -5,6 +5,8 @@ import 'account_scope.dart';
 import 'nas_connection_section.dart';
 import '../../features/identity/services/account_cloud_sync.dart';
 import '../../features/identity/services/account_service.dart';
+import '../../features/identity/models/account_configuration.dart';
+import 'package:app_identity/app_identity.dart';
 
 class AccountEntry extends StatelessWidget {
   const AccountEntry({super.key, required this.title});
@@ -50,6 +52,9 @@ class _AccountScreenState extends State<AccountScreen> {
   final _account = TextEditingController();
   final _password = TextEditingController();
   final _otp = TextEditingController();
+  final _customServer = TextEditingController();
+  String? _selectedServer;
+  static const _customChoice = '__custom__';
   bool _working = false, _showPassword = false, _otpShown = false;
   String? _failure;
   String _text(String zh, String en) =>
@@ -77,6 +82,10 @@ class _AccountScreenState extends State<AccountScreen> {
         account: _account.text,
         password: _password.text,
         otp: _otpShown || service.needsOtp ? _otp.text : null,
+        serverId: _selectedServer == _customChoice ? null : _selectedServer,
+        customOrigin: _selectedServer == _customChoice
+            ? Uri.parse(_customServer.text.trim())
+            : null,
       ),
       _text('登录失败，请重试。', 'Could not sign in. Retry.'),
     );
@@ -108,8 +117,24 @@ class _AccountScreenState extends State<AccountScreen> {
     _account.dispose();
     _password.dispose();
     _otp.dispose();
+    _customServer.dispose();
     super.dispose();
   }
+
+  Widget _serverLabel(NasServerAddress server) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(server.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      Text(
+        server.loginOrigin.toString(),
+        maxLines: 2,
+        softWrap: true,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ],
+  );
 
   Future<void> _editNickname(AccountService service) async {
     final value = await showDialog<String>(
@@ -138,6 +163,15 @@ class _AccountScreenState extends State<AccountScreen> {
     final busy = _working || (service?.isBusy ?? false);
     final otp = _otpShown || (service?.needsOtp ?? false);
     final error = _failure ?? service?.error;
+    final loginConfig = !signedIn && service?.supportsSignIn == true
+        ? service!.loginConfiguration
+        : null;
+    if (!signedIn &&
+        loginConfig != null &&
+        _selectedServer != _customChoice &&
+        !loginConfig.servers.any((s) => s.id == _selectedServer)) {
+      _selectedServer = loginConfig.activeServer.id;
+    }
     final fieldDecoration = InputDecoration(
       filled: true,
       fillColor: colors.surfaceContainerLow,
@@ -300,6 +334,82 @@ class _AccountScreenState extends State<AccountScreen> {
                           if (!signedIn &&
                               service != null &&
                               service.supportsSignIn) ...[
+                            DropdownButtonFormField<String>(
+                              key: ValueKey(
+                                'account-login-server-${loginConfig!.nasOrigin}',
+                              ),
+                              initialValue: _selectedServer,
+                              isExpanded: true,
+                              isDense: false,
+                              itemHeight: MediaQuery.textScalerOf(
+                                context,
+                              ).scale(72),
+                              decoration: fieldDecoration.copyWith(
+                                labelText: _text('登录网址', 'Sign-in address'),
+                              ),
+                              items: [
+                                for (final server in loginConfig.servers)
+                                  DropdownMenuItem(
+                                    value: server.id,
+                                    child: _serverLabel(server),
+                                  ),
+                                DropdownMenuItem(
+                                  value: _customChoice,
+                                  child: Text(_text('自定义网址', 'Custom address')),
+                                ),
+                              ],
+                              onChanged: busy || otp
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        if (value == _customChoice &&
+                                            _customServer.text.isEmpty) {
+                                          _customServer.text = loginConfig
+                                              .activeServer
+                                              .loginOrigin
+                                              .toString();
+                                        }
+                                        _selectedServer = value;
+                                        _failure = null;
+                                      });
+                                    },
+                            ),
+                            if (_selectedServer == _customChoice) ...[
+                              const SizedBox(height: UiTokens.itemGap),
+                              TextFormField(
+                                key: const ValueKey('account-custom-server'),
+                                controller: _customServer,
+                                readOnly: busy || otp,
+                                keyboardType: TextInputType.url,
+                                autocorrect: false,
+                                enableSuggestions: false,
+                                decoration: fieldDecoration.copyWith(
+                                  labelText: _text(
+                                    '群晖登录地址',
+                                    'Synology sign-in URL',
+                                  ),
+                                  hintText: 'https://nas.example:5001',
+                                  helperText: _text(
+                                    '登录地址，不含 friend 目录',
+                                    'Login URL without a storage folder',
+                                  ),
+                                ),
+                                validator: (value) {
+                                  try {
+                                    SynologyIdentityGateway.validateOrigin(
+                                      Uri.parse(value?.trim() ?? ''),
+                                    );
+                                    return null;
+                                  } catch (_) {
+                                    return _text(
+                                      '请输入 HTTPS 登录地址',
+                                      'Enter an HTTPS sign-in URL',
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                            const SizedBox(height: UiTokens.itemGap),
                             TextFormField(
                               key: const ValueKey('account-username'),
                               controller: _account,
@@ -436,6 +546,20 @@ class _AccountScreenState extends State<AccountScreen> {
                             const SizedBox(height: UiTokens.itemGap),
                           ],
                           if (service != null && service.supportsSignIn) ...[
+                            if (otp && !busy)
+                              TextButton(
+                                key: const ValueKey('account-cancel-otp'),
+                                onPressed: () => _run(
+                                  _cancel,
+                                  _text(
+                                    '取消未完成，请重试',
+                                    'Could not cancel. Retry.',
+                                  ),
+                                ),
+                                child: Text(
+                                  _text('取消验证', 'Cancel verification'),
+                                ),
+                              ),
                             FilledButton.icon(
                               key: ValueKey(
                                 signedIn

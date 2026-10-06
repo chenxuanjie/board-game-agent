@@ -33,6 +33,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
        supportsSignIn = signInSupported ?? !kIsWeb;
   static const _configurationKey =
       'board_game_agent.identity.synology.direct.configuration.v3';
+  static const authenticationTimeout = Duration(seconds: 3);
   final WebDavSettingsController? webDav;
   final IdentitySessionStorage Function(String)? _credentialStore;
   final Map<String, IdentitySessionStorage> _credentialStores = {};
@@ -153,6 +154,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   final Future<void> Function(String?)? _switchScope;
   final AccountPrivateFiles Function(IdentityGateway)? _privateFilesFactory;
   AccountConfiguration? _configuration;
+  AccountConfiguration? _pendingLoginConfiguration;
   IdentityController? _identity;
   IdentityGateway? _gateway;
   bool _observing = false,
@@ -167,6 +169,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   String? _nickname;
   AccountCloudSync? get cloud => _cloud;
   AccountConfiguration? get configuration => _configuration;
+  AccountConfiguration get loginConfiguration =>
+      _configuration ??
+      AccountConfiguration.fromResources(
+        sources: _controller.assetSourceConfigs,
+      );
   IdentityUser? get user => _identity?.user;
   bool get isConfigured => _configuration != null;
   bool get isSignedIn => user != null;
@@ -211,7 +218,12 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _refreshNickname() async {
     final key = nicknameKey;
-    final nickname = (await SharedPreferences.getInstance()).getString(key);
+    String? nickname;
+    try {
+      nickname = (await SharedPreferences.getInstance()).getString(key);
+    } catch (_) {
+      return; // A display-name lookup must not block an authenticated account.
+    }
     if (!_disposed && key == nicknameKey && _nickname != nickname) {
       _nickname = nickname;
       notifyListeners();
@@ -298,8 +310,12 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _gateway = gateway;
-    _identity = IdentityController(gateway: gateway)
-      ..addListener(_identityChanged);
+    _identity = IdentityController(
+      gateway: gateway,
+      requestTimeout: authenticationTimeout,
+      signInTimeout: authenticationTimeout,
+      failedSignInCleanupTimeout: const Duration(milliseconds: 500),
+    )..addListener(_identityChanged);
     if (restoreSession) await _identity!.initialize();
     _identityChanged();
     await _scopeQueue;
@@ -333,29 +349,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         if (_disposed || generation != _scopeGeneration) return;
         _appliedScope = target;
         _scopeChanging = false;
-        if (target != null &&
-            (_gateway is SynologyIdentityGateway ||
-                _privateFilesFactory != null)) {
-          final files = _privateFilesFactory != null
-              ? _privateFilesFactory(_gateway!)
-              : (_gateway as SynologyIdentityGateway).privateFiles(
-                  appId: 'board_game_agent',
-                );
-          final identityId = user!.id;
-          final cloud = AccountCloudSync(
-            controller: _controller,
-            scope: target,
-            files: files,
-            isActive: () =>
-                !_disposed &&
-                user?.id == identityId &&
-                !isOffline &&
-                dataScopeReady,
-          );
-          _cloud = cloud..addListener(_cloudChanged);
-          await cloud.initialize();
-          await _refreshNickname();
-        }
+        if (target != null) unawaited(_startCloud(target, generation));
       } catch (_) {
         if (!_disposed && generation == _scopeGeneration) {
           _scopeError = '账号数据切换未完成，请重试';
@@ -363,6 +357,49 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       }
       if (!_disposed) notifyListeners();
     });
+  }
+
+  Future<void> _startCloud(String target, int generation) async {
+    if (_disposed ||
+        generation != _scopeGeneration ||
+        user == null ||
+        _cloud != null ||
+        !dataScopeReady ||
+        !(_gateway is SynologyIdentityGateway ||
+            _privateFilesFactory != null)) {
+      return;
+    }
+    final identityId = user!.id;
+    try {
+      final files = _privateFilesFactory != null
+          ? _privateFilesFactory(_gateway!)
+          : (_gateway as SynologyIdentityGateway).privateFiles(
+              appId: 'board_game_agent',
+            );
+      final cloud = AccountCloudSync(
+        controller: _controller,
+        scope: target,
+        files: files,
+        isActive: () =>
+            !_disposed &&
+            user?.id == identityId &&
+            !isOffline &&
+            dataScopeReady,
+      );
+      _cloud = cloud..addListener(_cloudChanged);
+      await cloud.initialize().timeout(authenticationTimeout);
+      if (!_disposed && generation == _scopeGeneration) {
+        await _refreshNickname();
+      }
+    } catch (_) {
+      if (!_disposed &&
+          generation == _scopeGeneration &&
+          user?.id == identityId) {
+        _stopCloud();
+        _setupError = '已登录，云同步暂不可用，可重试连接';
+      }
+    }
+    if (!_disposed && generation == _scopeGeneration) notifyListeners();
   }
 
   Future<void> restore() async {
@@ -380,12 +417,19 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     await _identity!.restore();
     await _scopeQueue;
     await _projectResources();
+    if (user != null && dataScopeReady && _cloud == null) {
+      unawaited(
+        _startCloud(_configuration!.accountScope(user!.id), _scopeGeneration),
+      );
+    }
   }
 
   Future<void> signIn({
     required String account,
     required String password,
     String? otp,
+    String? serverId,
+    Uri? customOrigin,
   }) async {
     if (!supportsSignIn) {
       _setupError = '网页版暂不支持账号登录，可继续以访客使用';
@@ -405,14 +449,57 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _setupError = null;
     notifyListeners();
     final original = _configuration!;
+    var targetConfig = original;
+    NasServerAddress? selected;
+    if (!needsOtp) {
+      try {
+        if (customOrigin != null) {
+          SynologyIdentityGateway.validateOrigin(customOrigin);
+          final normalized = customOrigin.replace(path: '');
+          selected = original.servers
+              .where((s) => s.loginOrigin == normalized)
+              .firstOrNull;
+          if (selected == null) {
+            selected = NasServerAddress(
+              id: 'custom-login',
+              name: '自定义入口',
+              address: Uri(scheme: 'https', host: normalized.host).origin,
+              loginPort: normalized.port,
+              webDavPort: original.activeServer.webDavPort,
+            );
+            // An unknown host is a separate NAS until explicitly configured:
+            // never forward its credentials to the previous device's entrances.
+            targetConfig = AccountConfiguration(
+              nasOrigin: normalized,
+              servers: [selected],
+              storageFolder: original.storageFolder,
+              activeServerId: selected.id,
+            );
+            _pendingLoginConfiguration ??= original;
+          }
+        } else if (serverId != null) {
+          selected = original.servers.firstWhere((s) => s.id == serverId);
+        }
+      } catch (_) {
+        _setupError = '请选择有效的群晖 HTTPS 登录地址';
+        _signingIn = false;
+        notifyListeners();
+        return;
+      }
+    }
     // OTP retries stay on the NAS that issued the challenge.
-    final addresses = needsOtp ? [original.activeServer] : original.servers;
+    final addresses = needsOtp
+        ? [original.activeServer]
+        : selected != null
+        ? [selected]
+        : original.servers;
     try {
       for (final server in addresses) {
         if (_disposed || generation != _loginGeneration) return;
-        if (_gateway == null || _configuration!.activeServer.id != server.id) {
+        if (_gateway == null ||
+            _configuration!.nasOrigin != server.loginOrigin) {
           await _disconnect();
-          _configuration = original.withServer(server.id);
+          _configuration = targetConfig.withServer(server.id);
           await _connect(restoreSession: false);
         }
         if (_disposed || generation != _loginGeneration) return;
@@ -427,18 +514,27 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         if (_disposed || generation != _loginGeneration) return;
         if (isSignedIn) {
           await _persistConfiguration();
+          _pendingLoginConfiguration = null;
           if (webDav != null) {
-            await _credentials(_configuration!.accountScope(user!.id)).write(
-              jsonEncode({
-                'version': 1,
-                'userId': user!.id,
-                'environment': _configuration!.environmentId,
-                'username': account.trim(),
-                'password': password,
-              }),
-            );
-            if (_disposed || generation != _loginGeneration) return;
-            await _projectResources();
+            var credentialSaved = false;
+            try {
+              await _credentials(_configuration!.accountScope(user!.id)).write(
+                jsonEncode({
+                  'version': 1,
+                  'userId': user!.id,
+                  'environment': _configuration!.environmentId,
+                  'username': account.trim(),
+                  'password': password,
+                }),
+              );
+              credentialSaved = true;
+              if (_disposed || generation != _loginGeneration) return;
+              await _projectResources();
+            } catch (_) {
+              _setupError = credentialSaved
+                  ? '已登录，资料连接未完成，可重试连接'
+                  : '已登录，资料凭据保存失败，可重新登录再试';
+            }
           }
           return;
         }
@@ -454,8 +550,24 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       _setupError = '账号或资料连接未完成，请重试';
       if (isSignedIn) await _identity?.signOut();
       if (_identity != null) await _scopeQueue;
-      await _projectResources();
+      if (identical(targetConfig, original)) await _projectResources();
     } finally {
+      if (!_disposed &&
+          !isSignedIn &&
+          !needsOtp &&
+          !identical(targetConfig, original)) {
+        final failure = _setupError ?? _localizedFailure(_identity?.failure);
+        try {
+          await _disconnect();
+          _configuration = original;
+          await _connect(restoreSession: false);
+          await _projectResources();
+        } catch (_) {
+          _setupError = '登录连接未完成，请重试';
+        }
+        _setupError = failure ?? _setupError;
+        _pendingLoginConfiguration = null;
+      }
       _signingIn = false;
       if (!_disposed) notifyListeners();
     }
@@ -469,6 +581,14 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _identity?.cancelSignIn();
     await _scopeQueue;
+    if (needsOtp || _pendingLoginConfiguration != null) {
+      final previous = _pendingLoginConfiguration ?? _configuration!;
+      await _disconnect();
+      _configuration = previous;
+      _pendingLoginConfiguration = null;
+      await _connect(restoreSession: false);
+      _setupError = null;
+    }
     await _projectResources();
   }
 

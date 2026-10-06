@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 2.2.0+27
+version: 4.0.0+30
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
@@ -186,3 +186,11 @@ flutter:
     - assets/games/slay_the_spire/game.json
     - assets/games/slay_the_spire/manifest.json
     - assets/games/slay_the_spire/docs/local/knowledge/
+    - assets/games/durian/images/
+    - assets/games/durian/game.json
+    - assets/games/durian/manifest.json
+    - assets/games/durian/docs/local/index/
+    - assets/games/durian/docs/local/knowledge/
+    - assets/games/durian/docs/local/notes/
+    - assets/games/durian/docs/official/other/
+    - assets/games/durian/docs/official/rules/

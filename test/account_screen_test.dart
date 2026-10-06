@@ -17,6 +17,7 @@ import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'support/account_sync_fixture.dart';
 
 void main() {
@@ -390,6 +391,8 @@ MobileMineContent _mine(AppController controller) => MobileMineContent(
 );
 
 class _MineFixture extends ChangeNotifier implements AppController {
+  @override
+  List<AssetSourceConfig> get assetSourceConfigs => AssetSourceConfig.defaults;
   @override
   bool get accountCloudIdle => false;
   @override

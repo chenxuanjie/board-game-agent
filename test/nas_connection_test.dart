@@ -77,6 +77,7 @@ class _Gateway implements IdentityGateway, IdentityLocalSessionCleanup {
   IdentityFailureCode? failure;
   IdentityUser? current;
   Completer<void>? pending;
+  Completer<IdentityUser?>? verification;
   final events = StreamController<IdentityEvent>.broadcast();
   int calls = 0;
   @override
@@ -102,7 +103,8 @@ class _Gateway implements IdentityGateway, IdentityLocalSessionCleanup {
   }
 
   @override
-  Future<IdentityUser?> verifyCurrentUser() async => current;
+  Future<IdentityUser?> verifyCurrentUser() async =>
+      verification == null ? current : await verification!.future;
   @override
   Future<void> signOut() async {
     current = null;
@@ -144,6 +146,7 @@ class _Fixture {
   final credentials = <String, _Credentials>{};
   final gateways = <String, _Gateway>{};
   final attempted = <String>[];
+  bool disposed = false;
   late final dav = WebDavSettingsController(
     store: store,
     connectionTester: _Check(),
@@ -172,6 +175,8 @@ class _Fixture {
   }
 
   void dispose() {
+    if (disposed) return;
+    disposed = true;
     account.dispose();
     dav.dispose();
     app.dispose();
@@ -209,6 +214,113 @@ void main() {
     )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
   });
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'brief revalidation timeout keeps the cached account usable offline',
+    () async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      await f.start();
+      await f.account.signIn(
+        account: 'fixture',
+        password: 'synthetic-secret',
+        serverId: 'outside',
+      );
+      final gateway = f.gateways['outside.example']!;
+      gateway.verification = Completer<IdentityUser?>();
+      await f.account.restore();
+      expect(f.account.isSignedIn, isTrue);
+      expect(f.account.isOffline, isTrue);
+      expect(f.account.isBusy, isFalse);
+      expect(f.account.dataScopeReady, isTrue);
+      gateway.verification!.complete(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(f.account.isSignedIn, isTrue);
+    },
+  );
+  testWidgets(
+    'login displays configured URLs, selects one and validates custom input',
+    (tester) async {
+      final f = _Fixture(failure: null);
+      addTearDown(f.dispose);
+      await tester.runAsync(f.start);
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        AccountScope(
+          service: f.account,
+          child: MaterialApp(
+            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            home: const AccountScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final picker = find.byType(DropdownButtonFormField<String>);
+      expect(find.text('https://outside.example:5001'), findsOneWidget);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      expect(find.text('https://inside.example:5001'), findsWidgets);
+      await tester.tap(find.text('Custom address').last);
+      await tester.pumpAndSettle();
+      final custom = find.byKey(const ValueKey('account-custom-server'));
+      expect(custom, findsOneWidget);
+      await tester.enterText(custom, 'http://bad.example/friend');
+      await tester.enterText(
+        find.byKey(const ValueKey('account-username')),
+        'fixture',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('account-password')),
+        'synthetic-secret',
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('account-sign-in')));
+      await tester.tap(find.byKey(const ValueKey('account-sign-in')));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter an HTTPS sign-in URL'), findsOneWidget);
+      expect(f.gateways.values.every((g) => g.calls == 0), isTrue);
+      await tester.ensureVisible(picker);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('https://inside.example:5001').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('account-sign-in')));
+      await tester.tap(find.byKey(const ValueKey('account-sign-in')));
+      for (var attempt = 0; attempt < 40; attempt++) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        if (f.account.isSignedIn && !f.account.isBusy) break;
+      }
+      expect(f.account.isBusy, isFalse, reason: f.account.error);
+      await tester.pumpAndSettle();
+      expect(f.account.isSignedIn, isTrue);
+      expect(f.gateways['inside.example']!.calls, 1);
+      expect(f.gateways['outside.example']?.calls ?? 0, 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      f.dispose();
+    },
+  );
+  test('cancelled custom OTP restores the previous server choices', () async {
+    final f = _Fixture();
+    addTearDown(f.dispose);
+    await f.start();
+    f.gateways['custom.example'] = _Gateway(IdentityFailureCode.otpRequired);
+    await f.account.signIn(
+      account: 'fixture',
+      password: 'synthetic-secret',
+      customOrigin: Uri.parse('https://custom.example:5001'),
+    );
+    expect(f.account.needsOtp, isTrue);
+    await f.account.cancelSignIn();
+    expect(f.account.needsOtp, isFalse);
+    expect(f.account.configuration!.servers.map((s) => s.id), [
+      'inside',
+      'outside',
+    ]);
+    expect(f.account.isSignedIn, isFalse);
+  });
   test(
     'v3 migration separates ports/folder and preserves account scope across aliases',
     () {
@@ -367,6 +479,160 @@ void main() {
       expect(f.account.user!.id, 'other-verified-uid');
       expect(f.dav.saved.username, 'other');
       expect(f.credentials[scope]!.value, isNull);
+    },
+  );
+  test('explicit selection authenticates only the chosen entrance', () async {
+    final f = _Fixture();
+    addTearDown(f.dispose);
+    await f.start();
+    await f.account.signIn(
+      account: 'fixture',
+      password: 'synthetic-secret',
+      serverId: 'outside',
+    );
+    expect(f.account.isSignedIn, isTrue);
+    expect(f.gateways['inside.example']?.calls ?? 0, 0);
+    expect(f.gateways['outside.example']!.calls, 1);
+  });
+  test(
+    'custom gateway initialization failure leaves original resource addresses intact',
+    () async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      f.account.dispose();
+      f.account = AccountService(
+        controller: f.app,
+        webDav: f.dav,
+        switchScope: (_) async {},
+        credentialStore: (scope) =>
+            f.credentials.putIfAbsent(scope, _Credentials.new),
+        gatewayFactory: (config) async {
+          if (config.nasOrigin.host == 'broken.example') {
+            throw const IdentityFailure(IdentityFailureCode.storage);
+          }
+          return f.gateways.putIfAbsent(
+            config.nasOrigin.host,
+            () => _Gateway(null),
+          );
+        },
+      );
+      await f.start();
+      final original = f.account.configuration!.toJson();
+      final roots = f.app.assetSourceConfigs.map((s) => s.testUrl).toList();
+      await f.account.signIn(
+        account: 'fixture',
+        password: 'synthetic-secret',
+        customOrigin: Uri.parse('https://broken.example:5001'),
+      );
+      expect(f.account.isSignedIn, isFalse);
+      expect(f.account.isBusy, isFalse);
+      expect(f.account.configuration!.toJson(), original);
+      expect(f.app.assetSourceConfigs.map((s) => s.testUrl), roots);
+    },
+  );
+  test(
+    'optional cloud setup failure does not block the signed-in account',
+    () async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      f.account.dispose();
+      f.account = AccountService(
+        controller: f.app,
+        webDav: f.dav,
+        switchScope: (_) async {},
+        credentialStore: (scope) =>
+            f.credentials.putIfAbsent(scope, _Credentials.new),
+        gatewayFactory: (config) async =>
+            f.gateways.putIfAbsent(config.nasOrigin.host, () => _Gateway(null)),
+        privateFilesFactory: (_) => throw StateError('synthetic cloud failure'),
+      );
+      await f.start();
+      await f.account.signIn(
+        account: 'fixture',
+        password: 'synthetic-secret',
+        serverId: 'outside',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(f.account.isSignedIn, isTrue);
+      expect(f.account.dataScopeReady, isTrue);
+      expect(f.account.isBusy, isFalse);
+      expect(f.account.error, contains('已登录，云同步暂不可用'));
+      expect(f.account.resourceCredentialsReady, isTrue);
+    },
+  );
+  test(
+    'custom origin isolates its credentials and does not forward them to old entrances',
+    () async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      await f.start();
+      final previousScope = f.account.configuration!.accountScope(
+        'verified-uid',
+      );
+      await f.account.signIn(
+        account: 'fixture',
+        password: 'synthetic-secret',
+        customOrigin: Uri.parse('https://custom.example:5001'),
+      );
+      expect(f.account.isSignedIn, isTrue);
+      expect(f.account.configuration!.servers, hasLength(1));
+      expect(f.account.configuration!.nasOrigin.host, 'custom.example');
+      expect(
+        f.account.configuration!.accountScope('verified-uid'),
+        isNot(previousScope),
+      );
+      expect(
+        f.account
+            .settingsForResource(
+              Uri.parse('https://outside.example:5006/friend/a'),
+            )
+            .password,
+        isEmpty,
+      );
+      expect(f.dav.saved.baseUrl, 'https://custom.example:5006/friend/');
+    },
+  );
+  test(
+    'failed custom login restores the previous connections without saving the new host',
+    () async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      await f.start();
+      f.gateways['broken.example'] = _Gateway(
+        IdentityFailureCode.invalidCredentials,
+      );
+      final original = f.account.configuration!.toJson();
+      await f.account.signIn(
+        account: 'fixture',
+        password: 'synthetic-secret',
+        customOrigin: Uri.parse('https://broken.example:5001'),
+      );
+      expect(f.account.isSignedIn, isFalse);
+      expect(f.account.isBusy, isFalse);
+      expect(f.account.configuration!.toJson(), original);
+      expect(f.account.error, '账号或密码不正确');
+    },
+  );
+  test(
+    'resource credential persistence failure does not revoke successful authentication',
+    () async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      await f.start();
+      f.credentials[f.account.configuration!.accountScope(
+        'verified-uid',
+      )] = _Credentials()
+        ..fail = true;
+      await f.account.signIn(
+        account: 'fixture',
+        password: 'synthetic-secret',
+        serverId: 'outside',
+      );
+      expect(f.account.isSignedIn, isTrue);
+      expect(f.account.dataScopeReady, isTrue);
+      expect(f.account.isBusy, isFalse);
+      expect(f.account.resourceCredentialsReady, isFalse);
+      expect(f.account.error, contains('已登录，资料凭据保存失败'));
     },
   );
   test(

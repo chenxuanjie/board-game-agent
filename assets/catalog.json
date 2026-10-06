@@ -126,6 +126,12 @@
       "order": 210,
       "enabled": true,
       "browseCategories": ["strategy", "cooperative"]
+    },
+    {
+      "slug": "durian",
+      "order": 220,
+      "enabled": true,
+      "browseCategories": ["family", "party"]
     }
   ]
 }
