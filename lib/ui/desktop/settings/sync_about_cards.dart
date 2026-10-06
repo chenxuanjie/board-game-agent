@@ -66,11 +66,13 @@ class _AboutUpdatesCard extends StatelessWidget {
     required this.controller,
     required this.version,
     required this.onOpenAbout,
+    required this.onCheckUpdates,
   });
 
   final AppController controller;
   final Future<String> version;
   final VoidCallback onOpenAbout;
+  final VoidCallback onCheckUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -105,18 +107,23 @@ class _AboutUpdatesCard extends StatelessWidget {
           SizedBox(height: _px(context, 11)),
           Row(
             children: <Widget>[
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: const ValueKey<String>('desktop-settings-check-updates'),
-                  onPressed: onOpenAbout,
-                  icon: Icon(
-                    Icons.system_update_alt_rounded,
-                    size: _px(context, 17),
+              if (!kIsWeb)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey<String>(
+                      'desktop-settings-check-updates',
+                    ),
+                    onPressed: onCheckUpdates,
+                    icon: Icon(
+                      Icons.system_update_alt_rounded,
+                      size: _px(context, 17),
+                    ),
+                    label: Text(
+                      copy.localized('检查 Windows 更新', 'Check Windows updates'),
+                    ),
+                    style: _settingsButtonStyle(context),
                   ),
-                  label: Text(copy.localized('检查更新', 'Check for updates')),
-                  style: _settingsButtonStyle(context),
                 ),
-              ),
               SizedBox(width: _px(context, 9)),
               Expanded(
                 child: FilledButton.icon(

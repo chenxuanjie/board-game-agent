@@ -17,7 +17,7 @@ import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
-import 'features/settings/services/windows_update_service.dart';
+import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
@@ -252,6 +252,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                     transferService: _transferService,
                     initialPage: 'rankings',
                     onOpenAbout: _openAbout,
+                    onCheckUpdates: () => _openAbout(checkOnOpen: true),
                   )
                 : GameRankingScreen(
                     controller: widget.controller,
@@ -317,6 +318,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   webDavSettingsController: widget.updateSettingsController,
                   transferService: _transferService,
                   onOpenAbout: _openAbout,
+                  onCheckUpdates: () => _openAbout(checkOnOpen: true),
                 );
               }
               return HomeScreen(
@@ -364,19 +366,24 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     });
   }
 
-  Future<void> _openAbout() async {
+  Future<void> _openAbout({bool checkOnOpen = false}) async {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
     await navigator.push<void>(
       MaterialPageRoute<void>(
         builder: (_) => AppAboutPage(
-          config: const AppAboutConfig(
+          checkOnOpen: checkOnOpen,
+          config: AppAboutConfig(
             appName: '桌游导师',
             subtitle: '桌游入口与统一 AI 助手',
-            appIcon: _BoardGameAppMark(),
-            fallbackVersion: '1.0.0',
-            fallbackBuild: '7',
-            updateCheckSubtitle: '检查应用新版本',
+            appIcon: const _BoardGameAppMark(),
+            fallbackVersion: '版本不可用',
+            fallbackBuild: '—',
+            showUpdate: boardGameUpdateTarget != null,
+            updateCheckSubtitle:
+                boardGameUpdateTarget == AppUpdateTarget.windows
+                ? '检查 Windows 安装包更新'
+                : '检查 Android 安装包更新',
           ),
           updateService: _createUpdateService(),
         ),
@@ -384,31 +391,33 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     );
   }
 
-  AppUpdateService _createUpdateService() {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-      return createWindowsUpdateService(
-        settingsProvider: () => widget.updateSettingsController.saved,
-        beforeInstall: () async {
-          if (_transferService.isBusy) {
-            throw StateError('设置正在保存，请完成后重试');
-          }
-          await widget.controller.prepareForAppUpdate();
-        },
-        onInstallerLaunched: () => windowManager.destroy(),
-      );
+  List<WebDavSettings> _updateConnections() {
+    final accounts = widget.accountService;
+    final config = accounts?.configuration;
+    if (config != null && accounts!.resourceCredentialsReady) {
+      return [
+        for (final server in config.servers)
+          accounts.settingsForResource(server.webDavRoot(config.storageFolder)),
+      ];
     }
-    return createWebDavAndroidUpdateService(
-      settingsProvider: () => widget.updateSettingsController.saved,
-      config: const WebDavAndroidUpdateConfig(
-        appId: 'board_game_agent',
-        manifestPath: BoardGameRemoteLayout.updateManifestPath,
-        fallbackVersion: '1.0.0',
-        fallbackBuild: 7,
-        directoryName: 'board_game_agent_updates',
-      ),
-    );
+    return [widget.updateSettingsController.saved];
   }
 
+  AppUpdateService _createUpdateService() => createBoardGameUpdateService(
+    settingsProvider: () => widget.updateSettingsController.saved,
+    settingsCandidates: _updateConnections,
+    beforeInstall: () async {
+      if (_transferService.isBusy) {
+        throw AppUpdateFailure('设置正在保存，请完成后重试');
+      }
+      try {
+        await widget.controller.prepareForAppUpdate();
+      } catch (_) {
+        throw AppUpdateFailure('请结束正在进行的操作，再重试更新');
+      }
+    },
+    onWindowsInstallerLaunched: () => windowManager.destroy(),
+  );
   void _handleControllerChange() {
     if (mounted) {
       setState(() {});

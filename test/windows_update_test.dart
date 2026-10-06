@@ -12,7 +12,6 @@ import 'package:remote_update/remote_update.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/library/services/board_game_remote_layout.dart';
-import 'package:board_game_agent/features/settings/services/windows_update_installer.dart';
 import 'package:board_game_agent/features/settings/services/windows_update_service_io.dart';
 
 void main() {

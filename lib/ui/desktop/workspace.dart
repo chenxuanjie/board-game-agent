@@ -35,6 +35,7 @@ class DesktopWorkspace extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.webDavSettingsController,
     this.transferService,
     this.enableNativeWindowControls = true,
@@ -42,6 +43,7 @@ class DesktopWorkspace extends StatefulWidget {
   });
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final WebDavSettingsController? webDavSettingsController;
   final SettingsTransferService? transferService;
   final bool enableNativeWindowControls;
@@ -689,6 +691,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                 webDavSettingsController:
                                     widget.webDavSettingsController,
                                 onOpenAbout: widget.onOpenAbout,
+                                onCheckUpdates: widget.onCheckUpdates,
                               ),
                               _ => SizedBox(
                                 height: 500,

@@ -265,6 +265,7 @@ Future<void> _mount(
   AppController controller,
   Size size, {
   VoidCallback? onOpenAbout,
+  VoidCallback? onCheckUpdates,
   bool settle = true,
   WebDavSettingsController? webDavSettingsController,
   TextScaler textScaler = TextScaler.noScaling,
@@ -285,6 +286,7 @@ Future<void> _mount(
           controller: controller,
           webDavSettingsController: webDavSettingsController,
           onOpenAbout: onOpenAbout ?? () {},
+          onCheckUpdates: onCheckUpdates,
           enableNativeWindowControls: false,
         ),
       ),

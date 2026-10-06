@@ -28,7 +28,7 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 
 资料源连接编辑共用 `lib/ui/shared/resource_connection_screen.dart`，手机设置与桌面资料源均可进入。地址和账号保存沿用 `SettingsTransferService` 的安全存储、资料源持久化与失败回滚，保存后用于真实资源请求和更新检查。初始连接、旧地址迁移与发布注入见 [可编辑资源连接](resource-connections.md)。
 
-Windows 更新服务及安装交接位于 `lib/features/settings/services/windows_update_service*.dart` 与 `windows_update_installer.dart`，复用现有关于页、启动提示和共享下载校验器。Android 的原服务保持原接线。独立清单、安装目录和数据保留约束见 [Windows 应用内更新](windows-updates.md)。
+原生更新入口由 `board_game_app_update_service*.dart` 按真实运行平台选择。两端检查、下载与错误恢复均复用 `app_about.WebDavAppUpdateService`，关于页与启动提示复用 `AppUpdateContent`。`remote_update` 提供校验状态机及 Android/Windows 安装适配，`remote_update_webdav` 负责清单和下载源；项目 Windows 文件仅保留兼容包装和应用保存/退出回调。独立清单、安装目录和数据保留约束见 [Windows 应用内更新](windows-updates.md)。
 
 `AppController` 和部分桌面界面使用 Dart `part` 文件。`part` 只是把一个 library 的代码分到多个文件，仍共享私有状态；不要把文件移动误认为已经拆开职责。大型 AI 流程或页面如需继续拆分，应单独调整状态边界并验证行为，而不是仅按行数分文件。
 

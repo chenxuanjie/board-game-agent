@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/theme/app_motion.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -38,6 +39,7 @@ class DesktopSettingsPane extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.webDavSettingsController,
     this.focusAiSettings = false,
     this.transferService,
@@ -46,6 +48,7 @@ class DesktopSettingsPane extends StatefulWidget {
   final AppController controller;
   final bool focusAiSettings;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final WebDavSettingsController? webDavSettingsController;
   final SettingsTransferService? transferService;
 
@@ -460,6 +463,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           controller: widget.controller,
           version: _version,
           onOpenAbout: widget.onOpenAbout,
+          onCheckUpdates: widget.onCheckUpdates ?? widget.onOpenAbout,
         ),
       ];
 

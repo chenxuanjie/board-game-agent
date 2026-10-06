@@ -15,6 +15,30 @@ class _DesktopSettingsTestContext {
 }
 
 void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
+  testWidgets(
+    'desktop Windows update shortcut invokes the check action separately from About',
+    (tester) async {
+      var checks = 0, about = 0;
+      await _mount(
+        tester,
+        context.controller,
+        const Size(1280, 800),
+        onCheckUpdates: () => checks++,
+        onOpenAbout: () => about++,
+      );
+      await _navigate(tester, '设置');
+      final update = find.byKey(
+        const ValueKey('desktop-settings-check-updates'),
+      );
+      await tester.ensureVisible(update);
+      await tester.tap(update);
+      await tester.pumpAndSettle();
+      expect(checks, 1);
+      expect(about, 0);
+      expect(find.text('检查 Windows 更新'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('settings keeps AI configuration inline and invokes About', (
     tester,
   ) async {
