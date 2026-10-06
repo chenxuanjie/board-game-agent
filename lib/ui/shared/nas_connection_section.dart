@@ -4,7 +4,7 @@ import '../../features/identity/models/account_configuration.dart';
 import '../../features/identity/services/account_service.dart';
 import '../../core/theme/ui_tokens.dart';
 
-/// Public connection options. Authentication credentials only appear at sign-in.
+/// Public connection options shared by sign-in and guest resource access.
 class NasConnectionSection extends StatefulWidget {
   const NasConnectionSection({
     super.key,
@@ -140,7 +140,10 @@ class _NasConnectionSectionState extends State<NasConnectionSection> {
       maintainState: true,
       title: Text(_text('服务器与资料', 'Servers & resources')),
       subtitle: Text(
-        _text('登录和资料共用地址与账号', 'Shared addresses and sign-in account'),
+        _text(
+          '登录与知识库共用服务器地址',
+          'Shared server addresses for sign-in and resources',
+        ),
       ),
       children: [
         Form(
@@ -336,16 +339,23 @@ class _NasConnectionSectionState extends State<NasConnectionSection> {
               ),
               const SizedBox(height: UiTokens.itemGap),
               Text(
-                service.resourceCredentialsReady
+                service.resourceCredentialsReady && service.isSignedIn
                     ? _text(
                         '资料访问使用当前登录账号',
                         'Resources use your signed-in account',
                       )
+                    : service.resourceCredentialsReady
+                    ? _text(
+                        '资料访问使用独立 WebDAV 凭据',
+                        'Resources use separate WebDAV credentials',
+                      )
                     : _text(
-                        service.isSignedIn ? '请重新登录以连接资料' : '登录后自动连接资料',
+                        service.isSignedIn
+                            ? '请重新登录以连接资料'
+                            : '可登录账号或配置独立 WebDAV 凭据',
                         service.isSignedIn
                             ? 'Sign in again to connect resources'
-                            : 'Sign in to connect resources',
+                            : 'Sign in or set separate WebDAV credentials',
                       ),
                 style: Theme.of(context).textTheme.bodySmall,
               ),

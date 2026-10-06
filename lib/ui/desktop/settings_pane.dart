@@ -448,17 +448,18 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           onSelectTheme: (ColorSchemeOption scheme) =>
               unawaited(_save(() => widget.controller.setColorScheme(scheme))),
         ),
-        _SyncBackupCard(
-          onEditSource: _transfer.webDav == null
-              ? null
-              : _editResourceConnection,
-          transferMenu: _transferMenu(ConfigurationScope.webDav),
-          controller: widget.controller,
-          settingsController: widget.webDavSettingsController,
-          checking: _checkingSources,
-          onReorder: _reorderSources,
-          onCheckSources: _checkResourceSources,
-        ),
+        if (AccountScope.maybeOf(context) == null)
+          _SyncBackupCard(
+            onEditSource: _transfer.webDav == null
+                ? null
+                : _editResourceConnection,
+            transferMenu: _transferMenu(ConfigurationScope.webDav),
+            controller: widget.controller,
+            settingsController: widget.webDavSettingsController,
+            checking: _checkingSources,
+            onReorder: _reorderSources,
+            onCheckSources: _checkResourceSources,
+          ),
         _AboutUpdatesCard(
           controller: widget.controller,
           version: _version,

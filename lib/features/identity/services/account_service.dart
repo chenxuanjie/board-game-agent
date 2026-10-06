@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 import 'package:crypto/crypto.dart';
@@ -35,24 +36,29 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       'board_game_agent.identity.synology.direct.configuration.v3';
   static const authenticationTimeout = Duration(seconds: 3);
   final WebDavSettingsController? webDav;
+  AppController get controller => _controller;
+  String get _guestResourceScope => 'guest_${_configuration!.environmentId}';
   final IdentitySessionStorage Function(String)? _credentialStore;
   final Map<String, IdentitySessionStorage> _credentialStores = {};
   Future<void> _resourceQueue = Future.value();
   bool _signingIn = false;
   String? _resourceUserId;
+  bool _resourceProjectionReady = false;
   int _loginGeneration = 0;
   IdentitySessionStorage _credentials(String scope) =>
       _credentialStores.putIfAbsent(
         scope,
         () =>
             _credentialStore?.call(scope) ??
-            SecureIdentitySessionStorage(
-              appId: 'board_game_agent_resources',
-              environment: scope,
-            ),
+            (scope.startsWith('guest_')
+                ? _GuestResourceCredentialStorage(scope)
+                : SecureIdentitySessionStorage(
+                    appId: 'board_game_agent_resources',
+                    environment: scope,
+                  )),
       );
   bool get resourceCredentialsReady =>
-      isSignedIn &&
+      _resourceProjectionReady &&
       _resourceUserId == user?.id &&
       webDav?.saved.username.isNotEmpty == true &&
       webDav?.saved.password.isNotEmpty == true;
@@ -74,6 +80,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     if (webDav == null || _configuration == null) return Future.value();
     final work = _resourceQueue.then((_) async {
       if (_disposed) return;
+      _resourceProjectionReady = false;
       final config = _configuration!;
       final identity = user;
       final generation = _loginGeneration;
@@ -84,6 +91,15 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           final value = jsonDecode(raw) as Map<String, dynamic>;
           if (value['userId'] == identity.id &&
               value['environment'] == config.environmentId) {
+            username = value['username'] as String;
+            password = value['password'] as String;
+          }
+        }
+      } else {
+        final raw = await _credentials(_guestResourceScope).read();
+        if (raw != null) {
+          final value = jsonDecode(raw) as Map<String, dynamic>;
+          if (value['environment'] == config.environmentId) {
             username = value['username'] as String;
             password = value['password'] as String;
           }
@@ -105,11 +121,67 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           password: password,
         ),
       );
-      _resourceUserId = identity?.id;
       await _controller.saveAssetSourceConfigs(config.resourceSources);
+      if (!_disposed &&
+          generation == _loginGeneration &&
+          user?.id == identity?.id &&
+          identical(config, _configuration)) {
+        _resourceUserId = identity?.id;
+        _resourceProjectionReady = true;
+      }
     });
     _resourceQueue = work.catchError((Object _) {});
     return work;
+  }
+
+  /// Resource credentials do not create an identity or enable personal sync.
+  /// Keep them separate from authenticated users and bound to the NAS device.
+  Future<void> saveGuestResourceCredentials({
+    required String username,
+    required String password,
+  }) async {
+    if (isBusy || isSignedIn || _configuration == null || webDav == null) {
+      throw StateError('请先退出账号并等待连接完成');
+    }
+    if (username.trim().isEmpty != password.isEmpty) {
+      throw ArgumentError('请填写账号和密码，或同时清空');
+    }
+    _initializing = true;
+    ++_loginGeneration;
+    notifyListeners();
+    final store = _credentials(_guestResourceScope);
+    String? previous;
+    bool captured = false;
+    try {
+      previous = await store.read();
+      captured = true;
+      if (username.trim().isEmpty) {
+        await store.delete();
+      } else {
+        await store.write(
+          jsonEncode({
+            'version': 1,
+            'environment': _configuration!.environmentId,
+            'username': username.trim(),
+            'password': password,
+          }),
+        );
+      }
+      await _projectResources();
+    } catch (_) {
+      if (captured) {
+        if (previous == null) {
+          await store.delete();
+        } else {
+          await store.write(previous);
+        }
+        await _projectResources();
+      }
+      rethrow;
+    } finally {
+      _initializing = false;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   Future<void> _persistConfiguration() async {
@@ -327,7 +399,10 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   void _identityChanged() {
     if (_disposed) return;
-    if (_resourceUserId != user?.id) _resourceUserId = null;
+    if (_resourceUserId != user?.id) {
+      _resourceUserId = null;
+      _resourceProjectionReady = false;
+    }
     final target = user == null ? null : _configuration!.accountScope(user!.id);
     if (target != _requestedScope ||
         target != _appliedScope && !_scopeChanging) {
@@ -626,6 +701,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         throw StateError('Configuration persistence failed');
       }
       _configuration = next;
+      _resourceProjectionReady = false;
       _setupError = null;
       if (_identity == null && supportsSignIn) await _connect();
       await _projectResources();
@@ -653,6 +729,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> clearConfiguration() async {
     if (isBusy || isSignedIn) throw StateError('请先退出账号');
+    if (_configuration != null) {
+      await _credentials(_guestResourceScope).delete();
+    }
     await _disconnect();
     final prefs = await SharedPreferences.getInstance();
     if (!await prefs.remove(_configurationKey)) {
@@ -660,6 +739,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
     _configuration = null;
     _resourceUserId = null;
+    _resourceProjectionReady = false;
     if (webDav != null) {
       await webDav!.saveConfiguration(const WebDavSettings());
     }
@@ -713,4 +793,38 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_disconnect());
     super.dispose();
   }
+}
+
+/// Cross-platform resource-only storage. DSM sessions continue to use the
+/// native-only app_identity store; Web uses flutter_secure_storage's WebCrypto.
+final class _GuestResourceCredentialStorage implements IdentitySessionStorage {
+  _GuestResourceCredentialStorage(String scope)
+    : _key = 'board_game_agent.resources.v1.$scope';
+  final String _key;
+  final _storage = const FlutterSecureStorage();
+  Future<void> _tail = Future.value();
+
+  Future<T> _run<T>(Future<T> Function() operation) {
+    var expired = false;
+    final work = _tail.then((_) {
+      if (expired) throw StateError('Resource credential storage timed out');
+      return operation();
+    });
+    _tail = work.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return work.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        expired = true;
+        throw StateError('Resource credential storage timed out');
+      },
+    );
+  }
+
+  @override
+  Future<String?> read() => _run(() => _storage.read(key: _key));
+  @override
+  Future<void> write(String value) =>
+      _run(() => _storage.write(key: _key, value: value));
+  @override
+  Future<void> delete() => _run(() => _storage.delete(key: _key));
 }

@@ -80,13 +80,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     );
     if (mounted) {
       _importApplied();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.controller.copy.localized('连接设置已保存', 'Connection saved'),
-          ),
-        ),
-      );
     }
   }
 
@@ -273,80 +266,83 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      _SectionCard(
-                        palette: palette,
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                16,
-                                16,
-                                10,
+                      if (AccountScope.maybeOf(context) == null)
+                        _SectionCard(
+                          palette: palette,
+                          padding: EdgeInsets.zero,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  16,
+                                  16,
+                                  10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.storage_rounded,
+                                      color: palette.primary,
+                                      size: 22,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        copy.assetPriorityTitle,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                    ),
+                                    if (_transfer.webDav != null)
+                                      _transferMenu(ConfigurationScope.webDav),
+                                  ],
+                                ),
                               ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.storage_rounded,
-                                    color: palette.primary,
-                                    size: 22,
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: ResourceAccessSummary(
+                                  controller: controller,
+                                  onReorder: _reorderSources,
+                                  onEdit: _transfer.webDav == null
+                                      ? null
+                                      : _editResourceConnection,
+                                ),
+                              ),
+                              if (_transfer.webDav != null)
+                                ListTile(
+                                  key: const ValueKey(
+                                    'mobile-settings-webdav-connection',
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      copy.assetPriorityTitle,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
+                                  leading: Icon(
+                                    Icons.cloud_outlined,
+                                    color: palette.primary,
+                                  ),
+                                  title: Text(
+                                    copy.localized(
+                                      '账号与连接',
+                                      'Account & connections',
                                     ),
                                   ),
-                                  if (_transfer.webDav != null)
-                                    _transferMenu(ConfigurationScope.webDav),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: ResourceAccessSummary(
-                                controller: controller,
-                                onReorder: _reorderSources,
-                                onEdit: _transfer.webDav == null
-                                    ? null
-                                    : _editResourceConnection,
-                              ),
-                            ),
-                            if (_transfer.webDav != null)
-                              ListTile(
-                                key: const ValueKey(
-                                  'mobile-settings-webdav-connection',
-                                ),
-                                leading: Icon(
-                                  Icons.cloud_outlined,
-                                  color: palette.primary,
-                                ),
-                                title: Text(
-                                  copy.localized(
-                                    '账号与连接',
-                                    'Account & connections',
+                                  trailing: const Icon(
+                                    Icons.chevron_right_rounded,
                                   ),
+                                  onTap: _editResourceConnection,
                                 ),
-                                trailing: const Icon(
-                                  Icons.chevron_right_rounded,
-                                ),
-                                onTap: _editResourceConnection,
+                              TextButton.icon(
+                                onPressed: _isTestingAssets
+                                    ? null
+                                    : _testAssets,
+                                icon: const Icon(Icons.network_check_rounded),
+                                label: Text(copy.assetTest),
                               ),
-                            TextButton.icon(
-                              onPressed: _isTestingAssets ? null : _testAssets,
-                              icon: const Icon(Icons.network_check_rounded),
-                              label: Text(copy.assetTest),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 12),
                       SettingsSectionFocus(
                         reveal: widget.focusAiSettings,

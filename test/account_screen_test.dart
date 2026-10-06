@@ -4,6 +4,7 @@ import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_copy.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/core/models/connectivity_status.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/features/assistant/models/ai_conversation.dart';
@@ -366,7 +367,7 @@ Future<void> _mount(
     AccountScope(
       service: service,
       child: MaterialApp(
-        theme: theme,
+        theme: theme ?? AppTheme.buildTheme(PaletteRegistry.classic),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
@@ -391,6 +392,9 @@ MobileMineContent _mine(AppController controller) => MobileMineContent(
 );
 
 class _MineFixture extends ChangeNotifier implements AppController {
+  @override
+  ConnectivityStatus get assetConnectivityStatus =>
+      ConnectivityStatus.unknown();
   @override
   List<AssetSourceConfig> get assetSourceConfigs => AssetSourceConfig.defaults;
   @override

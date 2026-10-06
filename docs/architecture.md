@@ -41,3 +41,5 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 账号页的服务器配置现统一管理 NAS 地址、登录/WebDAV 端口与知识库目录。AccountService 负责优先级认证、稳定身份、按用户保存的安全资源凭据和派生资源配置；NasConnectionSection 是移动/桌面共享编辑器，原 ResourceConnectionScreen 只路由到账户页。详见 [账号与资源连接](resource-connections.md)。
 
 ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppController 的 service_status 并发检测、聚合状态与丢弃过期结果；RemoteAssetService 负责目录探测、资源读取竞速及取消，PROPFIND/XML 仍复用 webdav_storage。登录有序回退与资源并发入口访问是两个独立策略。
+
+账户知识库区位于 `lib/ui/shared/account_resources_section.dart`，集中状态、检测、连接配置与免登录 WebDAV 凭据操作。`AccountScreen` 负责宽屏双栏和窄屏纵向分区；资源投影与按 NAS 隔离的访客安全凭据仍由同一 `AccountService` 管理。
