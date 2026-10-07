@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/ui_tokens.dart';
@@ -5,6 +6,7 @@ import 'account_scope.dart';
 import 'account_resources_section.dart';
 import '../../features/identity/services/account_cloud_sync.dart';
 import '../../features/identity/services/account_service.dart';
+import '../../features/identity/services/saved_login_store.dart';
 import '../../features/identity/models/account_configuration.dart';
 import 'package:app_identity/app_identity.dart';
 
@@ -55,9 +57,36 @@ class _AccountScreenState extends State<AccountScreen> {
   String? _selectedServer;
   static const _customChoice = '__custom__';
   bool _working = false, _showPassword = false, _otpShown = false;
+  bool _savePassword = false, _credentialsEdited = false;
+  String? _formEnvironment, _prefilledUsername;
+  AccountService? _historyService;
   String? _failure;
   String _text(String zh, String en) =>
       Localizations.localeOf(context).languageCode == 'en' ? en : zh;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final service = AccountScope.maybeOf(context);
+    if (service != null && service != _historyService) {
+      _historyService = service;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(service.loadSavedLogins());
+      });
+    }
+  }
+
+  void _fillSavedLogin(SavedLogin entry, AccountService service) {
+    _account.text = entry.username;
+    _password.text = entry.password ?? '';
+    _savePassword = entry.hasPassword;
+    _prefilledUsername = entry.username;
+    _showPassword = false;
+    if (service.configuration!.servers.any((s) => s.id == entry.serverId)) {
+      _selectedServer = entry.serverId;
+    }
+  }
+
   Future<void> _run(Future<void> Function() operation, String failure) async {
     if (_working || AccountScope.maybeOf(context)?.isBusy == true) return;
     setState(() {
@@ -80,6 +109,7 @@ class _AccountScreenState extends State<AccountScreen> {
       () => service.signIn(
         account: _account.text,
         password: _password.text,
+        savePassword: _savePassword,
         otp: _otpShown || service.needsOtp ? _otp.text : null,
         serverId: _selectedServer == _customChoice ? null : _selectedServer,
         customOrigin: _selectedServer == _customChoice
@@ -91,6 +121,8 @@ class _AccountScreenState extends State<AccountScreen> {
     if (!mounted) return;
     if (service.isSignedIn) {
       _password.clear();
+      _prefilledUsername = null;
+      _credentialsEdited = false;
       _otp.clear();
       TextInput.finishAutofillContext(shouldSave: false);
     }
@@ -165,6 +197,23 @@ class _AccountScreenState extends State<AccountScreen> {
     final loginConfig = !signedIn && service?.supportsSignIn == true
         ? service!.loginConfiguration
         : null;
+    if (loginConfig != null && !otp) {
+      if (_formEnvironment != loginConfig.environmentId) {
+        if (_formEnvironment != null) {
+          _account.clear();
+          _password.clear();
+          _savePassword = false;
+          _credentialsEdited = false;
+          _prefilledUsername = null;
+        }
+        _formEnvironment = loginConfig.environmentId;
+      }
+      if (!_credentialsEdited &&
+          _prefilledUsername == null &&
+          service!.savedLogins.isNotEmpty) {
+        _fillSavedLogin(service.savedLogins.first, service);
+      }
+    }
     if (!signedIn &&
         loginConfig != null &&
         _selectedServer != _customChoice &&
@@ -223,8 +272,8 @@ class _AccountScreenState extends State<AccountScreen> {
                             : _text('已登录', 'Signed in'))
                       : !service.supportsSignIn
                       ? _text(
-                          '网页版暂不支持账号登录，可继续以访客使用。',
-                          'Web sign-in is unavailable. You can continue as a guest.',
+                          '网页版暂不支持账号登录，知识库不可用。',
+                          'Web sign-in is unavailable. The knowledge library requires sign-in.',
                         )
                       : _text(
                           '使用你的群晖账号和密码。',
@@ -386,7 +435,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   TextFormField(
                     key: const ValueKey('account-username'),
                     controller: _account,
-                    readOnly: busy,
+                    readOnly: busy || otp,
                     autofillHints: const [AutofillHints.username],
                     autocorrect: false,
                     enableSuggestions: false,
@@ -394,7 +443,84 @@ class _AccountScreenState extends State<AccountScreen> {
                     decoration: fieldDecoration.copyWith(
                       labelText: _text('账号', 'Account'),
                       prefixIcon: const Icon(Icons.person_outline_rounded),
+                      suffixIcon: service.savedLogins.isEmpty
+                          ? null
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (service.savedLogins.any(
+                                  (e) => e.username == _account.text.trim(),
+                                ))
+                                  IconButton(
+                                    key: const ValueKey('account-forget-login'),
+                                    tooltip: _text(
+                                      '移除已保存账号',
+                                      'Remove saved account',
+                                    ),
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                    ),
+                                    onPressed: busy || otp
+                                        ? null
+                                        : () async {
+                                            final entry = service.savedLogins
+                                                .firstWhere(
+                                                  (e) =>
+                                                      e.username ==
+                                                      _account.text.trim(),
+                                                );
+                                            await service.forgetSavedLogin(
+                                              entry,
+                                            );
+                                            if (!mounted) return;
+                                            if (_account.text.trim() ==
+                                                    entry.username &&
+                                                _formEnvironment ==
+                                                    entry.environment &&
+                                                !service.savedLogins.any(
+                                                  (e) =>
+                                                      e.username ==
+                                                      entry.username,
+                                                )) {
+                                              setState(() {
+                                                _password.clear();
+                                                _savePassword = false;
+                                                _credentialsEdited = true;
+                                              });
+                                            }
+                                          },
+                                  ),
+                                PopupMenuButton<SavedLogin>(
+                                  key: const ValueKey('account-saved-logins'),
+                                  tooltip: _text('已保存账号', 'Saved accounts'),
+                                  enabled: !busy && !otp,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                  ),
+                                  onSelected: (entry) => setState(() {
+                                    _credentialsEdited = true;
+                                    _fillSavedLogin(entry, service);
+                                  }),
+                                  itemBuilder: (_) => [
+                                    for (final entry in service.savedLogins)
+                                      PopupMenuItem(
+                                        value: entry,
+                                        child: Text(entry.username),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
                     ),
+                    onChanged: (_) => setState(() {
+                      _credentialsEdited = true;
+                      if (_prefilledUsername != null &&
+                          _account.text.trim() != _prefilledUsername) {
+                        _password.clear();
+                        _savePassword = false;
+                        _prefilledUsername = null;
+                      }
+                    }),
                     validator: (value) => value == null || value.trim().isEmpty
                         ? _text('请输入账号', 'Enter your account')
                         : null,
@@ -404,6 +530,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     key: const ValueKey('account-password'),
                     controller: _password,
                     readOnly: busy,
+                    onChanged: (_) => _credentialsEdited = true,
                     obscureText: !_showPassword,
                     autofillHints: const [AutofillHints.password],
                     autocorrect: false,
@@ -437,6 +564,19 @@ class _AccountScreenState extends State<AccountScreen> {
                     onFieldSubmitted: (_) {
                       if (!otp && !busy) _signIn();
                     },
+                  ),
+                  CheckboxListTile(
+                    key: const ValueKey('account-save-password'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(_text('保存密码', 'Save password')),
+                    value: _savePassword,
+                    onChanged: busy || otp
+                        ? null
+                        : (value) => setState(() {
+                            _credentialsEdited = true;
+                            _savePassword = value ?? false;
+                          }),
                   ),
                   if (otp) ...[
                     const SizedBox(height: UiTokens.itemGap),
@@ -564,6 +704,17 @@ class _AccountScreenState extends State<AccountScreen> {
                           ),
                     child: Text(_text('重试连接', 'Reconnect')),
                   ),
+                if (service?.savedLoginError != null) ...[
+                  Text(
+                    service!.savedLoginError!,
+                    style: TextStyle(color: colors.error),
+                  ),
+                  if (service.savedLoginNeedsReload)
+                    TextButton(
+                      onPressed: busy ? null : service.loadSavedLogins,
+                      child: Text(_text('重试', 'Retry')),
+                    ),
+                ],
               ],
             ),
           ),

@@ -144,6 +144,7 @@ class _Fixture {
   final IdentityFailureCode? failure;
   final bool? signInSupported;
   final app = _App(), store = _DavStore();
+  final loginHistory = _Credentials();
   final credentials = <String, _Credentials>{};
   final gateways = <String, _Gateway>{};
   final attempted = <String>[];
@@ -157,6 +158,7 @@ class _Fixture {
     controller: app,
     signInSupported: signInSupported,
     webDav: dav,
+    savedLoginStorage: loginHistory,
     credentialStore: (scope) =>
         credentials.putIfAbsent(scope, _Credentials.new),
     switchScope: (_) async {},
@@ -216,228 +218,327 @@ void main() {
     )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
   });
   setUp(() => SharedPreferences.setMockInitialValues({}));
-  test(
-    'guest WebDAV survives restart and restores after account sign-out',
-    () async {
-      final f = _Fixture();
-      addTearDown(f.dispose);
-      await f.start();
-      await f.account.saveGuestResourceCredentials(
-        username: 'reader',
-        password: 'reader-secret',
-      );
-      expect(f.account.isSignedIn, isFalse);
-      expect(f.account.cloud, isNull);
-      expect(f.account.resourceCredentialsReady, isTrue);
-      for (final server in f.account.configuration!.servers) {
-        final root = server.webDavRoot('friend');
-        expect(
-          f.account
-              .settingsForResource(root.resolve('apps/catalog.json'))
-              .username,
-          'reader',
+  for (final width in [390.0, 1280.0]) {
+    testWidgets(
+      'login form saves password, refills after logout and forgets on opt-out at $width',
+      (tester) async {
+        final f = (await tester.runAsync(() async {
+          final fixture = _Fixture();
+          await fixture.start();
+          await fixture.account.loadSavedLogins();
+          return fixture;
+        }))!;
+        addTearDown(f.dispose);
+        await tester.binding.setSurfaceSize(Size(width, 1100));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          AccountScope(
+            service: f.account,
+            child: MaterialApp(
+              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              home: const AccountScreen(),
+            ),
+          ),
         );
-      }
-      expect(
-        f.account
-            .settingsForResource(
-              Uri.parse('https://unknown.example:5006/friend/'),
-            )
-            .password,
-        isEmpty,
-      );
-      expect(
-        f.account
-            .settingsForResource(
-              Uri.parse('https://inside.example:5006/other/'),
-            )
-            .password,
-        isEmpty,
-      );
-      f.account.dispose();
-      f.account = f.create();
-      await f.account.initialize();
-      expect(f.dav.saved.username, 'reader');
-      await f.login();
-      expect(f.dav.saved.username, 'fixture');
-      await expectLater(
-        f.account.saveGuestResourceCredentials(
-          username: 'wrong',
-          password: 'wrong',
-        ),
-        throwsStateError,
-      );
-      await f.account.signOut();
-      expect(f.dav.saved.username, 'reader');
-      expect(f.dav.saved.password, 'reader-secret');
-      expect(f.account.isSignedIn, isFalse);
-      await f.account.saveGuestResourceCredentials(username: '', password: '');
-      expect(f.dav.saved.password, isEmpty);
-      expect(f.account.resourceCredentialsReady, isFalse);
-    },
-  );
-  test(
-    'guest credential storage failure leaves previous resources usable',
-    () async {
-      final f = _Fixture();
-      addTearDown(f.dispose);
-      await f.start();
-      await f.account.saveGuestResourceCredentials(
-        username: 'reader',
-        password: 'reader-secret',
-      );
-      final guest = f.credentials.entries
-          .singleWhere((e) => e.key.startsWith('guest_'))
-          .value;
-      guest.fail = true;
-      await expectLater(
-        f.account.saveGuestResourceCredentials(
-          username: 'replacement',
-          password: 'replacement-secret',
-        ),
-        throwsA(isA<IdentityFailure>()),
-      );
-      expect(f.dav.saved.username, 'reader');
-      expect(f.account.resourceCredentialsReady, isTrue);
-      expect(f.account.isBusy, isFalse);
-      guest.fail = false;
-      await f.account.saveGuestResourceCredentials(
-        username: 'replacement',
-        password: 'replacement-secret',
-      );
-      expect(f.dav.saved.username, 'replacement');
-    },
-  );
-  test(
-    'Web guest credentials work without constructing an identity gateway',
-    () async {
-      final f = _Fixture(signInSupported: false);
-      addTearDown(f.dispose);
-      await f.start();
-      await f.account.saveGuestResourceCredentials(
-        username: 'reader',
-        password: 'reader-secret',
-      );
-      expect(f.gateways, isEmpty);
-      expect(f.account.isSignedIn, isFalse);
-      expect(f.account.resourceCredentialsReady, isTrue);
-      f.account.dispose();
-      f.account = f.create();
-      await f.account.initialize();
-      expect(f.dav.saved.username, 'reader');
-      expect(f.gateways, isEmpty);
-      final original = f.account.configuration!;
-      await f.account.saveConfiguration(
-        AccountConfiguration.fromFields(
-          nasUrl: 'https://different.example:5001',
-        ),
-      );
-      expect(f.dav.saved.password, isEmpty);
-      expect(f.account.resourceCredentialsReady, isFalse);
-      await f.account.saveConfiguration(original);
-      expect(f.dav.saved.username, 'reader');
-    },
-  );
+        await tester.pumpAndSettle();
+        Finder control(String key) => find.byKey(ValueKey(key));
+        TextFormField input(String key) => tester.widget(control(key));
+        Future<void> press(String key) async {
+          await tester.ensureVisible(control(key));
+          await tester.runAsync(() async {
+            await tester.tap(control(key));
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            for (var i = 0; i < 100 && f.account.isBusy; i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+          });
+          await tester.pumpAndSettle();
+        }
+
+        expect(
+          tester
+              .widget<CheckboxListTile>(control('account-save-password'))
+              .value,
+          isFalse,
+        );
+        await tester.enterText(control('account-username'), 'reader');
+        await tester.enterText(control('account-password'), 'fixture-password');
+        await press('account-save-password');
+        await press('account-sign-in');
+        expect(f.account.isSignedIn, isTrue);
+        expect(f.account.savedLogins.single.password, 'fixture-password');
+        await press('account-sign-out');
+        expect(f.account.isSignedIn, isFalse);
+        expect(f.account.resourceCredentialsReady, isFalse);
+        expect(input('account-username').controller!.text, 'reader');
+        expect(input('account-password').controller!.text, 'fixture-password');
+
+        await press('account-save-password');
+        await press('account-sign-in');
+        expect(f.account.isSignedIn, isTrue);
+        expect(f.account.savedLogins.single.hasPassword, isFalse);
+        await press('account-sign-out');
+        expect(input('account-username').controller!.text, 'reader');
+        expect(input('account-password').controller!.text, isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   for (final width in [320.0, 390.0, 1280.0]) {
     testWidgets(
-      'guest resource controls have an intentional layout at $width',
+      'saved password autofill, account selection and removal at $width',
       (tester) async {
         final f = _Fixture();
         addTearDown(f.dispose);
-        await tester.runAsync(f.start);
+        await tester.runAsync(() async {
+          await f.start();
+          await f.account.signIn(
+            account: 'first',
+            password: 'first-secret',
+            savePassword: true,
+          );
+          await f.account.signOut();
+          await f.account.signIn(
+            account: 'second',
+            password: 'second-secret',
+            savePassword: true,
+          );
+          await f.account.signOut();
+        });
+        await tester.binding.setSurfaceSize(Size(width, 1000));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          AccountScope(
+            service: f.account,
+            child: MaterialApp(
+              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              home: const AccountScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        TextFormField input(String key) =>
+            tester.widget<TextFormField>(find.byKey(ValueKey(key)));
+        expect(input('account-username').controller!.text, 'second');
+        expect(input('account-password').controller!.text, 'second-secret');
+        expect(
+          tester
+              .widget<EditableText>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('account-password')),
+                  matching: find.byType(EditableText),
+                ),
+              )
+              .obscureText,
+          isTrue,
+        );
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const ValueKey('account-save-password')),
+              )
+              .value,
+          isTrue,
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('account-saved-logins')),
+        );
+        await tester.tap(find.byKey(const ValueKey('account-saved-logins')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('first'));
+        await tester.pumpAndSettle();
+        expect(input('account-password').controller!.text, 'first-secret');
+        await tester.tap(find.byKey(const ValueKey('account-forget-login')));
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pumpAndSettle();
+        expect(f.account.savedLogins.map((e) => e.username), ['second']);
+        expect(input('account-password').controller!.text, isEmpty);
+        await tester.enterText(
+          find.byKey(const ValueKey('account-username')),
+          'new-reader',
+        );
+        await tester.binding.setSurfaceSize(const Size(640, 1000));
+        await tester.pumpAndSettle();
+        expect(input('account-username').controller!.text, 'new-reader');
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  test('old guest credentials never restore without account login', () async {
+    final f = _Fixture();
+    addTearDown(f.dispose);
+    final old = _Credentials()
+      ..value = jsonEncode({
+        'version': 1,
+        'environment': _config().environmentId,
+        'username': 'reader',
+        'password': 'reader-secret',
+      });
+    f.credentials['guest_${_config().environmentId}'] = old;
+    await f.start();
+    expect(f.account.resourceCredentialsReady, isFalse);
+    expect(f.dav.saved.password, isEmpty);
+    f.account.dispose();
+    f.account = f.create();
+    await f.account.initialize();
+    expect(f.account.resourceCredentialsReady, isFalse);
+    expect(f.dav.saved.username, isEmpty);
+    await f.login();
+    expect(f.account.resourceCredentialsReady, isTrue);
+    expect(f.dav.saved.username, 'fixture');
+    await f.account.signOut();
+    expect(f.account.resourceCredentialsReady, isFalse);
+    expect(f.dav.saved.password, isEmpty);
+    expect(
+      f.account
+          .settingsForResource(_config().activeServer.webDavRoot('friend'))
+          .password,
+      isEmpty,
+    );
+  });
+  test(
+    'Web without sign-in cannot restore standalone resource credentials',
+    () async {
+      final f = _Fixture(signInSupported: false);
+      addTearDown(f.dispose);
+      f.store.value = const WebDavSettings(
+        username: 'reader',
+        password: 'reader-secret',
+      );
+      await f.start();
+      expect(f.account.resourceCredentialsReady, isFalse);
+      expect(f.dav.saved.username, isEmpty);
+      expect(f.gateways, isEmpty);
+    },
+  );
+  for (final width in [390.0, 1280.0]) {
+    testWidgets(
+      'signed-in NAS address is read-only and WebDAV remains editable at $width',
+      (tester) async {
+        final f = _Fixture();
+        addTearDown(f.dispose);
+        await tester.runAsync(() async {
+          await f.start();
+          await f.login();
+        });
         await tester.binding.setSurfaceSize(Size(width, 900));
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(
           AccountScope(
             service: f.account,
             child: MaterialApp(
-              theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
-              home: const AccountScreen(),
+              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              home: const AccountScreen(showConnections: true),
             ),
           ),
         );
         await tester.pumpAndSettle();
-        expect(
-          find.byKey(
-            ValueKey(
-              width >= 1000 ? 'account-wide-layout' : 'account-compact-layout',
+        for (final server in f.account.configuration!.servers) {
+          final address = tester.widget<TextField>(
+            find.descendant(
+              of: find.byKey(ValueKey('nas-address-${server.id}')),
+              matching: find.byType(TextField),
             ),
-          ),
-          findsOneWidget,
-        );
-        final guest = find.byKey(const ValueKey('account-guest-webdav'));
-        await tester.ensureVisible(guest);
-        await tester.tap(guest);
-        await tester.pumpAndSettle();
-        await tester.enterText(
-          find.byKey(const ValueKey('account-webdav-username')),
-          'reader',
-        );
-        await tester.enterText(
-          find.byKey(const ValueKey('account-webdav-password')),
-          'reader-secret',
-        );
-        if (width >= 1000) {
-          await tester.binding.setSurfaceSize(const Size(390, 900));
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(const ValueKey('account-compact-layout')),
-            findsOneWidget,
           );
-          expect(
-            tester
-                .widget<TextFormField>(
-                  find.byKey(const ValueKey('account-webdav-password')),
-                )
-                .controller!
-                .text,
-            'reader-secret',
+          expect(address.enabled, isTrue);
+          expect(address.readOnly, isTrue);
+          expect(address.controller!.text, server.address);
+          final davPort = tester.widget<TextField>(
+            find.descendant(
+              of: find.byKey(ValueKey('nas-dav-port-${server.id}')),
+              matching: find.byType(TextField),
+            ),
           );
-          await tester.binding.setSurfaceSize(Size(width, 900));
-          await tester.pumpAndSettle();
+          expect(davPort.enabled, isTrue);
+          expect(davPort.readOnly, isFalse);
         }
-        final save = find.byKey(const ValueKey('account-save-webdav'));
+        final port = find.byKey(const ValueKey('nas-dav-port-outside'));
+        await tester.ensureVisible(port);
+        await tester.enterText(port, '5443');
+        final folder = find.byKey(const ValueKey('nas-resource-folder'));
+        await tester.ensureVisible(folder);
+        await tester.enterText(folder, 'friend/rules');
+        final save = find.byKey(const ValueKey('nas-connections-save'));
         await tester.ensureVisible(save);
         await tester.tap(save);
-        await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
-        await tester.pumpAndSettle();
-        expect(f.account.isSignedIn, isFalse);
-        expect(f.dav.saved.username, 'reader');
-        final password = tester.widget<TextFormField>(
-          find.byKey(const ValueKey('account-webdav-password')),
-        );
-        expect(password.controller!.text, isEmpty);
-        if (width >= 1000) {
-          final connections = find.byKey(const ValueKey('account-connections'));
-          await tester.ensureVisible(connections);
-          await tester.tap(connections);
-          await tester.pumpAndSettle();
-          await tester.enterText(
-            find.byKey(const ValueKey('nas-resource-folder')),
-            'friend/rules',
+        for (var attempt = 0; attempt < 100 && f.account.isBusy; attempt++) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
           );
-          final saveConnection = find.byKey(
-            const ValueKey('nas-connections-save'),
-          );
-          await tester.ensureVisible(saveConnection);
-          await tester.tap(saveConnection);
-          for (var attempt = 0; attempt < 100 && f.account.isBusy; attempt++) {
-            await tester.pump();
-            await tester.runAsync(
-              () => Future<void>.delayed(const Duration(milliseconds: 10)),
-            );
-          }
-          expect(f.account.isBusy, isFalse);
-          await tester.pumpAndSettle();
-          expect(find.text('Connection saved'), findsOneWidget);
-          expect(f.account.configuration!.storageFolder, 'friend/rules');
         }
+        await tester.pumpAndSettle();
+        expect(f.account.isSignedIn, isTrue);
+        expect(f.account.configuration!.storageFolder, 'friend/rules');
+        expect(
+          f.account.configuration!.servers
+              .firstWhere((server) => server.id == 'outside')
+              .webDavPort,
+          5443,
+        );
+        expect(
+          f.dav.saved.baseUrl,
+          'https://outside.example:5443/friend/rules/',
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         f.dispose();
         await tester.pump();
       },
     );
+  }
+  for (final width in [320.0, 390.0, 1280.0]) {
+    testWidgets('signed-out resource controls require login at $width', (
+      tester,
+    ) async {
+      final f = _Fixture();
+      addTearDown(f.dispose);
+      await tester.runAsync(f.start);
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        AccountScope(
+          service: f.account,
+          child: MaterialApp(
+            theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+            home: const AccountScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          ValueKey(
+            width >= 1000 ? 'account-wide-layout' : 'account-compact-layout',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('account-guest-webdav')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('account-webdav-username')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('account-webdav-password')),
+        findsNothing,
+      );
+      expect(find.text('Sign in to use the knowledge library'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const ValueKey('account-check-resources')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(f.account.resourceCredentialsReady, isFalse);
+      expect(f.dav.saved.password, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      f.dispose();
+      await tester.pump();
+    });
   }
   test(
     'brief revalidation timeout keeps the cached account usable offline',

@@ -10,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../core/models/app_activity.dart';
+import '../shared/library_update_review.dart';
 import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
@@ -339,6 +340,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     closePanel?.call();
     unawaited(widget.controller.markActivityRead(activity.id));
     activity = widget.controller.resolveActivityTarget(activity);
+    if (activity.kind == AppActivityKind.libraryUpdate) {
+      unawaited(showLibraryUpdateReview(context, widget.controller));
+      return;
+    }
     if (activity.kind == AppActivityKind.libraryLoadFailed) {
       _navigate('library');
       return;

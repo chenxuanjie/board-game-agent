@@ -48,10 +48,20 @@ void main() {
     expect(DesktopResponsive.shouldShowGamesInspector(1146), isFalse);
     expect(DesktopResponsive.shouldShowGamesInspector(1147), isTrue);
 
-    expect(DesktopResponsive.detailHeroHeightFor(759), 320);
-    expect(DesktopResponsive.detailHeroHeightFor(760), 380);
-    expect(DesktopResponsive.detailHeroHeightFor(1099), 380);
-    expect(DesktopResponsive.detailHeroHeightFor(1100), 450);
+    expect(
+      DesktopResponsive.detailHeroHeightFor(759),
+      closeTo(759 * 9 / 16, .01),
+    );
+    expect(DesktopResponsive.detailHeroHeightFor(500), 320);
+    expect(DesktopResponsive.detailHeroHeightFor(760), 427.5);
+    expect(
+      DesktopResponsive.detailHeroHeightFor(1099),
+      closeTo(1099 * 9 / 16, .01),
+    );
+    expect(
+      DesktopResponsive.detailHeroHeightFor(1100),
+      closeTo(1100 * 9 / 16, .01),
+    );
   });
 
   test('desktop metrics scale visual dimensions independently of width', () {

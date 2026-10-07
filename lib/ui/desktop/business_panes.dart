@@ -25,6 +25,8 @@ import '../shared/assistant/message_bubble.dart';
 import '../shared/documents/markdown_document_screen.dart';
 import '../shared/documents/pdf_document_screen.dart';
 import '../shared/documents/library_resource_document_screen.dart';
+import '../shared/account_screen.dart';
+import '../shared/account_scope.dart';
 part 'activity_popup.dart';
 part 'assistant/assistant_pane.dart';
 part 'library/library_pane.dart';

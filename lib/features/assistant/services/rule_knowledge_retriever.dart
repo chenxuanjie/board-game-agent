@@ -27,6 +27,7 @@ class RuleKnowledgeRetriever {
     required List<AssetSourceConfig> assetSourceConfigs,
     required RemoteAssetService remoteAssetService,
   }) async {
+    if (!remoteAssetService.accessAllowed) return const <EvidenceChunk>[];
     final List<EvidenceChunk> chunks = <EvidenceChunk>[];
     int totalChars = 0;
 
@@ -47,6 +48,7 @@ class RuleKnowledgeRetriever {
         if (content == null) {
           continue;
         }
+        if (!remoteAssetService.accessAllowed) return const <EvidenceChunk>[];
 
         content = _normalizeContent(content);
         if (content.isEmpty) {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/ui_tokens.dart';
@@ -702,6 +704,27 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
 
   Future<void> _openDocument(GameInfo game) async {
     final controller = widget.controller;
+    if (!controller.libraryAccessAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            controller.copy.localized(
+              '登录后使用知识库',
+              'Sign in to use the knowledge library',
+            ),
+          ),
+          action: AccountScope.maybeOf(context)?.supportsSignIn == true
+              ? SnackBarAction(
+                  label: controller.copy.localized('登录', 'Sign in'),
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const AccountScreen()),
+                  ),
+                )
+              : null,
+        ),
+      );
+      return;
+    }
     final title = controller.copy.rulesBook;
     setState(() => _openingRulebook = true);
     try {

@@ -57,6 +57,9 @@ extension AppIdentityScopeController on AppController {
   Future<void> _switchIdentityScopeNow(String? userId) async {
     _switchingIdentityScope = true;
     _identityScopeEpoch++;
+    _pendingLibraryUpdate = null;
+    _libraryUpdateError = null;
+    _libraryUpdatePromptSeen = false;
     _invalidateAssetAccessStatus();
     _invalidateActiveRuns();
     // Invalidate finally blocks as well as event/delta callbacks.

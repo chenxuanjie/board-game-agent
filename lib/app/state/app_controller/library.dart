@@ -30,6 +30,7 @@ extension AppLibraryController on AppController {
   /// callers so opening the page and pressing refresh cannot race each other.
   /// Existing cached rows stay visible while this network request runs.
   Future<void> refreshLibraryResources({bool force = false}) {
+    if (!_remoteAssetService.accessAllowed) return Future<void>.value();
     final Future<void>? active = _libraryRefreshFuture;
     if (active != null) {
       return active;

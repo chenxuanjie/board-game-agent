@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../features/identity/models/account_configuration.dart';
 import '../../features/identity/services/account_service.dart';
-import '../../core/theme/ui_tokens.dart';
 
-/// Public connection options shared by sign-in and guest resource access.
+/// Public NAS connection options shared by sign-in and knowledge access.
 class NasConnectionSection extends StatefulWidget {
   const NasConnectionSection({
     super.key,
@@ -138,38 +137,24 @@ class _NasConnectionSectionState extends State<NasConnectionSection> {
       initiallyExpanded: widget.expanded,
       tilePadding: EdgeInsets.zero,
       maintainState: true,
-      title: Text(_text('服务器与资料', 'Servers & resources')),
-      subtitle: Text(
-        _text(
-          '登录与知识库共用服务器地址',
-          'Shared server addresses for sign-in and resources',
-        ),
-      ),
+      title: Text(_text('NAS 与 WebDAV', 'NAS & WebDAV')),
       children: [
         Form(
           key: _form,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                _text(
-                  '拖动右侧手柄调整访问顺序',
-                  'Drag the handles to change connection order',
-                ),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
               if (service.isSignedIn)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     _text(
-                      '修改登录地址前请先退出账号',
-                      'Sign out before changing sign-in addresses',
+                      '若要修改 NAS 基地址，请退出登录或切换账号。',
+                      'To change the NAS base URL, sign out or switch accounts.',
                     ),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-              const SizedBox(height: 12),
               ReorderableListView.builder(
                 key: const ValueKey('nas-address-order'),
                 shrinkWrap: true,
@@ -240,7 +225,8 @@ class _NasConnectionSectionState extends State<NasConnectionSection> {
                         TextFormField(
                           key: ValueKey('nas-address-${d.id}'),
                           controller: d.address,
-                          enabled: !locked && !service.isSignedIn,
+                          enabled: !locked,
+                          readOnly: service.isSignedIn,
                           keyboardType: TextInputType.url,
                           autocorrect: false,
                           validator: (value) {
@@ -255,7 +241,7 @@ class _NasConnectionSectionState extends State<NasConnectionSection> {
                             }
                           },
                           decoration: InputDecoration(
-                            labelText: _text('服务器地址', 'Server address'),
+                            labelText: _text('NAS 基地址', 'NAS base URL'),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -333,31 +319,9 @@ class _NasConnectionSectionState extends State<NasConnectionSection> {
                   }
                 },
                 decoration: InputDecoration(
-                  labelText: _text('知识库存储目录', 'Knowledge storage folder'),
+                  labelText: _text('WebDAV 目录', 'WebDAV folder'),
                   hintText: 'friend',
                 ),
-              ),
-              const SizedBox(height: UiTokens.itemGap),
-              Text(
-                service.resourceCredentialsReady && service.isSignedIn
-                    ? _text(
-                        '资料访问使用当前登录账号',
-                        'Resources use your signed-in account',
-                      )
-                    : service.resourceCredentialsReady
-                    ? _text(
-                        '资料访问使用独立 WebDAV 凭据',
-                        'Resources use separate WebDAV credentials',
-                      )
-                    : _text(
-                        service.isSignedIn
-                            ? '请重新登录以连接资料'
-                            : '可登录账号或配置独立 WebDAV 凭据',
-                        service.isSignedIn
-                            ? 'Sign in again to connect resources'
-                            : 'Sign in or set separate WebDAV credentials',
-                      ),
-                style: Theme.of(context).textTheme.bodySmall,
               ),
               if (_feedback != null)
                 Padding(

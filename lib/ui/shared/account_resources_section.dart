@@ -29,88 +29,24 @@ class _AccountResourcesSectionState extends State<AccountResourcesSection> {
     account: widget.service,
     webDav: widget.service.webDav,
   );
-  final _form = GlobalKey<FormState>();
-  final _username = TextEditingController();
-  final _password = TextEditingController();
-  bool _saving = false, _checking = false, _showPassword = false;
+  bool _checking = false;
   String? _feedback;
-  bool _failed = false;
   int _connectionsRevision = 0;
-  bool _waitingForCredentials = false;
   String _text(String zh, String en) =>
       Localizations.localeOf(context).languageCode == 'en' ? en : zh;
 
-  @override
-  void initState() {
-    super.initState();
-    _waitingForCredentials = !widget.service.resourceCredentialsReady;
-    _username.text = !widget.service.isSignedIn && !_waitingForCredentials
-        ? widget.service.webDav?.saved.username ?? ''
-        : '';
-    // Passwords remain in secure storage until explicitly replaced.
-  }
-
-  @override
-  void didUpdateWidget(covariant AccountResourcesSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_waitingForCredentials && widget.service.resourceCredentialsReady) {
-      _waitingForCredentials = false;
-      if (!widget.service.isSignedIn && !_saving && _username.text.isEmpty) {
-        _username.text = widget.service.webDav?.saved.username ?? '';
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _username.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save({bool clear = false}) async {
-    final service = widget.service;
-    if (_saving || _checking || service.isBusy) return;
-    if (!clear && !(_form.currentState?.validate() ?? false)) return;
-    setState(() {
-      _saving = true;
-      _feedback = null;
-    });
-    try {
-      await service.saveGuestResourceCredentials(
-        username: clear ? '' : _username.text,
-        password: clear ? '' : _password.text,
-      );
-      if (!mounted) return;
-      _password.clear();
-      if (clear) _username.clear();
-      setState(() {
-        _failed = false;
-        _feedback = clear
-            ? _text('已清除 WebDAV 凭据', 'WebDAV credentials cleared')
-            : _text('WebDAV 凭据已保存', 'WebDAV credentials saved');
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _failed = true;
-          _feedback = _text('凭据保存失败，请重试', 'Could not save credentials. Retry.');
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
   Future<void> _check() async {
-    if (_checking || _saving || widget.service.isBusy) return;
+    if (_checking ||
+        widget.service.isBusy ||
+        !widget.service.resourceCredentialsReady) {
+      return;
+    }
     setState(() => _checking = true);
     try {
       await widget.service.controller.refreshAssetAccessStatus();
     } catch (_) {
       if (mounted) {
         setState(() {
-          _failed = true;
           _feedback = _text('检测失败，请重试', 'Could not check access. Retry.');
         });
       }
@@ -122,7 +58,7 @@ class _AccountResourcesSectionState extends State<AccountResourcesSection> {
   @override
   Widget build(BuildContext context) {
     final service = widget.service;
-    final locked = _saving || _checking || service.isBusy;
+    final locked = _checking || service.isBusy;
     return Column(
       key: const ValueKey('account-resources'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,12 +88,17 @@ class _AccountResourcesSectionState extends State<AccountResourcesSection> {
           ],
         ),
         const SizedBox(height: UiTokens.itemGap),
-        ResourceAccessSummary(controller: service.controller),
+        if (service.isSignedIn)
+          ResourceAccessSummary(controller: service.controller)
+        else
+          Text(_text('登录后使用知识库', 'Sign in to use the knowledge library')),
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
             key: const ValueKey('account-check-resources'),
-            onPressed: locked ? null : _check,
+            onPressed: locked || !service.resourceCredentialsReady
+                ? null
+                : _check,
             icon: _checking
                 ? const SizedBox(
                     width: 18,
@@ -173,100 +114,12 @@ class _AccountResourcesSectionState extends State<AccountResourcesSection> {
           service: service,
           expanded: widget.expanded,
         ),
-        if (!service.isSignedIn && service.webDav != null)
-          ExpansionTile(
-            key: const ValueKey('account-guest-webdav'),
-            title: Text(_text('仅使用 WebDAV', 'Use WebDAV only')),
-            subtitle: Text(_text('无需登录群晖账号', 'No Synology sign-in needed')),
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: UiTokens.itemGap),
-            maintainState: true,
-            children: [
-              Form(
-                key: _form,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextFormField(
-                      key: const ValueKey('account-webdav-username'),
-                      controller: _username,
-                      enabled: !locked,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        labelText: _text('WebDAV 账号', 'WebDAV username'),
-                      ),
-                      validator: (v) => (v?.trim().isEmpty ?? true)
-                          ? _text('请输入账号', 'Enter a username')
-                          : null,
-                    ),
-                    const SizedBox(height: UiTokens.itemGap),
-                    TextFormField(
-                      key: const ValueKey('account-webdav-password'),
-                      controller: _password,
-                      enabled: !locked,
-                      obscureText: !_showPassword,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        labelText: _text('WebDAV 密码', 'WebDAV password'),
-                        suffixIcon: IconButton(
-                          tooltip: _text(
-                            _showPassword ? '隐藏密码' : '显示密码',
-                            _showPassword ? 'Hide password' : 'Show password',
-                          ),
-                          onPressed: locked
-                              ? null
-                              : () => setState(
-                                  () => _showPassword = !_showPassword,
-                                ),
-                          icon: Icon(
-                            _showPassword
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                          ),
-                        ),
-                      ),
-                      validator: (v) => (v?.isEmpty ?? true)
-                          ? _text('请输入密码', 'Enter a password')
-                          : null,
-                    ),
-                    const SizedBox(height: UiTokens.itemGap),
-                    Wrap(
-                      spacing: UiTokens.itemGap,
-                      children: [
-                        FilledButton(
-                          key: const ValueKey('account-save-webdav'),
-                          onPressed: locked ? null : () => _save(),
-                          child: Text(
-                            _text('保存 WebDAV 凭据', 'Save WebDAV credentials'),
-                          ),
-                        ),
-                        TextButton(
-                          key: const ValueKey('account-clear-webdav'),
-                          onPressed:
-                              locked ||
-                                  (!service.resourceCredentialsReady &&
-                                      service.error == null)
-                              ? null
-                              : () => _save(clear: true),
-                          child: Text(_text('清除凭据', 'Clear credentials')),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
         if (_feedback != null)
           Semantics(
             liveRegion: true,
             child: Text(
               _feedback!,
-              style: TextStyle(
-                color: _failed ? Theme.of(context).colorScheme.error : null,
-              ),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
       ],

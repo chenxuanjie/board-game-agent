@@ -932,6 +932,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
 
   for (final size in const [
     Size(1280, 800),
+    Size(1920, 1080),
     Size(1100, 700),
     Size(720, 700),
     Size(600, 700),
@@ -952,6 +953,28 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       expect(find.text(game.title), findsWidgets);
       expect(find.text(game.subtitle), findsWidgets);
       expect(find.text('询问 AI'), findsOneWidget);
+      final heroSize = tester.getSize(
+        find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
+      );
+      expect(
+        heroSize.width,
+        tester.getSize(find.byType(DesktopGameDetailPane)).width,
+      );
+      if (heroSize.width >= 760) {
+        expect(heroSize.width / heroSize.height, closeTo(16 / 9, .001));
+      }
+      final thumbnailRect = tester.getRect(
+        find.byKey(const ValueKey('desktop-detail-gallery-thumbnail-0')),
+      );
+      final heroRect = tester.getRect(
+        find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
+      );
+      expect(thumbnailRect.size, const Size(146, 88));
+      expect(thumbnailRect.top, closeTo(heroRect.bottom + 10, .01));
+      expect(
+        tester.getRect(find.byKey(const ValueKey('detail-tab-1'))).top,
+        greaterThan(thumbnailRect.bottom),
+      );
       expect(tester.takeException(), isNull);
 
       await tester.ensureVisible(

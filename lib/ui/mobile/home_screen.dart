@@ -7,6 +7,8 @@ import '../../core/theme/app_motion.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
+import '../../core/models/app_activity.dart';
+import '../shared/library_update_review.dart';
 import '../../app/state/app_controller.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 import 'settings_screen.dart';
@@ -262,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       sheetAnimationStyle: AppMotion.panelStyle(context),
       showDragHandle: true,
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
           child: Column(
@@ -292,6 +294,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemBuilder: (_, index) => ListTile(
                       title: Text(activities[index].title),
                       subtitle: Text(activities[index].message),
+                      trailing:
+                          activities[index].kind ==
+                              AppActivityKind.libraryUpdate
+                          ? const Icon(Icons.chevron_right_rounded)
+                          : null,
+                      onTap:
+                          activities[index].kind ==
+                              AppActivityKind.libraryUpdate
+                          ? () {
+                              Navigator.of(sheetContext).pop();
+                              unawaited(
+                                _showLibraryUpdateDialog(
+                                  fromNotification: true,
+                                ),
+                              );
+                            }
+                          : null,
                     ),
                   ),
                 ),
@@ -319,55 +338,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _showLibraryUpdateDialog() async {
+  Future<void> _showLibraryUpdateDialog({bool fromNotification = false}) async {
     if (!mounted ||
         _showingLibraryUpdateDialog ||
-        !widget.controller.shouldShowLibraryUpdatePrompt()) {
+        (!fromNotification &&
+            !widget.controller.shouldShowLibraryUpdatePrompt())) {
       return;
     }
     _showingLibraryUpdateDialog = true;
-    final copy = widget.controller.copy;
-    final update = widget.controller.pendingLibraryUpdate;
-    final shouldUpdate = await showDialog<bool>(
-      context: context,
-      animationStyle: AppMotion.menuStyle(context),
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: Text(copy.libraryUpdateTitle),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(copy.libraryUpdateMessage),
-              if (update != null && update.changedGameTitles.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(update.changedGameTitles.take(5).join('、')),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(copy.updateLater),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(copy.updateNow),
-          ),
-        ],
-      ),
-    );
-    _showingLibraryUpdateDialog = false;
-    if (!mounted) return;
-    if (shouldUpdate == true) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(copy.updatingNow)));
-      await widget.controller.applyPendingLibraryUpdate();
-    } else {
-      widget.controller.dismissPendingLibraryUpdatePrompt();
+    try {
+      await showLibraryUpdateReview(context, widget.controller);
+    } finally {
+      _showingLibraryUpdateDialog = false;
     }
   }
 }

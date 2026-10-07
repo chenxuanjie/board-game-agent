@@ -1,11 +1,25 @@
 part of '../app_controller.dart';
 
 extension AppDocumentController on AppController {
-  String _normalizeSource(String source) {
-    return source.replaceAll('\r\n', '\n').trim();
+  bool get libraryAccessAllowed => _remoteAssetService.accessAllowed;
+
+  bool _requireLibraryAccess() {
+    if (libraryAccessAllowed) return true;
+    _assetConnectivityStatus = ConnectivityStatus(
+      state: ConnectivityState.failure,
+      message: copy.localized(
+        '请先登录后使用知识库',
+        'Sign in to use the knowledge library',
+      ),
+      checkedAt: DateTime.now(),
+    );
+    _notifyListeners();
+    return false;
   }
 
   Future<List<int>?> _loadWebDocument(String path) async {
+    final updated = await _remoteAssetService.cachedBytesFor(path);
+    if (updated != null) return updated;
     // Shipped documents remain readable when WebDAV is offline. A remote-only
     // document still falls back to the configured source.
     if (path.startsWith('assets/')) {
@@ -23,6 +37,7 @@ extension AppDocumentController on AppController {
   }
 
   Future<String?> cacheDocument(String remotePath) async {
+    if (!_requireLibraryAccess()) return null;
     if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
@@ -56,6 +71,7 @@ extension AppDocumentController on AppController {
   }
 
   Future<List<int>?> loadDocumentBytes(String remotePath) async {
+    if (!_requireLibraryAccess()) return null;
     if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
@@ -98,6 +114,7 @@ extension AppDocumentController on AppController {
   }
 
   Future<String?> loadLibraryResourceText(String remotePath) async {
+    if (!_requireLibraryAccess()) return null;
     final String? localPath = await cacheDocument(remotePath);
     if (localPath == null) {
       if (remotePath.startsWith('assets/')) {
@@ -152,6 +169,13 @@ extension AppDocumentController on AppController {
     if (_resolvedAssetPaths.containsKey(remotePath)) {
       return _resolvedAssetPaths[remotePath];
     }
+    if (kIsWeb) {
+      final bytes = await _remoteAssetService.cachedBytesFor(remotePath);
+      if (bytes == null) return null;
+      final path = Uri.dataFromBytes(bytes).toString();
+      _resolvedAssetPaths[remotePath] = path;
+      return path;
+    }
     final CachedAsset? cached = await _remoteAssetService.ensureCached(
       sources: _assetSourceConfigs,
       remotePath: remotePath,
@@ -169,6 +193,7 @@ extension AppDocumentController on AppController {
     required String fallbackRemotePath,
     required String fallbackLabel,
   }) async {
+    if (!_requireLibraryAccess()) return null;
     final String fallback = fallbackRemotePath.trim();
     final List<String> candidates = _documentCandidates(
       game: game,

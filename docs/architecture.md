@@ -36,10 +36,14 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 
 应用动效令牌集中在 `lib/core/theme/app_motion.dart`，主页面过渡在 `lib/ui/shared/app_page_transition.dart`，详见 [应用动效规范](app-motion.md)。页面只挂载一个当前内容，不为淡出保留旧聊天页面。
 
+资料更新通知共用 `lib/ui/shared/library_update_review.dart`，宽屏弹窗与窄屏页面共用确认、进度与重试；差异模型和目录比较在 `features/library/`，检查与应用由 `AppController.library_updates` 管理。Web 的条件导入缓存封装在 `browser_asset_cache_*.dart`，原生继续使用文件缓存。行为、依赖与验证边界见 [资料更新通知与确认](library-update-review.md)。
+
 封面衔接、首屏内容入场、图片解码反馈和收藏确认图标分别在 `lib/ui/shared/game_cover_motion.dart`、`content_entrance.dart`、`image_reveal.dart`、`favorite_feedback.dart`。平台外壳只负责源位置和导航，收藏仍复用同一个 AppController 写入队列与失败回滚；不创建新业务状态或持久化格式。
 
 账号页的服务器配置现统一管理 NAS 地址、登录/WebDAV 端口与知识库目录。AccountService 负责优先级认证、稳定身份、按用户保存的安全资源凭据和派生资源配置；NasConnectionSection 是移动/桌面共享编辑器，原 ResourceConnectionScreen 只路由到账户页。详见 [账号与资源连接](resource-connections.md)。
 
 ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppController 的 service_status 并发检测、聚合状态与丢弃过期结果；RemoteAssetService 负责目录探测、资源读取竞速及取消，PROPFIND/XML 仍复用 webdav_storage。登录有序回退与资源并发入口访问是两个独立策略。
 
-账户知识库区位于 `lib/ui/shared/account_resources_section.dart`，集中状态、检测、连接配置与免登录 WebDAV 凭据操作。`AccountScreen` 负责宽屏双栏和窄屏纵向分区；资源投影与按 NAS 隔离的访客安全凭据仍由同一 `AccountService` 管理。
+账户知识库区位于 `lib/ui/shared/account_resources_section.dart`，集中状态、检测与连接配置；知识库要求登录，不提供独立凭据入口。`AccountScreen` 负责宽屏双栏和窄屏纵向分区；资源投影与按用户隔离的安全凭据仍由同一 `AccountService` 管理，未登录时停止资源读取。
+
+登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。

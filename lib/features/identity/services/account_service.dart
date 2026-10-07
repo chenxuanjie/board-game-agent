@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 import 'package:crypto/crypto.dart';
@@ -14,11 +13,13 @@ import '../../../app/state/app_controller.dart';
 import '../models/account_configuration.dart';
 import '../../settings/services/preferences_service.dart';
 import 'account_cloud_sync.dart';
+import 'saved_login_store.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
     required AppController controller,
     this.webDav,
+    @visibleForTesting IdentitySessionStorage? savedLoginStorage,
     @visibleForTesting IdentitySessionStorage Function(String)? credentialStore,
     @visibleForTesting
     Future<IdentityGateway> Function(AccountConfiguration)? gatewayFactory,
@@ -27,6 +28,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     @visibleForTesting
     AccountPrivateFiles Function(IdentityGateway)? privateFilesFactory,
   }) : _controller = controller,
+       _savedLogins = SavedLoginStore(storage: savedLoginStorage),
        _gatewayFactory = gatewayFactory,
        _switchScope = switchScope,
        _privateFilesFactory = privateFilesFactory,
@@ -37,7 +39,41 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   static const authenticationTimeout = Duration(seconds: 3);
   final WebDavSettingsController? webDav;
   AppController get controller => _controller;
-  String get _guestResourceScope => 'guest_${_configuration!.environmentId}';
+  final SavedLoginStore _savedLogins;
+  String? _savedLoginError;
+  String? get savedLoginError => _savedLoginError;
+  bool _savedLoginNeedsReload = false;
+  bool get savedLoginNeedsReload => _savedLoginNeedsReload;
+  List<SavedLogin> get savedLogins => _savedLogins.entries
+      .where((e) => e.environment == _configuration?.environmentId)
+      .toList(growable: false);
+
+  Future<void> loadSavedLogins() async {
+    if (!supportsSignIn || _disposed) return;
+    try {
+      await _savedLogins.load();
+      _savedLoginError = null;
+      _savedLoginNeedsReload = false;
+    } catch (_) {
+      _savedLoginError = '无法读取已保存账号，请重试';
+      _savedLoginNeedsReload = true;
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> forgetSavedLogin(SavedLogin entry) async {
+    if (!supportsSignIn || isBusy || _disposed) return;
+    try {
+      await _savedLogins.forget(entry);
+      _savedLoginError = null;
+      _savedLoginNeedsReload = false;
+    } catch (_) {
+      _savedLoginError = '已保存账号未移除，请重试';
+      _savedLoginNeedsReload = false;
+    }
+    if (!_disposed) notifyListeners();
+  }
+
   final IdentitySessionStorage Function(String)? _credentialStore;
   final Map<String, IdentitySessionStorage> _credentialStores = {};
   Future<void> _resourceQueue = Future.value();
@@ -50,14 +86,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         scope,
         () =>
             _credentialStore?.call(scope) ??
-            (scope.startsWith('guest_')
-                ? _GuestResourceCredentialStorage(scope)
-                : SecureIdentitySessionStorage(
-                    appId: 'board_game_agent_resources',
-                    environment: scope,
-                  )),
+            SecureIdentitySessionStorage(
+              appId: 'board_game_agent_resources',
+              environment: scope,
+            ),
       );
   bool get resourceCredentialsReady =>
+      isSignedIn &&
       _resourceProjectionReady &&
       _resourceUserId == user?.id &&
       webDav?.saved.username.isNotEmpty == true &&
@@ -95,15 +130,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
             password = value['password'] as String;
           }
         }
-      } else {
-        final raw = await _credentials(_guestResourceScope).read();
-        if (raw != null) {
-          final value = jsonDecode(raw) as Map<String, dynamic>;
-          if (value['environment'] == config.environmentId) {
-            username = value['username'] as String;
-            password = value['password'] as String;
-          }
-        }
       }
       if (_disposed ||
           generation != _loginGeneration ||
@@ -132,56 +158,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     });
     _resourceQueue = work.catchError((Object _) {});
     return work;
-  }
-
-  /// Resource credentials do not create an identity or enable personal sync.
-  /// Keep them separate from authenticated users and bound to the NAS device.
-  Future<void> saveGuestResourceCredentials({
-    required String username,
-    required String password,
-  }) async {
-    if (isBusy || isSignedIn || _configuration == null || webDav == null) {
-      throw StateError('请先退出账号并等待连接完成');
-    }
-    if (username.trim().isEmpty != password.isEmpty) {
-      throw ArgumentError('请填写账号和密码，或同时清空');
-    }
-    _initializing = true;
-    ++_loginGeneration;
-    notifyListeners();
-    final store = _credentials(_guestResourceScope);
-    String? previous;
-    bool captured = false;
-    try {
-      previous = await store.read();
-      captured = true;
-      if (username.trim().isEmpty) {
-        await store.delete();
-      } else {
-        await store.write(
-          jsonEncode({
-            'version': 1,
-            'environment': _configuration!.environmentId,
-            'username': username.trim(),
-            'password': password,
-          }),
-        );
-      }
-      await _projectResources();
-    } catch (_) {
-      if (captured) {
-        if (previous == null) {
-          await store.delete();
-        } else {
-          await store.write(previous);
-        }
-        await _projectResources();
-      }
-      rethrow;
-    } finally {
-      _initializing = false;
-      if (!_disposed) notifyListeners();
-    }
   }
 
   Future<void> _persistConfiguration() async {
@@ -319,6 +295,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       _observing = true;
     }
     _initializing = true;
+    unawaited(loadSavedLogins());
     _setupError = null;
     notifyListeners();
     try {
@@ -505,9 +482,10 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     String? otp,
     String? serverId,
     Uri? customOrigin,
+    bool savePassword = false,
   }) async {
     if (!supportsSignIn) {
-      _setupError = '网页版暂不支持账号登录，可继续以访客使用';
+      _setupError = '网页版暂不支持账号登录，知识库不可用';
       notifyListeners();
       return;
     }
@@ -590,6 +568,21 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         if (isSignedIn) {
           await _persistConfiguration();
           _pendingLoginConfiguration = null;
+          try {
+            await _savedLogins.remember(
+              environment: _configuration!.environmentId,
+              username: account,
+              password: password,
+              savePassword: savePassword,
+              serverId: _configuration!.activeServer.id,
+            );
+            _savedLoginError = null;
+            _savedLoginNeedsReload = false;
+          } catch (_) {
+            _savedLoginError = '已登录，登录信息未保存，请重新登录后重试';
+            _savedLoginNeedsReload = false;
+          }
+          if (_disposed || generation != _loginGeneration) return;
           if (webDav != null) {
             var credentialSaved = false;
             try {
@@ -669,6 +662,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> signOut() async {
     ++_loginGeneration;
+    _resourceProjectionReady = false;
+    notifyListeners();
     final scope = user == null ? null : _configuration!.accountScope(user!.id);
     if (scope != null && webDav != null) await _credentials(scope).delete();
     await _identity?.signOut();
@@ -729,9 +724,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> clearConfiguration() async {
     if (isBusy || isSignedIn) throw StateError('请先退出账号');
-    if (_configuration != null) {
-      await _credentials(_guestResourceScope).delete();
-    }
     await _disconnect();
     final prefs = await SharedPreferences.getInstance();
     if (!await prefs.remove(_configurationKey)) {
@@ -783,7 +775,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         IdentityFailureCode.remoteSignOutUnconfirmed => '已退出本机，请联网确认服务端退出',
         IdentityFailureCode.storage => '无法访问账号安全存储，请重试',
         IdentityFailureCode.unknown => '登录未完成，请重试',
-        IdentityFailureCode.unsupportedPlatform => '网页版暂不支持账号登录，可继续以访客使用',
+        IdentityFailureCode.unsupportedPlatform => '网页版暂不支持账号登录，知识库不可用',
       };
   @override
   void dispose() {
@@ -793,38 +785,4 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_disconnect());
     super.dispose();
   }
-}
-
-/// Cross-platform resource-only storage. DSM sessions continue to use the
-/// native-only app_identity store; Web uses flutter_secure_storage's WebCrypto.
-final class _GuestResourceCredentialStorage implements IdentitySessionStorage {
-  _GuestResourceCredentialStorage(String scope)
-    : _key = 'board_game_agent.resources.v1.$scope';
-  final String _key;
-  final _storage = const FlutterSecureStorage();
-  Future<void> _tail = Future.value();
-
-  Future<T> _run<T>(Future<T> Function() operation) {
-    var expired = false;
-    final work = _tail.then((_) {
-      if (expired) throw StateError('Resource credential storage timed out');
-      return operation();
-    });
-    _tail = work.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return work.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        expired = true;
-        throw StateError('Resource credential storage timed out');
-      },
-    );
-  }
-
-  @override
-  Future<String?> read() => _run(() => _storage.read(key: _key));
-  @override
-  Future<void> write(String value) =>
-      _run(() => _storage.write(key: _key, value: value));
-  @override
-  Future<void> delete() => _run(() => _storage.delete(key: _key));
 }

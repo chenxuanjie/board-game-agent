@@ -81,6 +81,7 @@ Future<void> main() async {
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(
       settingsProvider: () => updateSettingsController.saved,
+      accessAllowed: () => accountService.resourceCredentialsReady,
       resourceSettingsProvider: (target) =>
           accountService.settingsForResource(target),
     ),

@@ -11,10 +11,14 @@ import 'package:app_ai_client/src/default_http_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_storage/webdav_storage.dart';
 import 'package:webdav_settings/webdav_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'browser_asset_cache_stub.dart'
+    if (dart.library.js_interop) 'browser_asset_cache_web.dart';
 
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
 import '../models/game_resource.dart';
+import '../../games/models/game_catalog_manifest.dart';
 import '../models/remote_asset_file.dart';
 import 'board_game_remote_layout.dart';
 import '../../../core/models/connectivity_status.dart';
@@ -24,17 +28,22 @@ class RemoteAssetService {
     http.Client? client,
     WebDavSettings Function()? settingsProvider,
     WebDavSettings Function(Uri)? resourceSettingsProvider,
+    bool Function()? accessAllowed,
     this.requestTimeout = const Duration(seconds: 8),
   }) : _settingsProvider = settingsProvider,
+       _accessAllowed = accessAllowed,
        _resourceSettingsProvider = resourceSettingsProvider,
        _client = client ?? createDefaultAiHttpClient();
 
   final http.Client _client;
+  final bool Function()? _accessAllowed;
+  bool get accessAllowed => _accessAllowed?.call() ?? true;
   final WebDavSettings Function()? _settingsProvider;
   final WebDavSettings Function(Uri)? _resourceSettingsProvider;
   final Duration requestTimeout;
 
   static const String _versionManifestFileName = '_asset_versions.json';
+  Future<void> _versionWriteQueue = Future<void>.value();
 
   Future<CachedAsset?> ensureCached({
     required List<AssetSourceConfig> sources,
@@ -42,8 +51,39 @@ class RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async {
-    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
+    if (!accessAllowed) return null;
+    if (!_isUsableRemotePath(remotePath)) {
       return null;
+    }
+    if (kIsWeb) {
+      Uint8List? bytes;
+      if (!forceRefresh) bytes = await cachedBytesFor(remotePath);
+      var fromRemote = false;
+      if (bytes == null) {
+        final result = await _firstResponse(sources, remotePath, 'GET');
+        if (result != null) {
+          if (!accessAllowed) return null;
+          bytes = result.response.bodyBytes;
+          if (forceRefresh) _validateUpdate(remotePath, bytes);
+          await writeBrowserAsset(remotePath, bytes);
+          await _saveVersionInfo(
+            remotePath: remotePath,
+            sourceId: result.source.id,
+            headers: result.response.headers,
+          );
+          fromRemote = true;
+        } else if (allowCachedFallback) {
+          bytes = await cachedBytesFor(remotePath);
+        }
+      }
+      if (bytes == null) return null;
+      return CachedAsset(
+        remotePath: remotePath,
+        localPath: Uri.dataFromBytes(bytes).toString(),
+        exists: true,
+        fromRemote: fromRemote,
+        sourceId: null,
+      );
     }
     final File localFile = await _fileFor(remotePath);
     if (!forceRefresh && await localFile.exists()) {
@@ -57,11 +97,16 @@ class RemoteAssetService {
     }
 
     final result = await _firstResponse(sources, remotePath, 'GET');
+    if (!accessAllowed) return null;
     if (result != null) {
+      if (!accessAllowed) return null;
       final response = result.response;
       final source = result.source;
+      if (forceRefresh) _validateUpdate(remotePath, response.bodyBytes);
       await localFile.parent.create(recursive: true);
-      await localFile.writeAsBytes(response.bodyBytes, flush: true);
+      final staged = File('${localFile.path}.download');
+      await staged.writeAsBytes(response.bodyBytes, flush: true);
+      await staged.rename(localFile.path);
       await _saveVersionInfo(
         remotePath: remotePath,
         sourceId: source.id,
@@ -101,6 +146,25 @@ class RemoteAssetService {
       return utf8.decode(bytes);
     } catch (_) {
       return null;
+    }
+  }
+
+  void _validateUpdate(String path, List<int> bytes) {
+    if (bytes.isEmpty) throw const FormatException('Empty resource');
+    if (!path.endsWith('.json')) return;
+    final value = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    if (path == 'assets/catalog.json') {
+      if (value['games'] is! List) {
+        throw const FormatException('Invalid catalog');
+      }
+      GameCatalogManifest.fromJson(value);
+    } else if (path.endsWith('/game.json')) {
+      GameManifest.fromJson(value);
+    } else if (path.endsWith('/manifest.json')) {
+      if (value['resources'] is! List) {
+        throw const FormatException('Invalid manifest');
+      }
+      GameResourceManifest.fromJson(value);
     }
   }
 
@@ -212,6 +276,11 @@ class RemoteAssetService {
   }
 
   Future<String?> loadCachedOrBundledText({required String remotePath}) async {
+    if (!accessAllowed) return null;
+    if (kIsWeb) {
+      final bytes = await cachedBytesFor(remotePath);
+      return bytes == null ? null : utf8.decode(bytes);
+    }
     final File? cached = await cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {
       return cached.readAsString();
@@ -223,7 +292,7 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
-    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
+    if (!_isUsableRemotePath(remotePath)) {
       return false;
     }
     final Map<String, dynamic>? remote = await _probeRemoteVersion(
@@ -258,7 +327,17 @@ class RemoteAssetService {
     if (asset == null || !asset.exists) {
       return null;
     }
-    return File(asset.localPath).readAsString();
+    return kIsWeb
+        ? utf8.decode(Uri.parse(asset.localPath).data!.contentAsBytes())
+        : File(asset.localPath).readAsString();
+  }
+
+  Future<Uint8List?> cachedBytesFor(String remotePath) async {
+    if (!accessAllowed) return null;
+    if (!_isUsableRemotePath(remotePath)) return null;
+    if (kIsWeb) return readBrowserAsset(remotePath);
+    final file = await cachedFileFor(remotePath);
+    return file?.readAsBytes();
   }
 
   /// Loads a cached or remote file as bytes for an AI file input.
@@ -269,6 +348,7 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    if (!accessAllowed) return null;
     if (!_isUsableRemotePath(remotePath)) {
       return null;
     }
@@ -276,8 +356,10 @@ class RemoteAssetService {
       sources: sources,
       remotePath: remotePath,
     );
-    if (asset != null && asset.exists && !kIsWeb) {
-      return File(asset.localPath).readAsBytes();
+    if (asset != null && asset.exists) {
+      return kIsWeb
+          ? Uri.parse(asset.localPath).data!.contentAsBytes()
+          : File(asset.localPath).readAsBytes();
     }
     final List<int>? remoteBytes = await fetchRemoteBytes(
       sources: sources,
@@ -314,6 +396,7 @@ class RemoteAssetService {
   }
 
   Future<File?> cachedFileFor(String remotePath) async {
+    if (!accessAllowed) return null;
     if (kIsWeb || !_isUsableRemotePath(remotePath)) {
       return null;
     }
@@ -347,6 +430,7 @@ class RemoteAssetService {
     int maxDepth = 6,
     int maxEntries = 1000,
   }) async {
+    if (!accessAllowed) throw StateError('请先登录后使用知识库');
     if (sources.isEmpty) {
       return const <RemoteAssetFile>[];
     }
@@ -419,6 +503,7 @@ class RemoteAssetService {
     final Set<String> visited = <String>{};
     try {
       while (pending.isNotEmpty && files.length < maxEntries) {
+        if (!accessAllowed) throw StateError('请先登录后使用知识库');
         if (abort.isCompleted) throw StateError('Directory read cancelled');
         final _RemoteDirectoryRequest request = pending.removeAt(0);
         if (!visited.add(request.path)) {
@@ -493,6 +578,11 @@ class RemoteAssetService {
   }
 
   Future<Map<String, dynamic>> _loadVersionMap() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final source = prefs.getString('library.assetVersions.v1');
+      return source == null ? {} : jsonDecode(source) as Map<String, dynamic>;
+    }
     final File file = await _versionManifestFile();
     if (!await file.exists()) {
       return <String, dynamic>{};
@@ -506,6 +596,13 @@ class RemoteAssetService {
   }
 
   Future<void> _saveVersionMap(Map<String, dynamic> map) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString('library.assetVersions.v1', jsonEncode(map))) {
+        throw StateError('Unable to save library versions');
+      }
+      return;
+    }
     final File file = await _versionManifestFile();
     await file.parent.create(recursive: true);
     await file.writeAsString(jsonEncode(map), flush: true);
@@ -539,10 +636,14 @@ class RemoteAssetService {
   Future<void> _saveVersionRecord(
     String remotePath,
     Map<String, dynamic> record,
-  ) async {
-    final Map<String, dynamic> map = await _loadVersionMap();
-    map[remotePath] = record;
-    await _saveVersionMap(map);
+  ) {
+    final work = _versionWriteQueue.then((_) async {
+      final Map<String, dynamic> map = await _loadVersionMap();
+      map[remotePath] = record;
+      await _saveVersionMap(map);
+    });
+    _versionWriteQueue = work.catchError((Object _) {});
+    return work;
   }
 
   Future<Map<String, dynamic>?> _probeRemoteVersion({
@@ -634,6 +735,7 @@ class RemoteAssetService {
     Uri target, {
     Completer<void>? abort,
   }) async {
+    if (!accessAllowed) return http.Response('', 401);
     final requestAbort = Completer<void>();
     abort?.future.then((_) {
       if (!requestAbort.isCompleted) requestAbort.complete();
@@ -643,9 +745,10 @@ class RemoteAssetService {
           ..followRedirects = false
           ..headers.addAll(_headers(target));
     try {
-      return await (() async => http.Response.fromStream(
+      final response = await (() async => http.Response.fromStream(
         await _client.send(request),
       ))().timeout(requestTimeout);
+      return accessAllowed ? response : http.Response('', 401);
     } finally {
       if (!requestAbort.isCompleted) requestAbort.complete();
     }

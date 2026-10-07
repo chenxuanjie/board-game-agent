@@ -92,6 +92,12 @@ class GameManifestService {
     }
 
     // 1. Check local cache
+    if (kIsWeb) {
+      final cachedSource = await remoteAssetService.loadCachedOrBundledText(
+        remotePath: remotePath,
+      );
+      if (cachedSource != null) return cachedSource;
+    }
     final File? cached = await remoteAssetService.cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {
       debugPrint('[manifests] using cached source: $remotePath');
@@ -108,7 +114,9 @@ class GameManifestService {
         );
         if (asset != null && asset.exists) {
           debugPrint('[manifests] using remote source: $remotePath');
-          return File(asset.localPath).readAsString();
+          return kIsWeb
+              ? utf8.decode(Uri.parse(asset.localPath).data!.contentAsBytes())
+              : File(asset.localPath).readAsString();
         }
       } catch (e) {
         debugPrint('[manifests] remote fetch failed for $remotePath: $e');
@@ -142,6 +150,16 @@ class GameManifestService {
     required RemoteAssetService remoteAssetService,
   }) async {
     final GameCatalogManifest local = await loadBundledCatalogManifest();
+    if (kIsWeb) {
+      final source = await remoteAssetService.loadCachedOrBundledText(
+        remotePath: 'assets/catalog.json',
+      );
+      if (source == null) return local;
+      return mergeCatalogs(
+        base: local,
+        overlay: GameCatalogManifest.fromJson(jsonDecode(source)),
+      );
+    }
     final File? cached = await remoteAssetService.cachedFileFor(
       'assets/catalog.json',
     );

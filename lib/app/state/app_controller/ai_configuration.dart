@@ -272,6 +272,9 @@ extension AppAiConfigurationController on AppController {
           (old) => !saved.any((source) => source.id == old.id),
         )) {
       _invalidateAssetAccessStatus();
+      _pendingLibraryUpdate = null;
+      _libraryUpdateError = null;
+      _libraryUpdatePromptSeen = false;
     }
     _assetSourceConfigs = saved;
     _assetSourceStatuses.removeWhere(

@@ -20,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'support/account_sync_fixture.dart';
+import 'support/memory_login_storage.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -27,7 +28,11 @@ void main() {
     'unsupported Web hides credential fields and sign-in action while keeping guest access',
     (tester) async {
       final app = _MineFixture();
-      final service = AccountService(controller: app, signInSupported: false);
+      final service = AccountService(
+        savedLoginStorage: MemoryLoginStorage(),
+        controller: app,
+        signInSupported: false,
+      );
       addTearDown(service.dispose);
       addTearDown(app.dispose);
       await _mount(tester, service);
@@ -101,6 +106,7 @@ void main() {
   ) async {
     final app = _MineFixture();
     final service = AccountService(
+      savedLoginStorage: MemoryLoginStorage(),
       controller: app,
       gatewayFactory: (_) async =>
           throw const IdentityFailure(IdentityFailureCode.storage),
@@ -351,7 +357,10 @@ Future<void> _finishNicknameTransition(
 AccountService _service([_MineFixture? controller]) {
   final app = controller ?? _MineFixture();
   if (controller == null) addTearDown(app.dispose);
-  final service = AccountService(controller: app);
+  final service = AccountService(
+    savedLoginStorage: MemoryLoginStorage(),
+    controller: app,
+  );
   addTearDown(service.dispose);
   return service;
 }
@@ -430,6 +439,7 @@ Future<(AccountService, _UiGateway)> _configuredService(
           : null
       ..offline = offline;
     final service = AccountService(
+      savedLoginStorage: MemoryLoginStorage(),
       controller: controller,
       gatewayFactory: (_) async => gateway,
       switchScope: (_) async {},
@@ -438,6 +448,7 @@ Future<(AccountService, _UiGateway)> _configuredService(
     await service.saveConfiguration(
       AccountConfiguration.fromFields(nasUrl: 'https://nas.example.test:5001'),
     );
+    await service.loadSavedLogins();
     return (service, gateway, controller);
   });
   final (service, gateway, controller) = result!;

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_sync/webdav_sync.dart' show canonicalJson;
 import '../../features/identity/services/account_sync_store.dart';
@@ -50,6 +51,7 @@ import '../../features/games/services/game_favorite_ranker.dart';
 import '../../features/games/services/webdav_game_vote_store.dart';
 import '../../features/games/services/national_day_list_controller.dart';
 import '../../features/library/services/remote_asset_service.dart';
+import '../../features/library/services/library_update_diff.dart';
 import '../../features/assistant/services/speech_service.dart';
 import '../../features/assistant/services/tts_service.dart';
 import '../../features/assistant/services/realtime_voice_service.dart';
@@ -243,6 +245,9 @@ class AppController extends ChangeNotifier {
   bool _checkingLibraryUpdate = false;
   bool _applyingLibraryUpdate = false;
   bool _libraryUpdatePromptSeen = false;
+  String? _libraryUpdateError;
+  int _libraryUpdateCompleted = 0;
+  int _libraryContentRevision = 0;
   bool _homeAssetsLoading = false;
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
@@ -367,6 +372,9 @@ class AppController extends ChangeNotifier {
   }
 
   RemoteLibraryUpdate? get pendingLibraryUpdate => _pendingLibraryUpdate;
+  String? get libraryUpdateError => _libraryUpdateError;
+  int get libraryUpdateCompleted => _libraryUpdateCompleted;
+  int get libraryContentRevision => _libraryContentRevision;
   bool get checkingLibraryUpdate => _checkingLibraryUpdate;
   bool get applyingLibraryUpdate => _applyingLibraryUpdate;
   bool get homeAssetsLoading => _homeAssetsLoading;
@@ -699,6 +707,7 @@ class AppController extends ChangeNotifier {
     RemoteLibraryUpdate update, {
     int? identityEpoch,
   }) {
+    if (identityEpoch != null && identityEpoch != _identityScopeEpoch) return;
     final RemoteLibraryUpdate? previous = _pendingLibraryUpdate;
     _pendingLibraryUpdate = update;
     _libraryUpdatePromptSeen = false;
