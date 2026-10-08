@@ -46,6 +46,8 @@ class SyncDeviceFixture {
 class MemoryPrivateFiles implements AccountPrivateFiles {
   final objects = <String, String>{};
   PrivateFileFailure? failure;
+  // Opt in to an administrator-provisioned fixed folder with no device folders.
+  bool fixedDirectoryOnly = false;
   int calls = 0;
   void check() {
     calls++;
@@ -83,6 +85,11 @@ class MemoryPrivateFiles implements AccountPrivateFiles {
   @override
   Future<void> createImmutable(String relativePath, String content) async {
     check();
+    if (fixedDirectoryOnly &&
+        relativePath.substring(0, relativePath.lastIndexOf('/')) !=
+            'operations') {
+      throw const PrivateFileException(PrivateFileFailure.missing);
+    }
     objects.putIfAbsent(relativePath, () => content);
     if (objects[relativePath] != content) {
       throw const PrivateFileException(PrivateFileFailure.unavailable);

@@ -9,6 +9,77 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
+    'new devices sync with only a pre-provisioned operations folder',
+    () async {
+      final files = MemoryPrivateFiles()..fixedDirectoryOnly = true;
+      final a = SyncDeviceFixture(), b = SyncDeviceFixture();
+      await a.start();
+      await b.start();
+      a.entities['favorite|catan'] = {'gameSlug': 'catan'};
+      b.entities['favorite|splendor'] = {'gameSlug': 'splendor'};
+      expect((await a.sync(files)).completed, isTrue);
+      expect((await b.sync(files)).completed, isTrue);
+      expect((await a.sync(files)).completed, isTrue);
+      expect(a.entities, b.entities);
+      expect(a.entities.length, 2);
+      expect(
+        files.objects.keys.every(
+          (path) => RegExp(
+            r'^operations/d[0-9a-f]{32}\.[0-9]{16}\.json$',
+          ).hasMatch(path),
+        ),
+        isTrue,
+      );
+    },
+  );
+  test('legacy records remain readable alongside new flat records', () async {
+    final files = MemoryPrivateFiles(), a = SyncDeviceFixture();
+    await a.start();
+    a.entities['favorite|catan'] = {'gameSlug': 'catan'};
+    await a.sync(files);
+    final flat = files.objects.keys.single;
+    final legacy = flat.replaceFirst(
+      '${a.local.deviceId}.',
+      '${a.local.deviceId}/',
+    );
+    final original = files.objects.remove(flat)!;
+    files.objects[legacy] =
+        original; // Represents an existing old-client record.
+    a.entities['favorite|splendor'] = {'gameSlug': 'splendor'};
+    expect((await a.sync(files)).completed, isTrue);
+    final b = SyncDeviceFixture();
+    await b.start();
+    expect((await b.sync(files)).completed, isTrue);
+    expect(b.entities, a.entities);
+    expect(files.objects[legacy], original);
+    // An equivalent retry at the new path is one operation, not a sequence gap.
+    files.objects[flat] = original;
+    final c = SyncDeviceFixture();
+    await c.start();
+    expect((await c.sync(files)).completed, isTrue);
+    expect(c.entities, a.entities);
+    final changed = jsonDecode(original) as Map<String, dynamic>;
+    changed['operationId'] = '${changed['operationId']}-conflict';
+    files.objects[flat] = jsonEncode(changed);
+    final d = SyncDeviceFixture();
+    await d.start();
+    expect((await d.sync(files)).failed, isTrue);
+    expect(d.entities, isEmpty);
+  });
+  test(
+    'missing private directory preserves local data and is not retried',
+    () async {
+      final files = MemoryPrivateFiles()..failure = PrivateFileFailure.missing;
+      final a = SyncDeviceFixture();
+      await a.start();
+      a.entities['favorite|local'] = {'gameSlug': 'local'};
+      expect((await a.sync(files)).failed, isTrue);
+      expect(files.calls, 1);
+      expect(a.entities.containsKey('favorite|local'), isTrue);
+      expect(files.objects, isEmpty);
+    },
+  );
+  test(
     'offline outbox survives restart and distinct device changes converge',
     () async {
       final files = MemoryPrivateFiles()..failure = PrivateFileFailure.network;

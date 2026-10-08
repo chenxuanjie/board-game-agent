@@ -264,6 +264,8 @@ final class AccountCloudSync extends ChangeNotifier {
         status = AccountCloudStatus.pending;
         final cause = failure is WebDavException ? failure.cause : null;
         error = switch (cause) {
+          PrivateFileException(failure: PrivateFileFailure.missing) =>
+            '私人目录初始化未完成，请检查 home 后重试。本机数据已保留。',
           PrivateFileException(failure: PrivateFileFailure.denied) =>
             '群晖私有目录无访问权限，本机数据已保留。请检查 home 权限后重试。',
           PrivateFileException(failure: PrivateFileFailure.session) =>

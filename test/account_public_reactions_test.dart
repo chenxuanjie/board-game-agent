@@ -31,6 +31,26 @@ Future<void> _publish(
 
 void main() {
   test(
+    'administrator-provisioned folders count their UID namespaces separately',
+    () async {
+      final hub = PublicFixtureHub()
+        ..directoryOwners.addAll({'u101': 900, 'u102': 900, 'u103': 900});
+      final a = SyncDeviceFixture(),
+          b = SyncDeviceFixture(scope: 'b'),
+          observer = SyncDeviceFixture(scope: 'observer');
+      for (final device in [a, b, observer]) {
+        await device.start();
+      }
+      _vote(a, 'cabo');
+      _vote(b, 'cabo');
+      await _publish(AccountPublicReactions(MemoryPublicFiles(hub, 101)), a);
+      await _publish(AccountPublicReactions(MemoryPublicFiles(hub, 102)), b);
+      final remote = AccountPublicReactions(MemoryPublicFiles(hub, 103));
+      await _publish(remote, observer);
+      expect(remote.counts(GameVoteBallot.campaign), {'cabo': 2});
+    },
+  );
+  test(
     'two devices of the same UID count once; another account counts separately',
     () async {
       final hub = PublicFixtureHub();

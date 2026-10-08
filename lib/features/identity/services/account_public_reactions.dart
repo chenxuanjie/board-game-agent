@@ -36,11 +36,13 @@ final class AccountPublicReactions {
       var snapshots = 0;
       for (final account in accounts) {
         if (!account.directory ||
-            !RegExp(r'^u[1-9][0-9]*$').hasMatch(account.name) ||
-            account.ownerUid.toString() != account.name.substring(1)) {
+            !RegExp(r'^u[1-9][0-9]*$').hasMatch(account.name)) {
           throw const FormatException('公共账号目录身份不匹配');
         }
-        final heads = next.putIfAbsent(account.ownerUid, () => {});
+        // UID directory names identify the namespace, including folders created
+        // by an administrator. Each snapshot must still be owned by that UID.
+        final accountUid = int.parse(account.name.substring(1));
+        final heads = next.putIfAbsent(accountUid, () => {});
         String? dataset;
         final records = await files.entries(account.name);
         check();
@@ -49,20 +51,20 @@ final class AccountPublicReactions {
         }
         for (final record in records) {
           if (record.directory ||
-              record.ownerUid != account.ownerUid ||
+              record.ownerUid != accountUid ||
               !RegExp(r'^d[0-9a-f]{32}\.json$').hasMatch(record.name)) {
             throw const FormatException('公共记录身份不匹配');
           }
           final snapshot = await files.read('${account.name}/${record.name}');
           final data = jsonDecode(snapshot);
           check();
-          if (account.ownerUid == files.uid &&
+          if (accountUid == files.uid &&
               record.name == '${local.deviceId}.json') {
             published = snapshot;
           }
           if (data is! Map ||
               data['version'] != 1 ||
-              data['uid'] != account.ownerUid ||
+              data['uid'] != accountUid ||
               '${data['device']}.json' != record.name ||
               data['operations'] is! List ||
               (data['operations'] as List).length > 8192) {
@@ -124,9 +126,29 @@ final class AccountPublicReactions {
       if (generation != _generation) rethrow;
       error = switch (failure) {
         PrivateFileException(failure: PrivateFileFailure.missing) =>
-          '公共目录尚未配置，请在 NAS 设置共享目录权限。',
+          '公共目录不存在，请由管理员创建后重试。',
+        PrivateFileException(
+          failure: PrivateFileFailure.denied,
+          operation: 'directory-create',
+        ) =>
+          '无法创建账号公共目录，请检查创建权限。',
+        PrivateFileException(
+          failure: PrivateFileFailure.denied,
+          operation: 'public-permissions',
+        ) =>
+          '公共权限过宽：各账号只能修改自己的记录。',
+        PrivateFileException(
+          failure: PrivateFileFailure.denied,
+          operation: 'public-metadata',
+        ) =>
+          'NAS 返回的公共目录权限信息不完整。',
+        PrivateFileException(
+          failure: PrivateFileFailure.denied,
+          operation: 'public-owner',
+        ) =>
+          '公共记录的所有者与账号不匹配。',
         PrivateFileException(failure: PrivateFileFailure.denied) =>
-          '公共目录权限不符合要求：所有账号可读，各账号只能修改自己的记录。',
+          '无法访问公共目录，请检查当前账号的共享文件夹权限。',
         PrivateFileException(failure: PrivateFileFailure.session) =>
           '登录已过期，请重新登录。',
         FormatException() || SyncProtocolException() => '公共记录需要检查，已保留上次统计。',

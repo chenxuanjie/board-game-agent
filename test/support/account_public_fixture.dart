@@ -3,6 +3,7 @@ import 'package:app_identity/app_identity.dart';
 
 class PublicFixtureHub {
   final objects = <String, ({int owner, String text})>{};
+  final directoryOwners = <String, int>{};
   PrivateFileFailure? failure;
   Completer<void>? readGate;
   int writes = 0;
@@ -31,7 +32,9 @@ class MemoryPublicFiles implements AccountPublicFiles {
       result[pieces.first] = AccountPublicEntry(
         name: pieces.first,
         directory: pieces.length > 1,
-        ownerUid: entry.value.owner,
+        ownerUid: pieces.length > 1
+            ? hub.directoryOwners[pieces.first] ?? entry.value.owner
+            : entry.value.owner,
       );
     }
     return result.values.toList();

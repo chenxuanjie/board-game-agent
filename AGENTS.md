@@ -28,6 +28,12 @@
 
 ## 实现与验证
 
+### NAS 账号数据目录规则
+
+- 公共根目录 `/<共享目录>/apps/board_game_agent/public/v1` 与权限由管理员在 App 外准备。App 只允许受控初始化当前账号自己的 `u<UID>` 目录，以及 `/home/Apps/board_game_agent/sync/v1/<environment>/operations` 固定私人目录链；不得创建其他账号、共享根或任意路径的目录。
+- 所有 FileStation 上传必须显式设置 `create_parents=false`；目录初始化单独检查路径与存在状态，逐级创建并设置 `force_parent=false`。只有明确的目录缺失才能触发初始化；无权限、断网或会话错误不得当作缺失。失败明确报错并保留本机数据。
+- App 不得删除、移动或重命名 NAS 文件夹，也不得修改 NAS 权限。私人新记录直接写入固定 `operations/` 目录，设备 ID 放入文件名；新设备不能触发新建设备目录。旧设备目录仅兼容读取，不迁移、清理或删除。
+
 ### Android APK 资源规则
 
 - APK 不得内置桌游 PDF、规则书、FAQ、知识文档、翻译文本、索引、研究素材或资料压缩包；`assets/games/<slug>/docs/` 一律不得进入 Android 资源包。
