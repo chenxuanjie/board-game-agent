@@ -46,6 +46,7 @@ class GameVoteService extends ChangeNotifier {
   VoidCallback? onSaved;
   String? loadError;
   String? Function()? accountSyncError;
+  bool Function()? cachedCountVisibility;
   String? get syncError => accountSyncError?.call();
   String? _scope;
   int _revision = 0;
@@ -53,17 +54,20 @@ class GameVoteService extends ChangeNotifier {
   GameVoteSyncStatus status = GameVoteSyncStatus.localOnly;
   bool get ready => _cache != null && loadError == null;
   bool get hasCachedRemoteCounts =>
-      _cache?.remoteCounts.containsKey(
-        accountScopeProvider?.call() ?? scopeProvider?.call() ?? _scope,
-      ) ??
-      false;
+      cachedCountVisibility?.call() != false &&
+      (_cache?.remoteCounts.containsKey(
+            accountScopeProvider?.call() ?? scopeProvider?.call() ?? _scope,
+          ) ??
+          false);
   bool hasVoted(String slug) =>
       (externalGames?.call() ?? _cache?.ballot.games)?.contains(slug) ?? false;
   int count(String slug) =>
-      (_cache?.remoteCounts[accountScopeProvider?.call() ??
-              scopeProvider?.call() ??
-              _scope]?[slug] ??
-          0) +
+      (cachedCountVisibility?.call() == false
+          ? 0
+          : (_cache?.remoteCounts[accountScopeProvider?.call() ??
+                    scopeProvider?.call() ??
+                    _scope]?[slug] ??
+                0)) +
       (hasVoted(slug) ? 1 : 0);
 
   void externalSelectionChanged() {

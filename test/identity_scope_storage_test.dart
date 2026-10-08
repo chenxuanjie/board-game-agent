@@ -43,6 +43,42 @@ import 'package:board_game_agent/features/settings/services/preferences_service.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('guest never displays legacy anonymous public counters', () async {
+    final app = await _app();
+    final slug = app.games.first.slug;
+    final prefs = PreferencesService();
+    await prefs.saveGameVoteCache(
+      GameVoteCache(
+        ballot: GameVoteBallot(
+          deviceId: '0123456789abcdef0123456789abcdef',
+          games: [slug],
+        ),
+        remoteCounts: {
+          'legacy-anonymous': {slug: 99},
+        },
+        lastScope: 'legacy-anonymous',
+      ).encode(),
+    );
+    await prefs.saveFavoriteRankingCache(
+      GameVoteCache(
+        ballot: GameVoteBallot(
+          deviceId: '0123456789abcdef0123456789abcdef',
+          games: [],
+          namespace: GameVoteBallot.favoritesNamespace,
+        ),
+        remoteCounts: {
+          'legacy-anonymous': {slug: 99},
+        },
+        lastScope: 'legacy-anonymous',
+      ).encode(),
+    );
+    await app.gameVotes.reload();
+    expect(app.gameVotes.count(slug), 1);
+    expect(app.gameVotes.hasCachedRemoteCounts, isFalse);
+    await app.refreshFavoriteRankings();
+    expect(app.favoriteStatistics.count(slug), 0);
+    expect(app.favoriteStatistics.hasCachedRemoteCounts, isFalse);
+  });
 
   test('legacy personal preferences belong exclusively to guest', () async {
     SharedPreferences.setMockInitialValues({

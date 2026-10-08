@@ -158,11 +158,11 @@ void main() {
       await app.favoriteStatistics.sync();
       expect(app.favoriteStatistics.count('a'), 1);
       expect(app.favoriteStatistics.status, GameVoteSyncStatus.pending);
-      final offline = _app(prefs);
+      final offline = _app(prefs, cloud: cloud);
       await offline.refreshFavoriteRankings();
       expect(offline.favoriteStatistics.count('a'), 1);
       expect(offline.favoriteStatistics.hasCachedRemoteCounts, isTrue);
-      expect(offline.favoriteStatistics.status, GameVoteSyncStatus.localOnly);
+      expect(offline.favoriteStatistics.status, GameVoteSyncStatus.pending);
       cloud.fail = false;
       await app.refreshFavoriteRankings();
       expect(

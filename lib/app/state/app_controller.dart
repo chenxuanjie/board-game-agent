@@ -140,6 +140,11 @@ class AppController extends ChangeNotifier {
   final GameVoteService? _guestVoteTemplate;
   GameVoteService get gameVotes => _gameVotes
     ..canMutate = (() => !_switchingIdentityScope)
+    ..cachedCountVisibility = (() =>
+        identityUserId != null || _gameVotes.remoteProvider != null)
+    ..accountScopeProvider = (() =>
+        _accountReactionScope ??
+        (identityUserId == null ? null : 'account-public-v1.$identityUserId'))
     ..onSaved = _notifyListeners;
   String? get identityUserId => _preferencesService.identityUserId;
   bool _switchingIdentityScope = false;
@@ -187,25 +192,33 @@ class AppController extends ChangeNotifier {
     _favoriteStatistics?.accountSyncError = error;
   }
 
-  GameVoteService get favoriteStatistics =>
-      _favoriteStatistics ??= GameVoteService(
-        preferences: _preferencesService,
-        namespace: GameVoteBallot.favoritesNamespace,
-        remoteProvider: () =>
-            _accountReactionProvider?.call(GameVoteBallot.favoritesNamespace) ??
-            (anonymousReactionPublishingEnabled
-                ? _favoriteRemoteProvider?.call()
-                : null),
-        scopeProvider: () =>
-            _accountReactionScope ??
-            (anonymousReactionPublishingEnabled
-                ? _favoriteScopeProvider?.call()
-                : null),
-        externalGames: () =>
-            _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
-        cacheLoader: _preferencesService.loadFavoriteRankingCache,
-        cacheSaver: _preferencesService.saveFavoriteRankingCache,
-      )..accountSyncError = _accountReactionError;
+  GameVoteService get favoriteStatistics => _favoriteStatistics ??=
+      GameVoteService(
+          preferences: _preferencesService,
+          namespace: GameVoteBallot.favoritesNamespace,
+          remoteProvider: () =>
+              _accountReactionProvider?.call(
+                GameVoteBallot.favoritesNamespace,
+              ) ??
+              (anonymousReactionPublishingEnabled
+                  ? _favoriteRemoteProvider?.call()
+                  : null),
+          scopeProvider: () =>
+              _accountReactionScope ??
+              (identityUserId == null
+                  ? null
+                  : 'account-public-v1.$identityUserId') ??
+              (anonymousReactionPublishingEnabled
+                  ? _favoriteScopeProvider?.call()
+                  : null),
+          externalGames: () =>
+              _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
+          cacheLoader: _preferencesService.loadFavoriteRankingCache,
+          cacheSaver: _preferencesService.saveFavoriteRankingCache,
+        )
+        ..accountSyncError = _accountReactionError
+        ..cachedCountVisibility = (() =>
+            identityUserId != null || _favoriteRemoteProvider != null);
   NationalDayListController? _nationalDayList;
   NationalDayListController get nationalDayList => _nationalDayList ??=
       NationalDayListController(
