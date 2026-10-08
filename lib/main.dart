@@ -343,39 +343,51 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     _startupUpdateCheckScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !context.mounted) return;
-      unawaited(
-        checkForUpdateOnStartup(
-          context: context,
-          appId: 'board_game_agent',
-          updateService: _createUpdateService(),
-        ),
-      );
+      unawaited(_checkStartupUpdate(context));
     });
+  }
+
+  Future<void> _checkStartupUpdate(BuildContext context) async {
+    final release = widget.controller.suspendLibraryUpdatePrompts();
+    try {
+      await checkForUpdateOnStartup(
+        context: context,
+        appId: 'board_game_agent',
+        updateService: _createUpdateService(),
+      );
+    } finally {
+      release();
+    }
   }
 
   Future<void> _openAbout({bool checkOnOpen = false}) async {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    await navigator.push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AppAboutPage(
-          checkOnOpen: checkOnOpen,
-          config: AppAboutConfig(
-            appName: '桌游导师',
-            subtitle: '桌游入口与统一 AI 助手',
-            appIcon: const _BoardGameAppMark(),
-            fallbackVersion: '版本不可用',
-            fallbackBuild: '—',
-            showUpdate: boardGameUpdateTarget != null,
-            updateCheckSubtitle:
-                boardGameUpdateTarget == AppUpdateTarget.windows
-                ? '检查 Windows 安装包更新'
-                : '检查 Android 安装包更新',
+    final release = widget.controller.suspendLibraryUpdatePrompts();
+    try {
+      await navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AppAboutPage(
+            checkOnOpen: checkOnOpen,
+            config: AppAboutConfig(
+              appName: '桌游导师',
+              subtitle: '桌游入口与统一 AI 助手',
+              appIcon: const _BoardGameAppMark(),
+              fallbackVersion: '版本不可用',
+              fallbackBuild: '—',
+              showUpdate: boardGameUpdateTarget != null,
+              updateCheckSubtitle:
+                  boardGameUpdateTarget == AppUpdateTarget.windows
+                  ? '检查 Windows 安装包更新'
+                  : '检查 Android 安装包更新',
+            ),
+            updateService: _createUpdateService(),
           ),
-          updateService: _createUpdateService(),
         ),
-      ),
-    );
+      );
+    } finally {
+      release();
+    }
   }
 
   List<WebDavSettings> _updateConnections() {

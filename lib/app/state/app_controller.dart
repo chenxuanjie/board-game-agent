@@ -287,6 +287,7 @@ class AppController extends ChangeNotifier {
   bool _checkingLibraryUpdate = false;
   bool _applyingLibraryUpdate = false;
   bool _libraryUpdatePromptSeen = false;
+  int _appUpdateInteractions = 0;
   String? _libraryUpdateError;
   int _libraryUpdateCompleted = 0;
   int _libraryContentRevision = 0;

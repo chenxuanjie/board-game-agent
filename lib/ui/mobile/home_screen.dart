@@ -41,7 +41,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _tab = 0;
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
@@ -50,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkLibraryUpdate());
   }
@@ -69,6 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
     super.dispose();
   }
@@ -329,10 +331,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _checkLibraryUpdate() {
-    if (!mounted || _showingLibraryUpdateDialog) return;
+    if (!mounted ||
+        _showingLibraryUpdateDialog ||
+        !widget.controller.shouldShowLibraryUpdatePrompt() ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        (WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed)) {
+      return;
+    }
     final next = widget.controller.pendingLibraryUpdate;
     if (next == null || identical(next, _lastSeenUpdate)) return;
-    _lastSeenUpdate = next;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _showLibraryUpdateDialog(),
     );
@@ -341,15 +350,27 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _showLibraryUpdateDialog({bool fromNotification = false}) async {
     if (!mounted ||
         _showingLibraryUpdateDialog ||
+        widget.controller.appUpdateInProgress ||
+        (!fromNotification &&
+            WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) ||
+        (!fromNotification && ModalRoute.of(context)?.isCurrent != true) ||
         (!fromNotification &&
             !widget.controller.shouldShowLibraryUpdatePrompt())) {
       return;
     }
+    _lastSeenUpdate = widget.controller.pendingLibraryUpdate;
     _showingLibraryUpdateDialog = true;
     try {
       await showLibraryUpdateReview(context, widget.controller);
     } finally {
       _showingLibraryUpdateDialog = false;
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkLibraryUpdate();
   }
 }

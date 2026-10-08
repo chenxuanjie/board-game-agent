@@ -146,6 +146,69 @@ void main() {
       'Noto Sans SC',
     )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
   });
+  testWidgets(
+    'app update postpones library prompt until every update interaction finishes',
+    (tester) async {
+      final fixture = await tester.runAsync(_fixture);
+      final (c, remote) = fixture!;
+      addTearDown(c.dispose);
+      final releasePrompt = c.suspendLibraryUpdatePrompts();
+      final releaseDownload = c.suspendLibraryUpdatePrompts();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+          home: HomeScreen(controller: c, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryUpdateReview), findsNothing);
+      expect(c.pendingLibraryUpdate, isNotNull);
+      releasePrompt();
+      releasePrompt(); // idempotent release must not unblock an active download.
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryUpdateReview), findsNothing);
+      releaseDownload();
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryUpdateReview), findsOneWidget);
+      expect(remote.writes, isEmpty);
+      await tester.tap(find.byKey(const ValueKey('library-update-later')));
+      await tester.pumpAndSettle();
+      expect(c.pendingLibraryUpdate, isNotNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  for (final width in [390.0, 1280.0]) {
+    testWidgets(
+      'manual library review cannot interrupt an app update at $width',
+      (tester) async {
+        final fixture = await tester.runAsync(_fixture);
+        final (c, _) = fixture!;
+        addTearDown(c.dispose);
+        await tester.binding.setSurfaceSize(Size(width, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        late BuildContext host;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) {
+                host = context;
+                return const Scaffold();
+              },
+            ),
+          ),
+        );
+        final release = c.suspendLibraryUpdatePrompts();
+        await showLibraryUpdateReview(host, c);
+        await tester.pumpAndSettle();
+        expect(find.byType(LibraryUpdateReview), findsNothing);
+        expect(c.shouldShowLibraryUpdatePrompt(), isFalse);
+        release();
+        expect(c.shouldShowLibraryUpdatePrompt(), isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
   test(
     'catalog reports additions, order/category edits and disabling; omissions preserve overlays',
     () {

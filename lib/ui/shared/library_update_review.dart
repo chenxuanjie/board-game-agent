@@ -8,6 +8,7 @@ Future<void> showLibraryUpdateReview(
   BuildContext context,
   AppController controller,
 ) async {
+  if (controller.appUpdateInProgress) return;
   controller.dismissPendingLibraryUpdatePrompt();
   final narrow = MediaQuery.sizeOf(context).width < 700;
   if (narrow) {

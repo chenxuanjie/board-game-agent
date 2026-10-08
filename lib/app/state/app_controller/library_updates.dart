@@ -337,7 +337,25 @@ extension AppLibraryUpdateController on AppController {
   }
 
   bool shouldShowLibraryUpdatePrompt() =>
-      _pendingLibraryUpdate != null && !_libraryUpdatePromptSeen;
+      !appUpdateInProgress &&
+      _pendingLibraryUpdate != null &&
+      !_libraryUpdatePromptSeen;
+
+  bool get appUpdateInProgress => _appUpdateInteractions > 0;
+
+  /// Holds unsolicited library prompts while an app update is being reviewed,
+  /// downloaded or installed. Releasing does not consume the pending update.
+  VoidCallback suspendLibraryUpdatePrompts() {
+    _appUpdateInteractions++;
+    _notifyListeners();
+    var released = false;
+    return () {
+      if (released) return;
+      released = true;
+      _appUpdateInteractions--;
+      _notifyListeners();
+    };
+  }
 
   String? _gameTitleForRemotePath(String path) {
     final slug = RegExp(r'assets/games/([^/]+)/').firstMatch(path)?.group(1);
