@@ -20,6 +20,8 @@
 
 每个 `features/` 目录只在确有对应代码时设 `models/` 或 `services/`，不为对称性建立空目录。平台外壳负责布局与导航，业务状态和持久化只保留一套。新增界面时先确定它属于桌面、手机还是共用；新增数据处理时按功能放置，不因调用它的页面位于桌面或手机而复制一份。
 
+Windows 窗口框架统一位于 `lib/ui/desktop/desktop_window_frame.dart`，由 MaterialApp builder 包住导航与账号切换遮挡页面。最小化、最大化/还原、关闭、拖动和边缘调整大小不属于某个业务页；账号、关于、文档、导入导出、资料更新、国庆专题和弹窗均不得自行隐藏或重复绘制窗口栏。桌面退出登录后，等待旧账号写入完成并切换到访客数据，再清理旧导航并打开账号登录页；登录页仍可返回访客首页。登录成功仍进入当前账号首页。
+
 AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效位于 `lib/ui/shared/assistant/`；桌面和紧凑页面复用这些控件并保持原有控制器、会话和草稿边界，详见 [AI 助手界面](assistant-workspace-design.md)。
 
 配置导入导出共用 `lib/ui/shared/settings_transfer_screen.dart`；格式识别在 `lib/features/settings/models/configuration_transfer.dart`，跨存储保存及中断恢复在 `lib/features/settings/services/settings_transfer_service.dart`。设置页只提供范围入口与应用后的表单刷新，不复制解析或存储路径。格式、依赖补丁和验收边界见 [设置导入与导出](settings-transfer.md)。

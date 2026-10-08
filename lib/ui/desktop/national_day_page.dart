@@ -6,14 +6,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/services/game_vote_service.dart';
 import '../shared/national_day_game_picker.dart';
 import 'desktop_resolved_image.dart';
-import 'window_controls.dart';
 
 part 'national_day_artwork.dart';
 
@@ -28,12 +26,10 @@ class DesktopNationalDayPage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenGame,
-    this.enableNativeWindowControls = false,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
-  final bool enableNativeWindowControls;
 
   @override
   State<DesktopNationalDayPage> createState() => _DesktopNationalDayPageState();
@@ -127,7 +123,6 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
       widget.controller.nationalDayList,
     ]),
     builder: (context, _) {
-      final native = widget.enableNativeWindowControls;
       final page = Stack(
         fit: StackFit.expand,
         children: [
@@ -137,7 +132,7 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
             filterQuality: FilterQuality.high,
           ),
           Positioned.fill(
-            top: native ? 32 : 0,
+            top: 0,
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final scale = math.min(
@@ -205,32 +200,12 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
               },
             ),
           ),
-          if (native) ...[
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 150,
-              height: 32,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onPanStart: (_) => windowManager.startDragging(),
-                onDoubleTap: () async {
-                  if (await windowManager.isMaximized()) {
-                    await windowManager.unmaximize();
-                  } else {
-                    await windowManager.maximize();
-                  }
-                },
-              ),
-            ),
-            const Positioned(top: 0, right: 0, child: WindowControls()),
-          ],
         ],
       );
       return Scaffold(
         key: const ValueKey('desktop-national-day-page'),
         backgroundColor: _brown,
-        body: native ? DragToResizeArea(resizeEdgeSize: 6, child: page) : page,
+        body: page,
       );
     },
   );
@@ -317,7 +292,9 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
             GameVoteSyncStatus.localOnly => (
               Icons.phone_android_rounded,
               '仅本地',
-              widget.controller.identityUserId == null ? '登录后参与公共投票' : '公共投票尚未连接，点击重试',
+              widget.controller.identityUserId == null
+                  ? '登录后参与公共投票'
+                  : '公共投票尚未连接，点击重试',
             ),
             GameVoteSyncStatus.syncing => (
               Icons.sync_rounded,

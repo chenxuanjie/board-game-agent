@@ -411,7 +411,6 @@ void main() {
           home: DesktopWorkspace(
             controller: app,
             initialPage: 'rankings',
-            enableNativeWindowControls: false,
             onOpenAbout: () {},
           ),
         ),

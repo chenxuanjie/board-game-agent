@@ -46,3 +46,13 @@ HTTP 只允许 HTTPS（回环地址仅用于测试），不绕过 TLS。Windows 
 Android Release 构建成功，APK 143.31 MiB，资源检查发现禁止打包的桌游文档 0 项。Windows 默认输出被正在运行的程序锁定，保留原进程后在 `build/update-recovery` 隔离构建成功，文件版本为 4.1.0+31；Flutter 的全局构建目录配置已恢复。此次只生成本地产物，没有生成新的 Windows 安装器或上传 WebDAV，也没有执行 Android 实机安装。
 
 仍待改善：没有系统后台下载任务和下载通知；应用被系统结束后需重新进入更新页面继续。没有有界自动重连、移动数据下载确认和磁盘空间预检，目前磁盘错误会提示处理后重试。旧版本残留缓存尚无管理入口。普通断网、暂停、超时不清除当前有效进度；已确认损坏的文件必须重新下载。
+
+本轮提交记录（主项目与共享包分别保存）：
+
+| 仓库 | 分支 | 提交 | 标题 |
+| --- | --- | --- | --- |
+| board-game-agent | codex/synology-direct-auth | 821a430 | fix(update): 延后资料提示并接入安装包续传 |
+| remote_update | codex/pre-syno-auth-20261005 | fc76cec | fix(update): 保留中断下载并支持重启续传 |
+| remote_update_webdav | master | e3bcafa | fix(update): 验证断点范围并兼容服务器重下 |
+| webdav_storage | master | 85dc07f | fix(webdav): 及时关闭不支持断点的下载响应 |
+| app_about | codex/pre-syno-auth-20261005 | 4b3e3c8 | fix(update): 完善暂停续传与更新界面反馈 |

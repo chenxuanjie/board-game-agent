@@ -287,7 +287,6 @@ Future<void> _mount(
           webDavSettingsController: webDavSettingsController,
           onOpenAbout: onOpenAbout ?? () {},
           onCheckUpdates: onCheckUpdates,
-          enableNativeWindowControls: false,
         ),
       ),
     ),

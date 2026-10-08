@@ -33,7 +33,9 @@ import 'ui/mobile/settings_screen.dart';
 import 'ui/mobile/game_detail_screen.dart';
 import 'ui/shared/game_ranking_screen.dart';
 import 'ui/shared/account_scope.dart';
+import 'ui/shared/account_screen.dart';
 import 'ui/desktop/workspace.dart';
+import 'ui/desktop/desktop_window_frame.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
 
@@ -169,6 +171,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   bool _startupUpdateCheckScheduled = false;
   String? _lastAccountKey;
   String? _lastResourceConnection;
+  bool _accountNavigationPending = false;
+  bool _accountNavigationScheduled = false;
 
   @override
   void initState() {
@@ -208,25 +212,29 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           builder: (context, child) {
             final accounts = widget.accountService;
             if (accounts == null || accounts.dataScopeReady) {
-              return child ?? const SizedBox.shrink();
+              return DesktopWindowFrame(
+                child: child ?? const SizedBox.shrink(),
+              );
             }
             // Remove the prior account's UI from the tree while its writes drain.
-            return Scaffold(
-              body: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (accounts.error == null)
-                      const CircularProgressIndicator()
-                    else ...[
-                      const Text('账号数据切换未完成'),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: () => unawaited(accounts.restore()),
-                        child: const Text('重试'),
-                      ),
+            return DesktopWindowFrame(
+              child: Scaffold(
+                body: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (accounts.error == null)
+                        const CircularProgressIndicator()
+                      else ...[
+                        const Text('账号数据切换未完成'),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => unawaited(accounts.restore()),
+                          child: const Text('重试'),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             );
@@ -427,14 +435,34 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     if (!mounted) return;
     final key = widget.accountService?.nicknameKey;
     if (_lastAccountKey != null && key != _lastAccountKey) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-        }
-      });
+      _accountNavigationPending = true;
     }
     _lastAccountKey = key;
     final account = widget.accountService;
+    if (_accountNavigationPending &&
+        !_accountNavigationScheduled &&
+        account?.dataScopeReady == true) {
+      _accountNavigationScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _accountNavigationScheduled = false;
+        // A second account change may finish before this frame. Navigate using
+        // the current identity rather than discarding its pending transition.
+        if (!mounted || account?.dataScopeReady != true) {
+          return;
+        }
+        final navigator = _navigatorKey.currentState;
+        if (navigator == null) return;
+        _accountNavigationPending = false;
+        navigator.popUntil((route) => route.isFirst);
+        if (!kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.windows &&
+            account?.isSignedIn == false) {
+          navigator.push<void>(
+            MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
+          );
+        }
+      });
+    }
     if (account != null &&
         !account.isBusy &&
         account.resourceCredentialsReady) {

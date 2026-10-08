@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../core/models/app_activity.dart';
@@ -25,7 +23,6 @@ import 'settings_pane.dart';
 import 'sidebar.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
-import 'window_controls.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/game_cover_motion.dart';
@@ -39,7 +36,6 @@ class DesktopWorkspace extends StatefulWidget {
     this.onCheckUpdates,
     this.webDavSettingsController,
     this.transferService,
-    this.enableNativeWindowControls = true,
     this.initialPage = 'home',
   });
   final AppController controller;
@@ -47,7 +43,6 @@ class DesktopWorkspace extends StatefulWidget {
   final VoidCallback? onCheckUpdates;
   final WebDavSettingsController? webDavSettingsController;
   final SettingsTransferService? transferService;
-  final bool enableNativeWindowControls;
   final String initialPage;
   @override
   State<DesktopWorkspace> createState() => _DesktopWorkspaceState();
@@ -85,10 +80,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     'rankings',
     'settings',
   ];
-  bool get _native =>
-      widget.enableNativeWindowControls &&
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.windows;
   bool get _featurePage => ['assistant', 'library', 'rankings'].contains(_page);
 
   @override
@@ -202,7 +193,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       MaterialPageRoute<void>(
         builder: (pageContext) => DesktopNationalDayPage(
           controller: widget.controller,
-          enableNativeWindowControls: _native,
           onOpenGame: (game) {
             Navigator.of(pageContext).pop();
             _game(game);
@@ -468,16 +458,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
         final metrics = DesktopResponsive.metricsFor(
           Size(constraints.maxWidth, constraints.maxHeight),
         );
-        final sidebarWidth = narrow
-            ? 0.0
-            : (compact
-                  ? DesktopResponsive.compactSidebarWidth
-                  : DesktopResponsive.fullSidebarWidth);
         // The Windows shell uses the full available window width. DesktopMetrics
         // still scale visual dimensions, but no longer cap the dashboard canvas
         // at 1280 * scale, which previously created internal dead space.
         final canvasWidth = constraints.maxWidth;
-        final dragLeft = narrow ? 0.0 : metrics.px(sidebarWidth);
         final canvas = SizedBox(
           width: canvasWidth,
           height: constraints.maxHeight,
@@ -496,37 +480,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             ],
           ),
         );
-        Widget body = narrow
+        final body = narrow
             ? canvas
             : Align(alignment: Alignment.topCenter, child: canvas);
-        if (_native) {
-          body = DragToResizeArea(
-            resizeEdgeSize: 6,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: dragLeft,
-                  right: metrics.px(150),
-                  top: 0,
-                  height: metrics.px(45),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onPanStart: (_) => windowManager.startDragging(),
-                    onDoubleTap: () async {
-                      if (await windowManager.isMaximized()) {
-                        await windowManager.unmaximize();
-                      } else {
-                        await windowManager.maximize();
-                      }
-                    },
-                  ),
-                ),
-                body,
-                const Positioned(top: 0, right: 0, child: WindowControls()),
-              ],
-            ),
-          );
-        }
         return DesktopMetricsScope(
           metrics: metrics,
           child: Scaffold(
