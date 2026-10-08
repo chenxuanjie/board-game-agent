@@ -82,6 +82,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     'games',
     'assistant',
     'favorites',
+    'rankings',
     'settings',
   ];
   bool get _native =>

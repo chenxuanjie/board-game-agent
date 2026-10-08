@@ -86,6 +86,10 @@ final class AccountSyncLocalStore implements SyncLocalStore {
           'conversation',
           'preference',
           'nickname',
+          'vote',
+          'seasonalList',
+          'search',
+          'recommendation',
         }.contains(op.entityType) ||
         op.entityId.length > 512) {
       throw const SyncProtocolException('同步数据范围不匹配');
@@ -98,6 +102,54 @@ final class AccountSyncLocalStore implements SyncLocalStore {
       if (_operation(entry.value).operation == SyncOperationType.upsert)
         entry.key: Map<String, Object?>.from(_operation(entry.value).payload!),
   };
+
+  /// Public projection contains only reactions, including cancellation tombstones.
+  List<SyncOperation> get publicReactions => _heads.values
+      .map(_operation)
+      .where((op) => op.entityType == 'favorite' || op.entityType == 'vote')
+      .toList(growable: false);
+
+  static bool operationWins(SyncOperation incoming, SyncOperation? previous) =>
+      previous == null ||
+      incoming.logicalClock > previous.logicalClock ||
+      incoming.logicalClock == previous.logicalClock &&
+          incoming.operationId.compareTo(previous.operationId) > 0;
+
+  /// Import sparse public heads without advancing the private download cursor.
+  Future<void> applyPublicReactions(Iterable<SyncOperation> operations) =>
+      transaction<void>((current, project) async {
+        if (_state!['projectionPending'] == true) {
+          await _recover(current, project);
+        }
+        _capture(current);
+        var changed = false;
+        for (final op in operations) {
+          if (op.datasetId != datasetId ||
+              !{'favorite', 'vote'}.contains(op.entityType)) {
+            throw const SyncProtocolException('公共账号范围不匹配');
+          }
+          _operation(op.toJson());
+          final key = '${op.entityType}|${op.entityId}';
+          final old = _heads[key] == null ? null : _operation(_heads[key]);
+          _state!['clock'] = max(_state!['clock'] as int, op.logicalClock);
+          if (operationWins(op, old)) {
+            _heads[key] = op.toJson();
+            changed = true;
+          }
+        }
+        if (!changed) {
+          await _save();
+          return;
+        }
+        _state!['projectionPending'] = true;
+        _state!['projectionBase'] = current;
+        await _save();
+        await project(_entities());
+        _state!['projectionPending'] = false;
+        _state!.remove('projectionBase');
+        await _save();
+      });
+
   Future<void> _save() async {
     final json = jsonEncode(_state);
     if (utf8.encode(json).length > 32 * 1024 * 1024) {
@@ -244,19 +296,19 @@ final class AccountSyncLocalStore implements SyncLocalStore {
           (op.seen[old.deviceId] ?? 0) < old.sequence &&
           !(old.entityParents ?? old.parents).contains(op.operationId) &&
           (old.seen[op.deviceId] ?? 0) < op.sequence;
-      var wins =
-          old == null ||
-          op.logicalClock > old.logicalClock ||
-          op.logicalClock == old.logicalClock &&
-              op.operationId.compareTo(old.operationId) > 0;
-      if (op.entityType == 'recent' &&
+      var wins = operationWins(op, old);
+      if ((op.entityType == 'recent' || op.entityType == 'search') &&
           op.payload != null &&
           old?.payload != null) {
         final incoming = DateTime.tryParse(
-          op.payload!['viewedAt'] as String? ?? '',
+          op.payload![op.entityType == 'recent' ? 'viewedAt' : 'searchedAt']
+                  as String? ??
+              '',
         );
         final previous = DateTime.tryParse(
-          old!.payload!['viewedAt'] as String? ?? '',
+          old!.payload![op.entityType == 'recent' ? 'viewedAt' : 'searchedAt']
+                  as String? ??
+              '',
         );
         if (incoming != null && previous != null && incoming != previous) {
           wins = incoming.isAfter(previous);

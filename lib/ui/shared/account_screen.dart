@@ -291,8 +291,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     title: Text(_text('账号云同步', 'Account cloud sync')),
                     subtitle: Text(
                       _text(
-                        '收藏、浏览记录、AI 对话和个人偏好',
-                        'Favorites, history, AI chats and preferences',
+                        '收藏、想玩、清单、历史、AI 对话与偏好',
+                        'Favorites, votes, lists, history, chats and preferences',
                       ),
                     ),
                     value: cloud.enabled,
@@ -352,6 +352,52 @@ class _AccountScreenState extends State<AccountScreen> {
                         style: TextStyle(color: colors.error),
                       ),
                     ),
+                  if (cloud.publicReactions != null) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.leaderboard_outlined, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _text(
+                              cloud.publicSyncing
+                                  ? '公共统计同步中…'
+                                  : cloud.publicReactions!.error != null
+                                  ? '公共统计待重试'
+                                  : cloud.publicSynced
+                                  ? '公共统计已同步'
+                                  : '公共统计待同步',
+                              cloud.publicSyncing
+                                  ? 'Syncing public statistics…'
+                                  : cloud.publicReactions!.error != null
+                                  ? 'Public sync needs retry'
+                                  : cloud.publicSynced
+                                  ? 'Public statistics synced'
+                                  : 'Public statistics pending',
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          key: const ValueKey('account-public-sync'),
+                          onPressed:
+                              busy ||
+                                  cloud.publicSyncing ||
+                                  cloud.status == AccountCloudStatus.syncing
+                              ? null
+                              : cloud.synchronize,
+                          child: Text(_text('刷新', 'Refresh')),
+                        ),
+                      ],
+                    ),
+                    if (cloud.publicReactions!.error case final publicError?)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          publicError,
+                          style: TextStyle(color: colors.error),
+                        ),
+                      ),
+                  ],
                   TextButton.icon(
                     key: const ValueKey('account-edit-nickname'),
                     onPressed: busy ? null : () => _editNickname(service!),

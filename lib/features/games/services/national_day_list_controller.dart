@@ -19,12 +19,20 @@ class NationalDayListController extends ChangeNotifier {
   bool saving = false;
   bool ready = false;
   String? error;
+  bool Function()? canMutate;
+  VoidCallback? onSaved;
   Future<void>? _loadFuture;
   bool _disposed = false;
 
   Future<void> load() {
     if (_disposed || ready) return Future.value();
     return _loadFuture ??= _load().whenComplete(() => _loadFuture = null);
+  }
+
+  Future<void> reload() async {
+    if (_disposed || saving) throw StateError('清单数据暂忙');
+    ready = false;
+    await load();
   }
 
   Future<void> _load() async {
@@ -47,8 +55,11 @@ class NationalDayListController extends ChangeNotifier {
   }
 
   Future<bool> save(Iterable<String> slugs) async {
-    if (_disposed || !ready || saving) return false;
+    if (_disposed || !ready || saving || canMutate?.call() == false) {
+      return false;
+    }
     saving = true;
+    var committed = false;
     _notify();
     try {
       final next = slugs.toSet().toList();
@@ -57,12 +68,14 @@ class NationalDayListController extends ChangeNotifier {
           .timeout(const Duration(seconds: 8));
       if (_disposed) return false;
       _slugs = next;
+      committed = true;
       return true;
     } catch (_) {
       return false;
     } finally {
       saving = false;
       _notify();
+      if (committed) onSaved?.call();
     }
   }
 

@@ -10,7 +10,7 @@ import '../../features/games/models/game_ranking_entry.dart';
 import '../../features/games/services/game_vote_service.dart';
 import '../mobile/game_cover.dart';
 
-/// Fully wired, but intentionally absent from public navigation.
+/// Public favorites ranking, independent from seasonal want-to-play votes.
 class GameRankingScreen extends StatefulWidget {
   const GameRankingScreen({
     super.key,
@@ -103,7 +103,7 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                     else if (statistics.status == GameVoteSyncStatus.pending)
                       _notice(
                         copy.localized(
-                          '同步未完成，显示已保存数据',
+                          statistics.syncError ?? '同步未完成，显示已保存数据',
                           'Sync incomplete. Showing saved data',
                         ),
                         action: copy.localized('重试', 'Retry'),
@@ -147,8 +147,8 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                               return Text(
                                 statistics.hasCachedRemoteCounts
                                     ? copy.localized(
-                                        '按喜欢总数排序 · 同数并列',
-                                        'Total likes · Ties share a rank',
+                                        '按收藏人数排序 · 同数并列',
+                                        'People who saved · Ties share a rank',
                                       )
                                     : copy.localized(
                                         '本机喜欢 · 同数并列',
@@ -267,7 +267,12 @@ class _RankingRow extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text(
                         copy.localized(
-                          '${entry.favoriteCount} 次喜欢',
+                          controller.identityUserId != null &&
+                                  controller
+                                      .favoriteStatistics
+                                      .hasCachedRemoteCounts
+                              ? '${entry.favoriteCount} 人收藏'
+                              : '${entry.favoriteCount} 次喜欢',
                           '${entry.favoriteCount} likes',
                         ),
                         key: ValueKey('ranking-count-${entry.game.slug}'),

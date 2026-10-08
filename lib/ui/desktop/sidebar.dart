@@ -26,6 +26,7 @@ class DesktopSidebar extends StatelessWidget {
     (asset: 'sidebar_library.png', zh: '游戏库', en: 'Game Library'),
     (asset: 'sidebar_ai.png', zh: 'AI助手', en: 'AI Assistant'),
     (asset: 'sidebar_likes.png', zh: '我的喜欢', en: 'My Likes'),
+    (asset: 'sidebar_ranking.png', zh: '排行榜', en: 'Rankings'),
     (asset: 'sidebar_settings.png', zh: '设置', en: 'Settings'),
   ];
   static const double _headerHeight = 152;

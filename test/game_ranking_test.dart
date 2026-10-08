@@ -14,7 +14,7 @@ import 'package:board_game_agent/features/games/models/game_vote_record.dart';
 import 'package:board_game_agent/features/games/services/game_favorite_ranker.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
-import 'package:board_game_agent/features/games/services/webdav_game_vote_store.dart';
+import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
@@ -25,10 +25,7 @@ import 'package:board_game_agent/ui/shared/game_ranking_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_settings/webdav_settings.dart';
 
 const _otherId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _namespace = GameVoteBallot.favoritesNamespace;
@@ -335,69 +332,8 @@ void main() {
     },
   );
 
-  test('WebDAV adapter uses isolated favorite directory and schema', () async {
-    const root = '/friend/apps/board_game_agent/votes/game-favorites-v1';
-    final methods = <String>[];
-    final ballot = _ballot(_otherId, ['a']);
-    final client = MockClient((request) async {
-      methods.add('${request.method} ${request.url.path}');
-      switch (request.method) {
-        case 'MKCOL':
-          return http.Response('', 405);
-        case 'PUT':
-          expect(request.url.path, '$root/$_otherId.json');
-          expect(
-            GameVoteBallot.decode(request.body, namespace: _namespace).games,
-            ['a'],
-          );
-          return http.Response('', 201);
-        case 'PROPFIND':
-          return http.Response(
-            '<d:multistatus xmlns:d="DAV:"><d:response><d:href>$root/$_otherId.json</d:href><d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response></d:multistatus>',
-            207,
-          );
-        case 'GET':
-          return http.Response(ballot.encode(), 200);
-        default:
-          throw StateError('Unexpected method');
-      }
-    });
-    final settings = WebDavSettings(
-      mode: ExternalStorageMode.webDav,
-      baseUrl: 'https://dav.example/friend/',
-      username: 'tester',
-      password: 'example',
-    );
-    final store = WebDavGameVoteStore(
-      settings,
-      httpClient: client,
-      namespace: _namespace,
-    );
-    addTearDown(store.close);
-    await store.upload(ballot);
-    expect((await store.readBallots()).single.games, ['a']);
-    expect(
-      methods.any((request) => request.contains(GameVoteBallot.campaign)),
-      isFalse,
-    );
-    expect(store.scope, isNot(WebDavGameVoteStore.scopeFor(settings)));
-    expect(
-      store.scope,
-      isNot(
-        WebDavGameVoteStore.scopeFor(
-          settings.copyWith(username: 'another'),
-          namespace: _namespace,
-        ),
-      ),
-    );
-    await expectLater(
-      store.upload(GameVoteBallot(deviceId: _otherId, games: ['a'])),
-      throwsFormatException,
-    );
-  });
-
   testWidgets(
-    'hidden ranking page fits narrow/wide layouts and opens the selected game',
+    'ranking page fits narrow/wide layouts and opens the selected game',
     (tester) async {
       final app = _app(
         _Preferences()..favorites = [_record('a'), _record('b')],
@@ -484,8 +420,8 @@ void main() {
       final sidebar = find.byType(DesktopSidebar);
       expect(sidebar, findsOneWidget);
       expect(
-        find.descendant(of: sidebar, matching: find.text('喜欢榜')),
-        findsNothing,
+        find.descendant(of: sidebar, matching: find.text('排行榜')),
+        findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('ranking-game-a')));
       await tester.pumpAndSettle();

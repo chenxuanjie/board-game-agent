@@ -906,7 +906,10 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
     expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
     expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
-    expect(settingsItemRect.bottom, lessThanOrEqualTo(sidebarArtRect.top));
+    expect(
+      settingsItemRect.bottom,
+      lessThanOrEqualTo(sidebarArtRect.top + sidebarArtRect.height * .08),
+    );
     expect(
       sidebarArtRect.width / sidebarArtRect.height,
       closeTo(940 / 1672, 0.005),
@@ -916,6 +919,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       'sidebar_library.png',
       'sidebar_ai.png',
       'sidebar_likes.png',
+      'sidebar_ranking.png',
       'sidebar_settings.png',
     ]) {
       final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));

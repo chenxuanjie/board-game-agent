@@ -8,6 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/features/identity/services/account_sync_store.dart';
 import 'support/account_sync_fixture.dart';
+import 'support/account_public_fixture.dart';
+import 'package:board_game_agent/features/games/models/game_vote_record.dart';
+import 'package:webdav_sync/webdav_sync.dart' show sha256Json;
 import 'account_service_test.dart' show FixtureGateway;
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
@@ -31,7 +34,7 @@ import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
-import 'package:board_game_agent/features/games/services/webdav_game_vote_store.dart';
+import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
@@ -582,6 +585,43 @@ void main() {
     },
   );
   test(
+    'public account lifecycle publishes while private sync is paused and isolates logout',
+    () async {
+      final app = await _app(),
+          private = MemoryPrivateFiles(),
+          hub = PublicFixtureHub();
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => private,
+        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      final cloud = service.cloud!;
+      await cloud.synchronize();
+      expect(cloud.publicSynced, isTrue, reason: cloud.publicReactions?.error);
+      await cloud.setEnabled(false);
+      final privateCount = private.objects.length;
+      expect(await app.gameVotes.toggle(app.games.first.slug), isTrue);
+      await app.gameVotes.sync();
+      await cloud.synchronize();
+      expect(private.objects.length, privateCount);
+      expect(
+        hub.objects.values.map((v) => v.text).join(),
+        contains('"entityType":"vote"'),
+      );
+      expect(cloud.publicReactions?.error, isNull);
+      await service.signOut();
+      expect(app.gameVotes.hasVoted(app.games.first.slug), isFalse);
+      expect(service.cloud, isNull);
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      await service.cloud!.synchronize();
+      expect(app.gameVotes.hasVoted(app.games.first.slug), isTrue);
+    },
+  );
+  test(
     'cloud projection persists personal stores and excludes credentials',
     () async {
       final app = await _app();
@@ -609,6 +649,21 @@ void main() {
       await app.accountCloudTransaction<void>('a', (current, project) async {
         final projected = cloneEntities(current);
         projected['nickname|profile'] = {'value': 'cloud nickname'};
+        projected['vote|${app.games.last.slug}'] = {
+          'slug': app.games.last.slug,
+          'campaign': GameVoteBallot.campaign,
+        };
+        projected['seasonalList|${GameVoteBallot.campaign}'] = {
+          'slugs': [app.games.last.slug],
+        };
+        projected['search|${sha256Json('cabo')}'] = {
+          'query': 'Cabo',
+          'searchedAt': '2026-10-08T01:00:00Z',
+        };
+        projected['recommendation|2026-10-08'] = {
+          'date': '2026-10-08',
+          'gameIds': [app.games.last.id],
+        };
         projected['recent|${app.games.last.slug}'] = RecentGameRecord(
           gameSlug: app.games.last.slug,
           viewedAt: DateTime.utc(2026, 10, 5),
@@ -633,6 +688,13 @@ void main() {
       expect(
         (await prefs.loadRecentGames()).single.gameSlug,
         app.games.last.slug,
+      );
+      expect(app.gameVotes.hasVoted(app.games.last.slug), isTrue);
+      expect(await prefs.loadNationalDayGameSlugs(), [app.games.last.slug]);
+      expect((await prefs.loadSearchHistory()).single.query, 'Cabo');
+      expect(
+        (await prefs.loadDailyRecommendations()).single.date,
+        '2026-10-08',
       );
       expect(
         (await SharedPreferences.getInstance()).getString(

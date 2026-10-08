@@ -25,6 +25,8 @@ extension AppAccountCloudController on AppController {
         _conversationSaveQueue,
         _favoriteMutationQueue,
         _recentGamesMutationQueue,
+        _searchHistoryMutationQueue,
+        _dailyRecommendationSaveQueue,
         _selectedConversationSaveQueue,
         _preferencesService.drainPersonalWrites(),
       ]).timeout(const Duration(seconds: 15));
@@ -60,6 +62,25 @@ extension AppAccountCloudController on AppController {
     for (final recent in await _preferencesService.loadRecentGames()) {
       result['recent|${recent.gameSlug}'] = recent.toMap();
     }
+    final ballot = await _preferencesService.loadGameVoteCache();
+    if (ballot != null) {
+      for (final slug in GameVoteCache.decode(ballot).ballot.games) {
+        result['vote|$slug'] = {
+          'slug': slug,
+          'campaign': GameVoteBallot.campaign,
+        };
+      }
+    }
+    final list = await _preferencesService.loadNationalDayGameSlugs();
+    if (list != null) {
+      result['seasonalList|${GameVoteBallot.campaign}'] = {'slugs': list};
+    }
+    for (final record in await _preferencesService.loadSearchHistory()) {
+      result['search|${sha256Json(record.normalizedQuery)}'] = record.toMap();
+    }
+    for (final record in await _preferencesService.loadDailyRecommendations()) {
+      result['recommendation|${record.date}'] = record.toMap();
+    }
     for (final entry
         in (await _preferencesService.accountCloudPreferences()).entries) {
       result['preference|${entry.key}'] = {'value': entry.value};
@@ -94,6 +115,10 @@ extension AppAccountCloudController on AppController {
     final preferences = <String, Object>{},
         conversations = <String, Map<String, dynamic>>{};
     String? nickname;
+    final votes = <String>[];
+    List<String>? seasonalList;
+    final searches = <SearchHistoryRecord>[];
+    final recommendations = <DailyRecommendationRecord>[];
     // Validate the complete projection before writing any business store.
     for (final entry in entities.entries) {
       final split = entry.key.indexOf('|');
@@ -101,6 +126,43 @@ extension AppAccountCloudController on AppController {
           id = entry.key.substring(split + 1);
       final payload = Map<String, dynamic>.from(entry.value);
       switch (type) {
+        case 'vote':
+          if (!GameVoteBallot.slugPattern.hasMatch(id) ||
+              payload['slug'] != id ||
+              payload['campaign'] != GameVoteBallot.campaign) {
+            throw const FormatException('云端投票格式错误');
+          }
+          votes.add(id);
+        case 'seasonalList':
+          final slugs = payload['slugs'];
+          if (id != GameVoteBallot.campaign ||
+              slugs is! List ||
+              slugs.length > 256 ||
+              slugs.any(
+                (value) =>
+                    value is! String ||
+                    !GameVoteBallot.slugPattern.hasMatch(value),
+              )) {
+            throw const FormatException('云端清单格式错误');
+          }
+          seasonalList = slugs.cast<String>();
+        case 'search':
+          final record = SearchHistoryRecord.tryFromMap(payload);
+          if (record == null ||
+              record.query.length > 512 ||
+              sha256Json(record.normalizedQuery) != id) {
+            throw const FormatException('云端搜索记录格式错误');
+          }
+          searches.add(record);
+        case 'recommendation':
+          final record = DailyRecommendationRecord.tryFromMap(payload);
+          if (record == null ||
+              record.date != id ||
+              record.gameIds.length != (payload['gameIds'] as List).length ||
+              record.gameIds.length > 20) {
+            throw const FormatException('云端推荐记录格式错误');
+          }
+          recommendations.add(record);
         case 'favorite':
           final record = FavoriteGameRecord.tryFromMap(payload);
           if (record == null || record.gameSlug != id) {
@@ -149,10 +211,35 @@ extension AppAccountCloudController on AppController {
           throw const FormatException('未知云端数据类型');
       }
     }
+    if (votes.length > 256 || favorites.length > 2048) {
+      throw const FormatException('云端收藏或投票数量超过上限');
+    }
     favorites.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     recent.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
     await _preferencesService.saveFavoriteGames(favorites);
     await _preferencesService.saveRecentGames(recent);
+    searches.sort((a, b) => b.searchedAt.compareTo(a.searchedAt));
+    recommendations.sort((a, b) => b.date.compareTo(a.date));
+    await _preferencesService.saveSearchHistory(searches);
+    await _preferencesService.saveDailyRecommendations(
+      recommendations.take(30).toList(),
+    );
+    if (seasonalList != null) {
+      await _preferencesService.saveNationalDayGameSlugs(seasonalList);
+    }
+    await _gameVotes.load();
+    final rawBallot = await _preferencesService.loadGameVoteCache();
+    if (rawBallot == null) throw const FormatException('本机投票缓存未初始化');
+    final cache = GameVoteCache.decode(rawBallot);
+    await _preferencesService.saveGameVoteCache(
+      GameVoteCache(
+        ballot: GameVoteBallot(deviceId: cache.ballot.deviceId, games: votes),
+        remoteCounts: cache.remoteCounts,
+        lastScope: cache.lastScope,
+      ).encode(),
+    );
+    await _gameVotes.reload();
+    if (_nationalDayList != null) await _nationalDayList!.reload();
     await _preferencesService.applyAccountCloudPreferences(preferences);
     await _conversationStore.save(
       jsonEncode({

@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_sync/webdav_sync.dart' show canonicalJson;
+import 'package:webdav_sync/webdav_sync.dart' show canonicalJson, sha256Json;
 import '../../features/identity/services/account_sync_store.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
@@ -48,7 +48,7 @@ import '../../features/games/services/daily_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
 import '../../features/games/services/game_vote_service.dart';
 import '../../features/games/services/game_favorite_ranker.dart';
-import '../../features/games/services/webdav_game_vote_store.dart';
+import '../../features/games/services/remote_game_vote_store.dart';
 import '../../features/games/services/national_day_list_controller.dart';
 import '../../features/library/services/remote_asset_service.dart';
 import '../../features/library/services/library_update_diff.dart';
@@ -138,7 +138,9 @@ class AppController extends ChangeNotifier {
   final ConversationStore _baseConversationStore;
   GameVoteService _gameVotes;
   final GameVoteService? _guestVoteTemplate;
-  GameVoteService get gameVotes => _gameVotes;
+  GameVoteService get gameVotes => _gameVotes
+    ..canMutate = (() => !_switchingIdentityScope)
+    ..onSaved = _notifyListeners;
   String? get identityUserId => _preferencesService.identityUserId;
   bool _switchingIdentityScope = false;
   bool get isSwitchingIdentityScope => _switchingIdentityScope;
@@ -150,6 +152,8 @@ class AppController extends ChangeNotifier {
   bool get accountCloudIdle =>
       !_controllerDisposed &&
       !_switchingIdentityScope &&
+      !_gameVotes.saving &&
+      !(_nationalDayList?.saving ?? false) &&
       !_generationStates.values.any((state) => state.isSending) &&
       !_isListening;
   Future<void>? _initializationFuture;
@@ -164,28 +168,53 @@ class AppController extends ChangeNotifier {
   GameVoteService? _favoriteStatistics;
   bool _favoriteRecordsLoaded = false;
   final Set<String> _committedFavoriteSlugs = {};
+  RemoteGameVoteStore Function(String)? _accountReactionProvider;
+  String? _accountReactionScope;
+  String? Function()? _accountReactionError;
+  void configureAccountReactions({
+    RemoteGameVoteStore Function(String)? provider,
+    String? scope,
+    String? Function()? error,
+  }) {
+    _accountReactionProvider = provider;
+    _accountReactionScope = scope;
+    _accountReactionError = error;
+    _gameVotes.configureRemote(
+      provider == null ? null : () => provider(GameVoteBallot.campaign),
+      () => _accountReactionScope,
+    );
+    _gameVotes.accountSyncError = error;
+    _favoriteStatistics?.accountSyncError = error;
+  }
+
   GameVoteService get favoriteStatistics =>
       _favoriteStatistics ??= GameVoteService(
         preferences: _preferencesService,
         namespace: GameVoteBallot.favoritesNamespace,
-        remoteProvider: () => anonymousReactionPublishingEnabled
-            ? _favoriteRemoteProvider?.call()
-            : null,
-        scopeProvider: () => anonymousReactionPublishingEnabled
-            ? _favoriteScopeProvider?.call()
-            : null,
+        remoteProvider: () =>
+            _accountReactionProvider?.call(GameVoteBallot.favoritesNamespace) ??
+            (anonymousReactionPublishingEnabled
+                ? _favoriteRemoteProvider?.call()
+                : null),
+        scopeProvider: () =>
+            _accountReactionScope ??
+            (anonymousReactionPublishingEnabled
+                ? _favoriteScopeProvider?.call()
+                : null),
         externalGames: () =>
             _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
         cacheLoader: _preferencesService.loadFavoriteRankingCache,
         cacheSaver: _preferencesService.saveFavoriteRankingCache,
-      );
+      )..accountSyncError = _accountReactionError;
   NationalDayListController? _nationalDayList;
-  NationalDayListController get nationalDayList =>
-      _nationalDayList ??= NationalDayListController(
-        preferences: _preferencesService,
-        defaultSlugs: () =>
-            defaultNationalDayGames.map((game) => game.slug).toList(),
-      );
+  NationalDayListController get nationalDayList => _nationalDayList ??=
+      NationalDayListController(
+          preferences: _preferencesService,
+          defaultSlugs: () =>
+              defaultNationalDayGames.map((game) => game.slug).toList(),
+        )
+        ..canMutate = (() => !_switchingIdentityScope)
+        ..onSaved = _notifyListeners;
   final AiService _aiService;
   ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;

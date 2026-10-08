@@ -11,8 +11,6 @@ import 'package:window_manager/window_manager.dart';
 import 'features/assistant/services/board_game_ai_service.dart';
 import 'features/games/services/game_manifest_service.dart';
 import 'features/games/services/game_vote_service.dart';
-import 'features/games/services/webdav_game_vote_store.dart';
-import 'features/games/models/game_vote_record.dart';
 import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
@@ -57,19 +55,7 @@ Future<void> main() async {
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
-    gameVotes: GameVoteService(
-      preferences: preferencesService,
-      remoteProvider: () =>
-          WebDavGameVoteStore.fromSettings(updateSettingsController.saved),
-    ),
-    favoriteRemoteProvider: () => WebDavGameVoteStore.fromSettings(
-      updateSettingsController.saved,
-      namespace: GameVoteBallot.favoritesNamespace,
-    ),
-    favoriteScopeProvider: () => WebDavGameVoteStore.scopeFor(
-      updateSettingsController.saved,
-      namespace: GameVoteBallot.favoritesNamespace,
-    ),
+    gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(),
       responsesWorkflow: ResponsesRulesWorkflow(

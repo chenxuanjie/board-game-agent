@@ -171,30 +171,31 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('hidden and unsupported desktop routes stay unavailable', (
-    tester,
-  ) async {
-    await _mount(tester, context.controller, const Size(1280, 800));
-    expect(
-      find.descendant(
-        of: find.byType(DesktopSidebar),
-        matching: find.text('排行榜'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(DesktopSidebar),
-        matching: find.text('社区'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        const ValueKey<String>('desktop-sidebar-icon-sidebar_community.png'),
-      ),
-      findsNothing,
-    );
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'ranking is visible while unsupported desktop routes stay unavailable',
+    (tester) async {
+      await _mount(tester, context.controller, const Size(1280, 800));
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebar),
+          matching: find.text('排行榜'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebar),
+          matching: find.text('社区'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('desktop-sidebar-icon-sidebar_community.png'),
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

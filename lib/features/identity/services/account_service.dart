@@ -13,6 +13,7 @@ import '../../../app/state/app_controller.dart';
 import '../models/account_configuration.dart';
 import '../../settings/services/preferences_service.dart';
 import 'account_cloud_sync.dart';
+import 'account_public_reactions.dart';
 import 'saved_login_store.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
@@ -27,11 +28,14 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     @visibleForTesting bool? signInSupported,
     @visibleForTesting
     AccountPrivateFiles Function(IdentityGateway)? privateFilesFactory,
+    @visibleForTesting
+    AccountPublicFiles Function(IdentityGateway)? publicFilesFactory,
   }) : _controller = controller,
        _savedLogins = SavedLoginStore(storage: savedLoginStorage),
        _gatewayFactory = gatewayFactory,
        _switchScope = switchScope,
        _privateFilesFactory = privateFilesFactory,
+       _publicFilesFactory = publicFilesFactory,
        _credentialStore = credentialStore,
        supportsSignIn = signInSupported ?? !kIsWeb;
   static const _configurationKey =
@@ -201,6 +205,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   final Future<IdentityGateway> Function(AccountConfiguration)? _gatewayFactory;
   final Future<void> Function(String?)? _switchScope;
   final AccountPrivateFiles Function(IdentityGateway)? _privateFilesFactory;
+  final AccountPublicFiles Function(IdentityGateway)? _publicFilesFactory;
   AccountConfiguration? _configuration;
   AccountConfiguration? _pendingLoginConfiguration;
   IdentityController? _identity;
@@ -279,6 +284,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _stopCloud() {
+    if (_cloud?.publicReactions != null) {
+      _controller.configureAccountReactions();
+    }
     _cloud?.removeListener(_cloudChanged);
     _cloud?.dispose();
     _cloud = null;
@@ -432,6 +440,16 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         controller: _controller,
         scope: target,
         files: files,
+        publicReactions: _publicFilesFactory != null
+            ? AccountPublicReactions(_publicFilesFactory(_gateway!))
+            : _gateway is SynologyIdentityGateway
+            ? AccountPublicReactions(
+                (_gateway as SynologyIdentityGateway).publicFiles(
+                  appId: 'board_game_agent',
+                  sharedFolder: _configuration!.storageFolder,
+                ),
+              )
+            : null,
         isActive: () =>
             !_disposed &&
             user?.id == identityId &&
@@ -439,6 +457,18 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
             dataScopeReady,
       );
       _cloud = cloud..addListener(_cloudChanged);
+      if (cloud.publicReactions case final reactions?) {
+        _controller.configureAccountReactions(
+          scope: 'account-public-v1.$target',
+          error: () => reactions.error,
+          provider: (namespace) => AccountReactionRemote(
+            scope: 'account-public-v1.$target',
+            namespace: namespace,
+            reactions: reactions,
+            refresh: cloud.refreshPublic,
+          ),
+        );
+      }
       await cloud.initialize().timeout(authenticationTimeout);
       if (!_disposed && generation == _scopeGeneration) {
         await _refreshNickname();

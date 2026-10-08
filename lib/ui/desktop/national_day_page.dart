@@ -317,7 +317,7 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
             GameVoteSyncStatus.localOnly => (
               Icons.phone_android_rounded,
               '仅本地',
-              '投票保存在本地；可在设置中配置 WebDAV',
+              widget.controller.identityUserId == null ? '登录后参与公共投票' : '公共投票尚未连接，点击重试',
             ),
             GameVoteSyncStatus.syncing => (
               Icons.sync_rounded,
@@ -327,12 +327,12 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
             GameVoteSyncStatus.synced => (
               Icons.cloud_done_outlined,
               '已同步',
-              '刷新 WebDAV 投票',
+              '刷新公共投票',
             ),
             GameVoteSyncStatus.pending => (
               Icons.cloud_off_outlined,
               '待同步',
-              '本地投票已保留，点击重试同步',
+              votes.syncError ?? '本地投票已保留，点击重试同步',
             ),
           };
     return Tooltip(

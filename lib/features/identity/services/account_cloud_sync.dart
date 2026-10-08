@@ -7,6 +7,8 @@ import 'package:webdav_sync/webdav_sync.dart';
 import '../../../app/state/app_controller.dart';
 import 'account_sync_remote.dart';
 import 'account_sync_store.dart';
+import 'account_public_reactions.dart';
+import '../../games/models/game_vote_record.dart';
 
 enum AccountCloudStatus { idle, syncing, synced, pending, paused }
 
@@ -16,15 +18,21 @@ final class AccountCloudSync extends ChangeNotifier {
     required this.scope,
     required this.files,
     required this.isActive,
+    this.publicReactions,
   });
   final AppController controller;
   final String scope;
   final AccountPrivateFiles files;
   final bool Function() isActive;
+  final AccountPublicReactions? publicReactions;
   AccountSyncLocalStore? _local;
   int? _localGeneration;
   Timer? _debounce, _poll;
   Future<void>? _operation;
+  Completer<void>? _publicReady;
+  bool publicSyncing = false;
+  bool publicSynced = false;
+  bool _publicAttempted = false;
   bool _disposed = false;
   int _generation = 0;
   bool enabled = true;
@@ -46,14 +54,11 @@ final class AccountCloudSync extends ChangeNotifier {
     );
     status = enabled ? AccountCloudStatus.idle : AccountCloudStatus.paused;
     notifyListeners();
-    if (enabled) unawaited(synchronize());
+    unawaited(synchronize());
   }
 
   void _changed() {
-    if (_disposed ||
-        _operation != null ||
-        !enabled ||
-        !controller.accountCloudIdle) {
+    if (_disposed || _operation != null || !controller.accountCloudIdle) {
       return;
     }
     _debounce?.cancel();
@@ -81,6 +86,7 @@ final class AccountCloudSync extends ChangeNotifier {
       _generation++;
       _debounce?.cancel();
       files.cancelRequests();
+      publicReactions?.cancel();
       status = AccountCloudStatus.paused;
     }
     notifyListeners();
@@ -93,6 +99,8 @@ final class AccountCloudSync extends ChangeNotifier {
   Future<void> synchronize() {
     if (_operation != null) return _operation!;
     final done = Completer<void>();
+    _publicReady = Completer<void>();
+    _publicAttempted = false;
     // Install the barrier before callbacks in _run can notify listeners.
     _operation = done.future;
     unawaited(() async {
@@ -102,24 +110,81 @@ final class AccountCloudSync extends ChangeNotifier {
       } catch (error, stack) {
         done.completeError(error, stack);
       } finally {
+        if (!_publicReady!.isCompleted) _publicReady!.complete();
         _operation = null;
       }
     }());
     return done.future;
   }
 
+  Future<void> refreshPublic() async {
+    if (_operation != null && _publicReady?.isCompleted == true) {
+      throw StateError('账号同步正在进行，请稍后刷新公共统计');
+    }
+    if (_disposed || !isActive()) throw StateError('账号已切换');
+    if (_operation == null) unawaited(synchronize());
+    await _publicReady!.future;
+    if (!_publicAttempted ||
+        publicReactions == null ||
+        publicReactions!.error != null ||
+        _disposed ||
+        !isActive()) {
+      throw StateError('公共同步未完成');
+    }
+  }
+
+  Future<void> _syncPublic(AccountSyncLocalStore local) async {
+    final reactions = publicReactions;
+    if (reactions == null || _disposed || !isActive()) return;
+    _publicAttempted = true;
+    publicSyncing = true;
+    notifyListeners();
+    try {
+      await reactions
+          .synchronize(local)
+          .timeout(
+            const Duration(seconds: 20),
+            onTimeout: () {
+              reactions.cancel();
+              reactions.error = '公共同步超时，已保留上次统计。';
+              throw TimeoutException('公共同步超时');
+            },
+          );
+      if (_disposed || !isActive()) return;
+      final publicScope = 'account-public-v1.$scope';
+      await controller.gameVotes.acceptPublicCounts(
+        publicScope,
+        reactions.counts(GameVoteBallot.campaign),
+      );
+      await controller.favoriteStatistics.acceptPublicCounts(
+        publicScope,
+        reactions.counts(GameVoteBallot.favoritesNamespace),
+      );
+      publicSynced = true;
+    } catch (_) {
+      reactions.error ??= '公共同步未完成，已保留本机数据和上次统计。';
+      if (!_disposed && isActive()) {
+        controller.gameVotes.markPublicFailure();
+        controller.favoriteStatistics.markPublicFailure();
+      }
+    } finally {
+      publicSyncing = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<void> _run() async {
-    if (_disposed || !enabled || !isActive() || !controller.accountCloudIdle) {
+    if (_disposed || !isActive() || !controller.accountCloudIdle) {
       return;
     }
     _debounce?.cancel();
-    status = AccountCloudStatus.syncing;
+    status = enabled ? AccountCloudStatus.syncing : AccountCloudStatus.paused;
     error = null;
     notifyListeners();
     try {
       final generation = _generation;
       void check() {
-        if (_disposed || !enabled || !isActive() || generation != _generation) {
+        if (_disposed || !isActive() || generation != _generation) {
           throw const SyncProtocolException('同步已停止');
         }
       }
@@ -152,6 +217,10 @@ final class AccountCloudSync extends ChangeNotifier {
       }
       await local.capture();
       check();
+      await _syncPublic(local);
+      check();
+      if (!_publicReady!.isCompleted) _publicReady!.complete();
+      if (!enabled) return;
       final result =
           await IncrementalSyncEngine(
             local: local,
@@ -204,6 +273,22 @@ final class AccountCloudSync extends ChangeNotifier {
         };
       }
     } finally {
+      final local = _local;
+      if (!_disposed &&
+          isActive() &&
+          enabled &&
+          status == AccountCloudStatus.synced &&
+          local != null &&
+          publicReactions != null &&
+          publicReactions!.error == null &&
+          controller.accountCloudIdle) {
+        try {
+          await local.capture();
+          await _syncPublic(local);
+        } catch (_) {
+          // Public failure never rolls back durable private data or cached counts.
+        }
+      }
       if (!_disposed) notifyListeners();
     }
   }
@@ -216,6 +301,7 @@ final class AccountCloudSync extends ChangeNotifier {
     _poll?.cancel();
     controller.removeListener(_changed);
     files.cancelRequests();
+    publicReactions?.cancel();
     super.dispose();
   }
 }

@@ -12,6 +12,7 @@ import '../../core/localization/app_copy.dart';
 import '../shared/content_cards.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
+import '../shared/game_ranking_screen.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import 'game_cover.dart';
 
@@ -938,6 +939,12 @@ class _MobileMineContentState extends State<MobileMineContent> {
         copy.localized('设置', 'Settings'),
         copy.localized('语言、偏好设置', 'Language and preferences'),
         widget.onSettings,
+      ),
+      (
+        Icons.leaderboard_rounded,
+        copy.localized('排行榜', 'Rankings'),
+        copy.localized('收藏人数排名', 'Ranked by likes'),
+        () => Navigator.of(context).pushNamed(GameRankingScreen.routeName),
       ),
     ];
     return Container(

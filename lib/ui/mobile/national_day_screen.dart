@@ -161,10 +161,10 @@ class _MobileNationalDayScreenState extends State<MobileNationalDayScreen> {
     final label =
         votes.loadError ??
         switch (votes.status) {
-          GameVoteSyncStatus.localOnly => '投票已保存在本机',
+          GameVoteSyncStatus.localOnly => widget.controller.identityUserId == null ? '登录后参与公共投票' : '公共投票尚未连接，点此重试',
           GameVoteSyncStatus.syncing => '正在同步投票',
           GameVoteSyncStatus.synced => '投票已同步',
-          GameVoteSyncStatus.pending => '投票已保存在本机，点此重试同步',
+          GameVoteSyncStatus.pending => votes.syncError ?? '投票已保存在本机，点此重试同步',
         };
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),

@@ -3,12 +3,9 @@ import 'dart:convert';
 
 import 'package:board_game_agent/features/games/models/game_vote_record.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
-import 'package:board_game_agent/features/games/services/webdav_game_vote_store.dart';
+import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-import 'package:webdav_settings/webdav_settings.dart';
 
 void main() {
   test('offline vote and cancellation persist across restarts', () async {
@@ -194,84 +191,6 @@ void main() {
       }
     },
   );
-
-  test(
-    'WebDAV adapter uses per-device JSON files and excludes unrelated entries',
-    () async {
-      final id = 'a' * 32;
-      final ballot = GameVoteBallot(deviceId: id, games: ['splendor']);
-      final requests = <http.Request>[];
-      final client = MockClient((request) async {
-        requests.add(request);
-        if (request.method == 'MKCOL') return http.Response('', 405);
-        if (request.method == 'PUT') {
-          expect(GameVoteBallot.decode(request.body).games, {'splendor'});
-          expect(
-            request.headers['content-type'],
-            startsWith('application/json'),
-          );
-          return http.Response('', 201);
-        }
-        if (request.method == 'PROPFIND') {
-          final root = '/friend/${WebDavGameVoteStore.directory}';
-          return http.Response('''<d:multistatus xmlns:d="DAV:">
-          <d:response><d:href>$root/$id.json</d:href><d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response>
-          <d:response><d:href>$root/unrelated.json</d:href><d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response>
-        </d:multistatus>''', 207);
-        }
-        expect(request.method, 'GET');
-        return http.Response(ballot.encode(), 200);
-      });
-      final remote = WebDavGameVoteStore(
-        const WebDavSettings(
-          mode: ExternalStorageMode.webDav,
-          baseUrl: 'https://example.invalid/friend/',
-        ),
-        httpClient: client,
-      );
-      addTearDown(() {
-        remote.close();
-        client.close();
-      });
-      await remote.upload(ballot);
-      expect((await remote.readBallots()).single.deviceId, id);
-      expect(requests.where((r) => r.method == 'GET'), hasLength(1));
-      expect(
-        requests.where((r) => r.method == 'PUT').single.url.path,
-        '/friend/${WebDavGameVoteStore.directory}/$id.json',
-      );
-    },
-  );
-
-  test('unconfigured WebDAV remains local without constructing a client', () {
-    expect(WebDavGameVoteStore.fromSettings(const WebDavSettings()), isNull);
-  });
-
-  for (final statusCode in [401, 403, 500]) {
-    test(
-      'WebDAV $statusCode keeps the local vote and reports pending sync',
-      () async {
-        final client = MockClient((_) async => http.Response('', statusCode));
-        addTearDown(client.close);
-        final votes = _service(
-          _Preferences(),
-          () => WebDavGameVoteStore(
-            const WebDavSettings(
-              mode: ExternalStorageMode.webDav,
-              baseUrl: 'https://example.invalid/friend/',
-            ),
-            httpClient: client,
-          ),
-        );
-        await votes.load();
-        expect(await votes.toggle('splendor'), isTrue);
-        await votes.sync();
-        expect(votes.hasVoted('splendor'), isTrue);
-        expect(votes.count('splendor'), 1);
-        expect(votes.status, GameVoteSyncStatus.pending);
-      },
-    );
-  }
 
   test(
     'switching endpoints during sync cannot apply stale remote counts',
