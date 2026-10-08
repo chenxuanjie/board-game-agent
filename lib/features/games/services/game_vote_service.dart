@@ -89,7 +89,8 @@ class GameVoteService extends ChangeNotifier {
   Future<void> acceptPublicCounts(String scope, Map<String, int> counts) async {
     await load();
     await _serialize(() async {
-      if (_disposed || !ready) return;
+      if (_disposed) return;
+      if (!ready) throw StateError('统计缓存读取失败');
       final next = GameVoteCache(
         ballot: _cache!.ballot,
         remoteCounts: {..._cache!.remoteCounts, scope: Map.of(counts)},

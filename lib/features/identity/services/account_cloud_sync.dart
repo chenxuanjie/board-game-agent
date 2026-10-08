@@ -152,14 +152,18 @@ final class AccountCloudSync extends ChangeNotifier {
           );
       if (_disposed || !isActive()) return;
       final publicScope = 'account-public-v1.$scope';
-      await controller.gameVotes.acceptPublicCounts(
+      final votes = controller.gameVotes;
+      final favorites = controller.favoriteStatistics;
+      await votes.acceptPublicCounts(
         publicScope,
         reactions.counts(GameVoteBallot.campaign),
       );
-      await controller.favoriteStatistics.acceptPublicCounts(
+      if (_disposed || !isActive()) return;
+      await favorites.acceptPublicCounts(
         publicScope,
         reactions.counts(GameVoteBallot.favoritesNamespace),
       );
+      if (_disposed || !isActive()) return;
       publicSynced = true;
     } catch (_) {
       reactions.error ??= '公共同步未完成，已保留本机数据和上次统计。';

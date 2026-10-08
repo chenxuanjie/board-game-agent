@@ -8,6 +8,21 @@ import 'package:board_game_agent/features/settings/services/preferences_service.
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'public aggregate cannot overwrite an unreadable ballot cache',
+    () async {
+      final prefs = _Preferences()..data = '{';
+      final votes = GameVoteService(preferences: prefs);
+      addTearDown(votes.dispose);
+      await expectLater(
+        votes.acceptPublicCounts('account-public-v1.a', {'cabo': 2}),
+        throwsStateError,
+      );
+      expect(prefs.data, '{');
+      expect(votes.loadError, isNotNull);
+      expect(votes.hasCachedRemoteCounts, isFalse);
+    },
+  );
   test('offline vote and cancellation persist across restarts', () async {
     final prefs = _Preferences();
     final votes = _service(prefs);

@@ -40,4 +40,4 @@ Windows/Android 使用已有群晖 FileStation，不新增 NAS 服务。Web 保�
 
 回退需同时回退主工程与共享 app_identity 包；云端快照和本机收藏保留，不删除资料。旧客户端不能配套新增公共接口，也不能忽略未知私人实体继续同步。
 
-共享认证包版本：app_identity 0.4.0，提交以共享包仓库实际 HEAD 为准；主项目 pubspec.lock 固定该路径包版本。
+共享认证包版本：app_identity 0.4.0，共享包提交 `6acebeb`；主项目 pubspec.lock 记录该路径包版本。
