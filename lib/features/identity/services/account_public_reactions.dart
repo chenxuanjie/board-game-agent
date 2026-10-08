@@ -134,21 +134,16 @@ final class AccountPublicReactions {
           '无法创建账号公共目录，请检查创建权限。',
         PrivateFileException(
           failure: PrivateFileFailure.denied,
-          operation: 'public-permissions',
-        ) =>
-          '公共权限过宽：各账号只能修改自己的记录。',
-        PrivateFileException(
-          failure: PrivateFileFailure.denied,
           operation: 'public-metadata',
         ) =>
-          'NAS 返回的公共目录权限信息不完整。',
+          'NAS 返回的公共记录身份信息不完整。',
         PrivateFileException(
           failure: PrivateFileFailure.denied,
           operation: 'public-owner',
         ) =>
           '公共记录的所有者与账号不匹配。',
         PrivateFileException(failure: PrivateFileFailure.denied) =>
-          '无法访问公共目录，请检查当前账号的共享文件夹权限。',
+          'NAS 拒绝读写公共数据，请检查当前账号的访问权限。',
         PrivateFileException(failure: PrivateFileFailure.session) =>
           '登录已过期，请重新登录。',
         FormatException() || SyncProtocolException() => '公共记录需要检查，已保留上次统计。',

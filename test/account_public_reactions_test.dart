@@ -87,6 +87,48 @@ void main() {
   );
 
   test(
+    'two account votes persist remotely and cancelling one leaves the other',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture(), b = SyncDeviceFixture(scope: 'account-b');
+      await a.start();
+      await b.start();
+      final ra = AccountPublicReactions(MemoryPublicFiles(hub, 101));
+      final rb = AccountPublicReactions(MemoryPublicFiles(hub, 102));
+      _vote(a, 'cabo');
+      _favorite(a, 'cabo');
+      _vote(b, 'cabo');
+      _favorite(b, 'cabo');
+      await _publish(ra, a);
+      await _publish(rb, b);
+      final viewer = SyncDeviceFixture(scope: 'viewer');
+      await viewer.start();
+      final totals = AccountPublicReactions(MemoryPublicFiles(hub, 103));
+      await _publish(totals, viewer);
+      expect(totals.counts(GameVoteBallot.campaign), {'cabo': 2});
+      expect(totals.counts(GameVoteBallot.favoritesNamespace), {'cabo': 2});
+      // Re-enter the account using a fresh adapter/device and recover its vote.
+      final restored = SyncDeviceFixture(scope: 'account-b');
+      await restored.start();
+      final restoredRemote = AccountPublicReactions(
+        MemoryPublicFiles(hub, 102),
+      );
+      await _publish(restoredRemote, restored);
+      expect(
+        restored.entities.keys,
+        containsAll(['vote|cabo', 'favorite|cabo']),
+      );
+      await _publish(totals, viewer);
+      expect(totals.counts(GameVoteBallot.campaign), {'cabo': 2});
+      restored.entities.clear();
+      await _publish(restoredRemote, restored);
+      await _publish(totals, viewer);
+      expect(totals.counts(GameVoteBallot.campaign), {'cabo': 1});
+      expect(totals.counts(GameVoteBallot.favoritesNamespace), {'cabo': 1});
+      expect(hub.objects.keys.any((path) => path.startsWith('u101/')), isTrue);
+    },
+  );
+  test(
     'cancellation tombstones defeat stale devices and survive a new device',
     () async {
       final hub = PublicFixtureHub();

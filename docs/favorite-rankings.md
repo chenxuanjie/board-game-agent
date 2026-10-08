@@ -6,10 +6,10 @@
 
 Windows/Android 登录后以 DSM UID 去重，同账号多个设备仅贡献一次。当前账号贡献来自成功保存的收藏，远端缓存排除自己的 UID，避免重复叠加；乐观显示和失败保存不发布。访客/Web 仅展示本机收藏，没有匿名公共上传。
 
-公共快照只导出收藏/想玩操作及取消标记，不公开私人对话或凭据。FileStation 文件所有者 UID 必须与目录和记录匹配。取消采用日志版本合并，旧设备不会恢复已取消内容。错误保留上次完整统计并提供重试。存储、ACL、调度及迁移见 [公共账号数据](public-account-data.md)。
+公共快照只导出收藏/想玩操作及取消标记，不公开私人对话或凭据。FileStation 文件所有者 UID 必须与目录和记录匹配。NAS 允许共享读写，不以其他账号目录可写为由阻止统计。取消采用日志版本合并，旧设备不会恢复已取消内容。错误保留上次完整统计并提供重试。存储、调度及迁移见 [公共账号数据](public-account-data.md)。
 
 实现：GameFavoriteRanker、AppController/rankings.dart、GameRankingScreen，及 account_public_reactions.dart；复用现有投票状态与缓存，旧匿名 WebDavGameVoteStore 已移除。
 
-测试：game_ranking_test.dart 验证排序、收藏保存边界、缓存、320/390/1280 dp、150% 字号及详情往返；account_public_reactions_test.dart 验证账号去重、新设备恢复、取消、游标、失败和迟到响应；identity_scope_storage_test.dart 验证真实业务投影、退出隔离和私人同步暂停时公共同步。真实公共 ACL 和 Android 实机未验收。
+测试：game_ranking_test.dart 验证排序、收藏保存边界、缓存、320/390/1280 dp、150% 字号及详情往返；account_public_reactions_test.dart 验证账号去重、新设备恢复、取消、游标、失败和迟到响应；identity_scope_storage_test.dart 验证真实业务投影、退出隔离和私人同步暂停时公共同步。真实双账号同步和 Android 实机未验收。
 
 回退须配套回退主工程与共享认证包，保留本机收藏与云端快照。
