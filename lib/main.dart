@@ -167,12 +167,12 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     account: widget.accountService,
   );
   late Future<void> _initialization;
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  bool _initializationComplete = false;
+  bool _showAccountLoginAtRoot = false;
   bool _startupUpdateCheckScheduled = false;
   String? _lastAccountKey;
   String? _lastResourceConnection;
-  bool _accountNavigationPending = false;
-  bool _accountNavigationScheduled = false;
 
   @override
   void initState() {
@@ -211,7 +211,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
         return MaterialApp(
           builder: (context, child) {
             final accounts = widget.accountService;
-            if (accounts == null || accounts.dataScopeReady) {
+            if (accounts == null ||
+                accounts.dataScopeReady ||
+                (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
               return DesktopWindowFrame(
                 child: child ?? const SizedBox.shrink(),
               );
@@ -290,7 +292,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           home: FutureBuilder<void>(
             future: _initialization,
             builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
+              if (!_initializationComplete &&
+                  snapshot.connectionState != ConnectionState.done) {
                 return const _StartupScreen();
               }
 
@@ -306,6 +309,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
               }
 
               _scheduleStartupUpdateCheck(context);
+              if (_showAccountLoginAtRoot) {
+                return AccountScreen(onBack: _returnFromAccountLogin);
+              }
               if (desktopLayout) {
                 return DesktopWorkspace(
                   key: ValueKey(widget.accountService?.nicknameKey),
@@ -330,6 +336,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   Future<void> _initialize() async {
+    _initializationComplete = false;
     try {
       await widget.updateSettingsController.load();
       await _transferService.recover();
@@ -337,6 +344,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       await widget.accountService?.initialize();
       // Publish existing favorites too, even while the ranking entry is hidden.
       unawaited(widget.controller.refreshFavoriteRankings());
+      _initializationComplete = true;
     } catch (error, stackTrace) {
       debugPrint('[startup] initialization failed: $error');
       debugPrint('$stackTrace');
@@ -431,38 +439,25 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     }
   }
 
+  void _returnFromAccountLogin() {
+    if (widget.accountService?.dataScopeReady != true) return;
+    setState(() => _showAccountLoginAtRoot = false);
+  }
+
   void _handleAccountChange() {
     if (!mounted) return;
+    final account = widget.accountService;
     final key = widget.accountService?.nicknameKey;
     if (_lastAccountKey != null && key != _lastAccountKey) {
-      _accountNavigationPending = true;
+      // Replace the navigation tree and its root destination together. Popping
+      // home and then pushing login reveals the home during the route animation.
+      _showAccountLoginAtRoot =
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.windows &&
+          account?.isSignedIn == false;
+      _navigatorKey = GlobalKey<NavigatorState>();
     }
     _lastAccountKey = key;
-    final account = widget.accountService;
-    if (_accountNavigationPending &&
-        !_accountNavigationScheduled &&
-        account?.dataScopeReady == true) {
-      _accountNavigationScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _accountNavigationScheduled = false;
-        // A second account change may finish before this frame. Navigate using
-        // the current identity rather than discarding its pending transition.
-        if (!mounted || account?.dataScopeReady != true) {
-          return;
-        }
-        final navigator = _navigatorKey.currentState;
-        if (navigator == null) return;
-        _accountNavigationPending = false;
-        navigator.popUntil((route) => route.isFirst);
-        if (!kIsWeb &&
-            defaultTargetPlatform == TargetPlatform.windows &&
-            account?.isSignedIn == false) {
-          navigator.push<void>(
-            MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
-          );
-        }
-      });
-    }
     if (account != null &&
         !account.isBusy &&
         account.resourceCredentialsReady) {
@@ -501,7 +496,10 @@ class _StartupScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return const Scaffold(
+      key: ValueKey('app-startup-loading'),
+      body: Center(child: CircularProgressIndicator()),
+    );
   }
 }
 

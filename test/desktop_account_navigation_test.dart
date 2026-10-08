@@ -37,7 +37,7 @@ void main() {
   });
   for (final slowScope in [false, true]) {
     testWidgets(
-      'desktop logout returns to login after scope drain ($slowScope)',
+      'desktop logout shows login directly without a home frame ($slowScope)',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(1280, 800));
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -97,24 +97,93 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         });
         await tester.pump();
+        expect(find.byType(DesktopWorkspace), findsNothing);
+        expect(find.byKey(const ValueKey('app-startup-loading')), findsNothing);
         if (slowScope) {
           expect(account.dataScopeReady, isFalse);
           expect(find.byType(WindowControls), findsOneWidget);
+          expect(find.byType(AccountScreen), findsOneWidget);
+          expect(
+            tester
+                .widget<FilledButton>(
+                  find.byKey(const ValueKey('account-sign-in')),
+                )
+                .onPressed,
+            isNull,
+          );
+          await tester.tap(find.byType(BackButton));
+          await tester.pump();
+          expect(find.byType(AccountScreen), findsOneWidget);
+          expect(find.byType(DesktopWorkspace), findsNothing);
+          expect(
+            find.byKey(const ValueKey('app-startup-loading')),
+            findsNothing,
+          );
           scopeGate!.complete();
         }
         await tester.runAsync(() => logout);
+        // Inspect every transition frame, rather than only its settled result.
+        // Neither a rebuilt startup screen nor a home route may be painted.
+        for (final frame in [
+          Duration.zero,
+          const Duration(milliseconds: 1),
+          const Duration(milliseconds: 16),
+          const Duration(milliseconds: 16),
+          const Duration(milliseconds: 32),
+          const Duration(milliseconds: 120),
+          const Duration(milliseconds: 240),
+        ]) {
+          await tester.pump(frame);
+          expect(find.byType(DesktopWorkspace), findsNothing);
+          expect(
+            find.byKey(const ValueKey('app-startup-loading')),
+            findsNothing,
+          );
+          expect(find.byKey(const ValueKey('account-sign-in')), findsOneWidget);
+          expect(find.byType(WindowControls), findsOneWidget);
+        }
         await tester.pumpAndSettle();
         expect(find.byType(AccountScreen), findsOneWidget);
         expect(find.byKey(const ValueKey('account-sign-in')), findsOneWidget);
         expect(find.byKey(const ValueKey('account-sign-out')), findsNothing);
         expect(find.byType(WindowControls), findsOneWidget);
         expect(tester.takeException(), isNull);
-        // The login page still has a usable back path to the guest workspace.
-        await Navigator.of(
-          tester.element(find.byType(AccountScreen)),
-        ).maybePop();
+        // Signing in again must replace the login root with the account home,
+        // without treating its rebuilt Navigator as a fresh application start.
+        late Future<void> login;
+        await tester.runAsync(() async {
+          login = account.signIn(
+            account: 'Fixture',
+            password: 'fixture-password',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        });
+        for (var frame = 0; frame < 4; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(
+            find.byKey(const ValueKey('app-startup-loading')),
+            findsNothing,
+          );
+        }
+        await tester.runAsync(() => login);
+        await tester.pumpAndSettle();
+        expect(find.byType(DesktopWorkspace), findsOneWidget);
+        expect(find.byType(AccountScreen), findsNothing);
+        // A subsequent logout uses the same direct login root. Only an explicit
+        // back action after scope completion may return to the guest workspace.
+        await tester.runAsync(() async {
+          logout = account.signOut();
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        });
+        await tester.pump();
+        await tester.runAsync(() => logout);
+        await tester.pumpAndSettle();
+        expect(find.byType(AccountScreen), findsOneWidget);
+        expect(find.byType(DesktopWorkspace), findsNothing);
+        await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
         expect(find.byType(AccountScreen), findsNothing);
+        expect(find.byType(DesktopWorkspace), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
         controller.dispose();
         await gateway.events.close();

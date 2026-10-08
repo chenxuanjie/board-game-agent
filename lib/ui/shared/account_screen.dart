@@ -41,8 +41,9 @@ class AccountEntry extends StatelessWidget {
 }
 
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key, this.showConnections = false});
+  const AccountScreen({super.key, this.showConnections = false, this.onBack});
   final bool showConnections;
+  final VoidCallback? onBack;
   @override
   State<AccountScreen> createState() => _AccountScreenState();
 }
@@ -784,7 +785,12 @@ class _AccountScreenState extends State<AccountScreen> {
           );
     return Scaffold(
       key: const ValueKey('account-screen'),
-      appBar: AppBar(title: Text(_text('账户', 'Account'))),
+      appBar: AppBar(
+        title: Text(_text('账户', 'Account')),
+        leading: widget.onBack == null
+            ? null
+            : BackButton(onPressed: widget.onBack),
+      ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, box) {
