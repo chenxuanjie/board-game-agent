@@ -54,3 +54,22 @@ android {
 flutter {
     source = "../.."
 }
+
+// Validate merged Flutter assets for every Android build, including debug.
+// Documents stay on NAS; never strip an already signed APK after compilation.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    doLast {
+        val forbidden = outputs.files.asFileTree.matching {
+            include("**/flutter_assets/assets/games/*/docs/**")
+            include("**/flutter_assets/**/*.pdf")
+            for (extension in listOf("md", "txt", "html", "htm", "zip", "7z", "rar", "epub", "doc", "docx")) {
+                include("**/flutter_assets/assets/games/**/*.$extension")
+            }
+        }.files
+        check(forbidden.isEmpty()) {
+            "Android APK must not bundle game documents: " +
+                forbidden.take(10).joinToString { it.name } +
+                ". Exclude Android from document assets in pubspec.yaml."
+        }
+    }
+}
