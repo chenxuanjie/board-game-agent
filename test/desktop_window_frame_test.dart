@@ -1,5 +1,7 @@
 import 'package:board_game_agent/ui/desktop/desktop_window_frame.dart';
 import 'package:board_game_agent/ui/desktop/window_controls.dart';
+import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
+import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -96,6 +98,88 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+
+  for (final size in [
+    const Size(700, 800),
+    const Size(1100, 800),
+    const Size(1280, 800),
+    const Size(1586, 992),
+    const Size(2560, 1440),
+  ]) {
+    testWidgets(
+      'titlebar sidebar color matches the content viewport at $size',
+      (tester) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final observer = DesktopWindowChromeObserver(
+          workspaceRouteNames: {'/rankings'},
+        );
+        addTearDown(observer.sidebarVisible.dispose);
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildDesktopTheme(),
+            navigatorKey: navigator,
+            navigatorObservers: [observer],
+            builder: (_, child) => ValueListenableBuilder<bool>(
+              valueListenable: observer.sidebarVisible,
+              builder: (_, visible, _) =>
+                  DesktopWindowFrame(sidebarVisible: visible, child: child!),
+            ),
+            home: const Scaffold(body: Text('workspace')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final background = find.byKey(
+          const ValueKey('desktop-window-sidebar-background'),
+        );
+        if (size.width < DesktopResponsive.narrowBreakpoint) {
+          expect(background, findsNothing);
+        } else {
+          final contentSize = tester.getSize(find.byType(Scaffold));
+          final contentMetrics = DesktopResponsive.metricsFor(contentSize);
+          final width = contentMetrics.px(
+            size.width >= DesktopResponsive.fullSidebarBreakpoint
+                ? DesktopResponsive.fullSidebarWidth
+                : DesktopResponsive.compactSidebarWidth,
+          );
+          expect(tester.getSize(background).width, width);
+          expect(
+            (tester.widget<DecoratedBox>(background).decoration
+                    as BoxDecoration)
+                .color,
+            DesktopColors.sidebar,
+          );
+          expect(tester.getTopLeft(background), Offset.zero);
+        }
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
+        );
+        await tester.pumpAndSettle();
+        expect(background, findsNothing);
+        expect(find.byType(WindowControls), findsOneWidget);
+        showDialog<void>(
+          context: tester.element(find.byType(AccountScreen)),
+          builder: (_) => const AlertDialog(content: Text('dialog')),
+        );
+        await tester.pumpAndSettle();
+        expect(background, findsNothing);
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(
+          background,
+          size.width < DesktopResponsive.narrowBreakpoint
+              ? findsNothing
+              : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
 
   testWidgets(
     'Android keeps its own viewport without native chrome',

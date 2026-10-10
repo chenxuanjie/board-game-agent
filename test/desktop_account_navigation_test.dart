@@ -79,6 +79,10 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(account.isSignedIn, isTrue);
+        expect(
+          find.byKey(const ValueKey('desktop-window-sidebar-background')),
+          findsOneWidget,
+        );
         final navigator = Navigator.of(
           tester.element(find.byType(DesktopWorkspace)),
         );
@@ -87,6 +91,10 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('account-sign-out')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('desktop-window-sidebar-background')),
+          findsNothing,
+        );
         if (slowScope) scopeGate = Completer<void>();
         late Future<void> logout;
         await tester.runAsync(() async {
@@ -169,6 +177,10 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(DesktopWorkspace), findsOneWidget);
         expect(find.byType(AccountScreen), findsNothing);
+        expect(
+          find.byKey(const ValueKey('desktop-window-sidebar-background')),
+          findsOneWidget,
+        );
         // A subsequent logout uses the same direct login root. Only an explicit
         // back action after scope completion may return to the guest workspace.
         await tester.runAsync(() async {

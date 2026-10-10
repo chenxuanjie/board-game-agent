@@ -265,6 +265,72 @@ void main() {
       expect(app.assetSourceStatuses.keys, ['new']);
     },
   );
+  for (final reduced in [false, true]) {
+    testWidgets(
+      'refresh is independent from details and follows check lifecycle (reduced=$reduced)',
+      (tester) async {
+        final client = _Client();
+        final app = controllerFor(RemoteAssetService(client: client));
+        addTearDown(app.dispose);
+        await tester.runAsync(() => app.saveAssetSourceConfigs(sources));
+        late Future<void> check;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(disableAnimations: reduced),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: ResourceAccessSummary(
+                controller: app,
+                onRefresh: () => check = app.refreshAssetAccessStatus(),
+              ),
+            ),
+          ),
+        );
+        final refresh = find.byKey(const ValueKey('resource-access-refresh'));
+        await tester.runAsync(() async {
+          await tester.tap(refresh);
+          await settle();
+        });
+        await tester.pump();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(client.requests.length, 2);
+        expect(tester.widget<IconButton>(refresh).onPressed, isNull);
+        await tester.pump(const Duration(milliseconds: 150));
+        final rotation = tester
+            .widget<RotationTransition>(
+              find.byKey(const ValueKey('resource-access-refresh-rotation')),
+            )
+            .turns;
+        expect(rotation.value, reduced ? 0 : greaterThan(0));
+        // Tapping the status row opens diagnostics without starting another check.
+        await tester.tap(find.text(app.copy.assetStatusTitle));
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(find.text('内网入口'), findsOneWidget);
+        expect(client.requests.length, 2);
+        await tester.runAsync(() async {
+          client.reply(0, status: 403);
+          client.reply(1, status: reduced ? 403 : 200);
+          await check;
+        });
+        await tester.pumpAndSettle();
+        expect(rotation.value, 0);
+        expect(
+          app.assetConnectivityStatus.state,
+          reduced ? ConnectivityState.failure : ConnectivityState.success,
+        );
+        await tester.tap(find.text(app.copy.dialogClose));
+        await tester.pumpAndSettle();
+        expect(tester.widget<IconButton>(refresh).onPressed, isNotNull);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   for (final width in [320.0, 1280.0]) {
     testWidgets('access summary and live entrance details fit $width', (
       tester,

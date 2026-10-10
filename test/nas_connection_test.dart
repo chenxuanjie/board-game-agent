@@ -525,12 +525,12 @@ void main() {
       );
       expect(find.text('Sign in to use the knowledge library'), findsOneWidget);
       expect(
-        tester
-            .widget<TextButton>(
-              find.byKey(const ValueKey('account-check-resources')),
-            )
-            .onPressed,
-        isNull,
+        find.byKey(const ValueKey('account-check-resources')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('resource-access-refresh')),
+        findsNothing,
       );
       expect(f.account.resourceCredentialsReady, isFalse);
       expect(f.dav.saved.password, isEmpty);

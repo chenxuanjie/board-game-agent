@@ -1,6 +1,63 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
+  for (final width in [640.0, 1100.0, 1280.0, 2560.0]) {
+    testWidgets(
+      'global search appears only on home and game library at $width',
+      (tester) async {
+        await _mount(tester, context.controller, Size(width, 900));
+        final search = find.byKey(const ValueKey('desktop-home-search-field'));
+        expect(search, findsOneWidget);
+        final fullHeaderHeight = tester
+            .getSize(find.byKey(const ValueKey('desktop-top-bar')))
+            .height;
+        await _navigate(tester, '游戏库');
+        expect(search, findsOneWidget);
+        for (final label in ['我的喜欢', '排行榜', '设置', 'AI助手']) {
+          await _navigate(tester, label, settle: false);
+          if (label == '排行榜') {
+            expect(
+              find.byKey(const ValueKey('game-ranking-screen')),
+              findsOneWidget,
+            );
+          } else {
+            expect(
+              find.byType(switch (label) {
+                '我的喜欢' => DesktopFavoritesPane,
+                '设置' => DesktopSettingsPane,
+                _ => DesktopAssistantPane,
+              }),
+              findsOneWidget,
+            );
+          }
+          expect(search, findsNothing);
+          expect(
+            find.byKey(const ValueKey('desktop-home-search-shell')),
+            findsNothing,
+          );
+          expect(find.byTooltip('通知'), findsOneWidget);
+          expect(
+            tester
+                .getSize(find.byKey(const ValueKey('desktop-top-bar')))
+                .height,
+            lessThan(fullHeaderHeight),
+          );
+          if (width < DesktopResponsive.narrowBreakpoint) {
+            expect(
+              find.byKey(const ValueKey('desktop-open-navigation')),
+              findsOneWidget,
+            );
+          }
+          expect(tester.takeException(), isNull);
+        }
+        await _navigate(tester, '首页', settle: false);
+        expect(find.byType(DesktopHomePane), findsOneWidget);
+        expect(search, findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   test('Desktop theme keeps the host platform and shared content', () {
     final theme = buildDesktopTheme();
     expect(theme.platform, defaultTargetPlatform);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/models/connectivity_status.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_motion.dart';
 import '../../features/library/models/asset_source_config.dart';
 import 'resource_source_list.dart';
 
@@ -13,10 +14,16 @@ class ResourceAccessSummary extends StatelessWidget {
     required this.controller,
     this.onEdit,
     this.onReorder,
+    this.onRefresh,
+    this.refreshing = false,
+    this.refreshEnabled = true,
   });
   final AppController controller;
   final ValueChanged<AssetSourceConfig>? onEdit;
   final void Function(int, int)? onReorder;
+  final VoidCallback? onRefresh;
+  final bool refreshing;
+  final bool refreshEnabled;
 
   String _label(ConnectivityState state) => controller.copy.localized(
     switch (state) {
@@ -126,13 +133,91 @@ class ResourceAccessSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: controller,
-    builder: (context, _) => ListTile(
-      key: const ValueKey('resource-access-summary'),
-      contentPadding: EdgeInsets.zero,
-      title: Text(controller.copy.assetStatusTitle),
-      subtitle: _availability(context),
-      trailing: const Icon(Icons.info_outline_rounded),
-      onTap: () => _details(context),
+    builder: (context, _) {
+      final checking =
+          refreshing ||
+          controller.assetConnectivityStatus.isLoading ||
+          controller.assetSourceStatuses.values.any(
+            (status) => status.isLoading,
+          );
+      return ListTile(
+        key: const ValueKey('resource-access-summary'),
+        contentPadding: EdgeInsets.zero,
+        title: Text(controller.copy.assetStatusTitle),
+        subtitle: _availability(context),
+        trailing: onRefresh == null
+            ? const Icon(Icons.info_outline_rounded)
+            : _ResourceRefreshButton(
+                checking: checking,
+                tooltip: controller.copy.localized(
+                  checking ? '正在刷新资源访问' : '刷新资源访问',
+                  checking
+                      ? 'Refreshing resource access'
+                      : 'Refresh resource access',
+                ),
+                onPressed: refreshEnabled && !checking ? onRefresh : null,
+              ),
+        onTap: () => _details(context),
+      );
+    },
+  );
+}
+
+class _ResourceRefreshButton extends StatefulWidget {
+  const _ResourceRefreshButton({
+    required this.checking,
+    required this.tooltip,
+    this.onPressed,
+  });
+  final bool checking;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  @override
+  State<_ResourceRefreshButton> createState() => _ResourceRefreshButtonState();
+}
+
+class _ResourceRefreshButtonState extends State<_ResourceRefreshButton>
+    with SingleTickerProviderStateMixin {
+  late final _rotation = AnimationController(
+    vsync: this,
+    duration: AppMotion.refreshCycle,
+  );
+  void _updateRotation() {
+    if (widget.checking && !AppMotion.reduced(context)) {
+      if (!_rotation.isAnimating) _rotation.repeat();
+    } else {
+      _rotation.stop();
+      _rotation.value = 0;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateRotation();
+  }
+
+  @override
+  void didUpdateWidget(_ResourceRefreshButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateRotation();
+  }
+
+  @override
+  void dispose() {
+    _rotation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    key: const ValueKey('resource-access-refresh'),
+    tooltip: widget.tooltip,
+    onPressed: widget.onPressed,
+    icon: RotationTransition(
+      key: const ValueKey('resource-access-refresh-rotation'),
+      turns: _rotation,
+      child: const Icon(Icons.refresh_rounded),
     ),
   );
 }

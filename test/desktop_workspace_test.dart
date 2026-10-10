@@ -320,12 +320,21 @@ class _SuccessfulWebDavConnectionTester implements WebDavConnectionTester {
       const WebDavConnectionTestResult.success();
 }
 
-Future<void> _navigate(WidgetTester tester, String label) async {
+Future<void> _navigate(
+  WidgetTester tester,
+  String label, {
+  bool settle = true,
+}) async {
   if (find.byType(DesktopSidebar).evaluate().isEmpty) {
     await tester.tap(
       find.byKey(const ValueKey<String>('desktop-open-navigation')),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
   }
   final textItem = find.descendant(
     of: find.byType(DesktopSidebar),
@@ -336,7 +345,13 @@ Future<void> _navigate(WidgetTester tester, String label) async {
   } else {
     await tester.tap(find.byTooltip(label));
   }
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump(const Duration(milliseconds: 300));
+  }
 }
 
 Future<AppController> _createController({

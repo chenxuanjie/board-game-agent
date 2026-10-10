@@ -443,7 +443,7 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
                             size: 29,
                           ),
                           label: Text(
-                            '${widget.controller.gameVotes.hasVoted(game.slug) ? '已投' : '想玩'} ${widget.controller.gameVotes.count(game.slug)}',
+                            '${widget.controller.gameVotes.count(game.slug)}',
                           ),
                           style: TextButton.styleFrom(
                             foregroundColor: _wine,

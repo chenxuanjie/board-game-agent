@@ -416,14 +416,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     unawaited(widget.controller.removeSearch(value));
   }
 
-  void _find() {
-    if (_page == 'gameDetail') setState(() => _page = 'home');
-    _openSearch();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocus.requestFocus();
-    });
-  }
-
   void _submitSearch(String value) {
     _recordSearch(value);
     _openSearch();
@@ -638,7 +630,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   ),
                                 },
                                 onBack: () => _navigate(_gameDetailReturnPage),
-                                onSearch: _find,
                                 onOpenRules: () =>
                                     _openRules(widget.controller.selectedGame),
                                 onAskAi: () =>
@@ -777,14 +768,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   );
 
   Widget _topBar({required bool compact, required bool narrow}) {
-    final assistant = _page == 'assistant';
+    final showSearch = _page == 'home' || _page == 'games';
     final metrics = DesktopMetricsScope.of(context);
     return SizedBox(
       key: const ValueKey<String>('desktop-top-bar'),
-      height: metrics.px(assistant ? 72 : 104),
+      height: metrics.px(showSearch ? 104 : 48),
       child: Padding(
         padding: metrics.insets(
-          EdgeInsets.fromLTRB(20, assistant ? 26 : 30, 18, assistant ? 6 : 12),
+          EdgeInsets.fromLTRB(20, showSearch ? 30 : 0, 18, showSearch ? 12 : 0),
         ),
         child: Row(
           children: [
@@ -803,98 +794,104 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               ),
               SizedBox(width: metrics.px(6)),
             ],
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: metrics.px(assistant ? 460 : 780),
-                  ),
-                  child: SizedBox(
-                    key: const ValueKey<String>('desktop-home-search-shell'),
-                    width: double.infinity,
-                    height: metrics.px(assistant ? 40 : 55),
-                    child: AnimatedContainer(
-                      duration: AppMotion.duration(context, AppMotion.feedback),
-                      decoration: BoxDecoration(
-                        color: _searchFocus.hasFocus
-                            ? DesktopColors.card
-                            : const Color(0xFFF8F2EA),
-                        borderRadius: BorderRadius.circular(metrics.radius(26)),
-                        border: Border.all(
-                          color: _searchFocus.hasFocus
-                              ? DesktopColors.orange
-                              : Colors.transparent,
+            if (!showSearch) const Spacer(),
+            if (showSearch)
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: metrics.px(780)),
+                    child: SizedBox(
+                      key: const ValueKey<String>('desktop-home-search-shell'),
+                      width: double.infinity,
+                      height: metrics.px(55),
+                      child: AnimatedContainer(
+                        duration: AppMotion.duration(
+                          context,
+                          AppMotion.feedback,
                         ),
-                        boxShadow: _searchFocus.hasFocus
-                            ? <BoxShadow>[
-                                BoxShadow(
-                                  color: Color(0x14FF6846),
-                                  blurRadius: metrics.px(12),
-                                  offset: Offset(0, metrics.px(2)),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: TapRegion(
-                        groupId: _searchTapRegionGroup,
-                        child: TextField(
-                          key: const ValueKey<String>(
-                            'desktop-home-search-field',
+                        decoration: BoxDecoration(
+                          color: _searchFocus.hasFocus
+                              ? DesktopColors.card
+                              : const Color(0xFFF8F2EA),
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(26),
                           ),
-                          controller: _search,
-                          focusNode: _searchFocus,
-                          onTap: _openSearch,
-                          onSubmitted: _submitSearch,
-                          style: TextStyle(
-                            fontSize: metrics.font(assistant ? 14 : 19),
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF2F2924),
+                          border: Border.all(
+                            color: _searchFocus.hasFocus
+                                ? DesktopColors.orange
+                                : Colors.transparent,
                           ),
-                          decoration: InputDecoration(
-                            filled: false,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            isDense: true,
-                            prefixIcon: Icon(
-                              Icons.search_rounded,
-                              color: DesktopColors.brown,
-                              size: metrics.px(assistant ? 20 : 25),
+                          boxShadow: _searchFocus.hasFocus
+                              ? <BoxShadow>[
+                                  BoxShadow(
+                                    color: Color(0x14FF6846),
+                                    blurRadius: metrics.px(12),
+                                    offset: Offset(0, metrics.px(2)),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: TapRegion(
+                          groupId: _searchTapRegionGroup,
+                          child: TextField(
+                            key: const ValueKey<String>(
+                              'desktop-home-search-field',
                             ),
-                            suffixIcon: _searchOpen
-                                ? IconButton(
-                                    tooltip: _search.text.isEmpty
-                                        ? widget.controller.copy.localized(
-                                            '关闭搜索',
-                                            'Close search',
-                                          )
-                                        : widget.controller.copy.localized(
-                                            '清空搜索',
-                                            'Clear search',
-                                          ),
-                                    onPressed: _search.text.isEmpty
-                                        ? _closeSearch
-                                        : _clearSearch,
-                                    icon: Icon(
-                                      Icons.close_rounded,
-                                      size: metrics.px(20),
-                                      color: DesktopColors.secondaryText,
-                                    ),
-                                  )
-                                : null,
-                            hintText: widget.controller.copy.localized(
-                              '搜索桌游 / 机制 / 作者 / 玩法',
-                              'Search games / mechanics / designers / rules',
+                            controller: _search,
+                            focusNode: _searchFocus,
+                            onTap: _openSearch,
+                            onSubmitted: _submitSearch,
+                            style: TextStyle(
+                              fontSize: metrics.font(19),
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF2F2924),
                             ),
-                            hintStyle: TextStyle(
-                              color: Color(0xFFA89C90),
-                              fontSize: metrics.font(assistant ? 14 : 19),
-                              fontWeight: FontWeight.w400,
-                            ),
-                            contentPadding: EdgeInsets.symmetric(
-                              vertical: metrics.px(assistant ? 9 : 14),
+                            decoration: InputDecoration(
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              isDense: true,
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: DesktopColors.brown,
+                                size: metrics.px(25),
+                              ),
+                              suffixIcon: _searchOpen
+                                  ? IconButton(
+                                      tooltip: _search.text.isEmpty
+                                          ? widget.controller.copy.localized(
+                                              '关闭搜索',
+                                              'Close search',
+                                            )
+                                          : widget.controller.copy.localized(
+                                              '清空搜索',
+                                              'Clear search',
+                                            ),
+                                      onPressed: _search.text.isEmpty
+                                          ? _closeSearch
+                                          : _clearSearch,
+                                      icon: Icon(
+                                        Icons.close_rounded,
+                                        size: metrics.px(20),
+                                        color: DesktopColors.secondaryText,
+                                      ),
+                                    )
+                                  : null,
+                              hintText: widget.controller.copy.localized(
+                                '搜索桌游 / 机制 / 作者 / 玩法',
+                                'Search games / mechanics / designers / rules',
+                              ),
+                              hintStyle: TextStyle(
+                                color: Color(0xFFA89C90),
+                                fontSize: metrics.font(19),
+                                fontWeight: FontWeight.w400,
+                              ),
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: metrics.px(14),
+                              ),
                             ),
                           ),
                         ),
@@ -903,7 +900,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   ),
                 ),
               ),
-            ),
             CompositedTransformTarget(
               link: _activityLink,
               child: Badge(

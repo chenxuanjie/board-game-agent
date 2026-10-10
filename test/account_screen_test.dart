@@ -253,6 +253,100 @@ void main() {
     expect(preferences.getString('mobile_profile_nickname'), 'Device guest');
   });
 
+  testWidgets(
+    'profile avatar and name share one account route and refresh after logout',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'mobile_profile_nickname': 'Device guest',
+      });
+      final (service, _) = await _configuredService(tester, signedIn: true);
+      final controller = _MineFixture();
+      addTearDown(controller.dispose);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _mount(
+        tester,
+        service,
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: Scaffold(body: _mine(controller)),
+      );
+      expect(find.text('Shane'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile-mine-edit-profile')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('mobile-mine-avatar')));
+      await tester.tap(find.byKey(const ValueKey('mobile-mine-profile-name')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountScreen, skipOffstage: false), findsOneWidget);
+      await tester.runAsync(() => service.saveNickname('新的账号昵称'));
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('新的账号昵称'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile-mine-profile-name')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountScreen), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.runAsync(service.signOut);
+      await tester.pumpAndSettle();
+      expect(find.text('新的账号昵称'), findsNothing);
+      expect(find.text('Device guest'), findsOneWidget);
+      expect(find.text('点击登录'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile-mine-avatar')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('account-sign-in')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'profile statistics have separate tap actions and enlarged text fits',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'mobile_profile_nickname': '很长的本机访客名称需要正常显示',
+      });
+      final controller = _MineFixture();
+      final service = _service(controller);
+      addTearDown(controller.dispose);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      var favoriteTaps = 0;
+      var conversationTaps = 0;
+      for (final width in [320.0, 390.0, 720.0]) {
+        await tester.binding.setSurfaceSize(Size(width, 844));
+        await _mount(
+          tester,
+          service,
+          textScale: 2,
+          theme: AppTheme.buildTheme(PaletteRegistry.classic),
+          home: Scaffold(
+            body: MobileMineContent(
+              key: ValueKey(width),
+              controller: controller,
+              onOpenGame: (_) {},
+              onFavorites: () => favoriteTaps++,
+              onConversations: () => conversationTaps++,
+              onRecentAll: () {},
+              onExplore: () {},
+              onActivities: () {},
+              onSettings: () {},
+            ),
+          ),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('mobile-mine-favorites-stat')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('mobile-mine-conversations-stat')),
+        );
+        expect(find.byType(AccountScreen), findsNothing);
+        expect(tester.takeException(), isNull);
+      }
+      expect(favoriteTaps, 3);
+      expect(conversationTaps, 3);
+    },
+  );
+
   testWidgets('mine without scope retains guest editor and legacy key', (
     tester,
   ) async {
@@ -269,7 +363,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Device guest'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('mobile-mine-edit-profile')));
+    await tester.tap(find.byKey(const ValueKey('mobile-mine-account-entry')));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(find.byType(AccountScreen), findsNothing);
@@ -280,7 +374,7 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getString('mobile_profile_nickname'), 'New guest');
     expect(find.text('New guest'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('mobile-mine-edit-profile')));
+    await tester.tap(find.byKey(const ValueKey('mobile-mine-account-entry')));
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
@@ -305,7 +399,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(
-          find.byKey(const ValueKey('mobile-mine-edit-profile')),
+          find.byKey(const ValueKey('mobile-mine-account-entry')),
         );
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'Unsaved nickname');
@@ -325,7 +419,7 @@ void main() {
         );
         expect(find.text('Device guest'), findsOneWidget);
         await tester.tap(
-          find.byKey(const ValueKey('mobile-mine-edit-profile')),
+          find.byKey(const ValueKey('mobile-mine-account-entry')),
         );
         await tester.pumpAndSettle();
         expect(
@@ -404,6 +498,8 @@ class _MineFixture extends ChangeNotifier implements AppController {
   @override
   ConnectivityStatus get assetConnectivityStatus =>
       ConnectivityStatus.unknown();
+  @override
+  Map<String, ConnectivityStatus> get assetSourceStatuses => {};
   @override
   List<AssetSourceConfig> get assetSourceConfigs => AssetSourceConfig.defaults;
   @override

@@ -41,7 +41,10 @@ class _AccountResourcesSectionState extends State<AccountResourcesSection> {
         !widget.service.resourceCredentialsReady) {
       return;
     }
-    setState(() => _checking = true);
+    setState(() {
+      _checking = true;
+      _feedback = null;
+    });
     try {
       await widget.service.controller.refreshAssetAccessStatus();
     } catch (_) {
@@ -89,26 +92,14 @@ class _AccountResourcesSectionState extends State<AccountResourcesSection> {
         ),
         const SizedBox(height: UiTokens.itemGap),
         if (service.isSignedIn)
-          ResourceAccessSummary(controller: service.controller)
+          ResourceAccessSummary(
+            controller: service.controller,
+            onRefresh: _check,
+            refreshing: _checking,
+            refreshEnabled: !locked && service.resourceCredentialsReady,
+          )
         else
           Text(_text('登录后使用知识库', 'Sign in to use the knowledge library')),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const ValueKey('account-check-resources'),
-            onPressed: locked || !service.resourceCredentialsReady
-                ? null
-                : _check,
-            icon: _checking
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.network_check_rounded),
-            label: Text(_text('检测资源访问', 'Check resource access')),
-          ),
-        ),
         NasConnectionSection(
           key: ValueKey('nas-$_connectionsRevision'),
           service: service,

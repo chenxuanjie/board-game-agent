@@ -162,6 +162,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         ),
                         child: HoverCarouselControls(
                           enabled: kIsWeb && gallery.length > 1,
+                          showControls: false,
                           keyPrefix: 'mobile-detail-gallery',
                           onPrevious: () =>
                               _stepGalleryPage(-1, gallery.length),

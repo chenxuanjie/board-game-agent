@@ -168,6 +168,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   );
   late Future<void> _initialization;
   GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final _windowChrome = DesktopWindowChromeObserver(
+    workspaceRouteNames: {GameRankingScreen.routeName},
+  );
   bool _initializationComplete = false;
   bool _showAccountLoginAtRoot = false;
   bool _startupUpdateCheckScheduled = false;
@@ -189,6 +192,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     widget.accountService?.dispose();
     widget.controller.disposeServices();
     widget.updateSettingsController.dispose();
+    _windowChrome.sidebarVisible.dispose();
     super.dispose();
   }
 
@@ -214,8 +218,17 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             if (accounts == null ||
                 accounts.dataScopeReady ||
                 (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
-              return DesktopWindowFrame(
+              return ValueListenableBuilder<bool>(
+                valueListenable: _windowChrome.sidebarVisible,
                 child: child ?? const SizedBox.shrink(),
+                builder: (context, hasSidebar, child) => DesktopWindowFrame(
+                  sidebarVisible:
+                      desktopLayout &&
+                      _initializationComplete &&
+                      !_showAccountLoginAtRoot &&
+                      hasSidebar,
+                  child: child!,
+                ),
               );
             }
             // Remove the prior account's UI from the tree while its writes drain.
@@ -273,6 +286,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             ),
           },
           navigatorKey: _navigatorKey,
+          navigatorObservers: [_windowChrome],
           title: widget.controller.copy.appTitle,
           debugShowCheckedModeBanner: false,
           locale: widget.controller.language == AppLanguage.en
@@ -456,6 +470,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           defaultTargetPlatform == TargetPlatform.windows &&
           account?.isSignedIn == false;
       _navigatorKey = GlobalKey<NavigatorState>();
+      _windowChrome.reset();
     }
     _lastAccountKey = key;
     if (account != null &&

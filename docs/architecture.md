@@ -22,6 +22,8 @@
 
 Windows 窗口框架统一位于 `lib/ui/desktop/desktop_window_frame.dart`，由 MaterialApp builder 包住导航与账号切换遮挡页面。最小化、最大化/还原、关闭、拖动和边缘调整大小不属于某个业务页；账号、关于、文档、导入导出、资料更新、国庆专题和弹窗均不得自行隐藏或重复绘制窗口栏。桌面退出登录时同时替换旧导航和根页面，立即显示账号登录页，不经过首页或启动页。旧账号写入与访客数据切换完成前禁用登录及返回操作，完成后才可主动返回访客首页；登录成功直接进入当前账号首页。
 
+桌面全局搜索栏只在首页与游戏库展示。其他工作区页面保留紧凑的通知和窄窗口导航操作区；详情图内不再绘制同类搜索入口，保留返回与窄窗口导航。各功能页自己的过滤输入不受影响，尺寸见 V4 桌面约束。
+
 AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效位于 `lib/ui/shared/assistant/`；桌面和紧凑页面复用这些控件并保持原有控制器、会话和草稿边界，详见 [AI 助手界面](assistant-workspace-design.md)。
 
 配置导入导出共用 `lib/ui/shared/settings_transfer_screen.dart`；格式识别在 `lib/features/settings/models/configuration_transfer.dart`，跨存储保存及中断恢复在 `lib/features/settings/services/settings_transfer_service.dart`。设置页只提供范围入口与应用后的表单刷新，不复制解析或存储路径。格式、依赖补丁和验收边界见 [设置导入与导出](settings-transfer.md)。
@@ -47,5 +49,7 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppController 的 service_status 并发检测、聚合状态与丢弃过期结果；RemoteAssetService 负责目录探测、资源读取竞速及取消，PROPFIND/XML 仍复用 webdav_storage。登录有序回退与资源并发入口访问是两个独立策略。
 
 账户知识库区位于 `lib/ui/shared/account_resources_section.dart`，集中状态、检测与连接配置；知识库要求登录，不提供独立凭据入口。`AccountScreen` 负责宽屏双栏和窄屏纵向分区；资源投影与按用户隔离的安全凭据仍由同一 `AccountService` 管理，未登录时停止资源读取。
+
+手机“我的”资料卡由 `MobileMineContent` 合并头像与名称为账户详情入口，统计分别进入收藏和共用会话历史；登录状态及昵称沿用 AccountScope，详见 [手机资料卡片](mobile-profile-card.md)。
 
 登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。

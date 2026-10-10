@@ -11,6 +11,7 @@ class HoverCarouselControls extends StatefulWidget {
     required this.onNext,
     required this.keyPrefix,
     this.enabled = true,
+    this.showControls = true,
     this.onInteractionChanged,
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
   });
@@ -19,6 +20,7 @@ class HoverCarouselControls extends StatefulWidget {
   final VoidCallback onNext;
   final String keyPrefix;
   final bool enabled;
+  final bool showControls;
   final ValueChanged<bool>? onInteractionChanged;
   final BorderRadius borderRadius;
   @override
@@ -65,8 +67,10 @@ class _HoverCarouselControlsState extends State<HoverCarouselControls> {
             fit: StackFit.expand,
             children: [
               widget.child,
-              _button(context, previous: true),
-              _button(context, previous: false),
+              if (widget.showControls) ...[
+                _button(context, previous: true),
+                _button(context, previous: false),
+              ],
             ],
           ),
         ),

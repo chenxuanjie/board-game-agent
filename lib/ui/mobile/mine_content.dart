@@ -28,6 +28,7 @@ class MobileMineContent extends StatefulWidget {
     required this.onExplore,
     required this.onActivities,
     required this.onSettings,
+    this.onConversations,
   });
 
   final AppController controller;
@@ -37,6 +38,7 @@ class MobileMineContent extends StatefulWidget {
   final VoidCallback onExplore;
   final VoidCallback onActivities;
   final VoidCallback onSettings;
+  final VoidCallback? onConversations;
 
   @override
   State<MobileMineContent> createState() => _MobileMineContentState();
@@ -92,63 +94,6 @@ class _GuestNicknameDialogState extends State<_GuestNicknameDialog> {
   );
 }
 
-class _ProfileCardClipper extends CustomClipper<Path> {
-  const _ProfileCardClipper();
-
-  @override
-  Path getClip(Size size) {
-    const radius = 24.0;
-    final drop = (size.width * 0.13).clamp(50.0, 75.0);
-    final start = size.width * 0.49;
-    final end = size.width * 0.68;
-    return Path()
-      ..moveTo(radius, 0)
-      ..lineTo(start, 0)
-      ..cubicTo(
-        start + (end - start) * 0.45,
-        0,
-        start + (end - start) * 0.55,
-        drop,
-        end,
-        drop,
-      )
-      ..lineTo(size.width - radius, drop)
-      ..quadraticBezierTo(size.width, drop, size.width, drop + radius)
-      ..lineTo(size.width, size.height - radius)
-      ..quadraticBezierTo(
-        size.width,
-        size.height,
-        size.width - radius,
-        size.height,
-      )
-      ..lineTo(radius, size.height)
-      ..quadraticBezierTo(0, size.height, 0, size.height - radius)
-      ..lineTo(0, radius)
-      ..quadraticBezierTo(0, 0, radius, 0)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}
-
-class _ProfileCardShadowPainter extends CustomPainter {
-  const _ProfileCardShadowPainter({required this.clipper});
-
-  final _ProfileCardClipper clipper;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0x147A452B)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
-    canvas.drawPath(clipper.getClip(size).shift(const Offset(0, 6)), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
 class _MobileMineContentState extends State<MobileMineContent> {
   static const _nicknameKey = 'mobile_profile_nickname';
   String _nickname = '';
@@ -156,6 +101,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
   bool _signedIn = false;
   int _nicknameGeneration = 0;
   BuildContext? _profileDialogContext;
+  bool _profileRouteOpen = false;
 
   @override
   void didChangeDependencies() {
@@ -195,17 +141,23 @@ class _MobileMineContentState extends State<MobileMineContent> {
     }
   }
 
-  void _openAccount() {
-    Navigator.of(
-      context,
-    ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
+  Future<void> _openProfile() async {
+    if (_profileRouteOpen) return;
+    _profileRouteOpen = true;
+    try {
+      if (AccountScope.maybeOf(context) == null) {
+        await _editProfile();
+      } else {
+        await Navigator.of(
+          context,
+        ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
+      }
+    } finally {
+      _profileRouteOpen = false;
+    }
   }
 
   Future<void> _editProfile() async {
-    if (_signedIn) {
-      _openAccount();
-      return;
-    }
     final key = _activeNicknameKey ?? _nicknameKey;
     final generation = _nicknameGeneration;
     final copy = widget.controller.copy;
@@ -544,266 +496,141 @@ class _MobileMineContentState extends State<MobileMineContent> {
   );
 
   Widget _profileCard(AppCopy copy) {
-    const clipper = _ProfileCardClipper();
     final account = AccountScope.maybeOf(context);
-    return CustomPaint(
-      painter: const _ProfileCardShadowPainter(clipper: clipper),
-      child: ClipPath(
-        clipper: clipper,
-        child: Container(
-          key: const ValueKey('mobile-mine-profile'),
-          color: AppPalette.of(context).surface,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _avatarWithBadge(),
-                  const SizedBox(width: UiTokens.itemGap),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 2),
-                        InkWell(
-                          onTap: account == null ? _editProfile : _openAccount,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  account?.isSignedIn == true
-                                      ? account!.displayName
-                                      : _nickname.isEmpty
-                                      ? copy.localized('设置昵称', 'Set nickname')
-                                      : _nickname,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: ContentCardStyle.section(context),
-                                ),
-                              ),
-                              const Icon(
-                                Icons.chevron_right_rounded,
-                                size: 19,
-                                color: Color(0xFF8B94A4),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF1DA),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                '$_assetRoot/crown_badge_icon.png',
-                                width: 13,
-                                height: 13,
-                              ),
-                              const SizedBox(width: 3),
-                              Flexible(
-                                child: Text(
-                                  copy.localized('桌游伙伴', 'Player'),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF8B5A2E),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+    final palette = AppPalette.of(context);
+    final signedIn = account?.isSignedIn == true;
+    final name = signedIn
+        ? account!.displayName
+        : _nickname.isNotEmpty
+        ? _nickname
+        : copy.localized('未登录', 'Not signed in');
+    final status = signedIn
+        ? copy.localized('已登录', 'Signed in')
+        : account == null || !account.supportsSignIn
+        ? copy.localized('本机资料', 'Local profile')
+        : copy.localized('点击登录', 'Tap to sign in');
+    return Material(
+      key: const ValueKey('mobile-mine-profile'),
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(UiTokens.groupRadius),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Semantics(
+            button: true,
+            label: copy.localized(
+              '$name，${signedIn ? '账户详情' : status}',
+              '$name, ${signedIn ? 'Account details' : status}',
+            ),
+            child: InkWell(
+              key: const ValueKey('mobile-mine-account-entry'),
+              onTap: _openProfile,
+              child: Padding(
+                padding: const EdgeInsets.all(UiTokens.pageInset),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      key: const ValueKey('mobile-mine-avatar'),
+                      radius: 32,
+                      backgroundColor: palette.secondaryContainer,
+                      foregroundColor: palette.onSecondaryContainer,
+                      child: const Icon(Icons.person_outline_rounded, size: 32),
                     ),
-                  ),
-                  // Keep content clear of the lowered right-hand edge.
-                  const SizedBox(width: 76),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton(
-                  key: const ValueKey('mobile-mine-edit-profile'),
-                  onPressed: account?.isSignedIn == true
-                      ? _openAccount
-                      : _editProfile,
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF9F7F5),
-                    foregroundColor: const Color(0xFF6F7788),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 5,
+                    const SizedBox(width: UiTokens.itemGap),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            key: const ValueKey('mobile-mine-profile-name'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: ContentCardStyle.section(context),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            status,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: palette.textSecondary),
+                          ),
+                        ],
+                      ),
                     ),
-                    minimumSize: const Size(0, 30),
-                    side: const BorderSide(color: Color(0xFFEADBCE)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    account?.isSignedIn == true
-                        ? copy.localized('账户', 'Account')
-                        : copy.localized('编辑资料', 'Edit'),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              if (account != null && !account.isSignedIn)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    key: const ValueKey('mobile-mine-account-entry'),
-                    onPressed: _openAccount,
-                    icon: const Icon(Icons.account_circle_outlined, size: 18),
-                    label: Text(copy.localized('登录账户', 'Sign in')),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  _stat(
-                    '${widget.controller.favoriteCount}',
-                    copy.localized('我的喜欢', 'Liked games'),
-                    onTap: widget.onFavorites,
-                  ),
-                  _statDivider(),
-                  _stat(
-                    '${widget.controller.conversations.length}',
-                    copy.localized('AI 对话', 'AI chats'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _avatarWithBadge() => _signedIn
-      ? CircleAvatar(
-          key: ValueKey(_activeNicknameKey),
-          radius: 32,
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-          child: const Icon(Icons.person_outline_rounded, size: 32),
-        )
-      : SizedBox(
-          width: 64,
-          height: 64,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: const Color(0xFFFFE8D1),
-                    width: 2.5,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x187A452B),
-                      blurRadius: 8,
-                      offset: Offset(0, 3),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: palette.textSecondary,
                     ),
                   ],
                 ),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/desktop/warmwood/avatar.png',
-                    fit: BoxFit.cover,
-                    width: 64,
-                    height: 64,
-                  ),
-                ),
               ),
-              Positioned(
-                right: -1,
-                bottom: -1,
-                child: Container(
-                  width: 21,
-                  height: 21,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFFC654), Color(0xFFFFA21E)],
-                    ),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppPalette.of(context).surface,
-                      width: 1.8,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x24000000),
-                        blurRadius: 3,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: Image.asset(
-                    '$_assetRoot/crown_badge_icon.png',
-                    width: 12,
-                    height: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-
-  Widget _statDivider() =>
-      Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));
-
-  Widget _stat(String value, String label, {VoidCallback? onTap}) => Expanded(
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 19.5,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.of(context).textPrimary,
-              height: 1.1,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: AppPalette.of(context).textSecondary,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                _stat(
+                  '${widget.controller.favoriteCount}',
+                  copy.localized('我的喜欢', 'Liked games'),
+                  key: const ValueKey('mobile-mine-favorites-stat'),
+                  onTap: widget.onFavorites,
+                ),
+                _statDivider(),
+                _stat(
+                  '${widget.controller.conversations.length}',
+                  copy.localized('AI 对话', 'AI chats'),
+                  key: const ValueKey('mobile-mine-conversations-stat'),
+                  onTap: widget.onConversations,
+                ),
+              ],
             ),
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
+
+  Widget _statDivider() =>
+      Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));
+
+  Widget _stat(String value, String label, {Key? key, VoidCallback? onTap}) =>
+      Expanded(
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 19.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.of(context).textPrimary,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppPalette.of(context).textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Widget _shortcuts(AppCopy copy) {
     final palette = AppPalette.of(context);

@@ -121,7 +121,7 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
       const ValueKey<String>('desktop-detail-favorite-button'),
     );
     expect(button, findsOneWidget);
-    expect(tester.getSize(button), const Size(108, 48));
+    expect(tester.getSize(button), const Size(144, 56));
     expect(
       find.descendant(of: button, matching: find.text('喜欢')),
       findsOneWidget,
@@ -135,7 +135,7 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     });
     await tester.pump();
     await tester.pump();
-    expect(tester.getSize(button), const Size(108, 48));
+    expect(tester.getSize(button), const Size(144, 56));
     expect(
       find.descendant(of: button, matching: find.byType(FavoriteFeedbackIcon)),
       findsOneWidget,
@@ -153,7 +153,7 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     );
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
-    expect(tester.getSize(button), const Size(108, 48));
+    expect(tester.getSize(button), const Size(144, 56));
     expect(context.controller.isFavorite(game), isTrue);
     expect(tester.takeException(), isNull);
   });

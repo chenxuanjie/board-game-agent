@@ -365,6 +365,27 @@ void main() {
       expect(find.byKey(const ValueKey('mobile-mine-profile')), findsOneWidget);
       expect(find.text('${controller.favoriteCount}'), findsOneWidget);
       expect(find.text('好桌游，让平凡的日子闪闪发光！'), findsNothing);
+      final conversationCount = controller.conversations.length;
+      final conversation = controller.conversations.first;
+      await tester.tap(
+        find.byKey(const ValueKey('mobile-mine-conversations-stat')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('assistant-conversation-drawer')),
+        findsOneWidget,
+      );
+      expect(controller.conversations.length, conversationCount);
+      await tester.tap(
+        find.byKey(ValueKey('assistant-conversation-${conversation.id}')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AssistantChatScreen), findsOneWidget);
+      expect(controller.selectedConversationId, conversation.id);
+      expect(controller.conversations.length, conversationCount);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('mobile-mine-profile')), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('我的服务'),
         200,
@@ -372,7 +393,17 @@ void main() {
       );
       expect(find.text('我的服务'), findsOneWidget);
       expect(find.text('我的桌游'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.text('活动、评论、系统消息等'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('活动、评论、系统消息等'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('语言、偏好设置'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('语言、偏好设置'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
       await tester.pumpAndSettle();

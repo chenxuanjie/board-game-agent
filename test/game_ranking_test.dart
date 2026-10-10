@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
@@ -22,6 +23,7 @@ import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/workspace.dart';
 import 'package:board_game_agent/ui/shared/game_ranking_screen.dart';
+import 'package:board_game_agent/ui/shared/ranking_medal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,11 +56,18 @@ void main() {
         games,
         (slug) => counts[slug] ?? 0,
       );
-      expect(ranking.map((row) => row.game.slug), ['a', 'b', 'c']);
-      expect(ranking.map((row) => row.rank), [1, 1, 3]);
-      expect(ranking.map((row) => row.favoriteCount), [4, 4, 2]);
+      expect(ranking.map((row) => row.game.slug), ['a', 'b', 'c', 'zero']);
+      expect(ranking.map((row) => row.rank), [1, 1, 3, 4]);
+      expect(ranking.map((row) => row.favoriteCount), [4, 4, 2, 0]);
       expect(() => ranking.clear(), throwsUnsupportedError);
-      expect(GameFavoriteRanker.rank(games, (_) => 0), isEmpty);
+      final zeroRanking = GameFavoriteRanker.rank(games, (_) => 0);
+      expect(zeroRanking.map((row) => row.game.slug), ['a', 'b', 'c', 'zero']);
+      expect(zeroRanking.every((row) => row.favoriteCount == 0), isTrue);
+      expect(GameFavoriteRanker.rank([], (_) => 0), isEmpty);
+      expect(
+        GameFavoriteRanker.rank([_game('a')], (_) => -1).single.favoriteCount,
+        0,
+      );
     },
   );
 
@@ -70,7 +79,7 @@ void main() {
       final app = _app(prefs);
       await app.reloadGames();
       await app.refreshFavoriteRankings();
-      expect(app.favoriteRankings.map((row) => row.favoriteCount), [1, 1]);
+      expect(app.favoriteRankings.map((row) => row.favoriteCount), [1, 1, 0]);
       expect(prefs.favorites.first.createdAt, _record('a').createdAt);
       final cached = GameVoteCache.decode(prefs.cache!, namespace: _namespace);
       final restarted = _app(prefs);
@@ -79,7 +88,16 @@ void main() {
       expect(restarted.favoriteStatistics.count('a'), 1);
       expect(await restarted.toggleFavorite(_game('a')), isTrue);
       await restarted.favoriteStatistics.sync();
-      expect(restarted.favoriteRankings.map((row) => row.game.slug), ['b']);
+      expect(restarted.favoriteRankings.map((row) => row.game.slug), [
+        'b',
+        'a',
+        'c',
+      ]);
+      expect(restarted.favoriteRankings.map((row) => row.favoriteCount), [
+        1,
+        0,
+        0,
+      ]);
       expect(
         GameVoteCache.decode(
           prefs.cache!,
@@ -365,6 +383,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
         expect(find.text('1 次喜欢'), findsNWidgets(2));
+        expect(find.text('0 次喜欢'), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('ranking-game-b')));
         expect(opened?.slug, 'b');
         expect(tester.takeException(), isNull);
@@ -374,7 +393,7 @@ void main() {
   );
 
   testWidgets(
-    'ranking read error has retry and empty data does not invent ranks',
+    'ranking read error keeps retry and the full zero-count catalog visible',
     (tester) async {
       final prefs = _Preferences()..failRead = true;
       final app = _app(prefs);
@@ -387,15 +406,103 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('喜欢统计读取失败'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-game-a')), findsNothing);
+      expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
+      expect(find.text('0 次喜欢'), findsNWidgets(3));
       prefs.failRead = false;
       await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();
-      expect(find.text('还没有喜欢记录'), findsOneWidget);
+      expect(find.text('0 次喜欢'), findsNWidgets(3));
       expect(find.text('喜欢统计读取失败'), findsNothing);
+      for (final badge in tester.widgetList<RankingMedal>(
+        find.byType(RankingMedal),
+      )) {
+        expect(badge.decorated, isFalse);
+      }
+      expect(
+        tester
+            .widget<FractionallySizedBox>(
+              find.byKey(const ValueKey('ranking-fill-a')),
+            )
+            .widthFactor,
+        0,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('zero-count catalog stays readable in every theme and layout', (
+    tester,
+  ) async {
+    final app = _app(_Preferences());
+    await app.reloadGames();
+    await app.refreshFavoriteRankings();
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final palette in [
+      PaletteRegistry.warmwoodStudy,
+      PaletteRegistry.classic,
+      PaletteRegistry.sunsetCoast,
+    ]) {
+      for (final width in [320.0, 760.0, 2560.0]) {
+        await tester.binding.setSurfaceSize(Size(width, 900));
+        await tester.pumpWidget(
+          MaterialApp(
+            key: UniqueKey(),
+            theme: AppTheme.buildTheme(palette),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.5)),
+              child: child!,
+            ),
+            home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('0 次喜欢'), findsNWidgets(3));
+        expect(tester.takeException(), isNull);
+      }
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('public counts drive proportional bars, including zero games', (
+    tester,
+  ) async {
+    final cloud = _Cloud()
+      ..ballots['one'] = _ballot(_otherId, ['a', 'b'])
+      ..ballots['two'] = _ballot('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', ['a']);
+    final app = _app(_Preferences(), cloud: cloud);
+    await app.reloadGames();
+    await app.refreshFavoriteRankings();
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDesktopTheme(),
+        home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 人收藏'), findsOneWidget);
+    expect(find.text('1 人收藏'), findsOneWidget);
+    expect(find.text('0 人收藏'), findsOneWidget);
+    for (final item in {'a': 1.0, 'b': 0.5, 'c': 0.0}.entries) {
+      expect(
+        tester
+            .widget<FractionallySizedBox>(
+              find.byKey(ValueKey('ranking-fill-${item.key}')),
+            )
+            .widthFactor,
+        item.value,
+      );
+    }
+    expect(
+      tester.getSize(find.byKey(const ValueKey('ranking-game-a'))).width,
+      greaterThan(1100),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'desktop ranking navigation works while sidebar keeps its existing entries',

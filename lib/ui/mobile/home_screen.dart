@@ -23,6 +23,7 @@ import 'assistant_chat_screen.dart';
 import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_cover_motion.dart';
+import '../shared/assistant/conversation_drawer.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
 class HomeScreen extends StatefulWidget {
@@ -115,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     onOpenGame: _openGame,
                     onFavorites: () => _openSearch(favoritesOnly: true),
                     onRecentAll: () => _openSearch(recentOnly: true),
+                    onConversations: _openConversations,
                     onExplore: _openSearch,
                     onActivities: _openActivities,
                     onSettings: _openSettings,
@@ -203,6 +205,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openConversation(AiConversation conversation) {
+    if (!mounted) return;
     widget.controller.selectConversation(conversation.id);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -213,6 +216,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ? widget.controller.copy.globalAiTitle
               : null,
         ),
+      ),
+    );
+  }
+
+  void _openConversations() {
+    unawaited(
+      showConversationDrawer(
+        context,
+        controller: widget.controller,
+        onOpenConversation: _openConversation,
       ),
     );
   }
