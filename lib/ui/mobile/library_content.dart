@@ -146,9 +146,16 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                         ),
                     ],
                   ),
-                  GestureDetector(
-                    onTap: widget.onProfile,
-                    child: const CircleAvatar(
+                  IconButton(
+                    key: const ValueKey('mobile-library-profile'),
+                    tooltip: copy.localized('账户', 'Account'),
+                    onPressed: widget.onProfile,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 48,
+                      height: 48,
+                    ),
+                    icon: const CircleAvatar(
                       radius: 19,
                       backgroundColor: Color(0xFFFFE6CE),
                       child: Icon(

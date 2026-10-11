@@ -26,7 +26,7 @@ class MobileHomeContent extends StatefulWidget {
     required this.onOpenAi,
     required this.onRankings,
     required this.onFavorites,
-    required this.onSettings,
+    required this.onAccount,
     required this.onActivities,
     required this.onRules,
     required this.onOpenNationalDay,
@@ -39,7 +39,7 @@ class MobileHomeContent extends StatefulWidget {
   final VoidCallback onOpenAi;
   final VoidCallback onRankings;
   final VoidCallback onFavorites;
-  final VoidCallback onSettings;
+  final VoidCallback onAccount;
   final VoidCallback onActivities;
   final VoidCallback onRules;
   final VoidCallback onOpenNationalDay;
@@ -160,10 +160,6 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
                   ),
                 ),
               ),
-            if (widget.controller.activities.isNotEmpty) ...[
-              const SizedBox(height: 22),
-              _activityCard(copy),
-            ],
           ],
         ),
       ),
@@ -228,10 +224,13 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
             ),
         ],
       ),
-      GestureDetector(
+      IconButton(
         key: const ValueKey('mobile-home-profile'),
-        onTap: widget.onSettings,
-        child: const CircleAvatar(
+        tooltip: copy.localized('账户', 'Account'),
+        onPressed: widget.onAccount,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        icon: const CircleAvatar(
           radius: 19,
           backgroundColor: Color(0xFFFFE6CE),
           child: Icon(Icons.person_rounded, color: Color(0xFF955B3B)),
@@ -667,61 +666,4 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           ),
         ),
       );
-
-  Widget _activityCard(AppCopy copy) {
-    final activity = widget.controller.activities.first;
-    return InkWell(
-      onTap: widget.onActivities,
-      borderRadius: BorderRadius.circular(UiTokens.groupRadius),
-      child: Container(
-        padding: const EdgeInsets.all(17),
-        decoration: BoxDecoration(
-          color: AppPalette.of(context).surfaceContainer,
-          borderRadius: BorderRadius.circular(UiTokens.groupRadius),
-          border: Border.all(color: AppPalette.of(context).outline),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.campaign_rounded,
-              color: AppPalette.of(context).primary,
-              size: 28,
-            ),
-            const SizedBox(width: UiTokens.itemGap),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activity.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppPalette.of(context).textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    activity.message,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppPalette.of(context).textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: AppPalette.of(context).primary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

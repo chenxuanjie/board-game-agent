@@ -24,6 +24,7 @@ import 'assistant_chat_screen.dart';
 import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_cover_motion.dart';
+import '../shared/account_screen.dart';
 import '../shared/assistant/conversation_drawer.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
@@ -47,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _tab = 0;
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
+  bool _accountRouteOpen = false;
   RemoteLibraryUpdate? _lastSeenUpdate;
 
   @override
@@ -100,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       context,
                     ).pushNamed(GameRankingScreen.routeName),
                     onFavorites: () => _openSearch(favoritesOnly: true),
-                    onSettings: _openSettings,
+                    onAccount: _openAccount,
                     onActivities: _openActivities,
                     onRules: _openRuleMaterials,
                     onOpenNationalDay: _openNationalDay,
@@ -110,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     controller: widget.controller,
                     onOpenGame: _openGame,
                     onActivities: _openActivities,
-                    onProfile: _openSettings,
+                    onProfile: _openAccount,
                   )
                 : _tab == 2
                 ? UniversalAiScreen(controller: widget.controller)
@@ -277,6 +279,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  Future<void> _openAccount() async {
+    if (_accountRouteOpen) return;
+    _accountRouteOpen = true;
+    try {
+      await Navigator.of(
+        context,
+      ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
+    } finally {
+      _accountRouteOpen = false;
+    }
   }
 
   void _openActivities() {

@@ -15,6 +15,7 @@ import '../../settings/services/preferences_service.dart';
 import 'account_cloud_sync.dart';
 import 'account_public_reactions.dart';
 import 'saved_login_store.dart';
+import '../../community/services/game_comments_service.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
@@ -219,6 +220,40 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _scopeQueue = Future.value();
   Timer? _verificationTimer;
   AccountCloudSync? _cloud;
+  GameCommentsService? _comments;
+  bool _commentsClosing = false;
+  GameCommentsService? get comments {
+    if (!isSignedIn || !dataScopeReady || _disposed || _commentsClosing) {
+      return null;
+    }
+    if (_comments != null) return _comments;
+    if (_gateway is! SynologyIdentityGateway || isOffline) return null;
+    final identityId = user!.id;
+    final files = (_gateway as SynologyIdentityGateway).publicFiles(
+      appId: 'board_game_agent_comments',
+      sharedFolder: _configuration!.storageFolder,
+    );
+    final comments = GameCommentsService(
+      files: files,
+      scope: _configuration!.accountScope(identityId),
+      displayName: () => displayName,
+      isActive: () =>
+          !_disposed &&
+          !_commentsClosing &&
+          user?.id == identityId &&
+          !isOffline &&
+          dataScopeReady,
+    );
+    try {
+      // Bind DSM UID before exposing the service to synchronous widget reads.
+      comments.uid;
+      return _comments = comments;
+    } on PrivateFileException {
+      comments.dispose();
+      return null;
+    }
+  }
+
   String? _nickname;
   AccountCloudSync? get cloud => _cloud;
   AccountConfiguration? get configuration => _configuration;
@@ -281,6 +316,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       _nickname = nickname;
       notifyListeners();
     }
+  }
+
+  void _stopComments() {
+    _comments?.dispose();
+    _comments = null;
   }
 
   void _stopCloud() {
@@ -401,6 +441,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     final generation = ++_scopeGeneration;
     _scopeChanging = true;
     _scopeError = null;
+    _stopComments();
     _stopCloud();
     _scopeQueue = _scopeQueue.then((_) async {
       if (_disposed || generation != _scopeGeneration) return;
@@ -693,13 +734,22 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> signOut() async {
     ++_loginGeneration;
+    _commentsClosing = true;
+    _stopComments();
     _resourceProjectionReady = false;
     notifyListeners();
-    final scope = user == null ? null : _configuration!.accountScope(user!.id);
-    if (scope != null && webDav != null) await _credentials(scope).delete();
-    await _identity?.signOut();
-    await _scopeQueue;
-    await _projectResources();
+    try {
+      final scope = user == null
+          ? null
+          : _configuration!.accountScope(user!.id);
+      if (scope != null && webDav != null) await _credentials(scope).delete();
+      await _identity?.signOut();
+      await _scopeQueue;
+      await _projectResources();
+    } finally {
+      _commentsClosing = false;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   Future<void> saveConfiguration(AccountConfiguration next) async {
@@ -771,6 +821,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _disconnect() async {
+    _stopComments();
     _stopCloud();
     _verificationTimer?.cancel();
     _identity?.removeListener(_identityChanged);

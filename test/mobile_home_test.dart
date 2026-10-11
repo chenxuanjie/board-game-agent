@@ -42,6 +42,7 @@ import 'package:board_game_agent/features/assistant/models/ai_conversation.dart'
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/shared/content_cards.dart';
+import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_presentation.dart';
 import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
 
@@ -261,6 +262,13 @@ void main() {
       expect(tester.takeException(), isNull);
 
       if (size.width == 390) {
+        await tester.tap(find.byKey(const ValueKey('mobile-home-profile')));
+        await tester.tap(find.byKey(const ValueKey('mobile-home-profile')));
+        await tester.pumpAndSettle();
+        expect(find.byType(AccountScreen, skipOffstage: false), findsOneWidget);
+        expect(find.byType(MobileSettingsScreen), findsNothing);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
         await tester.tap(find.text('规则资料库'));
         await tester.pumpAndSettle();
         expect(find.byType(MobileRuleMaterialsScreen), findsOneWidget);
@@ -285,6 +293,12 @@ void main() {
       }
 
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile-library-profile')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountScreen), findsOneWidget);
+      expect(find.byType(MobileSettingsScreen), findsNothing);
+      await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('mobile-library-grid')), findsOneWidget);
       expect(
@@ -349,6 +363,14 @@ void main() {
             .first,
       );
       expect(find.text('相关游戏'), findsOneWidget);
+      final relatedSection = tester.getRect(
+        find.byKey(const ValueKey('mobile-related-games-section')),
+      );
+      final commentsSection = tester.getRect(
+        find.byKey(const ValueKey('mobile-game-comments-section')),
+      );
+      expect(commentsSection.top, greaterThanOrEqualTo(relatedSection.bottom));
+      expect(commentsSection.width, closeTo(relatedSection.width, .01));
       final relatedCard = find.byKey(
         ValueKey('mobile-related-game-${related.first.game.id}'),
       );

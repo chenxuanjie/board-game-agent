@@ -1,5 +1,7 @@
 # 工程目录
 
+桌游评论模型与独立 NAS 数据链路位于 `features/community/`，账号作用域服务由 `AccountService.comments` 管理；两端复用 `ui/shared/game_comments.dart`，评论区均位于相关游戏之后，桌面直接展示完整列表，App 使用预览、完整列表和回复页。评分规则、目录、重试与验证见 [桌游评论](game-comments.md)。
+
 `main.dart` 创建依赖，并按平台与 Web 宽度选择桌面或紧凑界面。两个界面使用同一个 `AppController` 和同一套业务模型、服务；目录划分不代表复制后端。
 
 | 目录 | 职责 | 修改时从哪里开始 |

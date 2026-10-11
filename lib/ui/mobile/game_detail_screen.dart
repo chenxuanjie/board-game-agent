@@ -21,6 +21,8 @@ import 'game_cover.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_cards.dart';
 import 'game_content_card.dart';
+import '../shared/game_comments.dart';
+import '../desktop/desktop_responsive.dart';
 
 class GameDetailScreen extends StatefulWidget {
   const GameDetailScreen({
@@ -162,7 +164,10 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                         ),
                         child: HoverCarouselControls(
                           enabled: kIsWeb && gallery.length > 1,
-                          showControls: false,
+                          showControls:
+                              kIsWeb &&
+                              MediaQuery.sizeOf(context).width <
+                                  DesktopResponsive.desktopWindowMinimumWidth,
                           keyPrefix: 'mobile-detail-gallery',
                           onPrevious: () =>
                               _stepGalleryPage(-1, gallery.length),
@@ -471,6 +476,26 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                             ),
                             const SizedBox(height: 16),
                             _relatedGames(game),
+                            const SizedBox(height: 16),
+                            Container(
+                              key: const ValueKey(
+                                'mobile-game-comments-section',
+                              ),
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppPalette.of(context).surface,
+                                borderRadius: BorderRadius.circular(
+                                  UiTokens.groupRadius,
+                                ),
+                              ),
+                              child: GameCommentsPanel(
+                                key: ValueKey('comments-${game.slug}'),
+                                gameSlug: game.slug,
+                                gameTitle: game.title,
+                                preview: true,
+                              ),
+                            ),
                           ],
                         ),
                       ),

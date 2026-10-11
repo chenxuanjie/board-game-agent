@@ -1115,6 +1115,22 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
       expect(find.text('规则摘要'), findsWidgets);
       expect(find.byKey(const ValueKey<String>('detail-tab-2')), findsNothing);
+      final commentsSection = find.byKey(
+        const ValueKey('desktop-game-comments-section'),
+      );
+      await tester.ensureVisible(commentsSection);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(commentsSection).top,
+        greaterThanOrEqualTo(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('desktop-related-games-section')),
+              )
+              .bottom,
+        ),
+      );
+      expect(find.text('登录后查看评论与桌友评分'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.ensureVisible(find.byTooltip('返回游戏库'));

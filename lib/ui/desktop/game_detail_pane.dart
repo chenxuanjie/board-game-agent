@@ -14,6 +14,7 @@ import 'theme.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import '../shared/favorite_feedback.dart';
 import '../shared/content_entrance.dart';
+import '../shared/game_comments.dart';
 
 class DesktopGameDetailPane extends StatefulWidget {
   const DesktopGameDetailPane({
@@ -142,6 +143,21 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
           ),
         ),
         _relatedSection(),
+        Container(
+          key: const ValueKey('desktop-game-comments-section'),
+          margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: DesktopColors.card,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: DesktopColors.line),
+          ),
+          child: GameCommentsPanel(
+            key: ValueKey('comments-${game.slug}'),
+            gameSlug: game.slug,
+            gameTitle: game.title,
+          ),
+        ),
         const SizedBox(height: 16),
       ],
     );
