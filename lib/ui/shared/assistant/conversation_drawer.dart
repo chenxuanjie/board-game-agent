@@ -13,6 +13,7 @@ import '../../../features/assistant/models/ai_conversation.dart';
 Future<void> showConversationDrawer(
   BuildContext context, {
   required AppController controller,
+  ValueChanged<AiConversation>? onOpenConversation,
 }) {
   final palette = AppPalette.of(context);
   final render = context.findRenderObject();
@@ -54,6 +55,7 @@ Future<void> showConversationDrawer(
                       child: ConversationHistoryPanel(
                         controller: controller,
                         onClose: () => Navigator.of(context).pop(),
+                        onOpenConversation: onOpenConversation,
                       ),
                     ),
                   ),
@@ -159,9 +161,11 @@ class ConversationHistoryPanel extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onClose,
+    this.onOpenConversation,
   });
   final AppController controller;
   final VoidCallback onClose;
+  final ValueChanged<AiConversation>? onOpenConversation;
 
   @override
   State<ConversationHistoryPanel> createState() =>
@@ -235,7 +239,11 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
       await widget.controller.createConversation(
         useGlobalMode: widget.controller.selectedConversation?.isGlobal ?? true,
       );
-      if (mounted) widget.onClose();
+      if (mounted) {
+        final conversation = widget.controller.selectedConversation;
+        widget.onClose();
+        if (conversation != null) widget.onOpenConversation?.call(conversation);
+      }
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -416,6 +424,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                 : () {
                     controller.selectConversation(conversation.id);
                     widget.onClose();
+                    widget.onOpenConversation?.call(conversation);
                   },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),

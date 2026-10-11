@@ -8,6 +8,42 @@ import 'package:board_game_agent/ui/shared/hover_horizontal_scrollbar.dart';
 
 void main() {
   testWidgets(
+    'hidden gallery controls retain keyboard navigation without arrows',
+    (tester) async {
+      var selected = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 360,
+              height: 180,
+              child: HoverCarouselControls(
+                keyPrefix: 'hidden-gallery',
+                showControls: false,
+                onPrevious: () => selected--,
+                onNext: () => selected++,
+                child: const Text('gallery'),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.byKey(const ValueKey('hidden-gallery-next')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('hidden-gallery-previous')),
+        findsNothing,
+      );
+      Focus.of(tester.element(find.text('gallery'))).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      expect(selected, 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      expect(selected, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'edge controls fade on hover, switch pages and allow keyboard focus',
     (tester) async {
       final pages = PageController();

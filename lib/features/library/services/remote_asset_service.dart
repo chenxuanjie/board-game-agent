@@ -1,41 +1,49 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
+// ignore: implementation_imports
+import 'package:app_ai_client/src/default_http_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_storage/webdav_storage.dart';
 import 'package:webdav_settings/webdav_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'browser_asset_cache_stub.dart'
+    if (dart.library.js_interop) 'browser_asset_cache_web.dart';
 
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
 import '../models/game_resource.dart';
+import '../../games/models/game_catalog_manifest.dart';
 import '../models/remote_asset_file.dart';
 import 'board_game_remote_layout.dart';
-import 'board_game_remote_credentials.dart';
+import '../../../core/models/connectivity_status.dart';
 
 class RemoteAssetService {
   RemoteAssetService({
     http.Client? client,
     WebDavSettings Function()? settingsProvider,
+    WebDavSettings Function(Uri)? resourceSettingsProvider,
+    bool Function()? accessAllowed,
+    this.requestTimeout = const Duration(seconds: 8),
   }) : _settingsProvider = settingsProvider,
-       _client =
-           client ??
-           (kIsWeb
-               ? http.Client()
-               : IOClient(
-                   HttpClient()
-                     ..badCertificateCallback =
-                         (X509Certificate cert, String host, int port) => true,
-                 ));
+       _accessAllowed = accessAllowed,
+       _resourceSettingsProvider = resourceSettingsProvider,
+       _client = client ?? createDefaultAiHttpClient();
 
   final http.Client _client;
+  final bool Function()? _accessAllowed;
+  bool get accessAllowed => _accessAllowed?.call() ?? true;
   final WebDavSettings Function()? _settingsProvider;
+  final WebDavSettings Function(Uri)? _resourceSettingsProvider;
+  final Duration requestTimeout;
 
   static const String _versionManifestFileName = '_asset_versions.json';
+  Future<void> _versionWriteQueue = Future<void>.value();
 
   Future<CachedAsset?> ensureCached({
     required List<AssetSourceConfig> sources,
@@ -43,8 +51,39 @@ class RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async {
-    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
+    if (!accessAllowed) return null;
+    if (!_isUsableRemotePath(remotePath)) {
       return null;
+    }
+    if (kIsWeb) {
+      Uint8List? bytes;
+      if (!forceRefresh) bytes = await cachedBytesFor(remotePath);
+      var fromRemote = false;
+      if (bytes == null) {
+        final result = await _firstResponse(sources, remotePath, 'GET');
+        if (result != null) {
+          if (!accessAllowed) return null;
+          bytes = result.response.bodyBytes;
+          if (forceRefresh) _validateUpdate(remotePath, bytes);
+          await writeBrowserAsset(remotePath, bytes);
+          await _saveVersionInfo(
+            remotePath: remotePath,
+            sourceId: result.source.id,
+            headers: result.response.headers,
+          );
+          fromRemote = true;
+        } else if (allowCachedFallback) {
+          bytes = await cachedBytesFor(remotePath);
+        }
+      }
+      if (bytes == null) return null;
+      return CachedAsset(
+        remotePath: remotePath,
+        localPath: Uri.dataFromBytes(bytes).toString(),
+        exists: true,
+        fromRemote: fromRemote,
+        sourceId: null,
+      );
     }
     final File localFile = await _fileFor(remotePath);
     if (!forceRefresh && await localFile.exists()) {
@@ -57,34 +96,29 @@ class RemoteAssetService {
       );
     }
 
-    for (final source in sources) {
-      final Uri? uri = _buildFileUri(source, remotePath);
-      if (uri == null) {
-        continue;
-      }
-      try {
-        final http.Response response = await _client
-            .get(uri, headers: _headers(uri))
-            .timeout(const Duration(seconds: 6));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          await localFile.parent.create(recursive: true);
-          await localFile.writeAsBytes(response.bodyBytes, flush: true);
-          await _saveVersionInfo(
-            remotePath: remotePath,
-            sourceId: source.id,
-            headers: response.headers,
-          );
-          return CachedAsset(
-            remotePath: remotePath,
-            localPath: localFile.path,
-            exists: true,
-            fromRemote: true,
-            sourceId: source.id,
-          );
-        }
-      } catch (_) {
-        continue;
-      }
+    final result = await _firstResponse(sources, remotePath, 'GET');
+    if (!accessAllowed) return null;
+    if (result != null) {
+      if (!accessAllowed) return null;
+      final response = result.response;
+      final source = result.source;
+      if (forceRefresh) _validateUpdate(remotePath, response.bodyBytes);
+      await localFile.parent.create(recursive: true);
+      final staged = File('${localFile.path}.download');
+      await staged.writeAsBytes(response.bodyBytes, flush: true);
+      await staged.rename(localFile.path);
+      await _saveVersionInfo(
+        remotePath: remotePath,
+        sourceId: source.id,
+        headers: response.headers,
+      );
+      return CachedAsset(
+        remotePath: remotePath,
+        localPath: localFile.path,
+        exists: true,
+        fromRemote: true,
+        sourceId: source.id,
+      );
     }
 
     if (allowCachedFallback && await localFile.exists()) {
@@ -115,6 +149,25 @@ class RemoteAssetService {
     }
   }
 
+  void _validateUpdate(String path, List<int> bytes) {
+    if (bytes.isEmpty) throw const FormatException('Empty resource');
+    if (!path.endsWith('.json')) return;
+    final value = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    if (path == 'assets/catalog.json') {
+      if (value['games'] is! List) {
+        throw const FormatException('Invalid catalog');
+      }
+      GameCatalogManifest.fromJson(value);
+    } else if (path.endsWith('/game.json')) {
+      GameManifest.fromJson(value);
+    } else if (path.endsWith('/manifest.json')) {
+      if (value['resources'] is! List) {
+        throw const FormatException('Invalid manifest');
+      }
+      GameResourceManifest.fromJson(value);
+    }
+  }
+
   /// Fetches the declared remote file without interpreting its bytes.
   ///
   /// Keeping this separate from [fetchRemoteText] is important for PDF and
@@ -127,26 +180,109 @@ class RemoteAssetService {
     if (!_isUsableRemotePath(remotePath)) {
       return null;
     }
-    for (final source in sources) {
-      final Uri? uri = _buildFileUri(source, remotePath);
-      if (uri == null) {
-        continue;
+    return (await _firstResponse(
+      sources,
+      remotePath,
+      'GET',
+    ))?.response.bodyBytes;
+  }
+
+  /// A real, uncached knowledge-catalog read, independent of local game data.
+  Future<ConnectivityStatus> checkAccess(
+    AssetSourceConfig source, {
+    Completer<void>? abort,
+    void Function(String catalogSource)? onCatalog,
+  }) async {
+    ConnectivityStatus status(ConnectivityState state, String message) =>
+        ConnectivityStatus(
+          state: state,
+          message: message,
+          checkedAt: DateTime.now(),
+        );
+    final uri = _buildFileUri(source, 'assets/catalog.json');
+    if (uri == null) return status(ConnectivityState.failure, '地址无效');
+    try {
+      final response = await _request('GET', uri, abort: abort);
+      final message = switch (response.statusCode) {
+        401 => '需要重新登录',
+        403 => '没有资料访问权限',
+        404 => '找不到知识库目录',
+        _ => '资料服务不可用',
+      };
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return status(ConnectivityState.failure, message);
       }
-      try {
-        final http.Response response = await _client
-            .get(uri, headers: _headers(uri))
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response.bodyBytes;
-        }
-      } catch (_) {
-        continue;
+      final catalog = jsonDecode(utf8.decode(response.bodyBytes));
+      if (catalog is! Map || catalog['games'] is! List) {
+        return status(ConnectivityState.failure, '知识库目录内容无效');
       }
+      onCatalog?.call(utf8.decode(response.bodyBytes));
+      return status(ConnectivityState.success, '知识库可读取');
+    } on TimeoutException {
+      return status(ConnectivityState.failure, '连接超时');
+    } on FormatException {
+      return status(ConnectivityState.failure, '知识库目录内容无效');
+    } catch (_) {
+      return status(ConnectivityState.failure, '地址暂时无法访问');
     }
-    return null;
+  }
+
+  /// Entrances share the same files: the first successful read wins. Only that
+  /// response may write the cache; aborting losing requests avoids double writes.
+  Future<_RemoteAssetResponse?> _firstResponse(
+    List<AssetSourceConfig> sources,
+    String path,
+    String method,
+  ) {
+    final seen = <Uri>{};
+    final entries = <(AssetSourceConfig, Uri)>[];
+    for (final source in sources) {
+      final uri = _buildFileUri(source, path);
+      if (uri != null && seen.add(uri)) entries.add((source, uri));
+    }
+    if (entries.isEmpty) return Future.value(null);
+    final result = Completer<_RemoteAssetResponse?>();
+    final aborts = [for (final _ in entries) Completer<void>()];
+    var remaining = entries.length;
+    for (var index = 0; index < entries.length; index++) {
+      final entry = entries[index];
+      unawaited(() async {
+        try {
+          final response = await _request(
+            method,
+            entry.$2,
+            abort: aborts[index],
+          );
+          if (!result.isCompleted &&
+              response.statusCode >= 200 &&
+              response.statusCode < 300) {
+            result.complete(_RemoteAssetResponse(entry.$1, response));
+            for (final abort in aborts) {
+              if (!abort.isCompleted) abort.complete();
+            }
+          }
+        } catch (_) {
+          // Every entrance settles independently; a failure cannot win the race.
+        } finally {
+          remaining--;
+          if (remaining == 0) {
+            if (!result.isCompleted) result.complete(null);
+            for (final abort in aborts) {
+              if (!abort.isCompleted) abort.complete();
+            }
+          }
+        }
+      }());
+    }
+    return result.future;
   }
 
   Future<String?> loadCachedOrBundledText({required String remotePath}) async {
+    if (!accessAllowed) return null;
+    if (kIsWeb) {
+      final bytes = await cachedBytesFor(remotePath);
+      return bytes == null ? null : utf8.decode(bytes);
+    }
     final File? cached = await cachedFileFor(remotePath);
     if (cached != null && await cached.exists()) {
       return cached.readAsString();
@@ -158,7 +294,7 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
-    if (kIsWeb || !_isUsableRemotePath(remotePath)) {
+    if (!_isUsableRemotePath(remotePath)) {
       return false;
     }
     final Map<String, dynamic>? remote = await _probeRemoteVersion(
@@ -193,7 +329,17 @@ class RemoteAssetService {
     if (asset == null || !asset.exists) {
       return null;
     }
-    return File(asset.localPath).readAsString();
+    return kIsWeb
+        ? utf8.decode(Uri.parse(asset.localPath).data!.contentAsBytes())
+        : File(asset.localPath).readAsString();
+  }
+
+  Future<Uint8List?> cachedBytesFor(String remotePath) async {
+    if (!accessAllowed) return null;
+    if (!_isUsableRemotePath(remotePath)) return null;
+    if (kIsWeb) return readBrowserAsset(remotePath);
+    final file = await cachedFileFor(remotePath);
+    return file?.readAsBytes();
   }
 
   /// Loads a cached or remote file as bytes for an AI file input.
@@ -204,6 +350,7 @@ class RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
+    if (!accessAllowed) return null;
     if (!_isUsableRemotePath(remotePath)) {
       return null;
     }
@@ -211,8 +358,10 @@ class RemoteAssetService {
       sources: sources,
       remotePath: remotePath,
     );
-    if (asset != null && asset.exists && !kIsWeb) {
-      return File(asset.localPath).readAsBytes();
+    if (asset != null && asset.exists) {
+      return kIsWeb
+          ? Uri.parse(asset.localPath).data!.contentAsBytes()
+          : File(asset.localPath).readAsBytes();
     }
     final List<int>? remoteBytes = await fetchRemoteBytes(
       sources: sources,
@@ -249,6 +398,7 @@ class RemoteAssetService {
   }
 
   Future<File?> cachedFileFor(String remotePath) async {
+    if (!accessAllowed) return null;
     if (kIsWeb || !_isUsableRemotePath(remotePath)) {
       return null;
     }
@@ -282,6 +432,7 @@ class RemoteAssetService {
     int maxDepth = 6,
     int maxEntries = 1000,
   }) async {
+    if (!accessAllowed) throw StateError('请先登录后使用知识库');
     if (sources.isEmpty) {
       return const <RemoteAssetFile>[];
     }
@@ -292,29 +443,36 @@ class RemoteAssetService {
       throw ArgumentError.value(maxEntries, 'maxEntries');
     }
 
-    Object? lastError;
-    for (final AssetSourceConfig source in sources) {
-      try {
-        final List<RemoteAssetFile> files = await _listFromSource(
-          source: source,
-          remotePath: remotePath,
-          maxDepth: maxDepth,
-          maxEntries: maxEntries,
-        );
-        debugPrint(
-          '[assets] listed ${files.length} files below $remotePath from ${source.id}',
-        );
-        return files;
-      } catch (error) {
-        lastError = error;
-        debugPrint('[assets] list failed for ${source.id}: $error');
-      }
+    final result = Completer<List<RemoteAssetFile>>();
+    final aborts = [for (final _ in sources) Completer<void>()];
+    var remaining = sources.length;
+    for (var index = 0; index < sources.length; index++) {
+      unawaited(() async {
+        try {
+          final files = await _listFromSource(
+            source: sources[index],
+            remotePath: remotePath,
+            maxDepth: maxDepth,
+            maxEntries: maxEntries,
+            abort: aborts[index],
+          ).timeout(const Duration(minutes: 1));
+          if (!result.isCompleted) {
+            result.complete(files);
+            for (final abort in aborts) {
+              if (!abort.isCompleted) abort.complete();
+            }
+          }
+        } catch (_) {
+          if (!aborts[index].isCompleted) aborts[index].complete();
+          if (remaining == 1 && !result.isCompleted) {
+            result.completeError(StateError('资料目录暂时无法读取，请重试'));
+          }
+        } finally {
+          remaining--;
+        }
+      }());
     }
-
-    if (lastError != null) {
-      throw lastError;
-    }
-    return const <RemoteAssetFile>[];
+    return result.future;
   }
 
   Future<List<RemoteAssetFile>> _listFromSource({
@@ -322,6 +480,7 @@ class RemoteAssetService {
     required String remotePath,
     required int maxDepth,
     required int maxEntries,
+    required Completer<void> abort,
   }) async {
     final Uri? parsed = Uri.tryParse(source.testUrl.trim());
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
@@ -334,9 +493,9 @@ class RemoteAssetService {
         baseUri: BoardGameRemoteLayout.normalizeBaseUri(parsed),
         username: username.isEmpty ? null : username,
         password: username.isEmpty ? null : credentials.password,
-        timeout: const Duration(seconds: 8),
+        timeout: requestTimeout,
       ),
-      httpClient: _client,
+      httpClient: _EntranceListClient(_client, abort),
     );
 
     final List<RemoteAssetFile> files = <RemoteAssetFile>[];
@@ -346,6 +505,8 @@ class RemoteAssetService {
     final Set<String> visited = <String>{};
     try {
       while (pending.isNotEmpty && files.length < maxEntries) {
+        if (!accessAllowed) throw StateError('请先登录后使用知识库');
+        if (abort.isCompleted) throw StateError('Directory read cancelled');
         final _RemoteDirectoryRequest request = pending.removeAt(0);
         if (!visited.add(request.path)) {
           continue;
@@ -419,6 +580,11 @@ class RemoteAssetService {
   }
 
   Future<Map<String, dynamic>> _loadVersionMap() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final source = prefs.getString('library.assetVersions.v1');
+      return source == null ? {} : jsonDecode(source) as Map<String, dynamic>;
+    }
     final File file = await _versionManifestFile();
     if (!await file.exists()) {
       return <String, dynamic>{};
@@ -432,6 +598,13 @@ class RemoteAssetService {
   }
 
   Future<void> _saveVersionMap(Map<String, dynamic> map) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString('library.assetVersions.v1', jsonEncode(map))) {
+        throw StateError('Unable to save library versions');
+      }
+      return;
+    }
     final File file = await _versionManifestFile();
     await file.parent.create(recursive: true);
     await file.writeAsString(jsonEncode(map), flush: true);
@@ -465,36 +638,29 @@ class RemoteAssetService {
   Future<void> _saveVersionRecord(
     String remotePath,
     Map<String, dynamic> record,
-  ) async {
-    final Map<String, dynamic> map = await _loadVersionMap();
-    map[remotePath] = record;
-    await _saveVersionMap(map);
+  ) {
+    final work = _versionWriteQueue.then((_) async {
+      final Map<String, dynamic> map = await _loadVersionMap();
+      map[remotePath] = record;
+      await _saveVersionMap(map);
+    });
+    _versionWriteQueue = work.catchError((Object _) {});
+    return work;
   }
 
   Future<Map<String, dynamic>?> _probeRemoteVersion({
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async {
-    for (final source in sources) {
-      final Uri? uri = _buildFileUri(source, remotePath);
-      if (uri == null) {
-        continue;
-      }
-      try {
-        final http.Response response = await _client
-            .head(uri, headers: _headers(uri))
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return <String, dynamic>{
-            'sourceId': source.id,
-            'etag': response.headers['etag'],
-            'lastModified': response.headers['last-modified'],
-            'contentLength': response.headers['content-length'],
-          };
-        }
-      } catch (_) {
-        continue;
-      }
+    final result = await _firstResponse(sources, remotePath, 'HEAD');
+    if (result != null) {
+      final response = result.response;
+      return <String, dynamic>{
+        'sourceId': result.source.id,
+        'etag': response.headers['etag'],
+        'lastModified': response.headers['last-modified'],
+        'contentLength': response.headers['content-length'],
+      };
     }
     return null;
   }
@@ -555,20 +721,39 @@ class RemoteAssetService {
   }
 
   WebDavSettings _webDavSettings(Uri target) {
+    if (_resourceSettingsProvider != null) {
+      return _resourceSettingsProvider(target);
+    }
     final WebDavSettings? configured = _settingsProvider?.call();
     // A newly imported account must never authenticate unrelated data sources.
     if (configured != null && _belongsTo(target, configured.baseUrl)) {
       return configured;
     }
-    if (!AssetSourceConfig.defaults.any(
-      (source) => _belongsTo(target, source.testUrl),
-    )) {
-      return const WebDavSettings();
+    return const WebDavSettings();
+  }
+
+  Future<http.Response> _request(
+    String method,
+    Uri target, {
+    Completer<void>? abort,
+  }) async {
+    if (!accessAllowed) return http.Response('', 401);
+    final requestAbort = Completer<void>();
+    abort?.future.then((_) {
+      if (!requestAbort.isCompleted) requestAbort.complete();
+    });
+    final request =
+        http.AbortableRequest(method, target, abortTrigger: requestAbort.future)
+          ..followRedirects = false
+          ..headers.addAll(_headers(target));
+    try {
+      final response = await (() async => http.Response.fromStream(
+        await _client.send(request),
+      ))().timeout(requestTimeout);
+      return accessAllowed ? response : http.Response('', 401);
+    } finally {
+      if (!requestAbort.isCompleted) requestAbort.complete();
     }
-    return const WebDavSettings(
-      username: BoardGameRemoteCredentials.username,
-      password: BoardGameRemoteCredentials.password,
-    );
   }
 
   Map<String, String> _headers(Uri target) {
@@ -581,6 +766,39 @@ class RemoteAssetService {
     );
     return <String, String>{'Authorization': 'Basic $encoded'};
   }
+}
+
+/// The shared WebDAV parser keeps owning PROPFIND/XML. This transport adapter
+/// only adds per-entrance cancellation; it never closes the shared HTTP client.
+class _EntranceListClient extends http.BaseClient {
+  _EntranceListClient(this.delegate, this.abort);
+  final http.Client delegate;
+  final Completer<void> abort;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (request is! http.Request) {
+      throw StateError('Unsupported directory request');
+    }
+    final cancellable =
+        http.AbortableRequest(
+            request.method,
+            request.url,
+            abortTrigger: abort.future,
+          )
+          ..followRedirects = false
+          ..headers.addAll(request.headers)
+          ..bodyBytes = request.bodyBytes;
+    return delegate.send(cancellable);
+  }
+
+  @override
+  void close() {}
+}
+
+class _RemoteAssetResponse {
+  const _RemoteAssetResponse(this.source, this.response);
+  final AssetSourceConfig source;
+  final http.Response response;
 }
 
 class _RemoteDirectoryRequest {

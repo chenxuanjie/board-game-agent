@@ -160,11 +160,10 @@ class AppCopy {
   String get evidenceTitle => isChinese ? '参考来源' : 'Sources';
   String get streaming => isChinese ? '正在回答…' : 'Answering…';
   String get assetTest => isChinese ? '测试资源访问' : 'Test Asset Access';
-  String get assetPriorityTitle =>
-      isChinese ? '资源访问优先级' : 'Asset Source Priority';
+  String get assetPriorityTitle => isChinese ? '服务器与资料' : 'Servers & resources';
   String get assetPriorityHint => isChinese
-      ? '拖动排序，越靠上越优先使用'
-      : 'Drag to reorder. Higher items are preferred first.';
+      ? '拖动调整登录顺序，资源访问会同时尝试这些入口'
+      : 'Drag to reorder sign-in attempts. Resource access tries these entrances together.';
   String get aiStatusTitle => isChinese ? 'AI接口' : 'AI API';
   String get assetStatusTitle => isChinese ? '资源访问' : 'Assets';
   String get aiStatusDialogTitle => isChinese ? 'AI 接口状态' : 'AI API Status';
@@ -237,6 +236,27 @@ class AppCopy {
 
   String libraryUpdateGameListLabel(int count) =>
       isChinese ? '涉及 $count 个桌游：' : 'Affected games ($count):';
+  String libraryUpdateKindLabel(RemoteLibraryChangeKind kind) => switch (kind) {
+    RemoteLibraryChangeKind.added => localized('新增', 'Added'),
+    RemoteLibraryChangeKind.modified => localized('修改', 'Modified'),
+    RemoteLibraryChangeKind.disabled => localized('停用', 'Disabled'),
+  };
+  String libraryUpdateFieldLabel(String field) => switch (field) {
+    'enabled' => localized('显示状态', 'Visibility'),
+    'order' => localized('排列顺序', 'Order'),
+    'browseCategories' => localized('分类', 'Categories'),
+    'score' => localized('评分', 'Rating'),
+    'supportedPlayers' || 'recommendedPlayer' => localized('适用人数', 'Players'),
+    'locales' => localized('名称、介绍或玩法', 'Name, description or gameplay'),
+    'resources' || 'documents' => localized('规则与资料清单', 'Rules and resources'),
+    'coverAsset' ||
+    'bannerAsset' ||
+    'galleryAssets' => localized('图片', 'Images'),
+    'catalog' || 'version' => localized('目录信息', 'Catalog information'),
+    'designers' => localized('设计师', 'Designers'),
+    'publishers' => localized('发行商', 'Publishers'),
+    _ => localized('资料信息', 'Resource information'),
+  };
   String get updateNow => isChinese ? '确定' : 'Update';
   String get updateLater => isChinese ? '取消' : 'Cancel';
   String get updatingNow => isChinese ? '正在更新资源…' : 'Updating content...';

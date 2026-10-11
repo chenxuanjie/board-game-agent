@@ -7,6 +7,36 @@ import 'package:board_game_agent/features/games/models/search_history_record.dar
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 
 void main() {
+  test(
+    'gallery selections merge concurrent games and isolate account reloads',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final a = PreferencesService(identityUserId: 'a');
+      final b = PreferencesService(identityUserId: 'b');
+      await Future.wait([
+        a.saveGameGallerySelection('tulip_bubble', 'images/third.jpg'),
+        a.saveGameGallerySelection('durian', 'images/second.jpg'),
+        a.saveGameGallerySelection('tulip_bubble', 'images/fourth.jpg'),
+        b.saveGameGallerySelection('tulip_bubble', 'images/first.jpg'),
+      ]);
+      expect(
+        await PreferencesService(
+          identityUserId: 'a',
+        ).loadGameGallerySelections(),
+        {'tulip_bubble': 'images/fourth.jpg', 'durian': 'images/second.jpg'},
+      );
+      expect(await b.loadGameGallerySelections(), {
+        'tulip_bubble': 'images/first.jpg',
+      });
+      expect(await PreferencesService().loadGameGallerySelections(), isEmpty);
+    },
+  );
+  test('invalid gallery storage falls back without blocking startup', () async {
+    SharedPreferences.setMockInitialValues({
+      'game_gallery_selections_v1': 'broken json',
+    });
+    expect(await PreferencesService().loadGameGallerySelections(), isEmpty);
+  });
   test('daily recommendation slate survives a preferences reload', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final service = PreferencesService();

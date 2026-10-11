@@ -10,6 +10,9 @@ import '../../features/games/models/recent_game_record.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/localization/app_copy.dart';
 import '../shared/content_cards.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
+import '../shared/game_ranking_screen.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import 'game_cover.dart';
 
@@ -25,6 +28,7 @@ class MobileMineContent extends StatefulWidget {
     required this.onExplore,
     required this.onActivities,
     required this.onSettings,
+    this.onConversations,
   });
 
   final AppController controller;
@@ -34,119 +38,169 @@ class MobileMineContent extends StatefulWidget {
   final VoidCallback onExplore;
   final VoidCallback onActivities;
   final VoidCallback onSettings;
+  final VoidCallback? onConversations;
 
   @override
   State<MobileMineContent> createState() => _MobileMineContentState();
 }
 
-class _ProfileCardClipper extends CustomClipper<Path> {
-  const _ProfileCardClipper();
+class _GuestNicknameDialog extends StatefulWidget {
+  const _GuestNicknameDialog({required this.nickname, required this.copy});
+
+  final String nickname;
+  final AppCopy copy;
 
   @override
-  Path getClip(Size size) {
-    const radius = 24.0;
-    final drop = (size.width * 0.13).clamp(50.0, 75.0);
-    final start = size.width * 0.49;
-    final end = size.width * 0.68;
-    return Path()
-      ..moveTo(radius, 0)
-      ..lineTo(start, 0)
-      ..cubicTo(
-        start + (end - start) * 0.45,
-        0,
-        start + (end - start) * 0.55,
-        drop,
-        end,
-        drop,
-      )
-      ..lineTo(size.width - radius, drop)
-      ..quadraticBezierTo(size.width, drop, size.width, drop + radius)
-      ..lineTo(size.width, size.height - radius)
-      ..quadraticBezierTo(
-        size.width,
-        size.height,
-        size.width - radius,
-        size.height,
-      )
-      ..lineTo(radius, size.height)
-      ..quadraticBezierTo(0, size.height, 0, size.height - radius)
-      ..lineTo(0, radius)
-      ..quadraticBezierTo(0, 0, radius, 0)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+  State<_GuestNicknameDialog> createState() => _GuestNicknameDialogState();
 }
 
-class _ProfileCardShadowPainter extends CustomPainter {
-  const _ProfileCardShadowPainter({required this.clipper});
-
-  final _ProfileCardClipper clipper;
+class _GuestNicknameDialogState extends State<_GuestNicknameDialog> {
+  late final TextEditingController _input;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0x147A452B)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
-    canvas.drawPath(clipper.getClip(size).shift(const Offset(0, 6)), paint);
+  void initState() {
+    super.initState();
+    _input = TextEditingController(text: widget.nickname);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  void dispose() {
+    // The route keeps this widget mounted throughout its exit transition.
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.copy.localized('编辑资料', 'Edit profile')),
+    content: TextField(
+      controller: _input,
+      maxLength: 24,
+      autofocus: true,
+      decoration: InputDecoration(
+        labelText: widget.copy.localized('昵称', 'Nickname'),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(widget.copy.localized('取消', 'Cancel')),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _input.text.trim()),
+        child: Text(widget.copy.localized('保存', 'Save')),
+      ),
+    ],
+  );
 }
 
 class _MobileMineContentState extends State<MobileMineContent> {
   static const _nicknameKey = 'mobile_profile_nickname';
   String _nickname = '';
+  String? _activeNicknameKey;
+  bool _signedIn = false;
+  int _nicknameGeneration = 0;
+  BuildContext? _profileDialogContext;
+  bool _profileRouteOpen = false;
 
   @override
-  void initState() {
-    super.initState();
-    _loadNickname();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final account = AccountScope.maybeOf(context);
+    final key = account?.nicknameKey ?? _nicknameKey;
+    final signedIn = account?.isSignedIn ?? false;
+    if (_activeNicknameKey == key && _signedIn == signedIn) return;
+    _activeNicknameKey = key;
+    _signedIn = signedIn;
+    _nickname = '';
+    final generation = ++_nicknameGeneration;
+    if (_profileDialogContext != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final dialog = _profileDialogContext;
+        if (mounted &&
+            dialog != null &&
+            dialog.mounted &&
+            ModalRoute.of(dialog)?.isCurrent == true) {
+          _profileDialogContext = null;
+          Navigator.of(dialog).pop();
+        }
+      });
+    }
+    if (!signedIn) _loadNickname(key, generation);
   }
 
-  Future<void> _loadNickname() async {
-    final preferences = await SharedPreferences.getInstance();
-    final saved = preferences.getString(_nicknameKey)?.trim();
-    if (mounted && saved != null && saved.isNotEmpty) {
-      setState(() => _nickname = saved);
+  Future<void> _loadNickname(String key, int generation) async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = preferences.getString(key)?.trim() ?? '';
+      if (mounted && generation == _nicknameGeneration && !_signedIn) {
+        setState(() => _nickname = saved);
+      }
+    } catch (_) {
+      // A device nickname must not prevent the account entry from opening.
+    }
+  }
+
+  Future<void> _openProfile() async {
+    if (_profileRouteOpen) return;
+    _profileRouteOpen = true;
+    try {
+      if (AccountScope.maybeOf(context) == null) {
+        await _editProfile();
+      } else {
+        await Navigator.of(
+          context,
+        ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
+      }
+    } finally {
+      _profileRouteOpen = false;
     }
   }
 
   Future<void> _editProfile() async {
-    final input = TextEditingController(text: _nickname);
+    final key = _activeNicknameKey ?? _nicknameKey;
+    final generation = _nicknameGeneration;
     final copy = widget.controller.copy;
     final next = await showDialog<String>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
-      builder: (context) => AlertDialog(
-        title: Text(copy.localized('编辑资料', 'Edit profile')),
-        content: TextField(
-          controller: input,
-          maxLength: 24,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: copy.localized('昵称', 'Nickname'),
-          ),
+      builder: (context) {
+        _profileDialogContext = context;
+        return _GuestNicknameDialog(nickname: _nickname, copy: copy);
+      },
+    );
+    _profileDialogContext = null;
+    if (!mounted ||
+        next == null ||
+        next.isEmpty ||
+        _signedIn ||
+        generation != _nicknameGeneration) {
+      return;
+    }
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      if (!mounted || _signedIn || generation != _nicknameGeneration) return;
+      final saved = await preferences.setString(key, next);
+      if (mounted && !_signedIn && generation == _nicknameGeneration) {
+        if (saved) {
+          setState(() => _nickname = next);
+        } else {
+          _nicknameFailure(copy);
+        }
+      }
+    } catch (_) {
+      if (mounted && generation == _nicknameGeneration) _nicknameFailure(copy);
+    }
+  }
+
+  void _nicknameFailure(AppCopy copy) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          copy.localized('昵称未保存，请重试', 'Could not save nickname. Retry.'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(copy.localized('取消', 'Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: Text(copy.localized('保存', 'Save')),
-          ),
-        ],
       ),
     );
-    input.dispose();
-    if (!mounted || next == null || next.isEmpty) return;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_nicknameKey, next);
-    if (mounted) setState(() => _nickname = next);
   }
 
   @override
@@ -442,238 +496,141 @@ class _MobileMineContentState extends State<MobileMineContent> {
   );
 
   Widget _profileCard(AppCopy copy) {
-    const clipper = _ProfileCardClipper();
-    return CustomPaint(
-      painter: const _ProfileCardShadowPainter(clipper: clipper),
-      child: ClipPath(
-        clipper: clipper,
-        child: Container(
-          key: const ValueKey('mobile-mine-profile'),
-          color: AppPalette.of(context).surface,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _avatarWithBadge(),
-                  const SizedBox(width: UiTokens.itemGap),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 2),
-                        InkWell(
-                          onTap: _editProfile,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  _nickname.isEmpty
-                                      ? copy.localized('设置昵称', 'Set nickname')
-                                      : _nickname,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: ContentCardStyle.section(context),
-                                ),
-                              ),
-                              const Icon(
-                                Icons.chevron_right_rounded,
-                                size: 19,
-                                color: Color(0xFF8B94A4),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF1DA),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                '$_assetRoot/crown_badge_icon.png',
-                                width: 13,
-                                height: 13,
-                              ),
-                              const SizedBox(width: 3),
-                              Flexible(
-                                child: Text(
-                                  copy.localized('桌游伙伴', 'Player'),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF8B5A2E),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+    final account = AccountScope.maybeOf(context);
+    final palette = AppPalette.of(context);
+    final signedIn = account?.isSignedIn == true;
+    final name = signedIn
+        ? account!.displayName
+        : _nickname.isNotEmpty
+        ? _nickname
+        : copy.localized('未登录', 'Not signed in');
+    final status = signedIn
+        ? copy.localized('已登录', 'Signed in')
+        : account == null || !account.supportsSignIn
+        ? copy.localized('本机资料', 'Local profile')
+        : copy.localized('点击登录', 'Tap to sign in');
+    return Material(
+      key: const ValueKey('mobile-mine-profile'),
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(UiTokens.groupRadius),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Semantics(
+            button: true,
+            label: copy.localized(
+              '$name，${signedIn ? '账户详情' : status}',
+              '$name, ${signedIn ? 'Account details' : status}',
+            ),
+            child: InkWell(
+              key: const ValueKey('mobile-mine-account-entry'),
+              onTap: _openProfile,
+              child: Padding(
+                padding: const EdgeInsets.all(UiTokens.pageInset),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      key: const ValueKey('mobile-mine-avatar'),
+                      radius: 32,
+                      backgroundColor: palette.secondaryContainer,
+                      foregroundColor: palette.onSecondaryContainer,
+                      child: const Icon(Icons.person_outline_rounded, size: 32),
                     ),
-                  ),
-                  // Keep content clear of the lowered right-hand edge.
-                  const SizedBox(width: 76),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton(
-                  key: const ValueKey('mobile-mine-edit-profile'),
-                  onPressed: _editProfile,
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF9F7F5),
-                    foregroundColor: const Color(0xFF6F7788),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 5,
+                    const SizedBox(width: UiTokens.itemGap),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            key: const ValueKey('mobile-mine-profile-name'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: ContentCardStyle.section(context),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            status,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: palette.textSecondary),
+                          ),
+                        ],
+                      ),
                     ),
-                    minimumSize: const Size(0, 30),
-                    side: const BorderSide(color: Color(0xFFEADBCE)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: palette.textSecondary,
                     ),
-                  ),
-                  child: Text(
-                    copy.localized('编辑资料', 'Edit'),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  _stat(
-                    '${widget.controller.favoriteCount}',
-                    copy.localized('我的喜欢', 'Liked games'),
-                    onTap: widget.onFavorites,
-                  ),
-                  _statDivider(),
-                  _stat(
-                    '${widget.controller.conversations.length}',
-                    copy.localized('AI 对话', 'AI chats'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _avatarWithBadge() => SizedBox(
-    width: 64,
-    height: 64,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFFFFE8D1), width: 2.5),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x187A452B),
-                blurRadius: 8,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: Image.asset(
-              'assets/desktop/warmwood/avatar.png',
-              fit: BoxFit.cover,
-              width: 64,
-              height: 64,
             ),
           ),
-        ),
-        Positioned(
-          right: -1,
-          bottom: -1,
-          child: Container(
-            width: 21,
-            height: 21,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFC654), Color(0xFFFFA21E)],
-              ),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppPalette.of(context).surface,
-                width: 1.8,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 3,
-                  offset: Offset(0, 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                _stat(
+                  '${widget.controller.favoriteCount}',
+                  copy.localized('我的喜欢', 'Liked games'),
+                  key: const ValueKey('mobile-mine-favorites-stat'),
+                  onTap: widget.onFavorites,
+                ),
+                _statDivider(),
+                _stat(
+                  '${widget.controller.conversations.length}',
+                  copy.localized('AI 对话', 'AI chats'),
+                  key: const ValueKey('mobile-mine-conversations-stat'),
+                  onTap: widget.onConversations,
                 ),
               ],
-            ),
-            child: Image.asset(
-              '$_assetRoot/crown_badge_icon.png',
-              width: 12,
-              height: 12,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _statDivider() =>
-      Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));
-
-  Widget _stat(String value, String label, {VoidCallback? onTap}) => Expanded(
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 19.5,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.of(context).textPrimary,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: AppPalette.of(context).textSecondary,
             ),
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
+
+  Widget _statDivider() =>
+      Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));
+
+  Widget _stat(String value, String label, {Key? key, VoidCallback? onTap}) =>
+      Expanded(
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 19.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.of(context).textPrimary,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppPalette.of(context).textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Widget _shortcuts(AppCopy copy) {
     final palette = AppPalette.of(context);
@@ -809,6 +766,12 @@ class _MobileMineContentState extends State<MobileMineContent> {
         copy.localized('设置', 'Settings'),
         copy.localized('语言、偏好设置', 'Language and preferences'),
         widget.onSettings,
+      ),
+      (
+        Icons.leaderboard_rounded,
+        copy.localized('排行榜', 'Rankings'),
+        copy.localized('收藏人数排名', 'Ranked by likes'),
+        () => Navigator.of(context).pushNamed(GameRankingScreen.routeName),
       ),
     ];
     return Container(

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/theme/app_motion.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -13,13 +14,15 @@ import '../../features/library/models/asset_source_config.dart';
 import '../../core/theme/color_scheme_option.dart';
 import '../../core/models/connectivity_status.dart';
 import '../../features/settings/services/desktop_ai_settings_service.dart';
-import '../../features/library/services/board_game_remote_layout.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
-import '../shared/resource_source_list.dart';
+import '../shared/resource_access_summary.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
+import '../shared/library_check_actions.dart';
 import '../../features/settings/models/configuration_transfer.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 
@@ -37,6 +40,7 @@ class DesktopSettingsPane extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.webDavSettingsController,
     this.focusAiSettings = false,
     this.transferService,
@@ -45,6 +49,7 @@ class DesktopSettingsPane extends StatefulWidget {
   final AppController controller;
   final bool focusAiSettings;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final WebDavSettingsController? webDavSettingsController;
   final SettingsTransferService? transferService;
 
@@ -63,7 +68,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   void _importApplied() {
     if (!mounted) return;
     final ai = widget.controller.aiApiConfig;
-    final dav = widget.webDavSettingsController?.saved;
     setState(() {
       _aiProvider.text = ai.name;
       _aiModel.text = ai.model;
@@ -72,13 +76,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       _aiReasoningEffort = ai.reasoningEffort;
       _aiResponseSpeed = ai.responseSpeed;
       _aiProviderOptionId = _providerOptionId(ai);
-      if (dav != null) {
-        _webDavUrl.text = dav.baseUrl;
-        _webDavUsername.text = dav.username;
-        _webDavPassword.text = dav.password;
-      }
       _aiFeedback = null;
-      _webDavFeedback = null;
     });
   }
 
@@ -92,13 +90,13 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     if (_transfer.webDav == null || _transfer.isBusy || _checkingSources) {
       return;
     }
-    final saved = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) =>
             ResourceConnectionScreen(service: _transfer, source: source),
       ),
     );
-    if (saved == true && mounted) _importApplied();
+    if (mounted) _importApplied();
   }
 
   late final Future<String> _version = _loadVersion();
@@ -107,9 +105,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   late final TextEditingController _aiModel;
   late final TextEditingController _aiApiKey;
   late final TextEditingController _aiBaseUrl;
-  late final TextEditingController _webDavUrl;
-  late final TextEditingController _webDavUsername;
-  late final TextEditingController _webDavPassword;
   late String _aiProviderOptionId;
   late AiReasoningEffort _aiReasoningEffort;
   late AiResponseSpeed _aiResponseSpeed;
@@ -117,9 +112,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
   bool _saving = false;
   bool _savingAi = false;
   bool _checkingSources = false;
-  bool _showWebDavPassword = false;
-  String? _webDavFeedback;
-  bool? _webDavFeedbackSucceeded;
   bool _showApiKey = false;
   String? _failure;
   String? _aiFeedback;
@@ -134,11 +126,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     _aiModel = TextEditingController(text: config.model);
     _aiApiKey = TextEditingController(text: config.apiKey);
     _aiBaseUrl = TextEditingController(text: config.baseUrl);
-    final WebDavSettings webDav =
-        widget.webDavSettingsController?.draft ?? const WebDavSettings();
-    _webDavUrl = TextEditingController(text: webDav.baseUrl);
-    _webDavUsername = TextEditingController(text: webDav.username);
-    _webDavPassword = TextEditingController(text: webDav.password);
     _aiProviderOptionId = _providerOptionId(config);
     _aiReasoningEffort = config.reasoningEffort;
     _aiResponseSpeed = config.responseSpeed;
@@ -150,9 +137,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     _aiModel.dispose();
     _aiApiKey.dispose();
     _aiBaseUrl.dispose();
-    _webDavUrl.dispose();
-    _webDavUsername.dispose();
-    _webDavPassword.dispose();
     super.dispose();
   }
 
@@ -210,66 +194,30 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     }
   }
 
-  Future<void> _saveAndCheckWebDav() async {
-    final WebDavSettingsController? settingsController =
-        widget.webDavSettingsController;
-    if (_checkingSources || settingsController == null) return;
-    setState(() {
-      _checkingSources = true;
-      _failure = null;
-      _webDavFeedback = null;
-      _webDavFeedbackSucceeded = null;
-    });
+  Future<void> _reorderSources(int oldIndex, int newIndex) async {
+    if (_checkingSources) return;
+    if (newIndex > oldIndex) newIndex--;
+    final next = widget.controller.assetSourceConfigs.toList();
+    next.insert(newIndex, next.removeAt(oldIndex));
+    setState(() => _checkingSources = true);
     try {
-      final WebDavSettings draft = BoardGameRemoteLayout.normalizeSettings(
-        WebDavSettings(
-          mode: ExternalStorageMode.webDav,
-          baseUrl: _webDavUrl.text.trim(),
-          username: _webDavUsername.text.trim(),
-          password: _webDavPassword.text,
-        ),
-      );
-      settingsController.updateDraft(draft);
-      final WebDavConnectionTestResult testResult = await settingsController
-          .testConnection();
-      if (!testResult.isSuccess) {
-        if (!mounted) return;
-        setState(() {
-          _webDavFeedback = testResult.message;
-          _webDavFeedbackSucceeded = false;
-        });
-        return;
+      final account = AccountScope.maybeOf(context);
+      if (account?.configuration != null) {
+        final config = account!.configuration!;
+        await account.saveConfiguration(
+          config.edited(
+            servers: next
+                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
+                .toList(),
+            folder: config.storageFolder,
+          ),
+        );
+        if (account.error != null) throw StateError('Connection pending');
+      } else {
+        await widget.controller.saveAssetSourceConfigs(next);
       }
-      final WebDavSettings saved = await settingsController.enableWebDav();
-      final AssetSourceConfig source = AssetSourceConfig.normalize(
-        AssetSourceConfig(
-          id: 'configured_webdav',
-          name: 'WebDAV',
-          address: saved.baseUrl,
-          testUrl: saved.baseUrl,
-        ),
-      );
-      await widget.controller.saveAssetSourceConfigs(<AssetSourceConfig>[
-        source,
-      ]);
-      if (!mounted) return;
-      _webDavUrl.text = saved.baseUrl;
-      setState(() {
-        _webDavFeedback = widget.controller.copy.localized(
-          '连接成功，WebDAV 地址已保存。',
-          'Connected. The WebDAV address has been saved.',
-        );
-        _webDavFeedbackSucceeded = true;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _webDavFeedback = widget.controller.copy.localized(
-          'WebDAV 配置保存失败：$error',
-          'Could not save the WebDAV configuration: $error',
-        );
-        _webDavFeedbackSucceeded = false;
-      });
+    } catch (_) {
+      if (mounted) setState(() => _failure = '顺序保存失败，请重试');
     } finally {
       if (mounted) setState(() => _checkingSources = false);
     }
@@ -437,6 +385,17 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     builder: (context, _) {
       final DesktopMetrics metrics = DesktopMetricsScope.of(context);
       final List<Widget> cards = <Widget>[
+        if (AccountScope.maybeOf(context) != null)
+          _SettingsCard(
+            icon: Icons.account_circle_outlined,
+            title: widget.controller.copy.localized('账户', 'Account'),
+            child: AccountEntry(
+              title: widget.controller.copy.localized(
+                '个人中心',
+                'Account details',
+              ),
+            ),
+          ),
         _GeneralCard(
           controller: widget.controller,
           saving: _saving,
@@ -490,31 +449,31 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           onSelectTheme: (ColorSchemeOption scheme) =>
               unawaited(_save(() => widget.controller.setColorScheme(scheme))),
         ),
-        _SyncBackupCard(
-          onEditSource: _transfer.webDav == null
-              ? null
-              : _editResourceConnection,
-          transferMenu: _transferMenu(ConfigurationScope.webDav),
-          controller: widget.controller,
-          settingsController: widget.webDavSettingsController,
-          urlController: _webDavUrl,
-          usernameController: _webDavUsername,
-          passwordController: _webDavPassword,
-          checking: _checkingSources,
-          showPassword: _showWebDavPassword,
-          feedback: _webDavFeedback,
-          feedbackSucceeded: _webDavFeedbackSucceeded,
-          onTogglePassword: () =>
-              setState(() => _showWebDavPassword = !_showWebDavPassword),
-          onSaveAndCheck: widget.webDavSettingsController == null
-              ? _checkResourceSources
-              : _saveAndCheckWebDav,
-          onCheckSources: _checkResourceSources,
+        _SettingsCard(
+          icon: Icons.fact_check_outlined,
+          title: widget.controller.copy.localized(
+            '桌游检查',
+            'Game library checks',
+          ),
+          child: LibraryCheckActions(controller: widget.controller),
         ),
+        if (AccountScope.maybeOf(context) == null)
+          _SyncBackupCard(
+            onEditSource: _transfer.webDav == null
+                ? null
+                : _editResourceConnection,
+            transferMenu: _transferMenu(ConfigurationScope.webDav),
+            controller: widget.controller,
+            settingsController: widget.webDavSettingsController,
+            checking: _checkingSources,
+            onReorder: _reorderSources,
+            onCheckSources: _checkResourceSources,
+          ),
         _AboutUpdatesCard(
           controller: widget.controller,
           version: _version,
           onOpenAbout: widget.onOpenAbout,
+          onCheckUpdates: widget.onCheckUpdates ?? widget.onOpenAbout,
         ),
       ];
 
@@ -530,16 +489,14 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
             for (int start = 0; start < cards.length; start += columns) {
               final int end = (start + columns).clamp(0, cards.length);
               rows.add(
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      for (int index = start; index < end; index++) ...<Widget>[
-                        if (index > start) SizedBox(width: gap),
-                        Expanded(child: cards[index]),
-                      ],
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (int index = start; index < end; index++) ...<Widget>[
+                      if (index > start) SizedBox(width: gap),
+                      Expanded(child: cards[index]),
                     ],
-                  ),
+                  ],
                 ),
               );
               if (end < cards.length) rows.add(SizedBox(height: gap));

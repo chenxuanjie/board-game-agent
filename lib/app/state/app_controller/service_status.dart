@@ -1,119 +1,131 @@
 part of '../app_controller.dart';
 
 extension AppServiceStatusController on AppController {
+  void _invalidateAssetAccessStatus() {
+    _assetStatusGeneration++;
+    final abort = _assetStatusAbort;
+    if (abort != null && !abort.isCompleted) abort.complete();
+    _assetStatusAbort = null;
+    _assetStatusRefreshFuture = null;
+    _assetSourceStatuses.clear();
+    _assetConnectivityStatus = ConnectivityStatus.unknown();
+  }
+
   Future<void> refreshAssetAccessStatus() {
-    final Future<void>? active = _assetStatusRefreshFuture;
-    if (active != null) {
-      return active;
-    }
-    final Future<void> future = _refreshAssetAccessStatus();
+    final active = _assetStatusRefreshFuture;
+    if (active != null) return active;
+    final generation = ++_assetStatusGeneration;
+    final abort = Completer<void>();
+    _assetStatusAbort = abort;
+    final future = Future<void>.microtask(
+      () => _refreshAssetAccessStatus(generation, abort),
+    );
     _assetStatusRefreshFuture = future;
     future
         .whenComplete(() {
+          if (!abort.isCompleted) abort.complete();
           if (identical(_assetStatusRefreshFuture, future)) {
             _assetStatusRefreshFuture = null;
+            _assetStatusAbort = null;
           }
         })
         .catchError((Object _) {});
     return future;
   }
 
-  Future<void> _refreshAssetAccessStatus() async {
-    final DateTime startedAt = DateTime.now();
-    if (_games.isEmpty) {
-      _assetSourceStatuses.clear();
-      _assetConnectivityStatus = ConnectivityStatus(
-        state: ConnectivityState.unknown,
-        message: '暂无游戏资料',
-        checkedAt: startedAt,
-      );
-      _notifyListeners();
-      return;
-    }
-
+  void _aggregateAssetAccessStatus() {
+    final states = _assetSourceStatuses.values.map((status) => status.state);
+    final state = states.contains(ConnectivityState.success)
+        ? ConnectivityState.success
+        : states.contains(ConnectivityState.loading)
+        ? ConnectivityState.loading
+        : states.isEmpty || states.contains(ConnectivityState.unknown)
+        ? ConnectivityState.unknown
+        : ConnectivityState.failure;
     _assetConnectivityStatus = ConnectivityStatus(
-      state: ConnectivityState.loading,
-      message: '正在检查规则资料',
-      checkedAt: startedAt,
-    );
-    for (final source in _assetSourceConfigs) {
-      _assetSourceStatuses[source.id] = ConnectivityStatus(
-        state: ConnectivityState.loading,
-        message: '正在检查',
-        checkedAt: startedAt,
-      );
-    }
-    _notifyListeners();
-
-    final Map<String, ConnectivityStatus> nextStatuses =
-        <String, ConnectivityStatus>{};
-    for (final source in _assetSourceConfigs) {
-      try {
-        final CachedAsset? asset = await _remoteAssetService.ensureCached(
-          sources: <AssetSourceConfig>[source],
-          remotePath: 'assets/games/${featuredGame.slug}/images/cover.jpg',
-          forceRefresh: true,
-          allowCachedFallback: false,
-        );
-        final ConnectivityStatus status = asset != null
-            ? ConnectivityStatus(
-                state: ConnectivityState.success,
-                message: '图片拉取成功',
-                checkedAt: DateTime.now(),
-              )
-            : ConnectivityStatus(
-                state: ConnectivityState.failure,
-                message: '图片拉取失败',
-                checkedAt: DateTime.now(),
-              );
-        debugPrint('[assets] ${source.id} => ${status.message}');
-        nextStatuses[source.id] = status;
-      } catch (error) {
-        final failureStatus = ConnectivityStatus(
-          state: ConnectivityState.failure,
-          message: '超时或失败',
-          checkedAt: DateTime.now(),
-        );
-        debugPrint('[assets] ${source.id} => ${failureStatus.message}: $error');
-        nextStatuses[source.id] = failureStatus;
-      }
-    }
-    _assetSourceStatuses
-      ..clear()
-      ..addAll(nextStatuses);
-    final int successCount = nextStatuses.values
-        .where(
-          (ConnectivityStatus status) =>
-              status.state == ConnectivityState.success,
-        )
-        .length;
-    final int failureCount = nextStatuses.values
-        .where(
-          (ConnectivityStatus status) =>
-              status.state == ConnectivityState.failure,
-        )
-        .length;
-    final ConnectivityState aggregateState;
-    final String aggregateMessage;
-    if (nextStatuses.isEmpty) {
-      aggregateState = ConnectivityState.unknown;
-      aggregateMessage = '未配置资料来源';
-    } else if (successCount == 0) {
-      aggregateState = ConnectivityState.failure;
-      aggregateMessage = '规则资料访问失败';
-    } else if (failureCount > 0) {
-      aggregateState = ConnectivityState.warning;
-      aggregateMessage = '部分资料来源可用';
-    } else {
-      aggregateState = ConnectivityState.success;
-      aggregateMessage = '规则资料访问正常';
-    }
-    _assetConnectivityStatus = ConnectivityStatus(
-      state: aggregateState,
-      message: aggregateMessage,
+      state: state,
+      message: switch (state) {
+        ConnectivityState.success => copy.localized(
+          '资源可用',
+          'Resources available',
+        ),
+        ConnectivityState.loading => copy.localized(
+          '正在检测入口',
+          'Checking entrances',
+        ),
+        ConnectivityState.failure => copy.localized(
+          '资源暂不可用',
+          'Resources unavailable',
+        ),
+        _ => copy.localized('尚未检测', 'Not checked'),
+      },
       checkedAt: DateTime.now(),
     );
+  }
+
+  Future<void> _refreshAssetAccessStatus(
+    int generation,
+    Completer<void> abort,
+  ) async {
+    final identityEpoch = _identityScopeEpoch;
+    final sources = List<AssetSourceConfig>.of(_assetSourceConfigs);
+    bool current() =>
+        !_controllerDisposed &&
+        generation == _assetStatusGeneration &&
+        identityEpoch == _identityScopeEpoch;
+    if (!current()) return;
+    _assetSourceStatuses
+      ..clear()
+      ..addEntries(
+        sources.map(
+          (source) => MapEntry(
+            source.id,
+            ConnectivityStatus(
+              state: ConnectivityState.loading,
+              message: '正在检测',
+              checkedAt: DateTime.now(),
+            ),
+          ),
+        ),
+      );
+    _aggregateAssetAccessStatus();
     _notifyListeners();
+    var quickStarted = false;
+    await Future.wait(
+      sources.map((source) async {
+        ConnectivityStatus status;
+        String? checkedCatalog;
+        try {
+          status = await _remoteAssetService.checkAccess(
+            source,
+            abort: abort,
+            onCatalog: (text) => checkedCatalog = text,
+          );
+        } catch (_) {
+          status = ConnectivityStatus(
+            state: ConnectivityState.failure,
+            message: '地址暂时无法访问',
+            checkedAt: DateTime.now(),
+          );
+        }
+        if (!current()) return;
+        _assetSourceStatuses[source.id] = status;
+        // Availability changes immediately; slower entrances keep settling only
+        // for the optional detail view and never downgrade a successful device.
+        _aggregateAssetAccessStatus();
+        _notifyListeners();
+        if (!quickStarted &&
+            status.state == ConnectivityState.success &&
+            checkedCatalog != null) {
+          quickStarted = true;
+          unawaited(
+            _initialLibraryFullPending
+                ? checkForLibraryUpdates(catalogSource: checkedCatalog)
+                : checkForLibraryUpdatesQuick(catalogSource: checkedCatalog),
+          );
+        }
+      }),
+    );
   }
 
   /// Refreshes every user-visible service status from its real endpoint.
@@ -139,24 +151,13 @@ extension AppServiceStatusController on AppController {
   }
 
   Future<void> _refreshServiceStatuses() async {
+    final identityEpoch = _identityScopeEpoch;
     final DateTime startedAt = DateTime.now();
     _aiConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.loading,
       message: '正在检查 AI 服务',
       checkedAt: startedAt,
     );
-    _assetConnectivityStatus = ConnectivityStatus(
-      state: ConnectivityState.loading,
-      message: '正在检查规则资料',
-      checkedAt: startedAt,
-    );
-    for (final source in _assetSourceConfigs) {
-      _assetSourceStatuses[source.id] = ConnectivityStatus(
-        state: ConnectivityState.loading,
-        message: '正在检查',
-        checkedAt: startedAt,
-      );
-    }
     _notifyListeners();
 
     try {
@@ -165,6 +166,7 @@ extension AppServiceStatusController on AppController {
         refreshAssetAccessStatus(),
       ]);
       _recordActivity(
+        identityEpoch: identityEpoch,
         kind: AppActivityKind.serviceRefresh,
         title: copy.activityServiceRefreshTitle,
         message: copy.activityServiceRefreshMessage(
@@ -174,6 +176,7 @@ extension AppServiceStatusController on AppController {
       );
     } catch (error) {
       _recordActivity(
+        identityEpoch: identityEpoch,
         kind: AppActivityKind.serviceRefresh,
         title: copy.activityServiceRefreshFailedTitle,
         message: _safeStatusError(error),

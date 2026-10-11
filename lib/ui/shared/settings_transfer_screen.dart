@@ -1,3 +1,5 @@
+import 'dart:convert';
+import '../../features/identity/models/account_configuration.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -301,7 +303,8 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
       if (_dav) {
         final values = _values('webdav', ConfigurationTransfer.webDavFields);
         ConfigurationTransfer.validateUrl(values['baseUrl']!);
-        if (values['username']!.trim().isNotEmpty &&
+        if (service.account == null &&
+            values['username']!.trim().isNotEmpty &&
             values['password']!.isEmpty) {
           throw const ConfigurationTransferException(
             '请补充 WebDAV 密码；新地址不会沿用旧密码。',
@@ -310,19 +313,32 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
         }
         dav = WebDavSettings(
           baseUrl: values['baseUrl']!,
-          username: values['username']!,
-          password: values['password']!,
+          username: service.account == null ? values['username']! : '',
+          password: service.account == null ? values['password']! : '',
         );
       }
-      await service.apply(ai: ai, dav: dav);
+      final encodedConnections = _fields['webdav.connections']?.text ?? '';
+      final connections =
+          _dav && service.account != null && encodedConnections.isNotEmpty
+          ? AccountConfiguration.fromJson(
+              Map<String, dynamic>.from(jsonDecode(encodedConnections) as Map),
+            )
+          : null;
+      await service.apply(ai: ai, dav: dav, connections: connections);
       widget.onApplied?.call();
       if (!mounted) return;
       setState(() => _applied = true);
       _notice(
         service.controller.copy.localized(
-          _dav ? '配置已保存。WebDAV 检测后启用。' : 'AI 配置已保存，下次发送生效。',
           _dav
-              ? 'Saved. Test WebDAV to enable it.'
+              ? (service.account == null
+                    ? '配置已保存。WebDAV 检测后启用。'
+                    : '连接已保存，账号请在登录页验证。')
+              : 'AI 配置已保存，下次发送生效。',
+          _dav
+              ? (service.account == null
+                    ? 'Saved. Test WebDAV to enable it.'
+                    : 'Connections saved. Verify your account on the sign-in page.')
               : 'AI settings saved for your next message.',
         ),
       );
@@ -666,9 +682,23 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
               if (available && (dav ? _dav : _ai)) ...[
                 for (final key
                     in dav
-                        ? ConfigurationTransfer.webDavFields
+                        ? (service.account == null
+                              ? ConfigurationTransfer.webDavFields.where(
+                                  (k) => k != 'connections',
+                                )
+                              : ['baseUrl'])
                         : ['name', 'baseUrl', 'apiKey', 'model'])
                   _field(group, key),
+                if (dav && service.account != null) ...[
+                  Text(
+                    copy.localized(
+                      '账号和密码统一在登录页验证，不从配置码导入。',
+                      'Verify credentials on the sign-in page; codes only import connections.',
+                    ),
+                  ),
+                  if (_fields['webdav.connections']?.text.isNotEmpty == true)
+                    _connectionPreview(_fields['webdav.connections']!.text),
+                ],
                 if (!dav)
                   ExpansionTile(
                     title: Text(copy.localized('高级配置', 'Advanced settings')),
@@ -747,6 +777,31 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
     );
   }
 
+  Widget _connectionPreview(String encoded) {
+    try {
+      final config = AccountConfiguration.fromJson(
+        Map<String, dynamic>.from(jsonDecode(encoded) as Map),
+      );
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          [
+            for (final server in config.servers)
+              '${server.name}: ${server.address} (${server.loginPort} / ${server.webDavPort})',
+            '${service.controller.copy.localized('知识库目录', 'Knowledge folder')}: ${config.storageFolder}',
+          ].join('\n'),
+        ),
+      );
+    } catch (_) {
+      return Text(
+        service.controller.copy.localized(
+          '服务器配置无效，请重新粘贴',
+          'Invalid connections. Paste again',
+        ),
+      );
+    }
+  }
+
   List<Widget> _exportContent() {
     final copy = service.controller.copy;
     final payload = ConfigurationTransfer.payload(
@@ -755,6 +810,13 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
       _scope,
       includeSecrets: _includeSecrets,
     );
+    if (service.account?.configuration != null &&
+        _scope != ConfigurationScope.ai) {
+      payload['webdav'] = {
+        'baseUrl': service.webDav!.saved.baseUrl,
+        'connections': jsonEncode(service.account!.configuration!.toJson()),
+      };
+    }
     final text = _readable
         ? ConfigurationTransfer.readable(payload, copy)
         : ConfigurationTransfer.encode(payload);
@@ -796,7 +858,14 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
       SwitchListTile(
         key: const ValueKey('transfer-include-secrets'),
         contentPadding: EdgeInsets.zero,
-        title: Text(copy.localized('包含密钥和密码', 'Include keys and passwords')),
+        title: Text(
+          copy.localized(
+            service.account == null ? '包含密钥和密码' : '包含 AI 密钥',
+            service.account == null
+                ? 'Include keys and passwords'
+                : 'Include AI keys',
+          ),
+        ),
         subtitle: _includeSecrets
             ? Text(
                 copy.localized(

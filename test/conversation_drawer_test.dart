@@ -15,6 +15,8 @@ import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/answer_source.dart';
+import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/conversation_store.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
@@ -31,7 +33,7 @@ import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_motion.dart';
 
-void _uiTest(String name, WidgetTesterCallback body) {
+void _uiTest(String name, WidgetTesterCallback body, {Timeout? timeout}) {
   testWidgets(name, (tester) async {
     final before = debugDisableShadows;
     try {
@@ -40,7 +42,7 @@ void _uiTest(String name, WidgetTesterCallback body) {
     } finally {
       debugDisableShadows = before;
     }
-  });
+  }, timeout: timeout);
 }
 
 void main() {
@@ -286,48 +288,135 @@ void main() {
     );
   }
 
-  _uiTest('desktop answer copies to clipboard and hides unavailable speech', (
-    tester,
-  ) async {
-    final ai = _DelayedAi(honorAbort: true);
-    final controller = await _controller(_MemoryStore(), ai: ai);
-    addTearDown(controller.dispose);
-    controller.openGlobalAssistant();
-    await controller.saveAiApiConfig(
-      controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
-    );
-    String? clipboard;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          clipboard = (call.arguments as Map)['text'] as String;
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  _uiTest(
+    'desktop answer copies to clipboard and hides unavailable speech',
+    (tester) async {
+      final ai = _DelayedAi(honorAbort: true);
+      final controller = await _controller(_MemoryStore(), ai: ai);
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      String? clipboard;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        null,
-      ),
-    );
-    await _mount(tester, controller, const Size(1280, 800), desktop: true);
-    final response = controller.sendPrompt('验证复制', useGlobalMode: true);
-    await ai.started.future;
-    ai.events.add(const BoardGameAiStreamEvent(delta: '保留的答案内容'));
-    await tester.pump(const Duration(milliseconds: 250));
-    await controller.stopGenerating(useGlobalMode: true);
-    await tester.pump(const Duration(milliseconds: 250));
-    await response;
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.volume_up_rounded), findsNothing);
-    await tester.tap(find.text(controller.copy.copyAnswer));
-    await tester.pumpAndSettle();
-    expect(clipboard, '保留的答案内容');
-    expect(find.text(controller.copy.answerCopied), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboard = (call.arguments as Map)['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await _mount(tester, controller, const Size(1280, 800), desktop: true);
+      final response = controller.sendPrompt('验证复制', useGlobalMode: true);
+      await ai.started.future;
+      ai.events.add(const BoardGameAiStreamEvent(delta: '保留的答案内容'));
+      await tester.pump(const Duration(milliseconds: 250));
+      await controller.stopGenerating(useGlobalMode: true);
+      await tester.pump(const Duration(milliseconds: 250));
+      await response;
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.volume_up_rounded), findsNothing);
+      await tester.tap(find.text(controller.copy.copyAnswer));
+      await tester.pumpAndSettle();
+      expect(clipboard, '保留的答案内容');
+      expect(find.text(controller.copy.answerCopied), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  testWidgets(
+    'AI stop finishes in fake time before delayed provider cleanup',
+    (tester) async {
+      final cleanup = Completer<void>();
+      var cancellations = 0;
+      final ai = _DelayedAi(
+        onCancel: () {
+          cancellations++;
+          return cleanup.future;
+        },
+      );
+      final controller = await _controller(_MemoryStore(), ai: ai);
+      addTearDown(controller.dispose);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      final response = controller.sendPrompt('取消回归', useGlobalMode: true);
+      var finished = false;
+      response.then((_) => finished = true);
+      await ai.started.future;
+      ai.events.add(const BoardGameAiStreamEvent(delta: '保留部分内容'));
+      await tester.pump(const Duration(milliseconds: 20));
+      await controller.stopGenerating(useGlobalMode: true);
+      await tester.pump();
+      expect(finished, isTrue);
+      expect(cancellations, 1);
+      expect(cleanup.isCompleted, isFalse);
+      expect(controller.isSendingForContext(useGlobalMode: true), isFalse);
+      expect(
+        controller.messagesForContext(useGlobalMode: true).last.text,
+        '保留部分内容',
+      );
+      ai.events.add(const BoardGameAiStreamEvent(delta: '迟到输出'));
+      await tester.pump();
+      expect(
+        controller.messagesForContext(useGlobalMode: true).last.text,
+        '保留部分内容',
+      );
+      cleanup.complete();
+      await tester.pump();
+      await response;
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  testWidgets(
+    'AI normal stream close finishes without recancelling its source',
+    (tester) async {
+      var cancellations = 0;
+      final ai = _DelayedAi(
+        onCancel: () {
+          cancellations++;
+        },
+      );
+      final controller = await _controller(_MemoryStore(), ai: ai);
+      addTearDown(controller.dispose);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      var finished = false;
+      final response = controller.sendPrompt('完成回归', useGlobalMode: true);
+      response.then((_) => finished = true);
+      await ai.started.future;
+      ai.events.add(
+        BoardGameAiStreamEvent(
+          answer: BoardGameAiAnswer(
+            text: '完整回答',
+            source: AnswerSource.generalAdvice,
+          ),
+          isDone: true,
+        ),
+      );
+      unawaited(ai.events.close());
+      await tester.pump();
+      expect(finished, isTrue);
+      expect(cancellations, 1);
+      expect(
+        controller.messagesForContext(useGlobalMode: true).last.text,
+        '完整回答',
+      );
+      await response;
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 
   _uiTest('phone drawer switches scope and restores drafts at 320px', (
     tester,
@@ -639,9 +728,10 @@ class _UnusedAi extends Fake implements AiService {
 }
 
 class _DelayedAi extends _UnusedAi {
-  _DelayedAi({this.honorAbort = false});
+  _DelayedAi({this.honorAbort = false, FutureOr<void> Function()? onCancel})
+    : events = StreamController<BoardGameAiStreamEvent>(onCancel: onCancel);
   final bool honorAbort;
-  final events = StreamController<BoardGameAiStreamEvent>();
+  final StreamController<BoardGameAiStreamEvent> events;
   final started = Completer<void>();
   String? requestedConversationId;
   @override

@@ -12,26 +12,46 @@
 | `lib/features/library/` | 资料、资源源、WebDAV 与缓存 | 资料获取及打开前的数据处理 |
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 | AI 请求及状态模型 |
 | `lib/features/settings/` | 偏好、桌面 AI 设置与更新配置 | 设置的保存与读取 |
+| `lib/features/identity/` | 原生群晖直连认证、恢复、个人数据切换与账号云同步；Web 访客模式 | 公共认证包与应用业务的接线 |
+| `integration_test/` | 实际 Windows 登录、安全存储、恢复与退出验证 | 仅在私有测试环境提供凭据时运行 |
 | `lib/ui/desktop/` | 桌面及宽屏 Web 的外壳、页面 | 桌面布局与交互 |
 | `lib/ui/mobile/` | Android 及窄屏 Web 的外壳、页面 | 手机布局与交互 |
 | `lib/ui/shared/` | 共用的文档、AI 展示、清单选游、轮播与横向滚动组件 | 共用 UI |
 
 每个 `features/` 目录只在确有对应代码时设 `models/` 或 `services/`，不为对称性建立空目录。平台外壳负责布局与导航，业务状态和持久化只保留一套。新增界面时先确定它属于桌面、手机还是共用；新增数据处理时按功能放置，不因调用它的页面位于桌面或手机而复制一份。
 
+Windows 窗口框架统一位于 `lib/ui/desktop/desktop_window_frame.dart`，由 MaterialApp builder 包住导航与账号切换遮挡页面。最小化、最大化/还原、关闭、拖动和边缘调整大小不属于某个业务页；账号、关于、文档、导入导出、资料更新、国庆专题和弹窗均不得自行隐藏或重复绘制窗口栏。桌面退出登录时同时替换旧导航和根页面，立即显示账号登录页，不经过首页或启动页。旧账号写入与访客数据切换完成前禁用登录及返回操作，完成后才可主动返回访客首页；登录成功直接进入当前账号首页。
+
+桌面全局搜索栏只在首页与游戏库展示。其他工作区页面保留紧凑的通知和窄窗口导航操作区；详情图内不再绘制同类搜索入口，保留返回与窄窗口导航。各功能页自己的过滤输入不受影响，尺寸见 V4 桌面约束。
+
 AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效位于 `lib/ui/shared/assistant/`；桌面和紧凑页面复用这些控件并保持原有控制器、会话和草稿边界，详见 [AI 助手界面](assistant-workspace-design.md)。
 
 配置导入导出共用 `lib/ui/shared/settings_transfer_screen.dart`；格式识别在 `lib/features/settings/models/configuration_transfer.dart`，跨存储保存及中断恢复在 `lib/features/settings/services/settings_transfer_service.dart`。设置页只提供范围入口与应用后的表单刷新，不复制解析或存储路径。格式、依赖补丁和验收边界见 [设置导入与导出](settings-transfer.md)。
 
-喜欢排行榜共用 `lib/ui/shared/game_ranking_screen.dart`，排名规则在 `lib/features/games/services/game_favorite_ranker.dart`，收藏挂接在 `lib/app/state/app_controller/rankings.dart`。统计复用现有投票同步服务，以独立命名空间读取已保存收藏，不与国庆想玩票数混用。入口保持隐藏，数据范围、缓存与验收见 [喜欢排行榜](favorite-rankings.md)。
+喜欢排行榜共用 `lib/ui/shared/game_ranking_screen.dart`，排名规则在 `lib/features/games/services/game_favorite_ranker.dart`，收藏挂接在 `lib/app/state/app_controller/rankings.dart`。统计复用现有投票状态与缓存，AccountCloudSync 统一入口下的公共/私人网络链路独立；通过 FileStation 账号公共快照按 UID 汇总已保存收藏，写后核对和重新汇总，本机日志串行提交，不与国庆想玩票数混用。桌面侧栏与 Android“我的”公开入口，数据范围、缓存与验收见 [喜欢排行榜](favorite-rankings.md)。
 
 资料源连接编辑共用 `lib/ui/shared/resource_connection_screen.dart`，手机设置与桌面资料源均可进入。地址和账号保存沿用 `SettingsTransferService` 的安全存储、资料源持久化与失败回滚，保存后用于真实资源请求和更新检查。初始连接、旧地址迁移与发布注入见 [可编辑资源连接](resource-connections.md)。
 
-Windows 更新服务及安装交接位于 `lib/features/settings/services/windows_update_service*.dart` 与 `windows_update_installer.dart`，复用现有关于页、启动提示和共享下载校验器。Android 的原服务保持原接线。独立清单、安装目录和数据保留约束见 [Windows 应用内更新](windows-updates.md)。
+原生更新入口由 `board_game_app_update_service*.dart` 按真实运行平台选择。两端检查、下载与错误恢复均复用 `app_about.WebDavAppUpdateService`，关于页与启动提示复用 `AppUpdateContent`。`remote_update` 提供校验状态机及 Android/Windows 安装适配，`remote_update_webdav` 负责清单和下载源；项目 Windows 文件仅保留兼容包装和应用保存/退出回调。独立清单、安装目录和数据保留约束见 [Windows 应用内更新](windows-updates.md)。
 
 `AppController` 和部分桌面界面使用 Dart `part` 文件。`part` 只是把一个 library 的代码分到多个文件，仍共享私有状态；不要把文件移动误认为已经拆开职责。大型 AI 流程或页面如需继续拆分，应单独调整状态边界并验证行为，而不是仅按行数分文件。
+
+桌面详情图片位置由 `app/state/app_controller/gallery.dart` 管理，`PreferencesService` 按账号保存，界面通过资源路径恢复，不随数组排序改变所选图片。该本机浏览偏好不进入公共统计或私人云同步，行为与验证见 [详情图片位置](gallery-browsing-position.md)。
 
 测试目前保留 `test/` 下原有的运行入口，已有 `desktop/`、`mobile/` 和 `responses_workflow/` 的 `part` 测试分组。测试用例按原功能继续维护；移动测试入口前应同时检查项目脚本对其路径的引用。
 
 应用动效令牌集中在 `lib/core/theme/app_motion.dart`，主页面过渡在 `lib/ui/shared/app_page_transition.dart`，详见 [应用动效规范](app-motion.md)。页面只挂载一个当前内容，不为淡出保留旧聊天页面。
 
+资料更新通知共用 `lib/ui/shared/library_update_review.dart`，宽屏弹窗与窄屏页面共用确认、进度与重试；差异模型和目录比较在 `features/library/`，检查与应用由 `AppController.library_updates` 管理。Web 的条件导入缓存封装在 `browser_asset_cache_*.dart`，原生继续使用文件缓存。行为、依赖与验证边界见 [资料更新通知与确认](library-update-review.md)。
+
 封面衔接、首屏内容入场、图片解码反馈和收藏确认图标分别在 `lib/ui/shared/game_cover_motion.dart`、`content_entrance.dart`、`image_reveal.dart`、`favorite_feedback.dart`。平台外壳只负责源位置和导航，收藏仍复用同一个 AppController 写入队列与失败回滚；不创建新业务状态或持久化格式。
+
+账号页的服务器配置现统一管理 NAS 地址、登录/WebDAV 端口与知识库目录。AccountService 负责优先级认证、稳定身份、按用户保存的安全资源凭据和派生资源配置；NasConnectionSection 是移动/桌面共享编辑器，原 ResourceConnectionScreen 只路由到账户页。详见 [账号与资源连接](resource-connections.md)。
+
+ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppController 的 service_status 并发检测、聚合状态与丢弃过期结果；RemoteAssetService 负责目录探测、资源读取竞速及取消，PROPFIND/XML 仍复用 webdav_storage。登录有序回退与资源并发入口访问是两个独立策略。
+
+账户知识库区位于 `lib/ui/shared/account_resources_section.dart`，集中状态、检测与连接配置；知识库要求登录，不提供独立凭据入口。`AccountScreen` 负责宽屏双栏和窄屏纵向分区；资源投影与按用户隔离的安全凭据仍由同一 `AccountService` 管理，未登录时停止资源读取。
+
+手机“我的”资料卡由 `MobileMineContent` 合并头像与名称为账户详情入口，统计分别进入收藏和共用会话历史；登录状态及昵称沿用 AccountScope，详见 [手机资料卡片](mobile-profile-card.md)。
+
+登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。

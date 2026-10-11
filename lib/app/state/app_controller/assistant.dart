@@ -4,6 +4,9 @@ extension AppAssistantController on AppController {
   /// Commit deletion through the same snapshot queue as streaming/new topics.
   /// A failed write keeps the record and selection available for retry.
   Future<void> deleteConversation(String conversationId) async {
+    if (_switchingIdentityScope) {
+      throw StateError('Account transition in progress');
+    }
     final id = conversationId.trim();
     final write = _conversationSaveQueue.then((_) async {
       final deleted = _conversations[id];
@@ -15,7 +18,7 @@ extension AppAssistantController on AppController {
             selectedGame;
         await (_aiService as AiConversationContextReset)
             .resetConversationContext(
-              conversationId: id,
+              conversationId: _providerConversationId(id),
               game: game,
               useGlobalMode: deleted.isGlobal,
             );
@@ -74,6 +77,9 @@ extension AppAssistantController on AppController {
   /// Creates an independent topic. Existing v4 records keep their original IDs.
   /// Selection changes only after the new record has been written successfully.
   Future<String> createConversation({required bool useGlobalMode}) async {
+    if (_switchingIdentityScope) {
+      throw StateError('Account transition in progress');
+    }
     final gameId = useGlobalMode ? null : selectedGame.id;
     if (!useGlobalMode && !hasGames) throw StateError('No game selected');
     final now = DateTime.now();
@@ -108,6 +114,7 @@ extension AppAssistantController on AppController {
   }
 
   void selectGame(String gameId) {
+    if (_switchingIdentityScope) return;
     final bool gameChanged = _selectedGameId != gameId;
     final String previousConversationId = _selectedConversationId ?? '';
     if (gameChanged) _invalidateGenerationForKey(previousConversationId);
@@ -121,6 +128,7 @@ extension AppAssistantController on AppController {
   /// Opens the game-scoped assistant for [gameId], creating its session only
   /// when the user explicitly enters that assistant context.
   bool openGameAssistant(String gameId) {
+    if (_switchingIdentityScope) return false;
     final GameInfo? game = _games
         .where((GameInfo item) => item.id == gameId)
         .cast<GameInfo?>()
@@ -146,6 +154,7 @@ extension AppAssistantController on AppController {
 
   /// Opens the cross-game assistant, creating its session on first entry.
   void openGlobalAssistant() {
+    if (_switchingIdentityScope) return;
     final String previousConversationId = _selectedConversationId ?? '';
     if (previousConversationId !=
         AppConversationController._globalConversationKey) {
@@ -164,6 +173,7 @@ extension AppAssistantController on AppController {
   /// independent IDs. Unknown IDs are ignored so stale preferences cannot point
   /// the UI at a conversation that no longer exists.
   void selectConversation(String conversationId) {
+    if (_switchingIdentityScope) return;
     final String normalized = conversationId.trim();
     if (!_conversations.containsKey(normalized) ||
         !_isConversationAvailable(_conversations[normalized]!)) {
@@ -197,6 +207,7 @@ extension AppAssistantController on AppController {
   }
 
   Future<void> setVoiceReplyEnabled(bool enabled) async {
+    if (_switchingIdentityScope) return;
     if (!voiceReplyAvailable) {
       if (_voiceReplyEnabled) {
         _voiceReplyEnabled = false;
@@ -213,6 +224,8 @@ extension AppAssistantController on AppController {
   }
 
   Future<bool> setAssistantMode(AssistantMode mode) async {
+    if (_switchingIdentityScope) return false;
+    final epoch = _identityScopeEpoch;
     if (_assistantMode == mode) {
       return true;
     }
@@ -223,6 +236,7 @@ extension AppAssistantController on AppController {
       await stopListening();
     }
     await stopSpeaking();
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return false;
     _assistantMode = mode;
     await _preferencesService.saveAssistantMode(mode);
     _notifyListeners();
@@ -233,6 +247,8 @@ extension AppAssistantController on AppController {
     bool enabled, {
     required bool useGlobalMode,
   }) async {
+    if (_switchingIdentityScope) return;
+    final epoch = _identityScopeEpoch;
     final AiAnswerMode next = enabled
         ? AiAnswerMode.knowledgeThenDirect
         : AiAnswerMode.knowledgeOnly;
@@ -250,6 +266,7 @@ extension AppAssistantController on AppController {
         await _preferencesService.saveGameAnswerMode(next);
       }
     } catch (_) {
+      if (epoch != _identityScopeEpoch) rethrow;
       if (useGlobalMode && _globalAnswerMode == next) {
         _globalAnswerMode = previous;
       } else if (!useGlobalMode && _gameAnswerMode == next) {
@@ -265,17 +282,25 @@ extension AppAssistantController on AppController {
   }
 
   Future<void> setGlobalUseCurrentGameKnowledge(bool enabled) async {
+    if (_switchingIdentityScope) return;
     if (_globalUseCurrentGameKnowledge == enabled) return;
     _globalUseCurrentGameKnowledge = enabled;
     await _preferencesService.saveGlobalUseCurrentGameKnowledge(enabled);
     _notifyListeners();
   }
 
-  Future<void> speakMessage(String text) async {
+  Future<void> speakMessage(String text) {
+    if (_switchingIdentityScope) return Future<void>.value();
+    return _trackVoiceOperation(() => _speakMessageNow(text));
+  }
+
+  Future<void> _speakMessageNow(String text) async {
+    final epoch = _identityScopeEpoch;
     if (!voiceReplyAvailable) {
       return;
     }
     await _ttsService.setLanguage(_language);
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     await _ttsService.speak(text);
   }
 
@@ -285,14 +310,33 @@ extension AppAssistantController on AppController {
 
   Future<void> startListening({
     required ValueChanged<String> onRecognizedText,
+  }) {
+    if (_switchingIdentityScope) return Future<void>.value();
+    return _trackVoiceOperation(
+      () => _startListeningNow(onRecognizedText: onRecognizedText),
+    );
+  }
+
+  Future<void> _startListeningNow({
+    required ValueChanged<String> onRecognizedText,
   }) async {
+    final epoch = _identityScopeEpoch;
+    bool current() => epoch == _identityScopeEpoch && !_switchingIdentityScope;
+    void stopped() {
+      if (current()) _handleListeningStopped();
+    }
+
+    void level(double value) {
+      if (current()) _handleSpeechLevel(value);
+    }
+
     if (_isListening) {
       return;
     }
 
     if (!_speechAvailable) {
       _speechAvailable = await _speechService.reinitialize(
-        onListeningStopped: _handleListeningStopped,
+        onListeningStopped: stopped,
       );
       if (!_speechAvailable) {
         _notifyListeners();
@@ -300,16 +344,20 @@ extension AppAssistantController on AppController {
       }
     }
 
+    if (!current()) return;
     _isListening = true;
     _speechLevel = 0;
     _notifyListeners();
 
     final bool started = await _speechService.startListening(
       language: _language,
-      onResult: onRecognizedText,
-      onListeningStopped: _handleListeningStopped,
-      onSoundLevel: _handleSpeechLevel,
+      onResult: (text) {
+        if (current()) onRecognizedText(text);
+      },
+      onListeningStopped: stopped,
+      onSoundLevel: level,
     );
+    if (!current()) return;
     if (!started) {
       _isListening = false;
       _speechLevel = 0;
@@ -347,6 +395,7 @@ extension AppAssistantController on AppController {
   }
 
   Future<void> resetConversation({bool useGlobalMode = false}) async {
+    if (_switchingIdentityScope) return;
     final _ChatGenerationState generation = _generationStateForContext(
       useGlobalMode: useGlobalMode,
     );
@@ -358,26 +407,31 @@ extension AppAssistantController on AppController {
       useGlobalMode: useGlobalMode,
     );
     final GameInfo contextGame = selectedGame;
+    final epoch = _identityScopeEpoch;
+    final providerId = _providerConversationId(conversationId);
     await stopGenerating(useGlobalMode: useGlobalMode);
     messages.clear();
     if (_aiService is AiConversationContextReset) {
       await (_aiService as AiConversationContextReset).resetConversationContext(
-        conversationId: conversationId,
+        conversationId: providerId,
         game: contextGame,
         useGlobalMode: useGlobalMode,
       );
     }
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     final AiConversation? existingConversation = _conversations[conversationId];
     if (existingConversation != null && existingConversation.lastRun != null) {
       existingConversation.lastRun = null;
     }
     await _ttsService.stop();
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     _trimConversationMessages(messages);
     _queueConversationSave(conversationId: conversationId);
     _notifyListeners();
   }
 
   Future<void> sendPrompt(String prompt, {bool useGlobalMode = false}) async {
+    if (_switchingIdentityScope) return;
     final trimmed = prompt.trim();
     final _ChatGenerationState generation = _generationStateForContext(
       useGlobalMode: useGlobalMode,
@@ -433,6 +487,8 @@ extension AppAssistantController on AppController {
     generation.wasStopped = false;
     final int operationToken = ++generation.operationToken;
     final int contextEpoch = generation.contextEpoch;
+    final finished = Completer<void>();
+    generation.finished = finished;
     generation
       ..useGlobalMode = useGlobalMode
       ..requestConfig = requestConfig
@@ -451,6 +507,11 @@ extension AppAssistantController on AppController {
     messages.add(draftMessage);
     _notifyListeners();
     final _StreamTextBatcher deltaBatcher = _StreamTextBatcher((String delta) {
+      if (_switchingIdentityScope ||
+          generation.operationToken != operationToken ||
+          generation.contextEpoch != contextEpoch) {
+        return;
+      }
       final ChatMessage? current = _messageById(messages, draftId);
       if (current == null) return;
       _replaceMessage(
@@ -469,25 +530,30 @@ extension AppAssistantController on AppController {
       BoardGameAiAnswer? finalAnswer;
       BoardGameAiStreamEvent? terminalEvent;
       AiRunResult? terminalRunResult;
-      await for (final BoardGameAiStreamEvent event in _aiService.streamReply(
-        prompt: trimmed,
-        language: _language,
-        game: game,
-        answerMode: answerMode,
-        useGlobalMode: useGlobalMode,
-        config: requestConfig,
-        assetSourceConfigs: _assetSourceConfigs,
-        remoteAssetService: _remoteAssetService,
-        conversationId: conversationId,
-        conversationHistory: List<ChatMessage>.unmodifiable(
-          messages.where((ChatMessage item) => item.id != draftId),
+      await for (final BoardGameAiStreamEvent event in _abortableAiStream(
+        _aiService.streamReply(
+          prompt: trimmed,
+          language: _language,
+          game: game,
+          answerMode: answerMode,
+          useGlobalMode: useGlobalMode,
+          config: requestConfig,
+          assetSourceConfigs: _assetSourceConfigs,
+          remoteAssetService: _remoteAssetService,
+          conversationId: _providerConversationId(conversationId),
+          conversationHistory: List<ChatMessage>.unmodifiable(
+            messages.where((ChatMessage item) => item.id != draftId),
+          ),
+          useCurrentGameKnowledge: useGlobalMode
+              ? _globalUseCurrentGameKnowledge
+              : true,
+          abortTrigger: generationAbort.future,
         ),
-        useCurrentGameKnowledge: useGlobalMode
-            ? _globalUseCurrentGameKnowledge
-            : true,
-        abortTrigger: generationAbort.future,
+        generationAbort.future,
+        onCancellation: _trackProviderCleanup,
       )) {
-        if (generation.wasStopped ||
+        if (_switchingIdentityScope ||
+            generation.wasStopped ||
             generation.operationToken != operationToken ||
             generation.contextEpoch != contextEpoch) {
           break;
@@ -683,6 +749,7 @@ extension AppAssistantController on AppController {
       _queueConversationSave(conversationId: conversationId);
     } finally {
       deltaBatcher.dispose();
+      if (!finished.isCompleted) finished.complete();
       if (generation.operationToken == operationToken) {
         generation.abort = null;
         generation.isSending = false;
@@ -695,6 +762,7 @@ extension AppAssistantController on AppController {
     ChatMessage message, {
     required bool useGlobalMode,
   }) async {
+    if (_switchingIdentityScope) return;
     final String? prompt = message.retryPrompt;
     if (!message.canRetry ||
         prompt == null ||

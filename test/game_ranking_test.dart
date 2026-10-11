@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageByteFormat;
+import 'package:flutter/rendering.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
@@ -14,7 +17,7 @@ import 'package:board_game_agent/features/games/models/game_vote_record.dart';
 import 'package:board_game_agent/features/games/services/game_favorite_ranker.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
-import 'package:board_game_agent/features/games/services/webdav_game_vote_store.dart';
+import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
@@ -22,13 +25,11 @@ import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/workspace.dart';
 import 'package:board_game_agent/ui/shared/game_ranking_screen.dart';
+import 'package:board_game_agent/ui/shared/ranking_medal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_settings/webdav_settings.dart';
 
 const _otherId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _namespace = GameVoteBallot.favoritesNamespace;
@@ -37,6 +38,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() async {
+    await (FontLoader(
+      'MaterialIcons',
+    )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
     await (FontLoader(
       'Noto Sans SC',
     )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
@@ -57,11 +61,18 @@ void main() {
         games,
         (slug) => counts[slug] ?? 0,
       );
-      expect(ranking.map((row) => row.game.slug), ['a', 'b', 'c']);
-      expect(ranking.map((row) => row.rank), [1, 1, 3]);
-      expect(ranking.map((row) => row.favoriteCount), [4, 4, 2]);
+      expect(ranking.map((row) => row.game.slug), ['a', 'b', 'c', 'zero']);
+      expect(ranking.map((row) => row.rank), [1, 1, 3, 4]);
+      expect(ranking.map((row) => row.favoriteCount), [4, 4, 2, 0]);
       expect(() => ranking.clear(), throwsUnsupportedError);
-      expect(GameFavoriteRanker.rank(games, (_) => 0), isEmpty);
+      final zeroRanking = GameFavoriteRanker.rank(games, (_) => 0);
+      expect(zeroRanking.map((row) => row.game.slug), ['a', 'b', 'c', 'zero']);
+      expect(zeroRanking.every((row) => row.favoriteCount == 0), isTrue);
+      expect(GameFavoriteRanker.rank([], (_) => 0), isEmpty);
+      expect(
+        GameFavoriteRanker.rank([_game('a')], (_) => -1).single.favoriteCount,
+        0,
+      );
     },
   );
 
@@ -73,7 +84,7 @@ void main() {
       final app = _app(prefs);
       await app.reloadGames();
       await app.refreshFavoriteRankings();
-      expect(app.favoriteRankings.map((row) => row.favoriteCount), [1, 1]);
+      expect(app.favoriteRankings.map((row) => row.favoriteCount), [1, 1, 0]);
       expect(prefs.favorites.first.createdAt, _record('a').createdAt);
       final cached = GameVoteCache.decode(prefs.cache!, namespace: _namespace);
       final restarted = _app(prefs);
@@ -82,7 +93,16 @@ void main() {
       expect(restarted.favoriteStatistics.count('a'), 1);
       expect(await restarted.toggleFavorite(_game('a')), isTrue);
       await restarted.favoriteStatistics.sync();
-      expect(restarted.favoriteRankings.map((row) => row.game.slug), ['b']);
+      expect(restarted.favoriteRankings.map((row) => row.game.slug), [
+        'b',
+        'a',
+        'c',
+      ]);
+      expect(restarted.favoriteRankings.map((row) => row.favoriteCount), [
+        1,
+        0,
+        0,
+      ]);
       expect(
         GameVoteCache.decode(
           prefs.cache!,
@@ -161,11 +181,11 @@ void main() {
       await app.favoriteStatistics.sync();
       expect(app.favoriteStatistics.count('a'), 1);
       expect(app.favoriteStatistics.status, GameVoteSyncStatus.pending);
-      final offline = _app(prefs);
+      final offline = _app(prefs, cloud: cloud);
       await offline.refreshFavoriteRankings();
       expect(offline.favoriteStatistics.count('a'), 1);
       expect(offline.favoriteStatistics.hasCachedRemoteCounts, isTrue);
-      expect(offline.favoriteStatistics.status, GameVoteSyncStatus.localOnly);
+      expect(offline.favoriteStatistics.status, GameVoteSyncStatus.pending);
       cloud.fail = false;
       await app.refreshFavoriteRankings();
       expect(
@@ -335,69 +355,8 @@ void main() {
     },
   );
 
-  test('WebDAV adapter uses isolated favorite directory and schema', () async {
-    const root = '/friend/apps/board_game_agent/votes/game-favorites-v1';
-    final methods = <String>[];
-    final ballot = _ballot(_otherId, ['a']);
-    final client = MockClient((request) async {
-      methods.add('${request.method} ${request.url.path}');
-      switch (request.method) {
-        case 'MKCOL':
-          return http.Response('', 405);
-        case 'PUT':
-          expect(request.url.path, '$root/$_otherId.json');
-          expect(
-            GameVoteBallot.decode(request.body, namespace: _namespace).games,
-            ['a'],
-          );
-          return http.Response('', 201);
-        case 'PROPFIND':
-          return http.Response(
-            '<d:multistatus xmlns:d="DAV:"><d:response><d:href>$root/$_otherId.json</d:href><d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response></d:multistatus>',
-            207,
-          );
-        case 'GET':
-          return http.Response(ballot.encode(), 200);
-        default:
-          throw StateError('Unexpected method');
-      }
-    });
-    final settings = WebDavSettings(
-      mode: ExternalStorageMode.webDav,
-      baseUrl: 'https://dav.example/friend/',
-      username: 'tester',
-      password: 'example',
-    );
-    final store = WebDavGameVoteStore(
-      settings,
-      httpClient: client,
-      namespace: _namespace,
-    );
-    addTearDown(store.close);
-    await store.upload(ballot);
-    expect((await store.readBallots()).single.games, ['a']);
-    expect(
-      methods.any((request) => request.contains(GameVoteBallot.campaign)),
-      isFalse,
-    );
-    expect(store.scope, isNot(WebDavGameVoteStore.scopeFor(settings)));
-    expect(
-      store.scope,
-      isNot(
-        WebDavGameVoteStore.scopeFor(
-          settings.copyWith(username: 'another'),
-          namespace: _namespace,
-        ),
-      ),
-    );
-    await expectLater(
-      store.upload(GameVoteBallot(deviceId: _otherId, games: ['a'])),
-      throwsFormatException,
-    );
-  });
-
   testWidgets(
-    'hidden ranking page fits narrow/wide layouts and opens the selected game',
+    'ranking page fits narrow/wide layouts and opens the selected game',
     (tester) async {
       final app = _app(
         _Preferences()..favorites = [_record('a'), _record('b')],
@@ -429,6 +388,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
         expect(find.text('1 次喜欢'), findsNWidgets(2));
+        expect(find.text('0 次喜欢'), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('ranking-game-b')));
         expect(opened?.slug, 'b');
         expect(tester.takeException(), isNull);
@@ -436,9 +396,89 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+  testWidgets(
+    'mobile ranking uses real covers with crown ranks and proportional bars',
+    (tester) async {
+      addTearDown(rootBundle.clear);
+      final cloud = _Cloud();
+      final app = _app(
+        _Preferences(),
+        cloud: cloud,
+        manifests: GameManifestService(),
+      );
+      await tester.runAsync(app.reloadGames);
+      final games = app.games.take(7).toList();
+      const counts = [128, 96, 74, 58, 46, 38, 32];
+      for (var voter = 1; voter <= 128; voter++) {
+        final id = voter.toRadixString(16).padLeft(32, '0');
+        cloud.ballots[id] = _ballot(id, [
+          for (var i = 0; i < games.length; i++)
+            if (voter <= counts[i]) games[i].slug,
+        ]);
+      }
+      await app.refreshFavoriteRankings();
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const capture = ValueKey('mobile-ranking-capture');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(app.palette),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: const Size(390, 844)),
+            child: child!,
+          ),
+          home: RepaintBoundary(
+            key: capture,
+            child: GameRankingScreen(
+              controller: app,
+              onOpenGame: (_) {},
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future.wait([
+          for (final game in games)
+            precacheImage(
+              AssetImage(game.coverAssetPath),
+              tester.element(find.byKey(capture)),
+            ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      final medals = tester
+          .widgetList<RankingMedal>(find.byType(RankingMedal))
+          .toList();
+      expect(medals.every((m) => m.crownOnly), isTrue);
+      expect(medals.where((m) => m.decorated).length, 3);
+      expect(
+        tester
+            .widget<FractionallySizedBox>(
+              find.byKey(ValueKey('ranking-fill-${games[1].slug}')),
+            )
+            .widthFactor,
+        0.75,
+      );
+      expect(tester.takeException(), isNull);
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(capture),
+      );
+      await tester.runAsync(() async {
+        final rendered = await boundary.toImage(pixelRatio: 2);
+        final bytes = await rendered.toByteData(format: ImageByteFormat.png);
+        rendered.dispose();
+        final output = File('tmp/mobile-ranking-reference.png');
+        await output.parent.create(recursive: true);
+        await output.writeAsBytes(bytes!.buffer.asUint8List());
+      });
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets(
-    'ranking read error has retry and empty data does not invent ranks',
+    'ranking read error keeps retry and the full zero-count catalog visible',
     (tester) async {
       final prefs = _Preferences()..failRead = true;
       final app = _app(prefs);
@@ -451,15 +491,103 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('喜欢统计读取失败'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-game-a')), findsNothing);
+      expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
+      expect(find.text('0 次喜欢'), findsNWidgets(3));
       prefs.failRead = false;
       await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();
-      expect(find.text('还没有喜欢记录'), findsOneWidget);
+      expect(find.text('0 次喜欢'), findsNWidgets(3));
       expect(find.text('喜欢统计读取失败'), findsNothing);
+      for (final badge in tester.widgetList<RankingMedal>(
+        find.byType(RankingMedal),
+      )) {
+        expect(badge.decorated, isFalse);
+      }
+      expect(
+        tester
+            .widget<FractionallySizedBox>(
+              find.byKey(const ValueKey('ranking-fill-a')),
+            )
+            .widthFactor,
+        0,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('zero-count catalog stays readable in every theme and layout', (
+    tester,
+  ) async {
+    final app = _app(_Preferences());
+    await app.reloadGames();
+    await app.refreshFavoriteRankings();
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final palette in [
+      PaletteRegistry.warmwoodStudy,
+      PaletteRegistry.classic,
+      PaletteRegistry.sunsetCoast,
+    ]) {
+      for (final width in [320.0, 760.0, 2560.0]) {
+        await tester.binding.setSurfaceSize(Size(width, 900));
+        await tester.pumpWidget(
+          MaterialApp(
+            key: UniqueKey(),
+            theme: AppTheme.buildTheme(palette),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.5)),
+              child: child!,
+            ),
+            home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('0 次喜欢'), findsNWidgets(3));
+        expect(tester.takeException(), isNull);
+      }
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('public counts drive proportional bars, including zero games', (
+    tester,
+  ) async {
+    final cloud = _Cloud()
+      ..ballots['one'] = _ballot(_otherId, ['a', 'b'])
+      ..ballots['two'] = _ballot('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', ['a']);
+    final app = _app(_Preferences(), cloud: cloud);
+    await app.reloadGames();
+    await app.refreshFavoriteRankings();
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDesktopTheme(),
+        home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 人收藏'), findsOneWidget);
+    expect(find.text('1 人收藏'), findsOneWidget);
+    expect(find.text('0 人收藏'), findsOneWidget);
+    for (final item in {'a': 1.0, 'b': 0.5, 'c': 0.0}.entries) {
+      expect(
+        tester
+            .widget<FractionallySizedBox>(
+              find.byKey(ValueKey('ranking-fill-${item.key}')),
+            )
+            .widthFactor,
+        item.value,
+      );
+    }
+    expect(
+      tester.getSize(find.byKey(const ValueKey('ranking-game-a'))).width,
+      greaterThan(1100),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'desktop ranking navigation works while sidebar keeps its existing entries',
@@ -475,7 +603,6 @@ void main() {
           home: DesktopWorkspace(
             controller: app,
             initialPage: 'rankings',
-            enableNativeWindowControls: false,
             onOpenAbout: () {},
           ),
         ),
@@ -484,8 +611,8 @@ void main() {
       final sidebar = find.byType(DesktopSidebar);
       expect(sidebar, findsOneWidget);
       expect(
-        find.descendant(of: sidebar, matching: find.text('喜欢榜')),
-        findsNothing,
+        find.descendant(of: sidebar, matching: find.text('排行榜')),
+        findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('ranking-game-a')));
       await tester.pumpAndSettle();
@@ -521,11 +648,12 @@ AppController _app(
   _Cloud? cloud,
   RemoteGameVoteStore? Function()? remote,
   String? Function()? scope,
+  GameManifestService? manifests,
 }) {
   final app = AppController(
     preferencesService: prefs,
     aiService: _UnusedAiService(),
-    gameManifestService: _Manifests(),
+    gameManifestService: manifests ?? _Manifests(),
     remoteAssetService: _NoAssets(),
     speechService: SpeechService(),
     ttsService: TtsService(),

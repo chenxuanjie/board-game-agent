@@ -1,7 +1,7 @@
 name: board_game_agent
 description: 一个参考 Ludomentor 风格、用于《波多黎各》的桌游助手安卓原型。
 publish_to: 'none'
-version: 2.1.0+24
+version: 4.1.0+33
 
 environment:
   sdk: '>=3.11.5 <4.0.0'
@@ -15,6 +15,8 @@ dependencies:
     path: ../shared_packages/app_about
   app_ai_client:
     path: ../shared_packages/app_ai_client
+  app_identity:
+    path: ../shared_packages/app_identity
   crypto: ^3.0.7
   flutter_secure_storage: ^9.2.4
   flutter_svg: ^2.3.0
@@ -29,12 +31,15 @@ dependencies:
   pdfrx: ^2.3.2
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
+  web: 1.1.1
   speech_to_text: ^7.3.0
   file_picker: ^10.3.10
   webdav_settings:
     path: ../shared_packages/webdav_settings
   webdav_storage:
     path: ../shared_packages/webdav_storage
+  webdav_sync:
+    path: ../shared_packages/webdav_sync
   window_manager: ^0.5.2
 
 dependency_overrides:
@@ -44,6 +49,8 @@ dependency_overrides:
     path: packages/speech_to_text_windows
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
@@ -70,47 +77,72 @@ flutter:
     - assets/desktop/warmwood/
     - branding/app_icon.png
     - assets/catalog.json
-    # Registered rulebooks and FAQs are bundled for offline Web reading.
-    - assets/games/puerto_rico/docs/official/rules/rulebook_en.pdf
-    - assets/games/arkham_horror_lcg/docs/official/answers/faq_en.pdf
-    - assets/games/arkham_horror_lcg/docs/official/rules/rulebook_en.pdf
-    - assets/games/cabo/docs/official/rules/rulebook_en.pdf
-    - assets/games/carcassonne_3/docs/official/rules/rulebook_en.pdf
-    - assets/games/harmonies/docs/official/rules/rulebook_en.pdf
-    - assets/games/war_chest/docs/official/rules/rulebook_en.pdf
-    - assets/games/decrypto/docs/official/rules/rulebook_cn.pdf
-    - assets/games/decrypto/docs/official/rules/rulebook_en.pdf
-    - assets/games/seven_wonders_duel/docs/official/rules/rulebook_en.pdf
-    - assets/games/splendor/docs/official/rules/rulebook_en.pdf
-    - assets/games/splendor_duel/docs/official/rules/rulebook_en.pdf
-    - assets/games/exploding_kittens/docs/official/rules/rulebook_en.pdf
-    - assets/games/castles_of_burgundy_2019/docs/official/rules/rulebook_en.pdf
-    - assets/games/citadels/docs/official/rules/rulebook_en.pdf
-    - assets/games/night_of_the_ninja/docs/official/answers/faq_en.pdf
-    - assets/games/night_of_the_ninja/docs/official/rules/rulebook_en.pdf
-    - assets/games/patchwork_10th_anniversary/docs/official/rules/rulebook_de.pdf
-    - assets/games/patchwork_10th_anniversary/docs/official/rules/rulebook_en.pdf
-    - assets/games/slay_the_spire/docs/official/rules/rulebook_en.pdf
+    # Desktop/Web/iOS documents only; Android packages must contain no game docs.
+    - path: assets/games/puerto_rico/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/arkham_horror_lcg/docs/official/answers/faq_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/arkham_horror_lcg/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/cabo/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/carcassonne_3/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/harmonies/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/war_chest/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/decrypto/docs/official/rules/rulebook_cn.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/decrypto/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/seven_wonders_duel/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/splendor/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/splendor_duel/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/exploding_kittens/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/castles_of_burgundy_2019/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/citadels/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/night_of_the_ninja/docs/official/answers/faq_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/night_of_the_ninja/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/patchwork_10th_anniversary/docs/official/rules/rulebook_de.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/patchwork_10th_anniversary/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/slay_the_spire/docs/official/rules/rulebook_en.pdf
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/puerto_rico/images/
     - assets/games/puerto_rico/game.json
     - assets/games/puerto_rico/manifest.json
-    - assets/games/puerto_rico/docs/local/knowledge/
+    - path: assets/games/puerto_rico/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/arkham_horror_lcg/images/
     - assets/games/arkham_horror_lcg/game.json
     - assets/games/arkham_horror_lcg/manifest.json
-    - assets/games/arkham_horror_lcg/docs/local/knowledge/
+    - path: assets/games/arkham_horror_lcg/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/startups/images/
     - assets/games/startups/game.json
     - assets/games/startups/manifest.json
-    - assets/games/startups/docs/local/knowledge/
+    - path: assets/games/startups/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/cabo/images/
     - assets/games/cabo/game.json
     - assets/games/cabo/manifest.json
-    - assets/games/cabo/docs/local/knowledge/
+    - path: assets/games/cabo/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/carcassonne_3/images/
     - assets/games/carcassonne_3/game.json
     - assets/games/carcassonne_3/manifest.json
-    - assets/games/carcassonne_3/docs/local/knowledge/
+    - path: assets/games/carcassonne_3/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/castles_of_burgundy_2019/images/
     - assets/games/castles_of_burgundy_2019/images/app/cover/
     - assets/games/castles_of_burgundy_2019/images/app/hero/
@@ -119,11 +151,13 @@ flutter:
     - assets/games/castles_of_burgundy_2019/images/app/gallery/
     - assets/games/castles_of_burgundy_2019/game.json
     - assets/games/castles_of_burgundy_2019/manifest.json
-    - assets/games/castles_of_burgundy_2019/docs/local/knowledge/
+    - path: assets/games/castles_of_burgundy_2019/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/harmonies/images/
     - assets/games/harmonies/game.json
     - assets/games/harmonies/manifest.json
-    - assets/games/harmonies/docs/local/knowledge/
+    - path: assets/games/harmonies/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/war_chest/images/
     - assets/games/war_chest/game.json
     - assets/games/war_chest/manifest.json
@@ -133,19 +167,23 @@ flutter:
     - assets/games/seven_wonders_duel/images/
     - assets/games/seven_wonders_duel/game.json
     - assets/games/seven_wonders_duel/manifest.json
-    - assets/games/seven_wonders_duel/docs/local/knowledge/
+    - path: assets/games/seven_wonders_duel/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/splendor/images/
     - assets/games/splendor/game.json
     - assets/games/splendor/manifest.json
-    - assets/games/splendor/docs/local/knowledge/
+    - path: assets/games/splendor/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/splendor_duel/images/
     - assets/games/splendor_duel/game.json
     - assets/games/splendor_duel/manifest.json
-    - assets/games/splendor_duel/docs/local/knowledge/
+    - path: assets/games/splendor_duel/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/exploding_kittens/images/
     - assets/games/exploding_kittens/game.json
     - assets/games/exploding_kittens/manifest.json
-    - assets/games/exploding_kittens/docs/local/knowledge/
+    - path: assets/games/exploding_kittens/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/citadels/images/
     - assets/games/citadels/game.json
     - assets/games/citadels/manifest.json
@@ -163,20 +201,57 @@ flutter:
     - assets/games/manila/images/
     - assets/games/manila/game.json
     - assets/games/manila/manifest.json
-    - assets/games/manila/docs/local/knowledge/
+    - path: assets/games/manila/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/night_of_the_ninja/images/
     - assets/games/night_of_the_ninja/game.json
     - assets/games/night_of_the_ninja/manifest.json
-    - assets/games/night_of_the_ninja/docs/local/knowledge/
+    - path: assets/games/night_of_the_ninja/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/patchwork_10th_anniversary/images/
     - assets/games/patchwork_10th_anniversary/game.json
     - assets/games/patchwork_10th_anniversary/manifest.json
-    - assets/games/patchwork_10th_anniversary/docs/local/knowledge/
+    - path: assets/games/patchwork_10th_anniversary/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/scout/images/
     - assets/games/scout/game.json
     - assets/games/scout/manifest.json
-    - assets/games/scout/docs/local/knowledge/
+    - path: assets/games/scout/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
     - assets/games/slay_the_spire/images/
     - assets/games/slay_the_spire/game.json
     - assets/games/slay_the_spire/manifest.json
-    - assets/games/slay_the_spire/docs/local/knowledge/
+    - path: assets/games/slay_the_spire/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
+    - assets/games/durian/images/app/cover/
+    - assets/games/durian/images/app/hero/
+    - assets/games/durian/images/app/search/
+    - assets/games/durian/images/app/thumbnail/
+    - assets/games/durian/images/app/gallery/
+    - assets/games/durian/game.json
+    - assets/games/durian/manifest.json
+    - path: assets/games/durian/docs/local/index/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/durian/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/durian/docs/local/notes/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/durian/docs/official/other/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/durian/docs/official/rules/
+      platforms: [web, windows, linux, macos, ios]
+    - assets/games/tulip_bubble/images/app/cover/
+    - assets/games/tulip_bubble/images/app/hero/
+    - assets/games/tulip_bubble/images/app/search/
+    - assets/games/tulip_bubble/images/app/thumbnail/
+    - assets/games/tulip_bubble/images/app/gallery/
+    - assets/games/tulip_bubble/game.json
+    - assets/games/tulip_bubble/manifest.json
+    - path: assets/games/tulip_bubble/docs/local/index/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/tulip_bubble/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/tulip_bubble/docs/local/notes/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/tulip_bubble/docs/official/other/
+      platforms: [web, windows, linux, macos, ios]

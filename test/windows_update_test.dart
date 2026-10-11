@@ -12,7 +12,6 @@ import 'package:remote_update/remote_update.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/library/services/board_game_remote_layout.dart';
-import 'package:board_game_agent/features/settings/services/windows_update_installer.dart';
 import 'package:board_game_agent/features/settings/services/windows_update_service_io.dart';
 
 void main() {
@@ -330,7 +329,7 @@ void main() {
     },
   );
 
-  test('download deadline cancels stream and removes partial data', () async {
+  test('download deadline cancels stream and preserves partial data', () async {
     service.dispose();
     final stream = StreamController<List<int>>();
     var opened = false;
@@ -354,7 +353,9 @@ void main() {
     await expectLater(service.install(info), throwsStateError);
     expect(opened, true);
     expect(installer.artifacts, isEmpty);
-    expect(temporary.listSync(), isEmpty);
+    final retained = temporary.listSync().whereType<File>().single;
+    expect(retained.path, endsWith('.part'));
+    expect(await retained.readAsBytes(), bytes.take(2).toList());
   });
 
   test(

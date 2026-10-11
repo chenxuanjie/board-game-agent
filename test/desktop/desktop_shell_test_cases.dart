@@ -1,6 +1,63 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
+  for (final width in [640.0, 1100.0, 1280.0, 2560.0]) {
+    testWidgets(
+      'global search appears only on home and game library at $width',
+      (tester) async {
+        await _mount(tester, context.controller, Size(width, 900));
+        final search = find.byKey(const ValueKey('desktop-home-search-field'));
+        expect(search, findsOneWidget);
+        final fullHeaderHeight = tester
+            .getSize(find.byKey(const ValueKey('desktop-top-bar')))
+            .height;
+        await _navigate(tester, '游戏库');
+        expect(search, findsOneWidget);
+        for (final label in ['我的喜欢', '排行榜', '设置', 'AI助手']) {
+          await _navigate(tester, label, settle: false);
+          if (label == '排行榜') {
+            expect(
+              find.byKey(const ValueKey('game-ranking-screen')),
+              findsOneWidget,
+            );
+          } else {
+            expect(
+              find.byType(switch (label) {
+                '我的喜欢' => DesktopFavoritesPane,
+                '设置' => DesktopSettingsPane,
+                _ => DesktopAssistantPane,
+              }),
+              findsOneWidget,
+            );
+          }
+          expect(search, findsNothing);
+          expect(
+            find.byKey(const ValueKey('desktop-home-search-shell')),
+            findsNothing,
+          );
+          expect(find.byTooltip('通知'), findsOneWidget);
+          expect(
+            tester
+                .getSize(find.byKey(const ValueKey('desktop-top-bar')))
+                .height,
+            lessThan(fullHeaderHeight),
+          );
+          if (width < DesktopResponsive.narrowBreakpoint) {
+            expect(
+              find.byKey(const ValueKey('desktop-open-navigation')),
+              findsOneWidget,
+            );
+          }
+          expect(tester.takeException(), isNull);
+        }
+        await _navigate(tester, '首页', settle: false);
+        expect(find.byType(DesktopHomePane), findsOneWidget);
+        expect(search, findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   test('Desktop theme keeps the host platform and shared content', () {
     final theme = buildDesktopTheme();
     expect(theme.platform, defaultTargetPlatform);
@@ -78,8 +135,11 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('通用'), findsOneWidget);
       expect(find.text('AI 服务'), findsOneWidget);
       expect(find.text('外观与主题'), findsOneWidget);
+      expect(find.text('桌游检查'), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-check-quick')), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-check-full')), findsOneWidget);
       expect(find.text('通知设置'), findsNothing);
-      expect(find.text('资料与同步'), findsOneWidget);
+      expect(find.text('服务器与资料'), findsOneWidget);
       expect(find.text('关于与更新'), findsOneWidget);
       final Finder settingsPane = find.byType(DesktopSettingsPane);
       final int columns = DesktopResponsive.settingsColumnsFor(
@@ -89,7 +149,8 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
         '通用',
         'AI 服务',
         '外观与主题',
-        '资料与同步',
+        '桌游检查',
+        '服务器与资料',
         '关于与更新',
       ];
       for (int start = 0; start < cardTitles.length; start += columns) {
@@ -171,30 +232,31 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('hidden and unsupported desktop routes stay unavailable', (
-    tester,
-  ) async {
-    await _mount(tester, context.controller, const Size(1280, 800));
-    expect(
-      find.descendant(
-        of: find.byType(DesktopSidebar),
-        matching: find.text('排行榜'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(DesktopSidebar),
-        matching: find.text('社区'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        const ValueKey<String>('desktop-sidebar-icon-sidebar_community.png'),
-      ),
-      findsNothing,
-    );
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'ranking is visible while unsupported desktop routes stay unavailable',
+    (tester) async {
+      await _mount(tester, context.controller, const Size(1280, 800));
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebar),
+          matching: find.text('排行榜'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebar),
+          matching: find.text('社区'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('desktop-sidebar-icon-sidebar_community.png'),
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

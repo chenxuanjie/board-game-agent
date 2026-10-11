@@ -1,6 +1,6 @@
 import 'dart:io';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:flutter/material.dart';
 import '../shared/game_cover_motion.dart';
 import '../shared/image_reveal.dart';
@@ -10,8 +10,8 @@ import '../../core/theme/app_palette.dart';
 
 /// Resolves a logical asset path through the controller's remote/cache layer.
 ///
-/// Native workspaces use the controller's file cache; wide Web uses bundled
-/// asset URLs because browsers cannot read a native filesystem cache.
+/// Native workspaces use the file cache; Web prefers confirmed updates in the
+/// browser cache and falls back to bundled assets.
 class DesktopResolvedImage extends StatefulWidget {
   const DesktopResolvedImage({
     super.key,
@@ -34,13 +34,22 @@ class DesktopResolvedImage extends StatefulWidget {
 
 class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
   late Future<String?> _pathFuture;
+  int _revision = 0;
+  void _refreshContent() {
+    final next = widget.controller.libraryContentRevision;
+    if (next == _revision) return;
+    _revision = next;
+    setState(
+      () => _pathFuture = widget.controller.resolveImagePath(widget.assetPath),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    _pathFuture = kIsWeb
-        ? Future.value(null)
-        : widget.controller.resolveImagePath(widget.assetPath);
+    _revision = widget.controller.libraryContentRevision;
+    widget.controller.addListener(_refreshContent);
+    _pathFuture = widget.controller.resolveImagePath(widget.assetPath);
   }
 
   @override
@@ -48,10 +57,19 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller ||
         oldWidget.assetPath != widget.assetPath) {
-      _pathFuture = kIsWeb
-          ? Future.value(null)
-          : widget.controller.resolveImagePath(widget.assetPath);
+      if (oldWidget.controller != widget.controller) {
+        oldWidget.controller.removeListener(_refreshContent);
+        widget.controller.addListener(_refreshContent);
+      }
+      _revision = widget.controller.libraryContentRevision;
+      _pathFuture = widget.controller.resolveImagePath(widget.assetPath);
     }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_refreshContent);
+    super.dispose();
   }
 
   @override
@@ -59,24 +77,27 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
       GameCoverSource(path: widget.assetPath, child: _image(context));
 
   Widget _image(BuildContext context) {
-    if (kIsWeb) {
-      if (widget.assetPath.trim().isEmpty) return _placeholder(context);
-      return SizedBox.expand(
-        child: Image.asset(
-          widget.assetPath,
-          fit: widget.fit,
-          frameBuilder: revealImageFrame,
-          errorBuilder: (_, _, _) => _placeholder(context),
-        ),
-      );
-    }
     return SizedBox.expand(
       child: FutureBuilder<String?>(
         future: _pathFuture,
         builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
           final String? path = snapshot.data;
           if (snapshot.hasError || path == null || path.isEmpty) {
-            return _placeholder(context);
+            if (!kIsWeb) return _placeholder(context);
+            return Image.asset(
+              widget.assetPath,
+              fit: widget.fit,
+              frameBuilder: revealImageFrame,
+              errorBuilder: (_, _, _) => _placeholder(context),
+            );
+          }
+          if (path.startsWith('data:')) {
+            return Image.memory(
+              Uri.parse(path).data!.contentAsBytes(),
+              fit: widget.fit,
+              frameBuilder: revealImageFrame,
+              errorBuilder: (_, _, _) => _placeholder(context),
+            );
           }
           return Image.file(
             frameBuilder: revealImageFrame,

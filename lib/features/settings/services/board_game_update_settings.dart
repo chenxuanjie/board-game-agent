@@ -1,7 +1,6 @@
 import 'package:webdav_settings/webdav_settings.dart';
 
 import '../../library/models/asset_source_config.dart';
-import '../../library/services/board_game_remote_credentials.dart';
 import '../../library/services/board_game_remote_layout.dart';
 
 class BoardGameUpdateSettingsLoader {
@@ -19,8 +18,6 @@ class BoardGameUpdateSettingsLoader {
     return WebDavSettings(
       mode: ExternalStorageMode.webDav,
       baseUrl: BoardGameRemoteLayout.normalizeBaseUri(sourceUri).toString(),
-      username: BoardGameRemoteCredentials.username,
-      password: BoardGameRemoteCredentials.password,
     );
   }
 

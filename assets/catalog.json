@@ -126,6 +126,24 @@
       "order": 210,
       "enabled": true,
       "browseCategories": ["strategy", "cooperative"]
+    },
+    {
+      "slug": "durian",
+      "order": 220,
+      "enabled": true,
+      "browseCategories": ["family", "party"]
+    },
+    {
+      "slug": "modern_art",
+      "order": 230,
+      "enabled": true,
+      "browseCategories": ["strategy"]
+    },
+    {
+      "slug": "tulip_bubble",
+      "order": 240,
+      "enabled": true,
+      "browseCategories": ["strategy"]
     }
   ]
 }

@@ -49,11 +49,18 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(controller.aiApiConfig.model, 'gpt-5.6-sol');
-      await controller.setAiReasoningEffort(AiReasoningEffort.high);
-      await controller.saveAiApiConfig(
+      final changingEffort = controller.setAiReasoningEffort(
+        AiReasoningEffort.high,
+      );
+      // Drain fake-zone completion callbacks before awaiting the queued write.
+      await tester.pump();
+      await changingEffort;
+      final changingSpeed = controller.saveAiApiConfig(
         controller.aiApiConfig.copyWith(responseSpeed: AiResponseSpeed.fast),
         forNextRun: true,
       );
+      await tester.pump();
+      await changingSpeed;
       expect(controller.isSendingForContext(useGlobalMode: true), isTrue);
       expect(ai.aborts, 0);
       ai.streams.first.add(const BoardGameAiStreamEvent(delta: '原请求继续完成'));
@@ -101,7 +108,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
   );
 
   _assistantDesignTest(
-    'resource sources show individual identities and expandable WebDAV settings',
+    'resource access shows one device with entrance details on demand',
     (tester) async {
       final controller = _SourcePreviewController();
       addTearDown(controller.dispose);
@@ -123,9 +130,17 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         webDavSettingsController: webDav,
       );
       await _navigate(tester, '设置');
-      final card = find.byKey(const ValueKey('resource-source-lan_share'));
-      await tester.ensureVisible(card);
+      final summary = find.byKey(const ValueKey('resource-access-summary'));
+      await tester.ensureVisible(summary);
       await tester.pumpAndSettle();
+      expect(find.text('资源可用'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('resource-source-lan_share')),
+        findsNothing,
+      );
+      await tester.tap(summary);
+      await tester.pumpAndSettle();
+      final card = find.byKey(const ValueKey('resource-source-lan_share'));
       expect(
         find.descendant(of: card, matching: find.text('内网访问')),
         findsOneWidget,
@@ -796,6 +811,12 @@ class _SourcePreviewController extends AppController {
         ttsService: _UnavailableTtsService(),
         remoteAssetService: _NoNetworkAssetService(),
       );
+  @override
+  ConnectivityStatus get assetConnectivityStatus => ConnectivityStatus(
+    state: ConnectivityState.success,
+    message: '资源可用',
+    checkedAt: DateTime.now(),
+  );
   @override
   Map<String, ConnectivityStatus> get assetSourceStatuses => {
     'lan_share': ConnectivityStatus(

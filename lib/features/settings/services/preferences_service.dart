@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/models/app_activity.dart';
@@ -16,6 +17,66 @@ import '../../games/models/recent_game_record.dart';
 import '../../games/models/search_history_record.dart';
 
 class PreferencesService {
+  PreferencesService({String? identityUserId})
+    : identityUserId = validateIdentityUserId(identityUserId);
+
+  /// Immutable: outstanding writes always retain their original account.
+  /// Null retains every legacy guest key. Existing data is never adopted.
+  final String? identityUserId;
+  final Set<Future<void>> _pendingPersonalWrites = {};
+  Future<void> _galleryWriteQueue = Future<void>.value();
+
+  /// Includes writes owned by votes and the seasonal list, outside AppController.
+  Future<void> drainPersonalWrites() async {
+    while (_pendingPersonalWrites.isNotEmpty) {
+      await Future.wait(_pendingPersonalWrites.toList());
+    }
+  }
+
+  Future<void> _trackPersonalWrite(Future<void> Function() action) {
+    final write = action();
+    _pendingPersonalWrites.add(write);
+    // Observe cleanup errors without changing the caller's failure result.
+    write.then<void>(
+      (_) => _pendingPersonalWrites.remove(write),
+      onError: (Object _, StackTrace _) => _pendingPersonalWrites.remove(write),
+    );
+    return write;
+  }
+
+  Future<void> _requirePersonalWrite(Future<bool> result) async {
+    if (!await result) throw StateError('Personal preferences write failed');
+  }
+
+  PreferencesService forIdentityScope(String? userId) =>
+      userId == identityUserId
+      ? this
+      : PreferencesService(identityUserId: userId);
+
+  static String? validateIdentityUserId(String? userId) {
+    if (userId != null && (userId.trim().isEmpty || userId.length > 4096)) {
+      throw ArgumentError.value(
+        userId,
+        'userId',
+        'Expected a stable identity ID',
+      );
+    }
+    return userId;
+  }
+
+  /// Fixed alphabet and length; never interpolate an identity into a path.
+  static String? identityStorageId(String? userId) {
+    validateIdentityUserId(userId);
+    return userId == null
+        ? null
+        : sha256.convert(utf8.encode(userId)).toString();
+  }
+
+  String _personalKey(String key) {
+    final scope = identityStorageId(identityUserId);
+    return scope == null ? key : 'personal_v1.$scope.$key';
+  }
+
   static const _languageKey = 'app_language';
   static const _voiceReplyKey = 'voice_reply_enabled';
   static const _colorSchemeKey = 'color_scheme';
@@ -37,38 +98,124 @@ class PreferencesService {
   static const _dailyRecommendationsKey = 'daily_recommendations_v1';
   static const _nationalDayGamesKey = 'national_day_game_slugs_v1';
   static const _gameVoteCacheKey = 'national_day_votes_v1';
+  static const _gameGallerySelectionsKey = 'game_gallery_selections_v1';
   static const int recentSearchesLimit = 8;
   static const int recentGamesLimit = 20;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
+  Future<Map<String, String>> loadGameGallerySelections() async {
+    final raw = (await _prefs).getString(
+      _personalKey(_gameGallerySelectionsKey),
+    );
+    if (raw == null) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return {
+        for (final entry in decoded.entries)
+          if (entry.key is String &&
+              entry.value is String &&
+              (entry.value as String).isNotEmpty)
+            entry.key as String: entry.value as String,
+      };
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Future<void> saveGameGallerySelection(String slug, String path) =>
+      _trackPersonalWrite(() {
+        final write = _galleryWriteQueue.catchError((Object _) {}).then((
+          _,
+        ) async {
+          final selections = await loadGameGallerySelections();
+          selections[slug] = path;
+          final prefs = await _prefs;
+          await _requirePersonalWrite(
+            prefs.setString(
+              _personalKey(_gameGallerySelectionsKey),
+              jsonEncode(selections),
+            ),
+          );
+        });
+        _galleryWriteQueue = write;
+        return write;
+      });
+
+  static const accountCloudPreferenceKeys = <String>{
+    _voiceReplyKey,
+    _assistantModeKey,
+    _gameAnswerModeKey,
+    _globalAnswerModeKey,
+    _globalUseCurrentGameKnowledgeKey,
+  };
+  Future<Map<String, Object>> accountCloudPreferences() async {
+    final prefs = await _prefs;
+    return {
+      for (final key in accountCloudPreferenceKeys)
+        if (prefs.get(_personalKey(key)) case final Object value) key: value,
+    };
+  }
+
+  Future<void> applyAccountCloudPreferences(Map<String, Object> values) =>
+      _trackPersonalWrite(() async {
+        final prefs = await _prefs;
+        for (final key in accountCloudPreferenceKeys) {
+          final value = values[key];
+          final boolean =
+              key == _voiceReplyKey || key == _globalUseCurrentGameKnowledgeKey;
+          if (value != null && (boolean ? value is! bool : value is! String)) {
+            throw const FormatException('个人偏好格式错误');
+          }
+          final saved = value == null
+              ? await prefs.remove(_personalKey(key))
+              : value is bool
+              ? await prefs.setBool(_personalKey(key), value)
+              : await prefs.setString(_personalKey(key), value as String);
+          if (!saved) throw StateError('个人偏好保存失败');
+        }
+      });
+
   Future<String?> loadGameVoteCache() async =>
-      (await _prefs).getString(_gameVoteCacheKey);
+      (await _prefs).getString(_personalKey(_gameVoteCacheKey));
 
   Future<String?> loadFavoriteRankingCache() async =>
-      (await _prefs).getString('game_favorite_ranking_v1');
+      (await _prefs).getString(_personalKey('game_favorite_ranking_v1'));
 
   Future<void> saveFavoriteRankingCache(String value) async {
-    if (!await (await _prefs).setString('game_favorite_ranking_v1', value)) {
-      throw StateError('Favorite ranking cache write failed');
-    }
+    await _trackPersonalWrite(() async {
+      if (!await (await _prefs).setString(
+        _personalKey('game_favorite_ranking_v1'),
+        value,
+      )) {
+        throw StateError('Favorite ranking cache write failed');
+      }
+    });
   }
 
   Future<void> saveGameVoteCache(String value) async {
-    if (!await (await _prefs).setString(_gameVoteCacheKey, value)) {
-      throw StateError('Game votes could not be saved');
-    }
+    await _trackPersonalWrite(() async {
+      if (!await (await _prefs).setString(
+        _personalKey(_gameVoteCacheKey),
+        value,
+      )) {
+        throw StateError('Game votes could not be saved');
+      }
+    });
   }
 
   Future<List<String>?> loadNationalDayGameSlugs() async =>
-      (await _prefs).getStringList(_nationalDayGamesKey);
+      (await _prefs).getStringList(_personalKey(_nationalDayGamesKey));
 
   Future<void> saveNationalDayGameSlugs(Iterable<String> slugs) async {
-    final saved = await (await _prefs).setStringList(
-      _nationalDayGamesKey,
-      slugs.toSet().toList(),
-    );
-    if (!saved) throw StateError('National Day list could not be saved');
+    await _trackPersonalWrite(() async {
+      final saved = await (await _prefs).setStringList(
+        _personalKey(_nationalDayGamesKey),
+        slugs.toSet().toList(),
+      );
+      if (!saved) throw StateError('National Day list could not be saved');
+    });
   }
 
   Future<AppLanguage> loadLanguage() async {
@@ -83,12 +230,16 @@ class PreferencesService {
 
   Future<bool> loadVoiceReplyEnabled() async {
     final prefs = await _prefs;
-    return prefs.getBool(_voiceReplyKey) ?? false;
+    return prefs.getBool(_personalKey(_voiceReplyKey)) ?? false;
   }
 
   Future<void> saveVoiceReplyEnabled(bool enabled) async {
-    final prefs = await _prefs;
-    await prefs.setBool(_voiceReplyKey, enabled);
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setBool(_personalKey(_voiceReplyKey), enabled),
+      );
+    });
   }
 
   Future<ColorSchemeOption> loadColorScheme() async {
@@ -151,41 +302,53 @@ class PreferencesService {
   Future<AiAnswerMode> loadGameAnswerMode() async {
     final prefs = await _prefs;
     return AiAnswerModeX.fromCode(
-      prefs.getString(_gameAnswerModeKey),
+      prefs.getString(_personalKey(_gameAnswerModeKey)),
       fallback: AiAnswerMode.knowledgeOnly,
     );
   }
 
   Future<void> saveGameAnswerMode(AiAnswerMode mode) async {
-    final prefs = await _prefs;
-    if (!await prefs.setString(_gameAnswerModeKey, mode.code)) {
-      throw StateError('Game answer mode write failed');
-    }
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      if (!await prefs.setString(_personalKey(_gameAnswerModeKey), mode.code)) {
+        throw StateError('Game answer mode write failed');
+      }
+    });
   }
 
   Future<AiAnswerMode> loadGlobalAnswerMode() async {
     final prefs = await _prefs;
     return AiAnswerModeX.fromCode(
-      prefs.getString(_globalAnswerModeKey),
+      prefs.getString(_personalKey(_globalAnswerModeKey)),
       fallback: AiAnswerMode.knowledgeThenDirect,
     );
   }
 
   Future<void> saveGlobalAnswerMode(AiAnswerMode mode) async {
-    final prefs = await _prefs;
-    if (!await prefs.setString(_globalAnswerModeKey, mode.code)) {
-      throw StateError('Global answer mode write failed');
-    }
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      if (!await prefs.setString(
+        _personalKey(_globalAnswerModeKey),
+        mode.code,
+      )) {
+        throw StateError('Global answer mode write failed');
+      }
+    });
   }
 
   Future<bool> loadGlobalUseCurrentGameKnowledge() async {
     final prefs = await _prefs;
-    return prefs.getBool(_globalUseCurrentGameKnowledgeKey) ?? false;
+    return prefs.getBool(_personalKey(_globalUseCurrentGameKnowledgeKey)) ??
+        false;
   }
 
   Future<void> saveGlobalUseCurrentGameKnowledge(bool enabled) async {
-    final prefs = await _prefs;
-    await prefs.setBool(_globalUseCurrentGameKnowledgeKey, enabled);
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setBool(_personalKey(_globalUseCurrentGameKnowledgeKey), enabled),
+      );
+    });
   }
 
   Future<bool> loadCheckForUpdates() async {
@@ -200,33 +363,49 @@ class PreferencesService {
 
   Future<AssistantMode> loadAssistantMode() async {
     final prefs = await _prefs;
-    return AssistantModeX.fromCode(prefs.getString(_assistantModeKey));
+    return AssistantModeX.fromCode(
+      prefs.getString(_personalKey(_assistantModeKey)),
+    );
   }
 
   Future<void> saveAssistantMode(AssistantMode mode) async {
-    final prefs = await _prefs;
-    await prefs.setString(_assistantModeKey, mode.code);
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setString(_personalKey(_assistantModeKey), mode.code),
+      );
+    });
   }
 
   Future<String?> loadSelectedConversationId() async {
     final prefs = await _prefs;
-    final String? value = prefs.getString(_selectedConversationKey)?.trim();
+    final String? value = prefs
+        .getString(_personalKey(_selectedConversationKey))
+        ?.trim();
     return value == null || value.isEmpty ? null : value;
   }
 
   Future<void> saveSelectedConversationId(String conversationId) async {
-    final prefs = await _prefs;
-    await prefs.setString(_selectedConversationKey, conversationId);
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setString(_personalKey(_selectedConversationKey), conversationId),
+      );
+    });
   }
 
   Future<void> clearSelectedConversationId() async {
-    final prefs = await _prefs;
-    await prefs.remove(_selectedConversationKey);
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.remove(_personalKey(_selectedConversationKey)),
+      );
+    });
   }
 
   Future<List<AppActivity>> loadActivities() async {
     final prefs = await _prefs;
-    final String? stored = prefs.getString(_activitiesKey);
+    final String? stored = prefs.getString(_personalKey(_activitiesKey));
     if (stored == null || stored.trim().isEmpty) {
       return const <AppActivity>[];
     }
@@ -246,13 +425,17 @@ class PreferencesService {
   }
 
   Future<void> saveActivities(Iterable<AppActivity> activities) async {
-    final prefs = await _prefs;
-    await prefs.setString(
-      _activitiesKey,
-      jsonEncode(
-        activities.map((AppActivity activity) => activity.toMap()).toList(),
-      ),
-    );
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setString(
+          _personalKey(_activitiesKey),
+          jsonEncode(
+            activities.map((AppActivity activity) => activity.toMap()).toList(),
+          ),
+        ),
+      );
+    });
   }
 
   /// Loads the lightweight desktop library index. Document bytes are never
@@ -302,7 +485,7 @@ class PreferencesService {
 
   Future<List<FavoriteGameRecord>> loadFavoriteGames() async {
     final prefs = await _prefs;
-    final String? stored = prefs.getString(_favoriteGamesKey);
+    final String? stored = prefs.getString(_personalKey(_favoriteGamesKey));
     if (stored == null || stored.trim().isEmpty) {
       return const <FavoriteGameRecord>[];
     }
@@ -333,22 +516,24 @@ class PreferencesService {
   }
 
   Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
-    final prefs = await _prefs;
-    final saved = await prefs.setString(
-      _favoriteGamesKey,
-      jsonEncode(<String, dynamic>{
-        'schemaVersion': 1,
-        'records': records
-            .map((FavoriteGameRecord record) => record.toMap())
-            .toList(growable: false),
-      }),
-    );
-    if (!saved) throw StateError('Favorites could not be saved');
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      final saved = await prefs.setString(
+        _personalKey(_favoriteGamesKey),
+        jsonEncode(<String, dynamic>{
+          'schemaVersion': 1,
+          'records': records
+              .map((FavoriteGameRecord record) => record.toMap())
+              .toList(growable: false),
+        }),
+      );
+      if (!saved) throw StateError('Favorites could not be saved');
+    });
   }
 
   Future<List<SearchHistoryRecord>> loadSearchHistory() async {
     final prefs = await _prefs;
-    final Object? stored = prefs.get(_recentSearchesKey);
+    final Object? stored = prefs.get(_personalKey(_recentSearchesKey));
     if (stored is List) {
       final DateTime migratedAt = DateTime.now().toUtc();
       return _normalizeSearchHistory(
@@ -381,16 +566,20 @@ class PreferencesService {
   }
 
   Future<void> saveSearchHistory(Iterable<SearchHistoryRecord> records) async {
-    final prefs = await _prefs;
-    await prefs.setString(
-      _recentSearchesKey,
-      jsonEncode(<String, dynamic>{
-        'schemaVersion': 1,
-        'records': _normalizeSearchHistory(
-          records,
-        ).map((record) => record.toMap()).toList(growable: false),
-      }),
-    );
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setString(
+          _personalKey(_recentSearchesKey),
+          jsonEncode(<String, dynamic>{
+            'schemaVersion': 1,
+            'records': _normalizeSearchHistory(
+              records,
+            ).map((record) => record.toMap()).toList(growable: false),
+          }),
+        ),
+      );
+    });
   }
 
   Future<List<String>> loadRecentSearches() async {
@@ -409,7 +598,7 @@ class PreferencesService {
 
   Future<List<RecentGameRecord>> loadRecentGames() async {
     final prefs = await _prefs;
-    final String? stored = prefs.getString(_recentGamesKey);
+    final String? stored = prefs.getString(_personalKey(_recentGamesKey));
     if (stored == null || stored.trim().isEmpty) {
       return const <RecentGameRecord>[];
     }
@@ -432,21 +621,25 @@ class PreferencesService {
   }
 
   Future<void> saveRecentGames(Iterable<RecentGameRecord> records) async {
-    final prefs = await _prefs;
-    await prefs.setString(
-      _recentGamesKey,
-      jsonEncode(<String, dynamic>{
-        'schemaVersion': 1,
-        'records': _normalizeRecentGames(
-          records,
-        ).map((record) => record.toMap()).toList(growable: false),
-      }),
-    );
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setString(
+          _personalKey(_recentGamesKey),
+          jsonEncode(<String, dynamic>{
+            'schemaVersion': 1,
+            'records': _normalizeRecentGames(
+              records,
+            ).map((record) => record.toMap()).toList(growable: false),
+          }),
+        ),
+      );
+    });
   }
 
   Future<List<DailyRecommendationRecord>> loadDailyRecommendations() async {
     final prefs = await _prefs;
-    final stored = prefs.getString(_dailyRecommendationsKey);
+    final stored = prefs.getString(_personalKey(_dailyRecommendationsKey));
     if (stored == null || stored.isEmpty) {
       return const <DailyRecommendationRecord>[];
     }
@@ -467,11 +660,15 @@ class PreferencesService {
   Future<void> saveDailyRecommendations(
     List<DailyRecommendationRecord> records,
   ) async {
-    final prefs = await _prefs;
-    await prefs.setString(
-      _dailyRecommendationsKey,
-      jsonEncode(records.map((record) => record.toMap()).toList()),
-    );
+    await _trackPersonalWrite(() async {
+      final prefs = await _prefs;
+      await _requirePersonalWrite(
+        prefs.setString(
+          _personalKey(_dailyRecommendationsKey),
+          jsonEncode(records.map((record) => record.toMap()).toList()),
+        ),
+      );
+    });
   }
 
   static List<SearchHistoryRecord> _normalizeSearchHistory(

@@ -5,6 +5,7 @@ AppUpdateService createWindowsUpdateService({
   required WebDavSettings Function() settingsProvider,
   required Future<void> Function() beforeInstall,
   required Future<void> Function() onInstallerLaunched,
+  List<WebDavSettings> Function()? settingsCandidates,
 }) => _UnsupportedWindowsUpdateService();
 
 class _UnsupportedWindowsUpdateService implements AppUpdateService {

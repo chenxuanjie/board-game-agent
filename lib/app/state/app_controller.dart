@@ -6,6 +6,10 @@ import 'dart:io';
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/painting.dart' show PaintingBinding;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webdav_sync/webdav_sync.dart' show canonicalJson, sha256Json;
+import '../../features/identity/services/account_sync_store.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -44,9 +48,10 @@ import '../../features/games/services/daily_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
 import '../../features/games/services/game_vote_service.dart';
 import '../../features/games/services/game_favorite_ranker.dart';
-import '../../features/games/services/webdav_game_vote_store.dart';
+import '../../features/games/services/remote_game_vote_store.dart';
 import '../../features/games/services/national_day_list_controller.dart';
 import '../../features/library/services/remote_asset_service.dart';
+import '../../features/library/services/library_update_diff.dart';
 import '../../features/assistant/services/speech_service.dart';
 import '../../features/assistant/services/tts_service.dart';
 import '../../features/assistant/services/realtime_voice_service.dart';
@@ -56,6 +61,7 @@ import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 
 part 'app_controller/collections.dart';
+part 'app_controller/gallery.dart';
 part 'app_controller/rankings.dart';
 part 'app_controller/ai_configuration.dart';
 part 'app_controller/assistant.dart';
@@ -65,6 +71,8 @@ part 'app_controller/service_status.dart';
 part 'app_controller/library.dart';
 part 'app_controller/library_updates.dart';
 part 'app_controller/documents.dart';
+part 'app_controller/identity_scope.dart';
+part 'app_controller/account_cloud.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
 
@@ -105,8 +113,11 @@ class AppController extends ChangeNotifier {
   }) : _preferencesService = preferencesService,
        _favoriteRemoteProvider = favoriteRemoteProvider,
        _favoriteScopeProvider = favoriteScopeProvider,
-       gameVotes =
+       _gameVotes =
            gameVotes ?? GameVoteService(preferences: preferencesService),
+       _basePreferencesService = preferencesService,
+       _guestVoteTemplate = gameVotes,
+       _baseConversationStore = conversationStore ?? const ConversationStore(),
        _colorScheme = initialColorScheme ?? defaultColorScheme,
        _aiService = aiService,
        _conversationStore = conversationStore ?? const ConversationStore(),
@@ -115,35 +126,113 @@ class AppController extends ChangeNotifier {
        _speechService = speechService,
        _ttsService = ttsService,
        _realtimeVoiceService =
-           realtimeVoiceService ?? const UnconfiguredRealtimeVoiceService();
+           realtimeVoiceService ?? const UnconfiguredRealtimeVoiceService() {
+    _conversationStore = _conversationStore.forIdentityScope(identityUserId);
+    if (identityUserId != null) {
+      _gameVotes.dispose();
+      _gameVotes = GameVoteService(preferences: _preferencesService);
+    }
+  }
 
-  final PreferencesService _preferencesService;
-  final GameVoteService gameVotes;
+  PreferencesService _preferencesService;
+  final PreferencesService _basePreferencesService;
+  final ConversationStore _baseConversationStore;
+  GameVoteService _gameVotes;
+  final GameVoteService? _guestVoteTemplate;
+  GameVoteService get gameVotes => _gameVotes
+    ..canMutate = (() => !_switchingIdentityScope && !_accountReactionCommit)
+    ..cachedCountVisibility = (() =>
+        identityUserId != null || _gameVotes.remoteProvider != null)
+    ..accountScopeProvider = (() =>
+        _accountReactionScope ??
+        (identityUserId == null ? null : 'account-public-v1.$identityUserId'))
+    ..onSaved = _notifyListeners;
+  String? get identityUserId => _preferencesService.identityUserId;
+  bool _switchingIdentityScope = false;
+  bool get isSwitchingIdentityScope => _switchingIdentityScope;
+  int _identityScopeEpoch = 0;
+  Future<void> _identityScopeQueue = Future<void>.value();
+  int _identityScopeRequests = 0;
+  Future<void>? _accountCloudWork;
+  bool _accountReactionCommit = false;
+  bool _controllerDisposed = false;
+  bool get accountCloudIdle =>
+      !_controllerDisposed &&
+      !_switchingIdentityScope &&
+      !_accountReactionCommit &&
+      !_gameVotes.saving &&
+      !(_nationalDayList?.saving ?? false) &&
+      !_generationStates.values.any((state) => state.isSending) &&
+      !_isListening;
+  Future<void>? _initializationFuture;
+  final List<Future<void>> _voiceOperations = [];
+  final Set<Future<void>> _providerCleanups = {};
+  bool get anonymousReactionPublishingEnabled =>
+      identityUserId == null && !_switchingIdentityScope;
+  String? get identityReactionSyncNotice =>
+      identityUserId == null ? null : '个人收藏通过账号云同步保存；公共排行与投票统计单独计算。';
   final RemoteGameVoteStore? Function()? _favoriteRemoteProvider;
   final String? Function()? _favoriteScopeProvider;
   GameVoteService? _favoriteStatistics;
   bool _favoriteRecordsLoaded = false;
   final Set<String> _committedFavoriteSlugs = {};
-  GameVoteService get favoriteStatistics =>
-      _favoriteStatistics ??= GameVoteService(
-        preferences: _preferencesService,
-        namespace: GameVoteBallot.favoritesNamespace,
-        remoteProvider: _favoriteRemoteProvider,
-        scopeProvider: _favoriteScopeProvider,
-        externalGames: () =>
-            _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
-        cacheLoader: _preferencesService.loadFavoriteRankingCache,
-        cacheSaver: _preferencesService.saveFavoriteRankingCache,
-      );
+  RemoteGameVoteStore Function(String)? _accountReactionProvider;
+  String? _accountReactionScope;
+  String? Function()? _accountReactionError;
+  void configureAccountReactions({
+    RemoteGameVoteStore Function(String)? provider,
+    String? scope,
+    String? Function()? error,
+  }) {
+    _accountReactionProvider = provider;
+    _accountReactionScope = scope;
+    _accountReactionError = error;
+    _gameVotes.configureRemote(
+      provider == null ? null : () => provider(GameVoteBallot.campaign),
+      () => _accountReactionScope,
+    );
+    _gameVotes.accountSyncError = error;
+    _favoriteStatistics?.accountSyncError = error;
+  }
+
+  GameVoteService get favoriteStatistics => _favoriteStatistics ??=
+      GameVoteService(
+          preferences: _preferencesService,
+          namespace: GameVoteBallot.favoritesNamespace,
+          remoteProvider: () =>
+              _accountReactionProvider?.call(
+                GameVoteBallot.favoritesNamespace,
+              ) ??
+              (anonymousReactionPublishingEnabled
+                  ? _favoriteRemoteProvider?.call()
+                  : null),
+          scopeProvider: () =>
+              _accountReactionScope ??
+              (identityUserId == null
+                  ? null
+                  : 'account-public-v1.$identityUserId') ??
+              (anonymousReactionPublishingEnabled
+                  ? _favoriteScopeProvider?.call()
+                  : null),
+          externalGames: () =>
+              _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
+          cacheLoader: _preferencesService.loadFavoriteRankingCache,
+          cacheSaver: _preferencesService.saveFavoriteRankingCache,
+        )
+        ..accountSyncError = _accountReactionError
+        ..cachedCountVisibility = (() =>
+            identityUserId != null || _favoriteRemoteProvider != null);
   NationalDayListController? _nationalDayList;
-  NationalDayListController get nationalDayList =>
-      _nationalDayList ??= NationalDayListController(
-        preferences: _preferencesService,
-        defaultSlugs: () =>
-            defaultNationalDayGames.map((game) => game.slug).toList(),
-      );
+  NationalDayListController get nationalDayList => _nationalDayList ??=
+      NationalDayListController(
+          preferences: _preferencesService,
+          defaultSlugs: () =>
+              defaultNationalDayGames.map((game) => game.slug).toList(),
+        )
+        ..canMutate = (() => !_switchingIdentityScope)
+        ..onSaved = _notifyListeners;
   final AiService _aiService;
-  final ConversationStore _conversationStore;
+  ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
   final SpeechService _speechService;
@@ -159,6 +248,7 @@ class AppController extends ChangeNotifier {
   bool _isListening = false;
   double _speechLevel = 0;
   String _selectedGameId = 'puerto-rico';
+  Map<String, String> _gameGallerySelections = {};
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
   bool _globalUseCurrentGameKnowledge = false;
@@ -192,19 +282,33 @@ class AppController extends ChangeNotifier {
   final Map<String, String> _resolvedAssetPaths = <String, String>{};
   Timer? _assetStatusTimer;
   Future<void>? _assetStatusRefreshFuture;
+  int _assetStatusGeneration = 0;
+  Completer<void>? _assetStatusAbort;
   Future<void>? _serviceStatusRefreshFuture;
   Future<void>? _aiServiceStatusRefreshFuture;
   int _aiServiceStatusGeneration = 0;
   RemoteLibraryUpdate? _pendingLibraryUpdate;
   bool _checkingLibraryUpdate = false;
+  Future<void>? _libraryCheckFuture;
+  bool _libraryFullRequested = false;
+  bool _libraryUpdateCheckFull = false;
+  int? _libraryCheckEpoch;
+  String? _libraryCheckSignature;
+  bool _initialLibraryFullPending = false;
   bool _applyingLibraryUpdate = false;
   bool _libraryUpdatePromptSeen = false;
+  int _appUpdateInteractions = 0;
+  String? _libraryUpdateError;
+  int _libraryUpdateCompleted = 0;
+  int _libraryContentRevision = 0;
   bool _homeAssetsLoading = false;
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
+  bool _conversationDirty = false;
   Future<void>? _aiConfigSaveQueue;
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
+  bool _selectedConversationDirty = false;
   Future<void> _activitySaveQueue = Future<void>.value();
   Future<void> _favoriteMutationQueue = Future<void>.value();
   Future<void> _searchHistoryMutationQueue = Future<void>.value();
@@ -219,6 +323,7 @@ class AppController extends ChangeNotifier {
   List<DailyRecommendationRecord> _dailyRecommendationHistory =
       <DailyRecommendationRecord>[];
   Future<void> _dailyRecommendationSaveQueue = Future<void>.value();
+  bool _dailyRecommendationsDirty = false;
   String? _selectedConversationId;
   final Map<String, _ChatGenerationState> _generationStates =
       <String, _ChatGenerationState>{};
@@ -263,6 +368,7 @@ class AppController extends ChangeNotifier {
     required bool useGlobalMode,
     required bool expanded,
   }) {
+    if (_switchingIdentityScope) return;
     final String key = _conversationKeyForContext(useGlobalMode: useGlobalMode);
     if (_runExpandedByContext[key] == expanded) return;
     _runExpandedByContext[key] = expanded;
@@ -319,6 +425,9 @@ class AppController extends ChangeNotifier {
   }
 
   RemoteLibraryUpdate? get pendingLibraryUpdate => _pendingLibraryUpdate;
+  String? get libraryUpdateError => _libraryUpdateError;
+  int get libraryUpdateCompleted => _libraryUpdateCompleted;
+  int get libraryContentRevision => _libraryContentRevision;
   bool get checkingLibraryUpdate => _checkingLibraryUpdate;
   bool get applyingLibraryUpdate => _applyingLibraryUpdate;
   bool get homeAssetsLoading => _homeAssetsLoading;
@@ -330,6 +439,7 @@ class AppController extends ChangeNotifier {
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
   List<GameInfo> get dailyRecommendedGames {
+    if (_switchingIdentityScope) return const <GameInfo>[];
     final today = DailyGameRecommender.localDateKey(DateTime.now());
     final before = _dailyRecommendationHistory
         .where((record) => record.date == today)
@@ -345,8 +455,13 @@ class AppController extends ChangeNotifier {
     if (current != null &&
         (before == null || !listEquals(before.gameIds, current.gameIds))) {
       _dailyRecommendationHistory = next;
+      _dailyRecommendationsDirty = true;
+      final preferences = _preferencesService;
       _dailyRecommendationSaveQueue = _dailyRecommendationSaveQueue
-          .then((_) => _preferencesService.saveDailyRecommendations(next))
+          .then((_) async {
+            await preferences.saveDailyRecommendations(next);
+            _dailyRecommendationsDirty = false;
+          })
           .catchError((Object error) {
             debugPrint('[recommendations] save failed: $error');
           });
@@ -442,7 +557,12 @@ class AppController extends ChangeNotifier {
     DateTime? createdAt,
     String? conversationId,
     String? messageId,
+    int? identityEpoch,
   }) {
+    if (_switchingIdentityScope ||
+        (identityEpoch != null && identityEpoch != _identityScopeEpoch)) {
+      return;
+    }
     final DateTime occurredAt = createdAt ?? DateTime.now();
     final AppActivity? existing = _activities
         .where((AppActivity activity) => activity.kind == kind)
@@ -468,10 +588,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _recordLibraryLoadFailure(String message) {
+  void _recordLibraryLoadFailure(String message, {int? identityEpoch}) {
     final String normalized = message.trim();
     if (normalized.isEmpty) return;
     _recordActivity(
+      identityEpoch: identityEpoch,
       kind: AppActivityKind.libraryLoadFailed,
       title: copy.activityLibraryLoadFailedTitle,
       message: copy.activityLibraryLoadFailedMessage(normalized),
@@ -479,13 +600,18 @@ class AppController extends ChangeNotifier {
   }
 
   void _queueActivitySave() {
+    final preferences = _preferencesService;
     final List<AppActivity> snapshot = List<AppActivity>.from(_activities);
     _activitySaveQueue = _activitySaveQueue
         .catchError((Object _) {})
-        .then((_) => _preferencesService.saveActivities(snapshot));
+        .then((_) => preferences.saveActivities(snapshot));
+    _activitySaveQueue.catchError((Object error) {
+      debugPrint('[activities] save failed: $error');
+    });
   }
 
   Future<void> markActivitiesRead() async {
+    if (_switchingIdentityScope) return;
     final bool hasUnread = _activities.any(
       (AppActivity activity) => !activity.isRead,
     );
@@ -502,6 +628,7 @@ class AppController extends ChangeNotifier {
   /// Marks one notification as read without changing the rest of the center.
   /// This is used when a user follows a notification into its target session.
   Future<void> markActivityRead(String activityId) async {
+    if (_switchingIdentityScope) return;
     final AppActivity? target = _activities
         .where((AppActivity activity) => activity.id == activityId)
         .cast<AppActivity?>()
@@ -629,7 +756,11 @@ class AppController extends ChangeNotifier {
     return nearest ?? conversation.updatedAt.difference(createdAt).abs();
   }
 
-  void _setPendingLibraryUpdate(RemoteLibraryUpdate update) {
+  void _setPendingLibraryUpdate(
+    RemoteLibraryUpdate update, {
+    int? identityEpoch,
+  }) {
+    if (identityEpoch != null && identityEpoch != _identityScopeEpoch) return;
     final RemoteLibraryUpdate? previous = _pendingLibraryUpdate;
     _pendingLibraryUpdate = update;
     _libraryUpdatePromptSeen = false;
@@ -640,6 +771,7 @@ class AppController extends ChangeNotifier {
         update.changedPaths.toSet().containsAll(previous.changedPaths);
     if (!isSame) {
       _recordActivity(
+        identityEpoch: identityEpoch,
         kind: AppActivityKind.libraryUpdate,
         title: copy.activityLibraryUpdateTitle,
         message: copy.activityLibraryUpdateMessage(update.changedCount),
@@ -647,7 +779,9 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize() => _initializationFuture ??= _initialize();
+
+  Future<void> _initialize() async {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
@@ -719,6 +853,7 @@ class AppController extends ChangeNotifier {
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
     }
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
+    await _restoreGameGallerySelections();
     _games = await _loadGamesForLanguage(_language);
     await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
@@ -766,8 +901,10 @@ class AppController extends ChangeNotifier {
     }
 
     _language = next;
+    final epoch = _identityScopeEpoch;
     _games = await _loadGamesForLanguage(_language);
     _refreshLibraryGameTitles();
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -780,8 +917,10 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> reloadGames() async {
+    final epoch = _identityScopeEpoch;
     _games = await _loadGamesForLanguage(_language);
     _refreshLibraryGameTitles();
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
@@ -854,10 +993,15 @@ class AppController extends ChangeNotifier {
     _aiService.dispose();
   }
 
-  void _notifyListeners() => notifyListeners();
+  void _notifyListeners() {
+    if (!_controllerDisposed) notifyListeners();
+  }
 
   @override
   void dispose() {
+    _controllerDisposed = true;
+    _assetStatusTimer?.cancel();
+    _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
     super.dispose();
   }
@@ -898,6 +1042,7 @@ class _StreamTextBatcher {
 }
 
 class _ChatGenerationState {
+  Completer<void>? finished;
   AiApiConfig? requestConfig;
   bool isSending = false;
   Completer<void>? abort;

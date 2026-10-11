@@ -26,6 +26,7 @@ class DesktopSidebar extends StatelessWidget {
     (asset: 'sidebar_library.png', zh: '游戏库', en: 'Game Library'),
     (asset: 'sidebar_ai.png', zh: 'AI助手', en: 'AI Assistant'),
     (asset: 'sidebar_likes.png', zh: '我的喜欢', en: 'My Likes'),
+    (asset: 'sidebar_ranking.png', zh: '排行榜', en: 'Rankings'),
     (asset: 'sidebar_settings.png', zh: '设置', en: 'Settings'),
   ];
   static const double _headerHeight = 152;
@@ -63,7 +64,7 @@ class DesktopSidebar extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     // Blend the blank paper margin into the sidebar background.
                     colors: [Colors.transparent, Colors.black, Colors.black],
-                    stops: [0, .08, 1],
+                    stops: [0, .12, 1],
                   ).createShader(bounds),
                   child: Image.asset(
                     'assets/desktop/home/sidebar_castle.png',
@@ -170,7 +171,8 @@ class DesktopSidebar extends StatelessWidget {
                             selected: i == selectedIndex,
                             compact: compact,
                             onTap: () {
-                              if (i != selectedIndex) onSelect(i);
+                              // Reselecting the game library refreshes it too.
+                              if (i != selectedIndex || i == 1) onSelect(i);
                             },
                           ),
                       ],

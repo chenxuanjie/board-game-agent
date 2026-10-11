@@ -11,21 +11,19 @@ import 'package:window_manager/window_manager.dart';
 import 'features/assistant/services/board_game_ai_service.dart';
 import 'features/games/services/game_manifest_service.dart';
 import 'features/games/services/game_vote_service.dart';
-import 'features/games/services/webdav_game_vote_store.dart';
-import 'features/games/models/game_vote_record.dart';
 import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
-import 'features/settings/services/windows_update_service.dart';
+import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
-import 'core/platform/insecure_android_certificate_trust.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
 import 'features/assistant/services/realtime_voice_service.dart';
 import 'features/assistant/services/responses_compaction_store.dart';
 import 'features/assistant/services/ai_run_telemetry.dart';
 import 'features/assistant/services/responses_rules_workflow.dart';
+import 'features/identity/services/account_service.dart';
 import 'app/state/app_controller.dart';
 import 'core/localization/app_language.dart';
 import 'core/theme/color_scheme_option.dart';
@@ -34,12 +32,14 @@ import 'ui/mobile/home_screen.dart';
 import 'ui/mobile/settings_screen.dart';
 import 'ui/mobile/game_detail_screen.dart';
 import 'ui/shared/game_ranking_screen.dart';
+import 'ui/shared/account_scope.dart';
+import 'ui/shared/account_screen.dart';
 import 'ui/desktop/workspace.dart';
+import 'ui/desktop/desktop_window_frame.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
 
 Future<void> main() async {
-  enableInsecureAndroidCertificateTrust();
   WidgetsFlutterBinding.ensureInitialized();
   await _configureWindowsWindow();
 
@@ -53,22 +53,11 @@ Future<void> main() async {
     connectionTester: DefaultWebDavConnectionTester(appId: 'board_game_agent'),
   );
 
+  late final AccountService accountService;
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
-    gameVotes: GameVoteService(
-      preferences: preferencesService,
-      remoteProvider: () =>
-          WebDavGameVoteStore.fromSettings(updateSettingsController.saved),
-    ),
-    favoriteRemoteProvider: () => WebDavGameVoteStore.fromSettings(
-      updateSettingsController.saved,
-      namespace: GameVoteBallot.favoritesNamespace,
-    ),
-    favoriteScopeProvider: () => WebDavGameVoteStore.scopeFor(
-      updateSettingsController.saved,
-      namespace: GameVoteBallot.favoritesNamespace,
-    ),
+    gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(),
       responsesWorkflow: ResponsesRulesWorkflow(
@@ -80,16 +69,24 @@ Future<void> main() async {
     gameManifestService: GameManifestService(),
     remoteAssetService: RemoteAssetService(
       settingsProvider: () => updateSettingsController.saved,
+      accessAllowed: () => accountService.resourceCredentialsReady,
+      resourceSettingsProvider: (target) =>
+          accountService.settingsForResource(target),
     ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
   );
 
+  accountService = AccountService(
+    controller: controller,
+    webDav: updateSettingsController,
+  );
   runApp(
     BoardGameAgentApp(
       controller: controller,
       updateSettingsController: updateSettingsController,
+      accountService: accountService,
     ),
   );
 }
@@ -152,10 +149,12 @@ class BoardGameAgentApp extends StatefulWidget {
     super.key,
     required this.controller,
     required this.updateSettingsController,
+    this.accountService,
   });
 
   final AppController controller;
   final WebDavSettingsController updateSettingsController;
+  final AccountService? accountService;
 
   @override
   State<BoardGameAgentApp> createState() => _BoardGameAgentAppState();
@@ -165,28 +164,46 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   late final SettingsTransferService _transferService = SettingsTransferService(
     controller: widget.controller,
     webDav: widget.updateSettingsController,
+    account: widget.accountService,
   );
   late Future<void> _initialization;
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final _windowChrome = DesktopWindowChromeObserver(
+    workspaceRouteNames: {GameRankingScreen.routeName},
+  );
+  bool _initializationComplete = false;
+  bool _showAccountLoginAtRoot = false;
   bool _startupUpdateCheckScheduled = false;
+  String? _lastAccountKey;
+  String? _lastResourceConnection;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_handleControllerChange);
+    widget.accountService?.addListener(_handleAccountChange);
     _initialization = _initialize();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleControllerChange);
+    widget.accountService?.removeListener(_handleAccountChange);
+    widget.accountService?.dispose();
     widget.controller.disposeServices();
     widget.updateSettingsController.dispose();
+    _windowChrome.sidebarVisible.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final app = _buildApplication(context);
+    final accounts = widget.accountService;
+    return accounts == null ? app : AccountScope(service: accounts, child: app);
+  }
+
+  Widget _buildApplication(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Theme and workspace must use the same decision, including after a
@@ -196,6 +213,47 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             (kIsWeb &&
                 DesktopResponsive.supportsDesktopViewport(constraints.biggest));
         return MaterialApp(
+          builder: (context, child) {
+            final accounts = widget.accountService;
+            if (accounts == null ||
+                accounts.dataScopeReady ||
+                (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
+              return ValueListenableBuilder<bool>(
+                valueListenable: _windowChrome.sidebarVisible,
+                child: child ?? const SizedBox.shrink(),
+                builder: (context, hasSidebar, child) => DesktopWindowFrame(
+                  sidebarVisible:
+                      desktopLayout &&
+                      _initializationComplete &&
+                      !_showAccountLoginAtRoot &&
+                      hasSidebar,
+                  child: child!,
+                ),
+              );
+            }
+            // Remove the prior account's UI from the tree while its writes drain.
+            return DesktopWindowFrame(
+              child: Scaffold(
+                body: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (accounts.error == null)
+                        const CircularProgressIndicator()
+                      else ...[
+                        const Text('账号数据切换未完成'),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => unawaited(accounts.restore()),
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
           routes: {
             GameRankingScreen.routeName: (context) => desktopLayout
                 ? DesktopWorkspace(
@@ -204,6 +262,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                     transferService: _transferService,
                     initialPage: 'rankings',
                     onOpenAbout: _openAbout,
+                    onCheckUpdates: () => _openAbout(checkOnOpen: true),
                   )
                 : GameRankingScreen(
                     controller: widget.controller,
@@ -227,6 +286,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             ),
           },
           navigatorKey: _navigatorKey,
+          navigatorObservers: [_windowChrome],
           title: widget.controller.copy.appTitle,
           debugShowCheckedModeBanner: false,
           locale: widget.controller.language == AppLanguage.en
@@ -246,7 +306,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           home: FutureBuilder<void>(
             future: _initialization,
             builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
+              if (!_initializationComplete &&
+                  snapshot.connectionState != ConnectionState.done) {
                 return const _StartupScreen();
               }
 
@@ -262,15 +323,21 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
               }
 
               _scheduleStartupUpdateCheck(context);
+              if (_showAccountLoginAtRoot) {
+                return AccountScreen(onBack: _returnFromAccountLogin);
+              }
               if (desktopLayout) {
                 return DesktopWorkspace(
+                  key: ValueKey(widget.accountService?.nicknameKey),
                   controller: widget.controller,
                   webDavSettingsController: widget.updateSettingsController,
                   transferService: _transferService,
                   onOpenAbout: _openAbout,
+                  onCheckUpdates: () => _openAbout(checkOnOpen: true),
                 );
               }
               return HomeScreen(
+                key: ValueKey(widget.accountService?.nicknameKey),
                 controller: widget.controller,
                 transferService: _transferService,
                 onOpenAbout: _openAbout,
@@ -283,12 +350,15 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   Future<void> _initialize() async {
+    _initializationComplete = false;
     try {
       await widget.updateSettingsController.load();
       await _transferService.recover();
       await widget.controller.initialize();
+      await widget.accountService?.initialize();
       // Publish existing favorites too, even while the ranking entry is hidden.
       unawaited(widget.controller.refreshFavoriteRankings());
+      _initializationComplete = true;
     } catch (error, stackTrace) {
       debugPrint('[startup] initialization failed: $error');
       debugPrint('$stackTrace');
@@ -303,64 +373,122 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     _startupUpdateCheckScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !context.mounted) return;
-      unawaited(
-        checkForUpdateOnStartup(
-          context: context,
-          appId: 'board_game_agent',
-          updateService: _createUpdateService(),
-        ),
-      );
+      unawaited(_checkStartupUpdate(context));
     });
   }
 
-  Future<void> _openAbout() async {
+  Future<void> _checkStartupUpdate(BuildContext context) async {
+    final release = widget.controller.suspendLibraryUpdatePrompts();
+    try {
+      await checkForUpdateOnStartup(
+        context: context,
+        appId: 'board_game_agent',
+        updateService: _createUpdateService(),
+      );
+    } finally {
+      release();
+    }
+  }
+
+  Future<void> _openAbout({bool checkOnOpen = false}) async {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    await navigator.push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AppAboutPage(
-          config: const AppAboutConfig(
-            appName: '桌游导师',
-            subtitle: '桌游入口与统一 AI 助手',
-            appIcon: _BoardGameAppMark(),
-            fallbackVersion: '1.0.0',
-            fallbackBuild: '7',
+    final release = widget.controller.suspendLibraryUpdatePrompts();
+    try {
+      await navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AppAboutPage(
+            checkOnOpen: checkOnOpen,
+            config: AppAboutConfig(
+              appName: '桌游导师',
+              subtitle: '桌游入口与统一 AI 助手',
+              appIcon: const _BoardGameAppMark(),
+              fallbackVersion: '版本不可用',
+              fallbackBuild: '—',
+              showUpdate: boardGameUpdateTarget != null,
+              updateCheckSubtitle:
+                  boardGameUpdateTarget == AppUpdateTarget.windows
+                  ? '检查 Windows 安装包更新'
+                  : '检查 Android 安装包更新',
+            ),
+            updateService: _createUpdateService(),
           ),
-          updateService: _createUpdateService(),
         ),
-      ),
-    );
-  }
-
-  AppUpdateService _createUpdateService() {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-      return createWindowsUpdateService(
-        settingsProvider: () => widget.updateSettingsController.saved,
-        beforeInstall: () async {
-          if (_transferService.isBusy) {
-            throw StateError('设置正在保存，请完成后重试');
-          }
-          await widget.controller.prepareForAppUpdate();
-        },
-        onInstallerLaunched: () => windowManager.destroy(),
       );
+    } finally {
+      release();
     }
-    return createWebDavAndroidUpdateService(
-      settingsProvider: () => widget.updateSettingsController.saved,
-      config: const WebDavAndroidUpdateConfig(
-        appId: 'board_game_agent',
-        manifestPath: BoardGameRemoteLayout.updateManifestPath,
-        fallbackVersion: '1.0.0',
-        fallbackBuild: 7,
-        directoryName: 'board_game_agent_updates',
-      ),
-    );
   }
 
+  List<WebDavSettings> _updateConnections() {
+    final accounts = widget.accountService;
+    final config = accounts?.configuration;
+    if (config != null && accounts!.resourceCredentialsReady) {
+      return [
+        for (final server in config.servers)
+          accounts.settingsForResource(server.webDavRoot(config.storageFolder)),
+      ];
+    }
+    return [widget.updateSettingsController.saved];
+  }
+
+  AppUpdateService _createUpdateService() => createBoardGameUpdateService(
+    settingsProvider: () => widget.updateSettingsController.saved,
+    settingsCandidates: _updateConnections,
+    beforeInstall: () async {
+      if (_transferService.isBusy) {
+        throw AppUpdateFailure('设置正在保存，请完成后重试');
+      }
+      try {
+        await widget.controller.prepareForAppUpdate();
+      } catch (_) {
+        throw AppUpdateFailure('请结束正在进行的操作，再重试更新');
+      }
+    },
+    onWindowsInstallerLaunched: () => windowManager.destroy(),
+  );
   void _handleControllerChange() {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _returnFromAccountLogin() {
+    if (widget.accountService?.dataScopeReady != true) return;
+    setState(() => _showAccountLoginAtRoot = false);
+  }
+
+  void _handleAccountChange() {
+    if (!mounted) return;
+    final account = widget.accountService;
+    final key = widget.accountService?.nicknameKey;
+    if (_lastAccountKey != null && key != _lastAccountKey) {
+      // Replace the navigation tree and its root destination together. Popping
+      // home and then pushing login reveals the home during the route animation.
+      _showAccountLoginAtRoot =
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.windows &&
+          account?.isSignedIn == false;
+      _navigatorKey = GlobalKey<NavigatorState>();
+      _windowChrome.reset();
+    }
+    _lastAccountKey = key;
+    if (account != null &&
+        !account.isBusy &&
+        account.resourceCredentialsReady) {
+      final connection =
+          '${account.nicknameKey}|${account.configuration!.resourceSources.map((s) => s.testUrl).join('|')}';
+      if (_lastResourceConnection != connection) {
+        _lastResourceConnection = connection;
+        // Credentials and the account scope are ready now. Probe immediately
+        // rather than leaving the resource status unknown until the next tick.
+        unawaited(widget.controller.refreshAssetAccessStatus());
+        unawaited(widget.controller.refreshLibraryResources(force: true));
+      }
+    } else if (account?.isSignedIn == false) {
+      _lastResourceConnection = null;
+    }
+    setState(() {});
   }
 }
 
@@ -386,7 +514,10 @@ class _StartupScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return const Scaffold(
+      key: ValueKey('app-startup-loading'),
+      body: Center(child: CircularProgressIndicator()),
+    );
   }
 }
 

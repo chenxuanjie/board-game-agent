@@ -236,6 +236,12 @@ class _DesktopActivityTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
+          if (activity.kind == AppActivityKind.libraryUpdate)
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: palette.textSecondary,
+            ),
           Tooltip(
             message: _activityAbsoluteTime(activity.createdAt),
             child: Text(
@@ -249,13 +255,16 @@ class _DesktopActivityTile extends StatelessWidget {
       ),
     );
     if (onTap == null) return content;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(compact ? 11 : 8),
-      child: InkWell(
+    return Semantics(
+      button: true,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(compact ? 11 : 8),
-        onTap: onTap,
-        child: content,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(compact ? 11 : 8),
+          onTap: onTap,
+          child: content,
+        ),
       ),
     );
   }

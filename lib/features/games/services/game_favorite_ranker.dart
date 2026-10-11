@@ -13,7 +13,7 @@ abstract final class GameFavoriteRanker {
       final slug = game.slug.trim();
       if (slug.isEmpty || !seen.add(slug)) continue;
       final total = count(slug);
-      if (total > 0) rows.add((game: game, count: total));
+      rows.add((game: game, count: total < 0 ? 0 : total));
     }
     rows.sort((left, right) {
       final popularity = right.count.compareTo(left.count);

@@ -116,11 +116,14 @@ abstract final class DesktopResponsive {
   static DesktopMetrics metricsFor(Size viewport) =>
       DesktopMetrics(viewportSize: viewport, scale: desktopScaleFor(viewport));
 
-  static double detailHeroHeightFor(double width) {
-    if (width < narrowBreakpoint) return 320;
-    if (width < 1100) return 380;
-    return 450;
-  }
+  static const detailHeroAspectRatio = 16 / 9;
+
+  /// Preserve room for the overlay controls when a narrow window cannot fit
+  /// the wide reference composition.
+  static double detailHeroHeightFor(double width) => math.max(
+    width < narrowBreakpoint ? 320 : 380,
+    width / detailHeroAspectRatio,
+  );
 
   static double maxContentWidthFor(String page) => switch (page) {
     'home' => homeMaxContentWidth,

@@ -18,6 +18,9 @@ extension AppCollectionController on AppController {
       '${nationalDayGames.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}';
 
   Future<bool> toggleFavorite(GameInfo game) {
+    if (_switchingIdentityScope || _accountReactionCommit) {
+      return Future<bool>.value(false);
+    }
     final Future<bool> operation = _favoriteMutationQueue
         .catchError((Object _) {})
         .then<bool>((_) => _toggleFavoriteNow(game));
@@ -62,6 +65,7 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> recordSearch(String value) {
+    if (_switchingIdentityScope) return Future<bool>.value(false);
     final query = value.trim();
     if (query.isEmpty) return Future<bool>.value(false);
 
@@ -81,6 +85,7 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> removeSearch(String query) {
+    if (_switchingIdentityScope) return Future<bool>.value(false);
     final normalized = query.trim().toLowerCase();
     if (normalized.isEmpty) return Future<bool>.value(false);
 
@@ -98,6 +103,7 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> clearSearchHistory() {
+    if (_switchingIdentityScope) return Future<bool>.value(false);
     final previous = List<SearchHistoryRecord>.from(_searchHistory);
     _searchHistory = <SearchHistoryRecord>[];
     final int stateVersion = ++_searchHistoryStateVersion;
@@ -114,8 +120,9 @@ extension AppCollectionController on AppController {
     required List<SearchHistoryRecord> previous,
     required int stateVersion,
   }) {
+    final preferences = _preferencesService;
     final Future<void> write = _searchHistoryMutationQueue.then<void>(
-      (_) => _preferencesService.saveSearchHistory(snapshot),
+      (_) => preferences.saveSearchHistory(snapshot),
     );
     final Future<bool> result = write.then<bool>(
       (_) => true,
@@ -133,6 +140,7 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> recordRecentlyViewed(GameInfo game) {
+    if (_switchingIdentityScope) return Future<bool>.value(false);
     final slug = game.slug.trim();
     if (slug.isEmpty) return Future<bool>.value(false);
 
@@ -154,6 +162,7 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> removeRecentlyViewed(GameInfo game) {
+    if (_switchingIdentityScope) return Future<bool>.value(false);
     final normalized = game.slug.trim().toLowerCase();
     if (normalized.isEmpty) return Future<bool>.value(false);
 
@@ -171,6 +180,7 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> clearRecentlyViewed() {
+    if (_switchingIdentityScope) return Future<bool>.value(false);
     final previous = List<RecentGameRecord>.from(_recentGameRecords);
     _recentGameRecords = <RecentGameRecord>[];
     final int stateVersion = ++_recentGamesStateVersion;
@@ -187,8 +197,9 @@ extension AppCollectionController on AppController {
     required List<RecentGameRecord> previous,
     required int stateVersion,
   }) {
+    final preferences = _preferencesService;
     final Future<void> write = _recentGamesMutationQueue.then<void>(
-      (_) => _preferencesService.saveRecentGames(snapshot),
+      (_) => preferences.saveRecentGames(snapshot),
     );
     final Future<bool> result = write.then<bool>(
       (_) => true,

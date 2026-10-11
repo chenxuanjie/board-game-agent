@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/theme/app_motion.dart';
 
 import '../../features/games/models/game_info.dart';
@@ -20,7 +22,6 @@ class DesktopGameDetailPane extends StatefulWidget {
     required this.game,
     required this.backTooltip,
     required this.onBack,
-    required this.onSearch,
     required this.onOpenRules,
     required this.onAskAi,
     required this.onToggleFavorite,
@@ -33,7 +34,6 @@ class DesktopGameDetailPane extends StatefulWidget {
   final GameInfo game;
   final String backTooltip;
   final VoidCallback onBack;
-  final VoidCallback onSearch;
   final VoidCallback onOpenRules;
   final VoidCallback onAskAi;
   final ValueChanged<GameInfo> onToggleFavorite;
@@ -47,7 +47,8 @@ class DesktopGameDetailPane extends StatefulWidget {
 
 class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
-  int _galleryIndex = 0;
+  int get _galleryIndex =>
+      widget.controller.gameGalleryIndex(game, _galleryPaths());
 
   static const _tabs = ['游戏介绍', '规则摘要'];
 
@@ -56,7 +57,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.game.id != widget.game.id) {
       _tab = 0;
-      _galleryIndex = 0;
     }
   }
 
@@ -67,7 +67,36 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     if (count <= 0 || index < 0 || index >= count || index == _galleryIndex) {
       return;
     }
-    setState(() => _galleryIndex = index);
+    _persistGalleryImage(_galleryPaths()[index]);
+    setState(() {});
+  }
+
+  void _persistGalleryImage(String path) {
+    unawaited(
+      widget.controller.rememberGameGalleryImage(game, path).catchError((
+        Object _,
+      ) {
+        if (!mounted) return;
+        final copy = widget.controller.copy;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              copy.localized('图片位置未保存', 'Image position was not saved'),
+            ),
+            action: SnackBarAction(
+              label: copy.localized('重试', 'Retry'),
+              onPressed: () {
+                if (!mounted) return;
+                final paths = _galleryPaths();
+                if (paths.isNotEmpty) {
+                  _persistGalleryImage(paths[_galleryIndex]);
+                }
+              },
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   void _stepGallery(int delta, int count) {
@@ -126,282 +155,259 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     final heroPath = paths.isEmpty ? '' : paths[galleryIndex];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final condensed = constraints.maxWidth < 1100;
-        return SizedBox(
-          key: widget.coverKey,
-          height: DesktopResponsive.detailHeroHeightFor(constraints.maxWidth),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              DesktopResolvedImage(
-                key: ValueKey<String>(
-                  'desktop-detail-gallery-image-$galleryIndex',
-                ),
-                controller: widget.controller,
-                assetPath: heroPath,
-                palette: widget.controller.palette,
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      Color(0xE819110D),
-                      Color(0xB018100D),
-                      Color(0x3518100D),
-                    ],
-                    stops: [0, .48, 1],
+        final metrics = DesktopMetricsScope.of(context);
+        final condensed =
+            constraints.maxWidth < DesktopResponsive.narrowBreakpoint;
+        final showTags = constraints.maxWidth >= 1100;
+        final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+        final imageHeight = DesktopResponsive.detailHeroHeightFor(
+          constraints.maxWidth,
+        );
+        final minimumHeight = metrics.px(condensed ? 360 : 440) * textScale;
+        return Focus(
+          onKeyEvent: (_, event) {
+            if (event is KeyDownEvent && paths.length > 1) {
+              if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                _stepGallery(-1, paths.length);
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                _stepGallery(1, paths.length);
+                return KeyEventResult.handled;
+              }
+            }
+            return KeyEventResult.ignored;
+          },
+          child: SizedBox(
+            key: widget.coverKey,
+            height: imageHeight > minimumHeight ? imageHeight : minimumHeight,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DesktopResolvedImage(
+                  key: ValueKey<String>(
+                    'desktop-detail-gallery-image-$galleryIndex',
                   ),
+                  controller: widget.controller,
+                  assetPath: heroPath,
+                  palette: widget.controller.palette,
                 ),
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0x33000000),
-                      Colors.transparent,
-                      Color(0xA6000000),
-                    ],
-                  ),
-                ),
-              ),
-              if (paths.length > 1) ...[
-                Positioned(
-                  left: 16,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _GalleryArrow(
-                      key: const ValueKey<String>(
-                        'desktop-detail-gallery-previous',
-                      ),
-                      tooltip: '上一张图片',
-                      icon: Icons.chevron_left_rounded,
-                      onTap: () => _stepGallery(-1, paths.length),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        Color(0xB319110D),
+                        Color(0x6718100D),
+                        Color(0x0018100D),
+                      ],
+                      stops: [0, .4, 1],
                     ),
                   ),
                 ),
-                Positioned(
-                  right: 16,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _GalleryArrow(
-                      key: const ValueKey<String>(
-                        'desktop-detail-gallery-next',
-                      ),
-                      tooltip: '下一张图片',
-                      icon: Icons.chevron_right_rounded,
-                      onTap: () => _stepGallery(1, paths.length),
-                    ),
-                  ),
-                ),
-              ],
-              Padding(
-                padding: condensed
-                    ? const EdgeInsets.fromLTRB(20, 16, 20, 16)
-                    : const EdgeInsets.fromLTRB(34, 24, 32, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        _RoundIcon(
-                          icon: Icons.arrow_back_rounded,
-                          tooltip: widget.backTooltip,
-                          onTap: widget.onBack,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 340),
-                              child: InkWell(
-                                onTap: widget.onSearch,
-                                borderRadius: BorderRadius.circular(24),
-                                child: Container(
-                                  height: 42,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 15,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xC95A4B42),
-                                    borderRadius: BorderRadius.circular(24),
-                                    border: Border.all(
-                                      color: const Color(0x55FFFFFF),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.search_rounded,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 9),
-                                      Text(
-                                        '搜索桌游 / 机制 / 作者',
-                                        style: TextStyle(
-                                          color: Color(0xFFF2EAE5),
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x1A000000),
+                        Colors.transparent,
+                        Color(0x99000000),
                       ],
                     ),
-                    const Spacer(),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                ),
+                Padding(
+                  padding: metrics.insets(
+                    condensed
+                        ? const EdgeInsets.fromLTRB(20, 16, 20, 16)
+                        : const EdgeInsets.fromLTRB(34, 24, 32, 24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            value(game.title),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: condensed ? 30 : 42,
-                              height: 1.02,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          if (game.subtitle.trim().isNotEmpty &&
-                              game.subtitle.trim() != game.title.trim()) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              value(game.subtitle),
-                              style: TextStyle(
-                                color: Color(0xFFF2E7DF),
-                                fontSize: condensed ? 15 : 19,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                          if (game.heroTagline.trim().isNotEmpty &&
-                              game.heroTagline.trim() !=
-                                  game.summary.trim()) ...[
-                            SizedBox(height: condensed ? 8 : 13),
-                            Text(
-                              '“ ${value(game.heroTagline)} ”',
-                              maxLines: condensed ? 1 : 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: condensed ? 12.5 : 15,
-                                height: 1.45,
-                              ),
-                            ),
-                          ],
-                          SizedBox(height: condensed ? 10 : 16),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.star_rounded,
-                                color: Color(0xFFFFD12D),
-                                size: condensed ? 20 : 25,
-                              ),
-                              SizedBox(width: condensed ? 5 : 7),
-                              Text(
-                                value(game.score),
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: condensed ? 18 : 22,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              SizedBox(width: condensed ? 7 : 10),
-                              Text(
-                                '(${value(game.scoreCountLabel)})',
-                                style: const TextStyle(
-                                  color: Color(0xFFD9CEC7),
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: condensed ? 10 : 17),
-                          Row(
-                            children: [
-                              _HeroMetric(
-                                Icons.group_rounded,
-                                GameMetadataText.players(game.playerCount),
-                                '推荐人数',
-                              ),
-                              _HeroMetric(
-                                Icons.schedule_rounded,
-                                GameMetadataText.playTime(game.playTime),
-                                '游戏时长',
-                              ),
-                              _HeroMetric(
-                                Icons.bar_chart_rounded,
-                                value(game.complexity),
-                                '游戏难度',
-                              ),
-                            ],
-                          ),
-                          if (!condensed) ...[
-                            const SizedBox(height: 15),
-                            Wrap(
-                              spacing: 7,
-                              runSpacing: 7,
-                              children: [
-                                for (final tag in _tags().take(6))
-                                  _HeroTag(tag),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                          ] else
-                            const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 8,
-                            children: [
-                              _HeroButton(
-                                key: const ValueKey<String>(
-                                  'desktop-detail-favorite-button',
-                                ),
-                                label: widget.controller.isFavorite(game)
-                                    ? '已喜欢'
-                                    : '喜欢',
-                                icon: widget.controller.isFavorite(game)
-                                    ? Icons.favorite_rounded
-                                    : Icons.favorite_border_rounded,
-                                onTap: widget.favoriteSaving
-                                    ? null
-                                    : () => widget.onToggleFavorite(game),
-                                busy: widget.favoriteSaving,
-                                pendingLabel: widget.controller.copy.localized(
-                                  '保存中',
-                                  'Saving',
-                                ),
-                                width: 108,
-                              ),
-                              _HeroButton(
-                                label: '询问 AI',
-                                icon: Icons.auto_awesome_rounded,
-                                onTap: widget.onAskAi,
-                                light: true,
-                              ),
-                            ],
+                          _RoundIcon(
+                            icon: Icons.arrow_back_rounded,
+                            tooltip: widget.backTooltip,
+                            onTap: widget.onBack,
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      const Spacer(),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: metrics.px(640)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              key: const ValueKey('desktop-detail-title'),
+                              value(game.title),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: metrics.font(condensed ? 34 : 42),
+                                height: 1.15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            if (game.subtitle.trim().isNotEmpty &&
+                                game.subtitle.trim() != game.title.trim()) ...[
+                              SizedBox(height: metrics.px(4)),
+                              Text(
+                                value(game.subtitle),
+                                style: TextStyle(
+                                  color: Color(0xFFF2E7DF),
+                                  fontSize: metrics.font(condensed ? 16 : 19),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                            if (game.heroTagline.trim().isNotEmpty &&
+                                game.heroTagline.trim() !=
+                                    game.summary.trim()) ...[
+                              SizedBox(height: metrics.px(condensed ? 10 : 16)),
+                              Text(
+                                '“ ${value(game.heroTagline)} ”',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: metrics.font(condensed ? 14 : 16),
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
+                            SizedBox(height: metrics.px(condensed ? 12 : 18)),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.star_rounded,
+                                  color: Color(0xFFFFD12D),
+                                  size: metrics.px(condensed ? 24 : 28),
+                                ),
+                                SizedBox(width: metrics.px(7)),
+                                Text(
+                                  value(game.score),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: metrics.font(condensed ? 22 : 26),
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                SizedBox(width: metrics.px(10)),
+                                Flexible(
+                                  child: Text(
+                                    '(${value(game.scoreCountLabel)})',
+                                    style: TextStyle(
+                                      color: Color(0xFFD9CEC7),
+                                      fontSize: metrics.font(
+                                        condensed ? 11 : 13,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: metrics.px(condensed ? 12 : 20)),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: metrics.px(480),
+                              ),
+                              child: LayoutBuilder(
+                                builder: (context, bounds) {
+                                  final columns = textScale > 1.4 ? 2 : 3;
+                                  final width = bounds.maxWidth / columns;
+                                  return Wrap(
+                                    runSpacing: metrics.px(12),
+                                    children: [
+                                      _HeroMetric(
+                                        Icons.group_rounded,
+                                        GameMetadataText.players(
+                                          game.playerCount,
+                                        ),
+                                        '推荐人数',
+                                        width: width,
+                                        compact: condensed,
+                                      ),
+                                      _HeroMetric(
+                                        Icons.schedule_rounded,
+                                        GameMetadataText.playTime(
+                                          game.playTime,
+                                        ),
+                                        '游戏时长',
+                                        width: width,
+                                        compact: condensed,
+                                      ),
+                                      _HeroMetric(
+                                        Icons.bar_chart_rounded,
+                                        value(game.complexity),
+                                        '游戏难度',
+                                        width: width,
+                                        compact: condensed,
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                            if (showTags) ...[
+                              const SizedBox(height: 15),
+                              Wrap(
+                                spacing: 7,
+                                runSpacing: 7,
+                                children: [
+                                  for (final tag in _tags().take(6))
+                                    _HeroTag(tag),
+                                ],
+                              ),
+                            ],
+                            SizedBox(height: metrics.px(18)),
+                            Wrap(
+                              spacing: metrics.px(14),
+                              runSpacing: metrics.px(12),
+                              children: [
+                                _HeroButton(
+                                  key: const ValueKey<String>(
+                                    'desktop-detail-favorite-button',
+                                  ),
+                                  label: widget.controller.isFavorite(game)
+                                      ? '已喜欢'
+                                      : '喜欢',
+                                  icon: widget.controller.isFavorite(game)
+                                      ? Icons.favorite_rounded
+                                      : Icons.favorite_border_rounded,
+                                  onTap: widget.favoriteSaving
+                                      ? null
+                                      : () => widget.onToggleFavorite(game),
+                                  busy: widget.favoriteSaving,
+                                  pendingLabel: widget.controller.copy
+                                      .localized('保存中', 'Saving'),
+                                  width: condensed ? 128 : 144,
+                                  compact: condensed,
+                                ),
+                                _HeroButton(
+                                  label: '询问 AI',
+                                  icon: Icons.auto_awesome_rounded,
+                                  onTap: widget.onAskAi,
+                                  light: true,
+                                  compact: condensed,
+                                  width: condensed ? 120 : 134,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -931,42 +937,58 @@ class _Highlights extends StatelessWidget {
 }
 
 class _HeroMetric extends StatelessWidget {
-  const _HeroMetric(this.icon, this.value, this.label);
+  const _HeroMetric(
+    this.icon,
+    this.value,
+    this.label, {
+    required this.width,
+    required this.compact,
+  });
   final IconData icon;
   final String value;
   final String label;
+  final double width;
+  final bool compact;
   @override
-  Widget build(BuildContext context) => Container(
-    constraints: const BoxConstraints(minWidth: 105),
-    margin: const EdgeInsets.only(right: 10),
-    padding: const EdgeInsets.only(right: 10),
-    decoration: const BoxDecoration(
-      border: Border(right: BorderSide(color: Color(0x55FFFFFF))),
-    ),
-    child: Row(
-      children: [
-        Icon(icon, size: 18, color: Colors.white),
-        const SizedBox(width: 7),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    return Container(
+      width: width,
+      padding: EdgeInsets.only(right: metrics.px(16)),
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: Color(0x55FFFFFF))),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: metrics.px(compact ? 20 : 24), color: Colors.white),
+          SizedBox(width: metrics.px(10)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: metrics.font(compact ? 14 : 16),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Color(0xFFD7CBC3),
+                    fontSize: metrics.font(compact ? 10 : 11),
+                  ),
+                ),
+              ],
             ),
-            Text(
-              label,
-              style: const TextStyle(color: Color(0xFFD7CBC3), fontSize: 9),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _HeroTag extends StatelessWidget {
@@ -997,6 +1019,7 @@ class _HeroButton extends StatefulWidget {
     this.width,
     this.busy = false,
     this.pendingLabel,
+    this.compact = false,
   });
   final String label;
   final IconData icon;
@@ -1005,6 +1028,7 @@ class _HeroButton extends StatefulWidget {
   final String? pendingLabel;
   final bool light;
   final double? width;
+  final bool compact;
   @override
   State<_HeroButton> createState() => _HeroButtonState();
 }
@@ -1014,6 +1038,7 @@ class _HeroButtonState extends State<_HeroButton> {
   bool? _confirmed;
   @override
   Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
     final heart =
         widget.icon == Icons.favorite_rounded ||
         widget.icon == Icons.favorite_border_rounded;
@@ -1037,14 +1062,14 @@ class _HeroButtonState extends State<_HeroButton> {
             hover && !AppMotion.reduced(context) && !widget.busy ? -2 : 0,
             0,
           ),
-          width: widget.width,
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          constraints: BoxConstraints(minWidth: metrics.px(widget.width ?? 0)),
+          height: metrics.px(widget.compact ? 48 : 56),
+          padding: EdgeInsets.symmetric(horizontal: metrics.px(20)),
           decoration: BoxDecoration(
             color: widget.light
                 ? const Color(0xEFFCF7F3)
                 : DesktopColors.orange,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(metrics.radius(12)),
             boxShadow: hover
                 ? const [
                     BoxShadow(
@@ -1068,14 +1093,14 @@ class _HeroButtonState extends State<_HeroButton> {
                         ? FavoriteFeedbackIcon(
                             selected: _confirmed!,
                             color: color,
-                            size: 18,
+                            size: metrics.px(24),
                           )
-                        : Icon(widget.icon, color: color, size: 18),
+                        : Icon(widget.icon, color: color, size: metrics.px(24)),
                   ),
                   if (widget.busy)
                     SizedBox(
-                      width: 18,
-                      height: 18,
+                      width: metrics.px(24),
+                      height: metrics.px(24),
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: color,
@@ -1083,7 +1108,7 @@ class _HeroButtonState extends State<_HeroButton> {
                     ),
                 ],
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: metrics.px(10)),
               Text(
                 widget.busy
                     ? widget.pendingLabel ?? widget.label
@@ -1091,7 +1116,7 @@ class _HeroButtonState extends State<_HeroButton> {
                 style: TextStyle(
                   color: color,
                   fontWeight: FontWeight.w800,
-                  fontSize: 12,
+                  fontSize: metrics.font(widget.compact ? 14 : 16),
                 ),
               ),
             ],
@@ -1121,35 +1146,6 @@ class _RoundIcon extends StatelessWidget {
         foregroundColor: Colors.white,
       ),
       icon: Icon(icon),
-    ),
-  );
-}
-
-class _GalleryArrow extends StatelessWidget {
-  const _GalleryArrow({
-    super.key,
-    required this.tooltip,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: tooltip,
-    child: IconButton(
-      onPressed: onTap,
-      icon: Icon(icon, size: 30),
-      color: Colors.white,
-      style: IconButton.styleFrom(
-        backgroundColor: const Color(0x99000000),
-        minimumSize: const Size.square(48),
-        maximumSize: const Size.square(48),
-        padding: EdgeInsets.zero,
-      ),
     ),
   );
 }

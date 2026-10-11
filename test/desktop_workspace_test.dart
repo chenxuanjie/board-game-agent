@@ -265,6 +265,7 @@ Future<void> _mount(
   AppController controller,
   Size size, {
   VoidCallback? onOpenAbout,
+  VoidCallback? onCheckUpdates,
   bool settle = true,
   WebDavSettingsController? webDavSettingsController,
   TextScaler textScaler = TextScaler.noScaling,
@@ -285,7 +286,7 @@ Future<void> _mount(
           controller: controller,
           webDavSettingsController: webDavSettingsController,
           onOpenAbout: onOpenAbout ?? () {},
-          enableNativeWindowControls: false,
+          onCheckUpdates: onCheckUpdates,
         ),
       ),
     ),
@@ -319,12 +320,21 @@ class _SuccessfulWebDavConnectionTester implements WebDavConnectionTester {
       const WebDavConnectionTestResult.success();
 }
 
-Future<void> _navigate(WidgetTester tester, String label) async {
+Future<void> _navigate(
+  WidgetTester tester,
+  String label, {
+  bool settle = true,
+}) async {
   if (find.byType(DesktopSidebar).evaluate().isEmpty) {
     await tester.tap(
       find.byKey(const ValueKey<String>('desktop-open-navigation')),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
   }
   final textItem = find.descendant(
     of: find.byType(DesktopSidebar),
@@ -335,7 +345,13 @@ Future<void> _navigate(WidgetTester tester, String label) async {
   } else {
     await tester.tap(find.byTooltip(label));
   }
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump(const Duration(milliseconds: 300));
+  }
 }
 
 Future<AppController> _createController({
@@ -365,6 +381,15 @@ class _UnavailableTtsService extends TtsService {
 }
 
 class _InMemoryPreferencesService extends PreferencesService {
+  final gallerySelections = <String, String>{};
+  @override
+  Future<Map<String, String>> loadGameGallerySelections() async =>
+      Map.of(gallerySelections);
+  @override
+  Future<void> saveGameGallerySelection(String slug, String path) async {
+    gallerySelections[slug] = path;
+  }
+
   String? gameVoteCache;
 
   @override

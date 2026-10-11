@@ -1,6 +1,42 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  testWidgets('detail reopens on the saved third image', (tester) async {
+    final controller = context.controller;
+    final game = controller.games.firstWhere((g) => g.slug == 'tulip_bubble');
+    controller.selectGame(game.id);
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    Widget detail() => MaterialApp(
+      theme: buildDesktopTheme(),
+      home: DesktopWorkspace(
+        controller: controller,
+        initialPage: 'gameDetail',
+        onOpenAbout: () {},
+      ),
+    );
+    await tester.pumpWidget(detail());
+    await tester.pumpAndSettle();
+    final third = find.byKey(
+      const ValueKey('desktop-detail-gallery-thumbnail-2'),
+    );
+    await tester.ensureVisible(third);
+    await tester.pumpAndSettle();
+    await tester.tap(third);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('desktop-detail-gallery-image-2')),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(detail());
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('desktop-detail-gallery-image-2')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
   for (final size in [
     const Size(1280, 800),
     const Size(1920, 1080),
@@ -906,7 +942,10 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(sidebarArtRect.left, closeTo(sidebarRect.left, 0.1));
     expect(sidebarArtRect.right, closeTo(sidebarRect.right - 1, 0.1));
     expect(sidebarArtRect.bottom, closeTo(sidebarRect.bottom, 0.1));
-    expect(settingsItemRect.bottom, lessThanOrEqualTo(sidebarArtRect.top));
+    expect(
+      settingsItemRect.bottom,
+      lessThanOrEqualTo(sidebarArtRect.top + sidebarArtRect.height * .08),
+    );
     expect(
       sidebarArtRect.width / sidebarArtRect.height,
       closeTo(940 / 1672, 0.005),
@@ -916,6 +955,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       'sidebar_library.png',
       'sidebar_ai.png',
       'sidebar_likes.png',
+      'sidebar_ranking.png',
       'sidebar_settings.png',
     ]) {
       final icon = find.byKey(ValueKey<String>('desktop-sidebar-icon-$asset'));
@@ -930,8 +970,95 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
+  for (final spec in [
+    (size: const Size(1280, 800), scale: 1.0),
+    (size: const Size(1586, 992), scale: 1.0),
+    (size: const Size(600, 800), scale: 1.5),
+    (size: const Size(1100, 800), scale: 2.0),
+  ]) {
+    testWidgets(
+      'detail hero controls stay readable at ${spec.size} with ${spec.scale} text',
+      (tester) async {
+        final controller = context.controller;
+        final game = controller.games.firstWhere(
+          (game) => game.slug.contains('carcassonne'),
+        );
+        controller.selectGame(game.id);
+        await tester.binding.setSurfaceSize(spec.size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: const ValueKey('desktop-test-capture'),
+            child: MaterialApp(
+              theme: buildDesktopTheme(),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(spec.scale)),
+                child: child!,
+              ),
+              home: DesktopWorkspace(
+                controller: controller,
+                initialPage: 'gameDetail',
+                onOpenAbout: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('desktop-detail-gallery-previous')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('desktop-detail-gallery-next')),
+          findsNothing,
+        );
+        final title = tester.widget<Text>(
+          find.byKey(const ValueKey('desktop-detail-title')),
+        );
+        expect(title.style!.fontSize!, greaterThanOrEqualTo(34));
+        expect(title.style!.height, 1.15);
+        final favorite = find.byKey(
+          const ValueKey('desktop-detail-favorite-button'),
+        );
+        expect(tester.getSize(favorite).height, greaterThanOrEqualTo(48));
+        expect(tester.takeException(), isNull);
+        await _captureDesktopTypography(
+          tester,
+          'detail-${spec.size.width.toInt()}-${spec.scale}',
+        );
+        if (spec.scale == 1) {
+          final thumbnail = find.byKey(
+            const ValueKey('desktop-detail-gallery-thumbnail-1'),
+          );
+          await tester.ensureVisible(thumbnail);
+          await tester.pumpAndSettle();
+          await tester.tap(thumbnail);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('desktop-detail-gallery-image-1')),
+            findsOneWidget,
+          );
+          Focus.of(
+            tester.element(find.byKey(const ValueKey('desktop-detail-title'))),
+          ).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
+            findsOneWidget,
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final size in const [
     Size(1280, 800),
+    Size(1920, 1080),
     Size(1100, 700),
     Size(720, 700),
     Size(600, 700),
@@ -946,12 +1073,39 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
       expect(find.byType(DesktopGameDetailPane), findsOneWidget);
       expect(
+        find.byKey(const ValueKey('desktop-home-search-field')),
+        findsNothing,
+      );
+      expect(find.text('搜索桌游 / 机制 / 作者'), findsNothing);
+      expect(
         find.byKey(const ValueKey<String>('desktop-game-detail')),
         findsOneWidget,
       );
       expect(find.text(game.title), findsWidgets);
       expect(find.text(game.subtitle), findsWidgets);
       expect(find.text('询问 AI'), findsOneWidget);
+      final heroSize = tester.getSize(
+        find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
+      );
+      expect(
+        heroSize.width,
+        tester.getSize(find.byType(DesktopGameDetailPane)).width,
+      );
+      if (heroSize.width >= 760) {
+        expect(heroSize.width / heroSize.height, closeTo(16 / 9, .001));
+      }
+      final thumbnailRect = tester.getRect(
+        find.byKey(const ValueKey('desktop-detail-gallery-thumbnail-0')),
+      );
+      final heroRect = tester.getRect(
+        find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
+      );
+      expect(thumbnailRect.size, const Size(146, 88));
+      expect(thumbnailRect.top, closeTo(heroRect.bottom + 10, .01));
+      expect(
+        tester.getRect(find.byKey(const ValueKey('detail-tab-1'))).top,
+        greaterThan(thumbnailRect.bottom),
+      );
       expect(tester.takeException(), isNull);
 
       await tester.ensureVisible(

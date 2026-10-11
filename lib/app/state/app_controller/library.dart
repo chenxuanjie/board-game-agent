@@ -30,6 +30,7 @@ extension AppLibraryController on AppController {
   /// callers so opening the page and pressing refresh cannot race each other.
   /// Existing cached rows stay visible while this network request runs.
   Future<void> refreshLibraryResources({bool force = false}) {
+    if (!_remoteAssetService.accessAllowed) return Future<void>.value();
     final Future<void>? active = _libraryRefreshFuture;
     if (active != null) {
       return active;
@@ -61,6 +62,7 @@ extension AppLibraryController on AppController {
   }
 
   Future<void> _refreshLibraryResources(int generation) async {
+    final identityEpoch = _identityScopeEpoch;
     await _ensureLibraryCacheLoaded();
     if (generation != _libraryRefreshGeneration) {
       return;
@@ -104,7 +106,7 @@ extension AppLibraryController on AppController {
           : LibraryLoadState.success;
       _libraryLoadError = index.warning;
       if (index.failedSlugs.isNotEmpty && index.warning != null) {
-        _recordLibraryLoadFailure(index.warning!);
+        _recordLibraryLoadFailure(index.warning!, identityEpoch: identityEpoch);
       }
     } catch (error) {
       if (generation != _libraryRefreshGeneration) {
@@ -115,7 +117,10 @@ extension AppLibraryController on AppController {
       }
       _libraryLoadState = LibraryLoadState.failure;
       _libraryLoadError = _safeStatusError(error);
-      _recordLibraryLoadFailure(_libraryLoadError!);
+      _recordLibraryLoadFailure(
+        _libraryLoadError!,
+        identityEpoch: identityEpoch,
+      );
       debugPrint('[assets] desktop library index unavailable: $error');
     }
     _notifyListeners();

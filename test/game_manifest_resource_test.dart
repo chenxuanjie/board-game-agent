@@ -181,12 +181,17 @@ void main() {
   });
 
   test('all bundled game pairs parse through the runtime models', () {
-    final Directory gamesDirectory = Directory('assets/games');
-    final List<Directory> gameDirectories =
-        gamesDirectory.listSync().whereType<Directory>().toList()
-          ..sort((a, b) => a.path.compareTo(b.path));
-
-    expect(gameDirectories.length, 22);
+    // Only catalog entries are bundled runtime games. Resource preparation may
+    // create additional, unfinished directories that are not yet in the catalog.
+    final catalog = GameCatalogManifest.fromJson(
+      jsonDecode(File('assets/catalog.json').readAsStringSync())
+          as Map<String, dynamic>,
+    );
+    expect(catalog.games, isNotEmpty);
+    final gameDirectories = [
+      for (final entry in catalog.games)
+        Directory('assets/games/${entry.slug}'),
+    ];
     for (final Directory directory in gameDirectories) {
       final String gameJson = File(
         '${directory.path}${Platform.pathSeparator}game.json',
@@ -201,7 +206,10 @@ void main() {
         ),
       );
 
-      expect(manifest.slug, directory.path.split(Platform.pathSeparator).last);
+      expect(
+        manifest.slug,
+        directory.path.replaceAll('\\', '/').split('/').last,
+      );
       expect(manifest.resources, isNotEmpty);
       expect(manifest.toGameInfo(AppLanguage.zhHans).slug, manifest.slug);
       expect(manifest.toGameInfo(AppLanguage.en).slug, manifest.slug);

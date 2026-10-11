@@ -7,6 +7,9 @@ import '../../core/theme/app_motion.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
+import '../../core/models/app_activity.dart';
+import '../shared/library_update_review.dart';
+import '../shared/game_ranking_screen.dart';
 import '../../app/state/app_controller.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 import 'settings_screen.dart';
@@ -21,6 +24,7 @@ import 'assistant_chat_screen.dart';
 import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_cover_motion.dart';
+import '../shared/assistant/conversation_drawer.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
 class HomeScreen extends StatefulWidget {
@@ -39,7 +43,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _tab = 0;
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
@@ -48,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkLibraryUpdate());
   }
@@ -67,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
     super.dispose();
   }
@@ -90,6 +96,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     onOpenGame: _openGame,
                     onOpenConversation: _openConversation,
                     onOpenAi: _openAi,
+                    onRankings: () => Navigator.of(
+                      context,
+                    ).pushNamed(GameRankingScreen.routeName),
                     onFavorites: () => _openSearch(favoritesOnly: true),
                     onSettings: _openSettings,
                     onActivities: _openActivities,
@@ -111,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onOpenGame: _openGame,
                     onFavorites: () => _openSearch(favoritesOnly: true),
                     onRecentAll: () => _openSearch(recentOnly: true),
+                    onConversations: _openConversations,
                     onExplore: _openSearch,
                     onActivities: _openActivities,
                     onSettings: _openSettings,
@@ -128,6 +138,9 @@ class _HomeScreenState extends State<HomeScreen> {
             widget.controller.openGlobalAssistant();
           }
           setState(() => _tab = index);
+          if (index == 1 && widget.controller.libraryAccessAllowed) {
+            unawaited(widget.controller.checkForLibraryUpdatesQuick());
+          }
         },
         type: BottomNavigationBarType.fixed,
         backgroundColor: AppPalette.of(context).surface,
@@ -199,6 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openConversation(AiConversation conversation) {
+    if (!mounted) return;
     widget.controller.selectConversation(conversation.id);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -209,6 +223,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ? widget.controller.copy.globalAiTitle
               : null,
         ),
+      ),
+    );
+  }
+
+  void _openConversations() {
+    unawaited(
+      showConversationDrawer(
+        context,
+        controller: widget.controller,
+        onOpenConversation: _openConversation,
       ),
     );
   }
@@ -262,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       sheetAnimationStyle: AppMotion.panelStyle(context),
       showDragHandle: true,
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
           child: Column(
@@ -292,6 +316,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemBuilder: (_, index) => ListTile(
                       title: Text(activities[index].title),
                       subtitle: Text(activities[index].message),
+                      trailing:
+                          activities[index].kind ==
+                              AppActivityKind.libraryUpdate
+                          ? const Icon(Icons.chevron_right_rounded)
+                          : null,
+                      onTap:
+                          activities[index].kind ==
+                              AppActivityKind.libraryUpdate
+                          ? () {
+                              Navigator.of(sheetContext).pop();
+                              unawaited(
+                                _showLibraryUpdateDialog(
+                                  fromNotification: true,
+                                ),
+                              );
+                            }
+                          : null,
                     ),
                   ),
                 ),
@@ -310,64 +351,46 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _checkLibraryUpdate() {
-    if (!mounted || _showingLibraryUpdateDialog) return;
+    if (!mounted ||
+        _showingLibraryUpdateDialog ||
+        !widget.controller.shouldShowLibraryUpdatePrompt() ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        (WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed)) {
+      return;
+    }
     final next = widget.controller.pendingLibraryUpdate;
     if (next == null || identical(next, _lastSeenUpdate)) return;
-    _lastSeenUpdate = next;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _showLibraryUpdateDialog(),
     );
   }
 
-  Future<void> _showLibraryUpdateDialog() async {
+  Future<void> _showLibraryUpdateDialog({bool fromNotification = false}) async {
     if (!mounted ||
         _showingLibraryUpdateDialog ||
-        !widget.controller.shouldShowLibraryUpdatePrompt()) {
+        widget.controller.appUpdateInProgress ||
+        (!fromNotification &&
+            WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) ||
+        (!fromNotification && ModalRoute.of(context)?.isCurrent != true) ||
+        (!fromNotification &&
+            !widget.controller.shouldShowLibraryUpdatePrompt())) {
       return;
     }
+    _lastSeenUpdate = widget.controller.pendingLibraryUpdate;
     _showingLibraryUpdateDialog = true;
-    final copy = widget.controller.copy;
-    final update = widget.controller.pendingLibraryUpdate;
-    final shouldUpdate = await showDialog<bool>(
-      context: context,
-      animationStyle: AppMotion.menuStyle(context),
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: Text(copy.libraryUpdateTitle),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(copy.libraryUpdateMessage),
-              if (update != null && update.changedGameTitles.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(update.changedGameTitles.take(5).join('、')),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(copy.updateLater),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(copy.updateNow),
-          ),
-        ],
-      ),
-    );
-    _showingLibraryUpdateDialog = false;
-    if (!mounted) return;
-    if (shouldUpdate == true) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(copy.updatingNow)));
-      await widget.controller.applyPendingLibraryUpdate();
-    } else {
-      widget.controller.dismissPendingLibraryUpdatePrompt();
+    try {
+      await showLibraryUpdateReview(context, widget.controller);
+    } finally {
+      _showingLibraryUpdateDialog = false;
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkLibraryUpdate();
   }
 }

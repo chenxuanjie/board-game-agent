@@ -38,6 +38,7 @@ class _LibraryResourceDocumentScreenState
   }
 
   Future<Object?> _loadContent() async {
+    if (!widget.controller.libraryAccessAllowed) return null;
     if (widget.document.renderType == DocumentRenderType.image) {
       // Desktop caches remote images, while bundled fallback images can be
       // rendered directly from Flutter's asset bundle when no remote copy is
@@ -95,6 +96,11 @@ class _LibraryResourceDocumentScreenState
                               Object error,
                               StackTrace? stack,
                             ) => Text('图片加载失败：$error'),
+                      )
+                    : path.startsWith('data:')
+                    ? Image.memory(
+                        Uri.parse(path).data!.contentAsBytes(),
+                        fit: BoxFit.contain,
                       )
                     : Image.file(
                         File(path),

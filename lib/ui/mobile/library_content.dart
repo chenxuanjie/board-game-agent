@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
+import '../shared/library_check_progress.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/ui_tokens.dart';
@@ -195,6 +196,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                 ),
               ),
             ),
+            LibraryCheckProgress(controller: widget.controller),
             SizedBox(
               height: 44,
               child: ListView.separated(

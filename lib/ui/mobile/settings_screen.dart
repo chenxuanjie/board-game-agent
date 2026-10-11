@@ -2,7 +2,6 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
-import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -14,10 +13,13 @@ import '../../core/theme/palette_registry.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/localization/app_copy.dart';
-import '../shared/resource_source_list.dart';
+import '../shared/resource_access_summary.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
+import '../shared/library_check_actions.dart';
 import '../../features/settings/models/configuration_transfer.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 
@@ -57,7 +59,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       _selectedModel = config.model.isEmpty ? null : config.model;
       _selectedReasoningEffort = config.reasoningEffort;
       _selectedResponseSpeed = config.responseSpeed;
-      _assetSourceConfigs = widget.controller.assetSourceConfigs;
       _lastTestMessage = null;
     });
   }
@@ -72,28 +73,20 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     if (_transfer.webDav == null || _isTestingAssets || _transfer.isBusy) {
       return;
     }
-    final saved = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) =>
             ResourceConnectionScreen(service: _transfer, source: source),
       ),
     );
-    if (saved == true && mounted) {
+    if (mounted) {
       _importApplied();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.controller.copy.localized('连接设置已保存', 'Connection saved'),
-          ),
-        ),
-      );
     }
   }
 
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _keyController;
-  late List<AssetSourceConfig> _assetSourceConfigs;
   late _AiPresetOption _selectedPreset;
   String? _selectedModel;
   AiReasoningEffort _selectedReasoningEffort = AiReasoningEffort.automatic;
@@ -121,7 +114,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     _selectedModel = config.model.trim().isEmpty ? null : config.model.trim();
     _selectedReasoningEffort = config.reasoningEffort;
     _selectedResponseSpeed = config.responseSpeed;
-    _assetSourceConfigs = widget.controller.assetSourceConfigs;
   }
 
   @override
@@ -177,6 +169,15 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
+                      if (AccountScope.maybeOf(context) != null) ...[
+                        _SectionCard(
+                          palette: palette,
+                          child: AccountEntry(
+                            title: copy.localized('账户', 'Account'),
+                          ),
+                        ),
+                        const SizedBox(height: UiTokens.sectionGap),
+                      ],
                       _SectionTitle(
                         title: copy.languageTitle,
                         icon: Icons.translate_rounded,
@@ -266,181 +267,83 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      _SectionCard(
-                        palette: palette,
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                16,
-                                16,
-                                10,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.storage_rounded,
-                                    color: palette.primary,
-                                    size: 22,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      copy.assetPriorityTitle,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
+                      if (AccountScope.maybeOf(context) == null)
+                        _SectionCard(
+                          palette: palette,
+                          padding: EdgeInsets.zero,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  16,
+                                  16,
+                                  10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.storage_rounded,
+                                      color: palette.primary,
+                                      size: 22,
                                     ),
-                                  ),
-                                  if (_transfer.webDav != null)
-                                    _transferMenu(ConfigurationScope.webDav),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: ResourceSourceList(
-                                sources: _assetSourceConfigs,
-                                statuses: controller.assetSourceStatuses,
-                                copy: copy,
-                                checking: _isTestingAssets,
-                                onEdit: _transfer.webDav == null
-                                    ? null
-                                    : _editResourceConnection,
-                              ),
-                            ),
-                            if (_transfer.webDav != null)
-                              ListTile(
-                                key: const ValueKey(
-                                  'mobile-settings-webdav-connection',
-                                ),
-                                leading: Icon(
-                                  Icons.cloud_outlined,
-                                  color: palette.primary,
-                                ),
-                                title: Text(
-                                  copy.localized(
-                                    'WebDAV 连接设置',
-                                    'WebDAV connection',
-                                  ),
-                                ),
-                                trailing: const Icon(
-                                  Icons.chevron_right_rounded,
-                                ),
-                                onTap: _editResourceConnection,
-                              ),
-                            ExpansionTile(
-                              key: const ValueKey('mobile-settings-sources'),
-                              maintainState: true,
-                              shape: const Border(),
-                              collapsedShape: const Border(),
-                              leading: Icon(
-                                Icons.swap_vert_rounded,
-                                color: palette.primary,
-                              ),
-                              title: Text(
-                                copy.localized('调整优先级', 'Change priority'),
-                              ),
-                              childrenPadding: const EdgeInsets.fromLTRB(
-                                16,
-                                0,
-                                16,
-                                16,
-                              ),
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    ReorderableListView.builder(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      itemCount: _assetSourceConfigs.length,
-                                      onReorder: _reorderSources,
-                                      itemBuilder: (context, index) {
-                                        final item = _assetSourceConfigs[index];
-                                        return Container(
-                                          key: ValueKey(item.id),
-                                          margin: const EdgeInsets.only(
-                                            bottom: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: palette.surfaceVariant,
-                                            borderRadius: BorderRadius.circular(
-                                              UiTokens.groupRadius,
-                                            ),
-                                          ),
-                                          child: ListTile(
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 14,
-                                                  vertical: 8,
-                                                ),
-                                            leading: CircleAvatar(
-                                              backgroundColor: palette.primary
-                                                  .withValues(alpha: 0.16),
-                                              foregroundColor: palette.primary,
-                                              child: Text('${index + 1}'),
-                                            ),
-                                            title: Text(
-                                              item.name,
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.titleMedium,
-                                            ),
-                                            subtitle: Text(
-                                              item.address,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodyMedium
-                                                  ?.copyWith(
-                                                    color: palette.textPrimary
-                                                        .withValues(
-                                                          alpha: 0.72,
-                                                        ),
-                                                  ),
-                                            ),
-                                            trailing:
-                                                ReorderableDragStartListener(
-                                                  index: index,
-                                                  child: Icon(
-                                                    Icons.drag_handle_rounded,
-                                                    color: palette.textPrimary
-                                                        .withValues(
-                                                          alpha: 0.72,
-                                                        ),
-                                                  ),
-                                                ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: OutlinedButton(
-                                        onPressed: _isTestingAssets
-                                            ? null
-                                            : _testAssets,
-                                        child: Text(
-                                          _isTestingAssets
-                                              ? '...'
-                                              : copy.assetTest,
-                                        ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        copy.assetPriorityTitle,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
                                       ),
                                     ),
+                                    if (_transfer.webDav != null)
+                                      _transferMenu(ConfigurationScope.webDav),
                                   ],
                                 ),
-                              ],
-                            ),
-                          ],
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: ResourceAccessSummary(
+                                  controller: controller,
+                                  onReorder: _reorderSources,
+                                  onEdit: _transfer.webDav == null
+                                      ? null
+                                      : _editResourceConnection,
+                                ),
+                              ),
+                              if (_transfer.webDav != null)
+                                ListTile(
+                                  key: const ValueKey(
+                                    'mobile-settings-webdav-connection',
+                                  ),
+                                  leading: Icon(
+                                    Icons.cloud_outlined,
+                                    color: palette.primary,
+                                  ),
+                                  title: Text(
+                                    copy.localized(
+                                      '账号与连接',
+                                      'Account & connections',
+                                    ),
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.chevron_right_rounded,
+                                  ),
+                                  onTap: _editResourceConnection,
+                                ),
+                              TextButton.icon(
+                                onPressed: _isTestingAssets
+                                    ? null
+                                    : _testAssets,
+                                icon: const Icon(Icons.network_check_rounded),
+                                label: Text(copy.assetTest),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 12),
                       SettingsSectionFocus(
                         reveal: widget.focusAiSettings,
@@ -677,6 +580,16 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                             ],
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 24),
+                      _SectionTitle(
+                        title: copy.localized('桌游检查', 'Game library checks'),
+                        icon: Icons.fact_check_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        child: LibraryCheckActions(controller: controller),
                       ),
                       const SizedBox(height: 24),
                       _SectionTitle(
@@ -972,101 +885,67 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   }
 
   Future<void> _reorderSources(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) {
-      newIndex -= 1;
+    if (_isTestingAssets) return;
+    if (newIndex > oldIndex) newIndex--;
+    final next = List<AssetSourceConfig>.from(
+      widget.controller.assetSourceConfigs,
+    );
+    next.insert(newIndex, next.removeAt(oldIndex));
+    setState(() => _isTestingAssets = true);
+    try {
+      final account = AccountScope.maybeOf(context);
+      if (account?.configuration != null) {
+        final config = account!.configuration!;
+        await account.saveConfiguration(
+          config.edited(
+            servers: next
+                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
+                .toList(),
+            folder: config.storageFolder,
+          ),
+        );
+        if (account.error != null) throw StateError('Connection pending');
+      } else {
+        await widget.controller.saveAssetSourceConfigs(next);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.localized(
+                '顺序保存失败，请重试',
+                'Could not save order. Retry',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingAssets = false);
     }
-    final next = List<AssetSourceConfig>.from(_assetSourceConfigs);
-    final item = next.removeAt(oldIndex);
-    next.insert(newIndex, item);
-    setState(() {
-      _assetSourceConfigs = next;
-    });
-    await widget.controller.saveAssetSourceConfigs(next);
   }
 
   Future<void> _testAssets() async {
+    if (_isTestingAssets) return;
     setState(() => _isTestingAssets = true);
     try {
       await widget.controller.refreshAssetAccessStatus();
-      if (!mounted) {
-        return;
-      }
-      final statuses = widget.controller.assetSourceStatuses;
-      final lines = _assetSourceConfigs
-          .map((source) {
-            final status = statuses[source.id];
-            final stateLabel = _stateLabel(
-              status?.state,
-              widget.controller.copy,
-            );
-            return '${source.name}: $stateLabel${status == null ? '' : ' · ${status.message}'}';
-          })
-          .join('\n');
-      final hasFailure = _assetSourceConfigs.any((source) {
-        final status = statuses[source.id];
-        return status == null || status.state == ConnectivityState.failure;
-      });
-      final hasSuccess = _assetSourceConfigs.any((source) {
-        final status = statuses[source.id];
-        return status?.state == ConnectivityState.success;
-      });
-      showDialog<void>(
-        context: context,
-        animationStyle: AppMotion.menuStyle(context),
-        builder: (context) {
-          final palette = AppPalette.of(context);
-          return AlertDialog(
-            title: Text(widget.controller.copy.assetStatusDialogTitle),
-            content: Text(
-              lines,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: palette.textPrimary.withValues(alpha: 0.88),
-                height: 1.5,
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(widget.controller.copy.dialogClose),
-              ),
-            ],
-          );
-        },
-      );
+      if (!mounted) return;
+      final available =
+          widget.controller.assetConnectivityStatus.state ==
+          ConnectivityState.success;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(widget.controller.copy.assetTestDone),
-          backgroundColor: hasFailure
-              ? (hasSuccess
-                    ? AppPalette.of(context).warning
-                    : AppPalette.of(context).error)
-              : AppPalette.of(context).success,
+          content: Text(widget.controller.assetConnectivityStatus.message),
+          backgroundColor: available
+              ? AppPalette.of(context).success
+              : AppPalette.of(context).error,
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isTestingAssets = false);
-      }
+      if (mounted) setState(() => _isTestingAssets = false);
     }
-  }
-
-  String _stateLabel(ConnectivityState? state, AppCopy copy) {
-    if (state == null) {
-      return copy.localized('未检测', 'Not checked');
-    }
-    if (state == ConnectivityState.success) {
-      return copy.localized('成功', 'Available');
-    }
-    if (state == ConnectivityState.failure) {
-      return copy.localized('失败', 'Failed');
-    }
-    if (state == ConnectivityState.warning) {
-      return copy.localized('受限', 'Limited');
-    }
-    if (state == ConnectivityState.loading) {
-      return copy.localized('加载中', 'Checking');
-    }
-    return copy.localized('未检测', 'Not checked');
   }
 }
 

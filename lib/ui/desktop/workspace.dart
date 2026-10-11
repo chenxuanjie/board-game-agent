@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../core/models/app_activity.dart';
+import '../shared/library_update_review.dart';
+import '../shared/library_check_progress.dart';
 import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
@@ -24,7 +24,6 @@ import 'settings_pane.dart';
 import 'sidebar.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
-import 'window_controls.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/game_cover_motion.dart';
@@ -35,16 +34,16 @@ class DesktopWorkspace extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.webDavSettingsController,
     this.transferService,
-    this.enableNativeWindowControls = true,
     this.initialPage = 'home',
   });
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final WebDavSettingsController? webDavSettingsController;
   final SettingsTransferService? transferService;
-  final bool enableNativeWindowControls;
   final String initialPage;
   @override
   State<DesktopWorkspace> createState() => _DesktopWorkspaceState();
@@ -79,12 +78,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     'games',
     'assistant',
     'favorites',
+    'rankings',
     'settings',
   ];
-  bool get _native =>
-      widget.enableNativeWindowControls &&
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.windows;
   bool get _featurePage => ['assistant', 'library', 'rankings'].contains(_page);
 
   @override
@@ -94,6 +90,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.addListener(_refresh);
     _search.addListener(_refreshSearch);
     _searchFocus.addListener(_handleSearchFocusChanged);
+    if (_page == 'games') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _page == 'games') _checkGameUpdates();
+      });
+    }
   }
 
   void _refresh() {
@@ -128,6 +129,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       }
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (page == 'games') _checkGameUpdates();
+  }
+
+  void _checkGameUpdates() {
+    if (widget.controller.libraryAccessAllowed) {
+      unawaited(widget.controller.checkForLibraryUpdatesQuick());
+    }
   }
 
   void _setLibraryFilter(DesktopLibraryResourceType? filter) {
@@ -198,7 +206,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       MaterialPageRoute<void>(
         builder: (pageContext) => DesktopNationalDayPage(
           controller: widget.controller,
-          enableNativeWindowControls: _native,
           onOpenGame: (game) {
             Navigator.of(pageContext).pop();
             _game(game);
@@ -337,6 +344,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     closePanel?.call();
     unawaited(widget.controller.markActivityRead(activity.id));
     activity = widget.controller.resolveActivityTarget(activity);
+    if (activity.kind == AppActivityKind.libraryUpdate) {
+      unawaited(showLibraryUpdateReview(context, widget.controller));
+      return;
+    }
     if (activity.kind == AppActivityKind.libraryLoadFailed) {
       _navigate('library');
       return;
@@ -418,14 +429,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     unawaited(widget.controller.removeSearch(value));
   }
 
-  void _find() {
-    if (_page == 'gameDetail') setState(() => _page = 'home');
-    _openSearch();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocus.requestFocus();
-    });
-  }
-
   void _submitSearch(String value) {
     _recordSearch(value);
     _openSearch();
@@ -460,16 +463,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
         final metrics = DesktopResponsive.metricsFor(
           Size(constraints.maxWidth, constraints.maxHeight),
         );
-        final sidebarWidth = narrow
-            ? 0.0
-            : (compact
-                  ? DesktopResponsive.compactSidebarWidth
-                  : DesktopResponsive.fullSidebarWidth);
         // The Windows shell uses the full available window width. DesktopMetrics
         // still scale visual dimensions, but no longer cap the dashboard canvas
         // at 1280 * scale, which previously created internal dead space.
         final canvasWidth = constraints.maxWidth;
-        final dragLeft = narrow ? 0.0 : metrics.px(sidebarWidth);
         final canvas = SizedBox(
           width: canvasWidth,
           height: constraints.maxHeight,
@@ -488,37 +485,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             ],
           ),
         );
-        Widget body = narrow
+        final body = narrow
             ? canvas
             : Align(alignment: Alignment.topCenter, child: canvas);
-        if (_native) {
-          body = DragToResizeArea(
-            resizeEdgeSize: 6,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: dragLeft,
-                  right: metrics.px(150),
-                  top: 0,
-                  height: metrics.px(45),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onPanStart: (_) => windowManager.startDragging(),
-                    onDoubleTap: () async {
-                      if (await windowManager.isMaximized()) {
-                        await windowManager.unmaximize();
-                      } else {
-                        await windowManager.maximize();
-                      }
-                    },
-                  ),
-                ),
-                body,
-                const Positioned(top: 0, right: 0, child: WindowControls()),
-              ],
-            ),
-          );
-        }
         return DesktopMetricsScope(
           metrics: metrics,
           child: Scaffold(
@@ -563,6 +532,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_page != 'gameDetail') _topBar(compact: compact, narrow: narrow),
+        if (_page == 'games')
+          LibraryCheckProgress(controller: widget.controller),
         Expanded(
           child: AppPageTransition(
             key: const ValueKey('desktop-page-transition'),
@@ -674,7 +645,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   ),
                                 },
                                 onBack: () => _navigate(_gameDetailReturnPage),
-                                onSearch: _find,
                                 onOpenRules: () =>
                                     _openRules(widget.controller.selectedGame),
                                 onAskAi: () =>
@@ -689,6 +659,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                 webDavSettingsController:
                                     widget.webDavSettingsController,
                                 onOpenAbout: widget.onOpenAbout,
+                                onCheckUpdates: widget.onCheckUpdates,
                               ),
                               _ => SizedBox(
                                 height: 500,
@@ -812,14 +783,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   );
 
   Widget _topBar({required bool compact, required bool narrow}) {
-    final assistant = _page == 'assistant';
+    final showSearch = _page == 'home' || _page == 'games';
     final metrics = DesktopMetricsScope.of(context);
     return SizedBox(
       key: const ValueKey<String>('desktop-top-bar'),
-      height: metrics.px(assistant ? 72 : 104),
+      height: metrics.px(showSearch ? 104 : 48),
       child: Padding(
         padding: metrics.insets(
-          EdgeInsets.fromLTRB(20, assistant ? 26 : 30, 18, assistant ? 6 : 12),
+          EdgeInsets.fromLTRB(20, showSearch ? 30 : 0, 18, showSearch ? 12 : 0),
         ),
         child: Row(
           children: [
@@ -838,98 +809,104 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               ),
               SizedBox(width: metrics.px(6)),
             ],
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: metrics.px(assistant ? 460 : 780),
-                  ),
-                  child: SizedBox(
-                    key: const ValueKey<String>('desktop-home-search-shell'),
-                    width: double.infinity,
-                    height: metrics.px(assistant ? 40 : 55),
-                    child: AnimatedContainer(
-                      duration: AppMotion.duration(context, AppMotion.feedback),
-                      decoration: BoxDecoration(
-                        color: _searchFocus.hasFocus
-                            ? DesktopColors.card
-                            : const Color(0xFFF8F2EA),
-                        borderRadius: BorderRadius.circular(metrics.radius(26)),
-                        border: Border.all(
-                          color: _searchFocus.hasFocus
-                              ? DesktopColors.orange
-                              : Colors.transparent,
+            if (!showSearch) const Spacer(),
+            if (showSearch)
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: metrics.px(780)),
+                    child: SizedBox(
+                      key: const ValueKey<String>('desktop-home-search-shell'),
+                      width: double.infinity,
+                      height: metrics.px(55),
+                      child: AnimatedContainer(
+                        duration: AppMotion.duration(
+                          context,
+                          AppMotion.feedback,
                         ),
-                        boxShadow: _searchFocus.hasFocus
-                            ? <BoxShadow>[
-                                BoxShadow(
-                                  color: Color(0x14FF6846),
-                                  blurRadius: metrics.px(12),
-                                  offset: Offset(0, metrics.px(2)),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: TapRegion(
-                        groupId: _searchTapRegionGroup,
-                        child: TextField(
-                          key: const ValueKey<String>(
-                            'desktop-home-search-field',
+                        decoration: BoxDecoration(
+                          color: _searchFocus.hasFocus
+                              ? DesktopColors.card
+                              : const Color(0xFFF8F2EA),
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(26),
                           ),
-                          controller: _search,
-                          focusNode: _searchFocus,
-                          onTap: _openSearch,
-                          onSubmitted: _submitSearch,
-                          style: TextStyle(
-                            fontSize: metrics.font(assistant ? 14 : 19),
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF2F2924),
+                          border: Border.all(
+                            color: _searchFocus.hasFocus
+                                ? DesktopColors.orange
+                                : Colors.transparent,
                           ),
-                          decoration: InputDecoration(
-                            filled: false,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            isDense: true,
-                            prefixIcon: Icon(
-                              Icons.search_rounded,
-                              color: DesktopColors.brown,
-                              size: metrics.px(assistant ? 20 : 25),
+                          boxShadow: _searchFocus.hasFocus
+                              ? <BoxShadow>[
+                                  BoxShadow(
+                                    color: Color(0x14FF6846),
+                                    blurRadius: metrics.px(12),
+                                    offset: Offset(0, metrics.px(2)),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: TapRegion(
+                          groupId: _searchTapRegionGroup,
+                          child: TextField(
+                            key: const ValueKey<String>(
+                              'desktop-home-search-field',
                             ),
-                            suffixIcon: _searchOpen
-                                ? IconButton(
-                                    tooltip: _search.text.isEmpty
-                                        ? widget.controller.copy.localized(
-                                            '关闭搜索',
-                                            'Close search',
-                                          )
-                                        : widget.controller.copy.localized(
-                                            '清空搜索',
-                                            'Clear search',
-                                          ),
-                                    onPressed: _search.text.isEmpty
-                                        ? _closeSearch
-                                        : _clearSearch,
-                                    icon: Icon(
-                                      Icons.close_rounded,
-                                      size: metrics.px(20),
-                                      color: DesktopColors.secondaryText,
-                                    ),
-                                  )
-                                : null,
-                            hintText: widget.controller.copy.localized(
-                              '搜索桌游 / 机制 / 作者 / 玩法',
-                              'Search games / mechanics / designers / rules',
+                            controller: _search,
+                            focusNode: _searchFocus,
+                            onTap: _openSearch,
+                            onSubmitted: _submitSearch,
+                            style: TextStyle(
+                              fontSize: metrics.font(19),
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF2F2924),
                             ),
-                            hintStyle: TextStyle(
-                              color: Color(0xFFA89C90),
-                              fontSize: metrics.font(assistant ? 14 : 19),
-                              fontWeight: FontWeight.w400,
-                            ),
-                            contentPadding: EdgeInsets.symmetric(
-                              vertical: metrics.px(assistant ? 9 : 14),
+                            decoration: InputDecoration(
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              isDense: true,
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: DesktopColors.brown,
+                                size: metrics.px(25),
+                              ),
+                              suffixIcon: _searchOpen
+                                  ? IconButton(
+                                      tooltip: _search.text.isEmpty
+                                          ? widget.controller.copy.localized(
+                                              '关闭搜索',
+                                              'Close search',
+                                            )
+                                          : widget.controller.copy.localized(
+                                              '清空搜索',
+                                              'Clear search',
+                                            ),
+                                      onPressed: _search.text.isEmpty
+                                          ? _closeSearch
+                                          : _clearSearch,
+                                      icon: Icon(
+                                        Icons.close_rounded,
+                                        size: metrics.px(20),
+                                        color: DesktopColors.secondaryText,
+                                      ),
+                                    )
+                                  : null,
+                              hintText: widget.controller.copy.localized(
+                                '搜索桌游 / 机制 / 作者 / 玩法',
+                                'Search games / mechanics / designers / rules',
+                              ),
+                              hintStyle: TextStyle(
+                                color: Color(0xFFA89C90),
+                                fontSize: metrics.font(19),
+                                fontWeight: FontWeight.w400,
+                              ),
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: metrics.px(14),
+                              ),
                             ),
                           ),
                         ),
@@ -938,7 +915,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   ),
                 ),
               ),
-            ),
             CompositedTransformTarget(
               link: _activityLink,
               child: Badge(

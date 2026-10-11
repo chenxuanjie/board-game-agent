@@ -37,6 +37,29 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
   @override
   Widget build(BuildContext context) {
     final AppCopy copy = widget.controller.copy;
+    if (!widget.controller.libraryAccessAllowed) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              copy.localized(
+                '登录后使用知识库',
+                'Sign in to use the knowledge library',
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (AccountScope.maybeOf(context)?.supportsSignIn == true)
+              FilledButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(builder: (_) => const AccountScreen()),
+                ),
+                child: Text(copy.localized('登录', 'Sign in')),
+              ),
+          ],
+        ),
+      );
+    }
     if (!widget.controller.hasGames) {
       return _DesktopNoGamesPane(
         controller: widget.controller,

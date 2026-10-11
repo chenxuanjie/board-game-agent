@@ -248,21 +248,27 @@ void main() {
         ),
         'rule',
       );
-      expect(requests.single.url.host, 'dav.example');
+      final authenticated = requests.singleWhere(
+        (r) => r.url.host == 'dav.example',
+      );
       expect(
-        requests.single.headers['Authorization'],
+        authenticated.headers['Authorization'],
         'Basic ${base64Encode(utf8.encode('${_newDav.username}:${_newDav.password}'))}',
+      );
+      expect(
+        requests
+            .where((r) => r.url.host != 'dav.example')
+            .every((r) => !r.headers.containsKey('Authorization')),
+        isTrue,
       );
     },
   );
   testWidgets(
-    'mobile connection edits persist, malformed URLs do not save and failed check remains editable',
+    'resource connection entry opens the shared account page without a separate password form',
     (tester) async {
       final f = _Fixture();
       addTearDown(f.dispose);
       await f.setup();
-      await tester.binding.setSurfaceSize(const Size(320, 820));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.buildTheme(f.app.palette),
@@ -280,79 +286,14 @@ void main() {
       await tester.ensureVisible(entry);
       await tester.tap(entry);
       await tester.pumpAndSettle();
-      final url = find.byKey(const ValueKey('resource-connection-url'));
-      await tester.enterText(url, 'not a url');
-      await tester.tap(find.byKey(const ValueKey('resource-connection-save')));
-      await tester.pumpAndSettle();
-      expect(f.dav.saved.baseUrl, _oldDav.baseUrl);
-      expect(find.text('请输入有效的 HTTP 或 HTTPS 地址'), findsOneWidget);
-      await tester.enterText(url, _newDav.baseUrl);
-      await tester.enterText(
-        find.byKey(const ValueKey('resource-connection-username')),
-        _newDav.username,
-      );
-      await tester.enterText(
+      expect(find.byType(ResourceConnectionScreen), findsOneWidget);
+      expect(find.byKey(const ValueKey('account-screen')), findsOneWidget);
+      expect(
         find.byKey(const ValueKey('resource-connection-password')),
-        _newDav.password,
+        findsNothing,
       );
-      f.tester.fail = true;
-      await tester.tap(find.byKey(const ValueKey('resource-connection-test')));
-      await tester.pumpAndSettle();
-      expect(find.text('连接检测失败，请检查地址与账号后重试。'), findsOneWidget);
-      expect(f.dav.saved.baseUrl, _oldDav.baseUrl);
-      expect(tester.widget<TextFormField>(url).enabled, isTrue);
-      await tester.tap(find.byKey(const ValueKey('resource-connection-save')));
-      await tester.pumpAndSettle();
-      expect(find.byType(ResourceConnectionScreen), findsNothing);
-      expect(f.dav.saved.baseUrl, _newDav.baseUrl);
-      expect(f.dav.saved.mode, ExternalStorageMode.webDav);
-      expect(f.app.assetSourceConfigs.first.testUrl, _newDav.baseUrl);
+      expect(find.text('调整优先级'), findsNothing);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
-  testWidgets(
-    'resource connection fits phone and desktop widths with larger text',
-    (tester) async {
-      final f = _Fixture();
-      addTearDown(f.dispose);
-      await f.setup();
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      for (final width in [320.0, 390.0, 1280.0]) {
-        await tester.binding.setSurfaceSize(Size(width, 820));
-        await tester.pumpWidget(
-          MaterialApp(
-            key: UniqueKey(),
-            theme: AppTheme.buildTheme(f.app.palette),
-            builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(textScaler: const TextScaler.linear(1.5)),
-              child: child!,
-            ),
-            home: ResourceConnectionScreen(
-              service: f.service,
-              source: f.app.assetSourceConfigs.last,
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(
-          tester
-              .widget<TextField>(
-                find.descendant(
-                  of: find.byKey(
-                    const ValueKey('resource-connection-password'),
-                  ),
-                  matching: find.byType(TextField),
-                ),
-              )
-              .obscureText,
-          isTrue,
-        );
-        expect(tester.takeException(), isNull);
-      }
-      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
   test(
