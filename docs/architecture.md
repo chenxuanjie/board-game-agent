@@ -36,6 +36,8 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 
 `AppController` 和部分桌面界面使用 Dart `part` 文件。`part` 只是把一个 library 的代码分到多个文件，仍共享私有状态；不要把文件移动误认为已经拆开职责。大型 AI 流程或页面如需继续拆分，应单独调整状态边界并验证行为，而不是仅按行数分文件。
 
+桌面详情图片位置由 `app/state/app_controller/gallery.dart` 管理，`PreferencesService` 按账号保存，界面通过资源路径恢复，不随数组排序改变所选图片。该本机浏览偏好不进入公共统计或私人云同步，行为与验证见 [详情图片位置](gallery-browsing-position.md)。
+
 测试目前保留 `test/` 下原有的运行入口，已有 `desktop/`、`mobile/` 和 `responses_workflow/` 的 `part` 测试分组。测试用例按原功能继续维护；移动测试入口前应同时检查项目脚本对其路径的引用。
 
 应用动效令牌集中在 `lib/core/theme/app_motion.dart`，主页面过渡在 `lib/ui/shared/app_page_transition.dart`，详见 [应用动效规范](app-motion.md)。页面只挂载一个当前内容，不为淡出保留旧聊天页面。

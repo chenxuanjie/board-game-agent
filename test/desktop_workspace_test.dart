@@ -381,6 +381,15 @@ class _UnavailableTtsService extends TtsService {
 }
 
 class _InMemoryPreferencesService extends PreferencesService {
+  final gallerySelections = <String, String>{};
+  @override
+  Future<Map<String, String>> loadGameGallerySelections() async =>
+      Map.of(gallerySelections);
+  @override
+  Future<void> saveGameGallerySelection(String slug, String path) async {
+    gallerySelections[slug] = path;
+  }
+
   String? gameVoteCache;
 
   @override

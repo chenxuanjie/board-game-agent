@@ -151,6 +151,7 @@ extension AppIdentityScopeController on AppController {
     _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
     _globalUseCurrentGameKnowledge = false;
     _selectedGameId = _games.firstOrNull?.id ?? 'puerto-rico';
+    _gameGallerySelections = {};
     _favoriteStatistics = null;
     _nationalDayList = null;
     _preferencesService = _basePreferencesService.forIdentityScope(userId);
@@ -169,6 +170,7 @@ extension AppIdentityScopeController on AppController {
   }
 
   Future<void> _reloadIdentityPersonalState() async {
+    await _restoreGameGallerySelections();
     _voiceReplyEnabled = await _preferencesService
         .loadVoiceReplyEnabled()
         .timeout(const Duration(seconds: 8));

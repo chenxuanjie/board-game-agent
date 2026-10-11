@@ -64,7 +64,7 @@ class DesktopSidebar extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     // Blend the blank paper margin into the sidebar background.
                     colors: [Colors.transparent, Colors.black, Colors.black],
-                    stops: [0, .08, 1],
+                    stops: [0, .12, 1],
                   ).createShader(bounds),
                   child: Image.asset(
                     'assets/desktop/home/sidebar_castle.png',

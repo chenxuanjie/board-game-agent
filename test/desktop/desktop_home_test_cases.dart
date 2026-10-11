@@ -1,6 +1,42 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  testWidgets('detail reopens on the saved third image', (tester) async {
+    final controller = context.controller;
+    final game = controller.games.firstWhere((g) => g.slug == 'tulip_bubble');
+    controller.selectGame(game.id);
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    Widget detail() => MaterialApp(
+      theme: buildDesktopTheme(),
+      home: DesktopWorkspace(
+        controller: controller,
+        initialPage: 'gameDetail',
+        onOpenAbout: () {},
+      ),
+    );
+    await tester.pumpWidget(detail());
+    await tester.pumpAndSettle();
+    final third = find.byKey(
+      const ValueKey('desktop-detail-gallery-thumbnail-2'),
+    );
+    await tester.ensureVisible(third);
+    await tester.pumpAndSettle();
+    await tester.tap(third);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('desktop-detail-gallery-image-2')),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(detail());
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('desktop-detail-gallery-image-2')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
   for (final size in [
     const Size(1280, 800),
     const Size(1920, 1080),

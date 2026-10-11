@@ -61,6 +61,7 @@ import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 
 part 'app_controller/collections.dart';
+part 'app_controller/gallery.dart';
 part 'app_controller/rankings.dart';
 part 'app_controller/ai_configuration.dart';
 part 'app_controller/assistant.dart';
@@ -247,6 +248,7 @@ class AppController extends ChangeNotifier {
   bool _isListening = false;
   double _speechLevel = 0;
   String _selectedGameId = 'puerto-rico';
+  Map<String, String> _gameGallerySelections = {};
   AiAnswerMode _gameAnswerMode = AiAnswerMode.knowledgeOnly;
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
   bool _globalUseCurrentGameKnowledge = false;
@@ -851,6 +853,7 @@ class AppController extends ChangeNotifier {
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
     }
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
+    await _restoreGameGallerySelections();
     _games = await _loadGamesForLanguage(_language);
     await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);

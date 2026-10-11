@@ -24,6 +24,7 @@ class PreferencesService {
   /// Null retains every legacy guest key. Existing data is never adopted.
   final String? identityUserId;
   final Set<Future<void>> _pendingPersonalWrites = {};
+  Future<void> _galleryWriteQueue = Future<void>.value();
 
   /// Includes writes owned by votes and the seasonal list, outside AppController.
   Future<void> drainPersonalWrites() async {
@@ -97,10 +98,50 @@ class PreferencesService {
   static const _dailyRecommendationsKey = 'daily_recommendations_v1';
   static const _nationalDayGamesKey = 'national_day_game_slugs_v1';
   static const _gameVoteCacheKey = 'national_day_votes_v1';
+  static const _gameGallerySelectionsKey = 'game_gallery_selections_v1';
   static const int recentSearchesLimit = 8;
   static const int recentGamesLimit = 20;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+
+  Future<Map<String, String>> loadGameGallerySelections() async {
+    final raw = (await _prefs).getString(
+      _personalKey(_gameGallerySelectionsKey),
+    );
+    if (raw == null) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return {
+        for (final entry in decoded.entries)
+          if (entry.key is String &&
+              entry.value is String &&
+              (entry.value as String).isNotEmpty)
+            entry.key as String: entry.value as String,
+      };
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Future<void> saveGameGallerySelection(String slug, String path) =>
+      _trackPersonalWrite(() {
+        final write = _galleryWriteQueue.catchError((Object _) {}).then((
+          _,
+        ) async {
+          final selections = await loadGameGallerySelections();
+          selections[slug] = path;
+          final prefs = await _prefs;
+          await _requirePersonalWrite(
+            prefs.setString(
+              _personalKey(_gameGallerySelectionsKey),
+              jsonEncode(selections),
+            ),
+          );
+        });
+        _galleryWriteQueue = write;
+        return write;
+      });
 
   static const accountCloudPreferenceKeys = <String>{
     _voiceReplyKey,

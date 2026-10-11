@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_motion.dart';
@@ -46,7 +47,8 @@ class DesktopGameDetailPane extends StatefulWidget {
 
 class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
-  int _galleryIndex = 0;
+  int get _galleryIndex =>
+      widget.controller.gameGalleryIndex(game, _galleryPaths());
 
   static const _tabs = ['游戏介绍', '规则摘要'];
 
@@ -55,7 +57,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.game.id != widget.game.id) {
       _tab = 0;
-      _galleryIndex = 0;
     }
   }
 
@@ -66,7 +67,36 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     if (count <= 0 || index < 0 || index >= count || index == _galleryIndex) {
       return;
     }
-    setState(() => _galleryIndex = index);
+    _persistGalleryImage(_galleryPaths()[index]);
+    setState(() {});
+  }
+
+  void _persistGalleryImage(String path) {
+    unawaited(
+      widget.controller.rememberGameGalleryImage(game, path).catchError((
+        Object _,
+      ) {
+        if (!mounted) return;
+        final copy = widget.controller.copy;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              copy.localized('图片位置未保存', 'Image position was not saved'),
+            ),
+            action: SnackBarAction(
+              label: copy.localized('重试', 'Retry'),
+              onPressed: () {
+                if (!mounted) return;
+                final paths = _galleryPaths();
+                if (paths.isNotEmpty) {
+                  _persistGalleryImage(paths[_galleryIndex]);
+                }
+              },
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   void _stepGallery(int delta, int count) {

@@ -50,6 +50,33 @@ import 'package:board_game_agent/features/settings/services/preferences_service.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'gallery positions restore per account and survive reorder and missing images',
+    () async {
+      final app = await _app();
+      final game = app.games.first;
+      const paths = ['images/one.jpg', 'images/two.jpg', 'images/three.jpg'];
+      await app.rememberGameGalleryImage(game, paths[1]);
+      await app.switchIdentityScope('a');
+      expect(app.gameGalleryIndex(game, paths), 0);
+      await app.rememberGameGalleryImage(game, paths[2]);
+      await app.switchIdentityScope('b');
+      expect(app.gameGalleryIndex(game, paths), 0);
+      await app.rememberGameGalleryImage(game, paths[1]);
+      await app.switchIdentityScope('a');
+      expect(app.gameGalleryIndex(game, paths), 2);
+      await app.switchIdentityScope(null);
+      expect(app.gameGalleryIndex(game, paths), 1);
+      final restored = await _app();
+      await restored.switchIdentityScope('a');
+      expect(restored.gameGalleryIndex(game, paths), 2);
+      expect(
+        restored.gameGalleryIndex(game, [paths[1], paths[2], paths[0]]),
+        1,
+      );
+      expect(restored.gameGalleryIndex(game, paths.take(2).toList()), 0);
+    },
+  );
   test('guest never displays legacy anonymous public counters', () async {
     final app = await _app();
     final slug = app.games.first.slug;
