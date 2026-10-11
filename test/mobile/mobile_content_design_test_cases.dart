@@ -162,13 +162,17 @@ void _registerContentDesignTests() {
             );
             expect(
               panel.color,
-              index == 0
-                  ? palette.primaryContainer
-                  : palette.secondaryContainer,
+              Color.lerp(
+                palette.surface,
+                index == 0
+                    ? palette.primaryContainer
+                    : palette.secondaryContainer,
+                .65,
+              ),
             );
             expect(
               (panel.shape! as RoundedRectangleBorder).side.color,
-              palette.outline,
+              palette.outline.withValues(alpha: .45),
             );
           }
           final recent = find.byKey(

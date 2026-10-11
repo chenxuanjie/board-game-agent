@@ -18,6 +18,72 @@ import 'game_cover.dart';
 
 const _assetRoot = 'assets/mobile/mine';
 
+/// The lowered right shoulder reveals the header artwork. Content in the
+/// raised portion must stay to the left of the beginning of this curve.
+class _ProfilePanelShape extends ShapeBorder {
+  const _ProfilePanelShape({required this.outline});
+
+  final Color outline;
+
+  static double shoulderDrop(double width) => (width * .15).clamp(44.0, 64.0);
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    const radius = 24.0;
+    final drop = shoulderDrop(rect.width);
+    final start = rect.width * .62;
+    final end = rect.width * .80;
+    return (Path()
+          ..moveTo(radius, 0)
+          ..lineTo(start, 0)
+          ..cubicTo(
+            start + (end - start) * .48,
+            0,
+            start + (end - start) * .52,
+            drop,
+            end,
+            drop,
+          )
+          ..lineTo(rect.width - radius, drop)
+          ..quadraticBezierTo(rect.width, drop, rect.width, drop + radius)
+          ..lineTo(rect.width, rect.height - radius)
+          ..quadraticBezierTo(
+            rect.width,
+            rect.height,
+            rect.width - radius,
+            rect.height,
+          )
+          ..lineTo(radius, rect.height)
+          ..quadraticBezierTo(0, rect.height, 0, rect.height - radius)
+          ..lineTo(0, radius)
+          ..quadraticBezierTo(0, 0, radius, 0)
+          ..close())
+        .shift(rect.topLeft);
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    canvas.drawPath(
+      getOuterPath(rect.deflate(.5), textDirection: textDirection),
+      Paint()
+        ..color = outline
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  ShapeBorder scale(double t) =>
+      _ProfilePanelShape(outline: outline.withValues(alpha: outline.a * t));
+}
+
 class MobileMineContent extends StatefulWidget {
   const MobileMineContent({
     super.key,
@@ -364,6 +430,8 @@ class _MobileMineContentState extends State<MobileMineContent> {
   Widget _integratedHeaderSection(AppCopy copy) => LayoutBuilder(
     builder: (context, constraints) {
       final width = constraints.maxWidth;
+      final palette = AppPalette.of(context);
+      final dark = Theme.of(context).brightness == Brightness.dark;
       // Match the artwork to the card width, then cap it on wider Web layouts
       // so the meeple and die stay inside the curved opening.
       final imageWidth = (width + 32).clamp(0.0, 420.0);
@@ -376,16 +444,18 @@ class _MobileMineContentState extends State<MobileMineContent> {
             top: 0,
             left: -16,
             right: -16,
-            height: imageHeight,
+            height: imageHeight + 120,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: Theme.of(context).brightness == Brightness.dark
-                      ? [
-                          AppPalette.of(context).pageBackground,
-                          AppPalette.of(context).pageBackground,
-                        ]
-                      : const [Color(0xFFFFF7EE), Color(0xFFFFE9D0)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    dark ? palette.surfaceContainer : const Color(0xFFFFF3E3),
+                    dark ? palette.pageBackground : const Color(0xFFFFEDD8),
+                    palette.pageBackground,
+                  ],
+                  stops: const [0, .45, 1],
                 ),
               ),
             ),
@@ -403,41 +473,51 @@ class _MobileMineContentState extends State<MobileMineContent> {
                 opacity: Theme.of(context).brightness == Brightness.dark
                     ? .18
                     : 1,
-                child: Image.asset(
-                  '$_assetRoot/header_background_card.jpg',
-                  width: imageWidth,
-                  height: imageHeight,
-                  fit: BoxFit.fill,
+                child: ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black, Colors.black, Colors.transparent],
+                    stops: [0, .68, 1],
+                  ).createShader(bounds),
+                  blendMode: BlendMode.dstIn,
+                  child: Image.asset(
+                    '$_assetRoot/header_background_card.jpg',
+                    width: imageWidth,
+                    height: imageHeight,
+                    fit: BoxFit.fill,
+                  ),
                 ),
               ),
             ),
           ),
-          Positioned(
-            top: 22,
-            left: width * 0.57,
-            width: width * 0.26,
-            child: Transform.rotate(
-              angle: -0.12,
-              child: Text(
-                copy.localized(
-                  '桌游\n让生活多一点\n乐趣 ♡',
-                  'Games bring\nmore joy\nto life ♡',
-                ),
-                maxLines: 3,
-                style: TextStyle(
-                  color: const Color(0xFFE97536),
-                  fontSize: width < 340 ? 9.5 : 13,
-                  fontWeight: FontWeight.w600,
-                  fontStyle: FontStyle.italic,
-                  height: 1.2,
+          if (MediaQuery.textScalerOf(context).scale(16) <= 20)
+            Positioned(
+              top: 48,
+              left: width * 0.57,
+              width: width * 0.23,
+              child: Transform.rotate(
+                angle: -0.12,
+                child: Text(
+                  copy.localized(
+                    '桌游\n让生活多一点\n乐趣 ♡',
+                    'Games bring\nmore joy\nto life ♡',
+                  ),
+                  maxLines: 3,
+                  style: TextStyle(
+                    color: const Color(0xFFE97536),
+                    fontSize: width < 340 ? 9 : 11,
+                    fontWeight: FontWeight.w600,
+                    fontStyle: FontStyle.italic,
+                    height: 1.2,
+                  ),
                 ),
               ),
             ),
-          ),
           Column(
             children: [
               _topNavRow(copy),
-              const SizedBox(height: 8),
+              const SizedBox(height: 24),
               _profileCard(copy),
             ],
           ),
@@ -509,91 +589,156 @@ class _MobileMineContentState extends State<MobileMineContent> {
         : account == null || !account.supportsSignIn
         ? copy.localized('本机资料', 'Local profile')
         : copy.localized('点击登录', 'Tap to sign in');
-    return Material(
-      key: const ValueKey('mobile-mine-profile'),
-      color: palette.surface,
-      borderRadius: BorderRadius.circular(UiTokens.groupRadius),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Semantics(
-            button: true,
-            label: copy.localized(
-              '$name，${signedIn ? '账户详情' : status}',
-              '$name, ${signedIn ? 'Account details' : status}',
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final tint = Color.lerp(palette.surface, palette.secondaryContainer, .10)!;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final largeText = MediaQuery.textScalerOf(context).scale(16) > 20;
+        final drop = _ProfilePanelShape.shoulderDrop(constraints.maxWidth);
+        return Material(
+          key: const ValueKey('mobile-mine-profile'),
+          color: Colors.transparent,
+          elevation: 2,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: palette.shadow.withValues(alpha: .12),
+          shape: _ProfilePanelShape(
+            outline: palette.surface.withValues(alpha: dark ? .10 : .70),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  palette.surface.withValues(alpha: .92),
+                  tint.withValues(alpha: .88),
+                ],
+              ),
             ),
-            child: InkWell(
-              key: const ValueKey('mobile-mine-account-entry'),
-              onTap: _openProfile,
-              child: Padding(
-                padding: const EdgeInsets.all(UiTokens.pageInset),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      key: const ValueKey('mobile-mine-avatar'),
-                      radius: 32,
-                      backgroundColor: palette.secondaryContainer,
-                      foregroundColor: palette.onSecondaryContainer,
-                      child: const Icon(Icons.person_outline_rounded, size: 32),
-                    ),
-                    const SizedBox(width: UiTokens.itemGap),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              children: [
+                Semantics(
+                  button: true,
+                  label: copy.localized(
+                    '$name，${signedIn ? '账户详情' : status}',
+                    '$name, ${signedIn ? 'Account details' : status}',
+                  ),
+                  child: InkWell(
+                    key: const ValueKey('mobile-mine-account-entry'),
+                    onTap: _openProfile,
+                    child: Padding(
+                      // At normal sizes the name stays on the raised shoulder.
+                      // Enlarged text uses the full width below the curved opening.
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        largeText ? drop + 12 : 18,
+                        largeText ? 16 : constraints.maxWidth * .40,
+                        14,
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            name,
-                            key: const ValueKey('mobile-mine-profile-name'),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: ContentCardStyle.section(context),
+                          CircleAvatar(
+                            key: const ValueKey('mobile-mine-avatar'),
+                            radius: constraints.maxWidth < 340 ? 28 : 32,
+                            backgroundColor: palette.secondaryContainer,
+                            foregroundColor: palette.onSecondaryContainer,
+                            child: const Icon(
+                              Icons.person_outline_rounded,
+                              size: 32,
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            status,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: palette.textSecondary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        key: const ValueKey(
+                                          'mobile-mine-profile-name',
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: ContentCardStyle.section(
+                                          context,
+                                        ).copyWith(fontSize: 22),
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 18,
+                                      color: palette.textSecondary,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  status,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: palette.textSecondary),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: palette.textSecondary,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Row(
-              children: [
-                _stat(
-                  '${widget.controller.favoriteCount}',
-                  copy.localized('我的喜欢', 'Liked games'),
-                  key: const ValueKey('mobile-mine-favorites-stat'),
-                  onTap: widget.onFavorites,
-                ),
-                _statDivider(),
-                _stat(
-                  '${widget.controller.conversations.length}',
-                  copy.localized('AI 对话', 'AI chats'),
-                  key: const ValueKey('mobile-mine-conversations-stat'),
-                  onTap: widget.onConversations,
+                Container(
+                  key: const ValueKey('mobile-mine-statistics-panel'),
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        (dark
+                                ? Color.lerp(
+                                    palette.surface,
+                                    palette.surfaceContainer,
+                                    .8,
+                                  )!
+                                : palette.surface)
+                            .withValues(alpha: .96),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    children: [
+                      _stat(
+                        '${widget.controller.favoriteCount}',
+                        copy.localized('我的喜欢', 'Liked games'),
+                        key: const ValueKey('mobile-mine-favorites-stat'),
+                        onTap: widget.onFavorites,
+                      ),
+                      _statDivider(),
+                      _stat(
+                        '${widget.controller.conversations.length}',
+                        copy.localized('AI 对话', 'AI chats'),
+                        key: const ValueKey('mobile-mine-conversations-stat'),
+                        onTap: widget.onConversations,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _statDivider() =>
-      Container(width: 1, height: 24, color: const Color(0xFFF1E5DC));
+  Widget _statDivider() => Container(
+    width: 1,
+    height: 24,
+    color: AppPalette.of(context).outline.withValues(alpha: .35),
+  );
 
   Widget _stat(String value, String label, {Key? key, VoidCallback? onTap}) =>
       Expanded(
@@ -652,12 +797,16 @@ class _MobileMineContentState extends State<MobileMineContent> {
           if (index > 0) const SizedBox(width: UiTokens.itemGap),
           Expanded(
             child: Material(
-              color: index == 0
-                  ? palette.primaryContainer
-                  : palette.secondaryContainer,
+              color: Color.lerp(
+                palette.surface,
+                index == 0
+                    ? palette.primaryContainer
+                    : palette.secondaryContainer,
+                .65,
+              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(ContentCardStyle.radius),
-                side: BorderSide(color: palette.outline),
+                side: BorderSide(color: palette.outline.withValues(alpha: .45)),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(

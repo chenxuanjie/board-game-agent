@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' show ImageByteFormat;
 
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
@@ -19,6 +21,8 @@ import 'package:board_game_agent/ui/mobile/mine_content.dart';
 import 'package:board_game_agent/ui/shared/account_scope.dart';
 import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
@@ -27,6 +31,77 @@ import 'support/memory_login_storage.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('curved profile keeps artwork and readable theme layers', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'mobile_profile_nickname': 'Shane',
+    });
+    final controller = _MineFixture();
+    addTearDown(controller.dispose);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(rootBundle.clear);
+    await tester.runAsync(() async {
+      await (FontLoader('Noto Sans SC')
+            ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
+          .load();
+      await (FontLoader(
+        'MaterialIcons',
+      )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
+    });
+    for (final palette in [
+      PaletteRegistry.warmwoodStudy,
+      PaletteRegistry.classic,
+    ]) {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      final boundaryKey = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey(palette.scheme),
+          theme: AppTheme.buildTheme(palette),
+          home: RepaintBoundary(
+            key: boundaryKey,
+            child: Scaffold(body: _mine(controller)),
+          ),
+        ),
+      );
+      await tester.runAsync(() async {
+        await precacheImage(
+          const AssetImage('assets/mobile/mine/header_background_card.jpg'),
+          boundaryKey.currentContext!,
+        );
+        await precacheImage(
+          const AssetImage('assets/desktop/home/logo.png'),
+          boundaryKey.currentContext!,
+        );
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Shane'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile-mine-statistics-panel')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.runAsync(() async {
+        final boundary =
+            boundaryKey.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        final screenshot = await boundary.toImage(pixelRatio: 2);
+        try {
+          final bytes = await screenshot.toByteData(
+            format: ImageByteFormat.png,
+          );
+          await Directory('tmp').create(recursive: true);
+          final label = palette == PaletteRegistry.classic ? 'dark' : 'warm';
+          await File(
+            'tmp/mobile-profile-$label.png',
+          ).writeAsBytes(bytes!.buffer.asUint8List());
+        } finally {
+          screenshot.dispose();
+        }
+      });
+    }
+  });
   testWidgets(
     'unsupported Web hides credential fields and sign-in action while keeping guest access',
     (tester) async {
