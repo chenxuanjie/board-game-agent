@@ -6,23 +6,30 @@ import '../../features/library/models/remote_library_update.dart';
 
 Future<void> showLibraryUpdateReview(
   BuildContext context,
-  AppController controller,
-) async {
+  AppController controller, {
+  bool completeCheck = false,
+}) async {
   if (controller.appUpdateInProgress) return;
   controller.dismissPendingLibraryUpdatePrompt();
   final narrow = MediaQuery.sizeOf(context).width < 700;
   if (narrow) {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) =>
-            LibraryUpdateReview(controller: controller, fullPage: true),
+        builder: (_) => LibraryUpdateReview(
+          controller: controller,
+          fullPage: true,
+          completeCheck: completeCheck,
+        ),
       ),
     );
   } else {
     await showDialog<void>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
-      builder: (_) => LibraryUpdateReview(controller: controller),
+      builder: (_) => LibraryUpdateReview(
+        controller: controller,
+        completeCheck: completeCheck,
+      ),
     );
   }
 }
@@ -32,21 +39,37 @@ class LibraryUpdateReview extends StatefulWidget {
     super.key,
     required this.controller,
     this.fullPage = false,
+    this.completeCheck = false,
   });
   final AppController controller;
   final bool fullPage;
+  final bool completeCheck;
   @override
   State<LibraryUpdateReview> createState() => _LibraryUpdateReviewState();
 }
 
 class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
   RemoteLibraryUpdate? _applied;
+  bool _startingCheck = true;
+  late bool _completeCheck;
   @override
   void initState() {
     super.initState();
-    if (widget.controller.pendingLibraryUpdate == null) {
-      unawaited(widget.controller.checkForLibraryUpdates());
+    _completeCheck = widget.completeCheck;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _startingCheck = false);
+      unawaited(_check());
+    });
+  }
+
+  Future<void> _check({bool? complete}) {
+    if (complete != null && complete != _completeCheck) {
+      setState(() => _completeCheck = complete);
     }
+    return _completeCheck
+        ? widget.controller.checkForLibraryUpdates()
+        : widget.controller.checkForLibraryUpdatesQuick();
   }
 
   Future<void> _apply() async {
@@ -65,9 +88,12 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
     builder: (context, _) {
       final c = widget.controller;
       final copy = c.copy;
-      final busy = c.applyingLibraryUpdate || c.checkingLibraryUpdate;
+      final busy =
+          _startingCheck || c.applyingLibraryUpdate || c.checkingLibraryUpdate;
       final update = c.pendingLibraryUpdate ?? _applied;
       final error = c.libraryUpdateError;
+      final upToDate =
+          !busy && _applied == null && update == null && error == null;
       final entries = update?.changes.isNotEmpty == true
           ? update!.changes
           : [
@@ -168,24 +194,25 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
         ],
       );
       final actions = [
-        TextButton(
-          key: const ValueKey('library-update-later'),
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            copy.localized(
-              c.applyingLibraryUpdate
-                  ? '后台继续'
-                  : _applied != null
-                  ? '关闭'
-                  : '暂不更新',
-              c.applyingLibraryUpdate
-                  ? 'Continue in background'
-                  : _applied != null
-                  ? 'Close'
-                  : 'Later',
+        if (!upToDate)
+          TextButton(
+            key: const ValueKey('library-update-later'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              copy.localized(
+                busy
+                    ? '后台继续'
+                    : _applied == null && update != null
+                    ? '暂不更新'
+                    : '关闭',
+                busy
+                    ? 'Continue in background'
+                    : _applied == null && update != null
+                    ? 'Later'
+                    : 'Close',
+              ),
             ),
           ),
-        ),
         if (_applied == null && update != null)
           FilledButton(
             key: const ValueKey('library-update-apply'),
@@ -198,10 +225,22 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
             ),
           ),
         if (_applied == null && update == null)
-          FilledButton(
+          TextButton(
             key: const ValueKey('library-update-check'),
-            onPressed: busy ? null : () => c.checkForLibraryUpdates(),
+            onPressed: busy ? null : _check,
             child: Text(copy.localized('重新检查', 'Check again')),
+          ),
+        if (upToDate && !_completeCheck)
+          TextButton(
+            key: const ValueKey('library-update-full-check'),
+            onPressed: () => _check(complete: true),
+            child: Text(copy.localized('完整性检查', 'Full check')),
+          ),
+        if (upToDate)
+          FilledButton(
+            key: const ValueKey('library-update-confirm'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(copy.localized('确认', 'OK')),
           ),
       ];
       if (widget.fullPage) {

@@ -171,7 +171,8 @@ class DesktopSidebar extends StatelessWidget {
                             selected: i == selectedIndex,
                             compact: compact,
                             onTap: () {
-                              if (i != selectedIndex) onSelect(i);
+                              // Reselecting the game library refreshes it too.
+                              if (i != selectedIndex || i == 1) onSelect(i);
                             },
                           ),
                       ],

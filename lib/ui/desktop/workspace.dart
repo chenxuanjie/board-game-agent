@@ -9,6 +9,7 @@ import 'package:webdav_settings/webdav_settings.dart';
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../core/models/app_activity.dart';
 import '../shared/library_update_review.dart';
+import '../shared/library_check_progress.dart';
 import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
@@ -89,6 +90,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.addListener(_refresh);
     _search.addListener(_refreshSearch);
     _searchFocus.addListener(_handleSearchFocusChanged);
+    if (_page == 'games') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _page == 'games') _checkGameUpdates();
+      });
+    }
   }
 
   void _refresh() {
@@ -123,6 +129,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       }
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (page == 'games') _checkGameUpdates();
+  }
+
+  void _checkGameUpdates() {
+    if (widget.controller.libraryAccessAllowed) {
+      unawaited(widget.controller.checkForLibraryUpdatesQuick());
+    }
   }
 
   void _setLibraryFilter(DesktopLibraryResourceType? filter) {
@@ -519,6 +532,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_page != 'gameDetail') _topBar(compact: compact, narrow: narrow),
+        if (_page == 'games')
+          LibraryCheckProgress(controller: widget.controller),
         Expanded(
           child: AppPageTransition(
             key: const ValueKey('desktop-page-transition'),

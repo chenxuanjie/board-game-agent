@@ -191,6 +191,7 @@ class RemoteAssetService {
   Future<ConnectivityStatus> checkAccess(
     AssetSourceConfig source, {
     Completer<void>? abort,
+    void Function(String catalogSource)? onCatalog,
   }) async {
     ConnectivityStatus status(ConnectivityState state, String message) =>
         ConnectivityStatus(
@@ -215,6 +216,7 @@ class RemoteAssetService {
       if (catalog is! Map || catalog['games'] is! List) {
         return status(ConnectivityState.failure, '知识库目录内容无效');
       }
+      onCatalog?.call(utf8.decode(response.bodyBytes));
       return status(ConnectivityState.success, '知识库可读取');
     } on TimeoutException {
       return status(ConnectivityState.failure, '连接超时');

@@ -134,6 +134,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             widget.controller.openGlobalAssistant();
           }
           setState(() => _tab = index);
+          if (index == 1 && widget.controller.libraryAccessAllowed) {
+            unawaited(widget.controller.checkForLibraryUpdatesQuick());
+          }
         },
         type: BottomNavigationBarType.fixed,
         backgroundColor: AppPalette.of(context).surface,

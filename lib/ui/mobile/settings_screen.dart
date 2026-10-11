@@ -19,6 +19,7 @@ import '../shared/account_screen.dart';
 import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
+import '../shared/library_check_actions.dart';
 import '../../features/settings/models/configuration_transfer.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 
@@ -579,6 +580,16 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                             ],
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 24),
+                      _SectionTitle(
+                        title: copy.localized('桌游检查', 'Game library checks'),
+                        icon: Icons.fact_check_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        child: LibraryCheckActions(controller: controller),
                       ),
                       const SizedBox(height: 24),
                       _SectionTitle(

@@ -480,6 +480,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           '${account.nicknameKey}|${account.configuration!.resourceSources.map((s) => s.testUrl).join('|')}';
       if (_lastResourceConnection != connection) {
         _lastResourceConnection = connection;
+        // Credentials and the account scope are ready now. Probe immediately
+        // rather than leaving the resource status unknown until the next tick.
+        unawaited(widget.controller.refreshAssetAccessStatus());
         unawaited(widget.controller.refreshLibraryResources(force: true));
       }
     } else if (account?.isSignedIn == false) {

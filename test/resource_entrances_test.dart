@@ -15,6 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert';
 
 const sources = [
   AssetSourceConfig(
@@ -64,10 +66,13 @@ class _Client extends http.BaseClient {
 
 class _Ai extends Fake implements AiService {}
 
-AppController controllerFor(RemoteAssetService service) => AppController(
+AppController controllerFor(
+  RemoteAssetService service, {
+  GameManifestService? manifests,
+}) => AppController(
   preferencesService: PreferencesService(),
   aiService: _Ai(),
-  gameManifestService: GameManifestService(),
+  gameManifestService: manifests ?? GameManifestService(),
   remoteAssetService: service,
   speechService: SpeechService(),
   ttsService: TtsService(),
@@ -77,6 +82,36 @@ Future<void> settle() => Future<void>.delayed(Duration.zero);
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'availability catalog read drives one quick comparison without another GET or HEAD',
+    () async {
+      final local = await rootBundle.loadString('assets/catalog.json');
+      final remoteCatalog = jsonDecode(local) as Map<String, dynamic>;
+      (remoteCatalog['games'] as List).first['order'] = 999;
+      final client = _Client();
+      final remote = _CatalogRemote(client);
+      final manifests = _CatalogManifests();
+      final app = controllerFor(remote, manifests: manifests);
+      addTearDown(app.dispose);
+      await app.saveAssetSourceConfigs(sources);
+      final availability = app.refreshAssetAccessStatus();
+      await settle();
+      client.reply(0, status: 503);
+      client.reply(1, body: jsonEncode(remoteCatalog));
+      await availability;
+      expect(app.assetConnectivityStatus.state, ConnectivityState.success);
+      expect(manifests.reads, 1);
+      expect(client.requests.length, 2);
+      expect(remote.probes, 0);
+      final quick = app.checkForLibraryUpdatesQuick();
+      manifests.local.complete(local);
+      await quick;
+      expect(app.pendingLibraryUpdate!.changedPaths, ['assets/catalog.json']);
+      expect(client.requests.length, 2);
+      expect(remote.probes, 0);
+      expect(manifests.reads, 1);
+    },
+  );
   test(
     'reads race both entrances, fastest success returns and aborts loser',
     () async {
@@ -370,5 +405,30 @@ void main() {
       expect(find.text('没有资料访问权限'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+  }
+}
+
+class _CatalogManifests extends GameManifestService {
+  final local = Completer<String>();
+  int reads = 0;
+  @override
+  Future<String> loadCatalogSource({
+    required RemoteAssetService remoteAssetService,
+  }) {
+    reads++;
+    return local.future;
+  }
+}
+
+class _CatalogRemote extends RemoteAssetService {
+  _CatalogRemote(http.Client client) : super(client: client);
+  int probes = 0;
+  @override
+  Future<bool> hasRemoteChanged({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async {
+    probes++;
+    return false;
   }
 }

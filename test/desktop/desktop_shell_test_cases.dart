@@ -135,6 +135,9 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('通用'), findsOneWidget);
       expect(find.text('AI 服务'), findsOneWidget);
       expect(find.text('外观与主题'), findsOneWidget);
+      expect(find.text('桌游检查'), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-check-quick')), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-check-full')), findsOneWidget);
       expect(find.text('通知设置'), findsNothing);
       expect(find.text('服务器与资料'), findsOneWidget);
       expect(find.text('关于与更新'), findsOneWidget);
@@ -146,6 +149,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
         '通用',
         'AI 服务',
         '外观与主题',
+        '桌游检查',
         '服务器与资料',
         '关于与更新',
       ];

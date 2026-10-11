@@ -90,11 +90,17 @@ extension AppServiceStatusController on AppController {
       );
     _aggregateAssetAccessStatus();
     _notifyListeners();
+    var quickStarted = false;
     await Future.wait(
       sources.map((source) async {
         ConnectivityStatus status;
+        String? checkedCatalog;
         try {
-          status = await _remoteAssetService.checkAccess(source, abort: abort);
+          status = await _remoteAssetService.checkAccess(
+            source,
+            abort: abort,
+            onCatalog: (text) => checkedCatalog = text,
+          );
         } catch (_) {
           status = ConnectivityStatus(
             state: ConnectivityState.failure,
@@ -108,6 +114,16 @@ extension AppServiceStatusController on AppController {
         // for the optional detail view and never downgrade a successful device.
         _aggregateAssetAccessStatus();
         _notifyListeners();
+        if (!quickStarted &&
+            status.state == ConnectivityState.success &&
+            checkedCatalog != null) {
+          quickStarted = true;
+          unawaited(
+            _initialLibraryFullPending
+                ? checkForLibraryUpdates(catalogSource: checkedCatalog)
+                : checkForLibraryUpdatesQuick(catalogSource: checkedCatalog),
+          );
+        }
       }),
     );
   }

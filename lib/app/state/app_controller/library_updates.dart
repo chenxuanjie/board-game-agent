@@ -2,15 +2,17 @@ part of '../app_controller.dart';
 
 extension AppLibraryUpdateController on AppController {
   Future<void> _initializeRemoteLibrary() async {
+    _initialLibraryFullPending = true;
+    // The first successful catalog read both reports availability and starts
+    // the deferred startup full check with that same response body. Neither
+    // index discovery nor image prefetch may postpone this initial probe.
+    _startAssetStatusPolling();
     try {
+      await refreshAssetAccessStatus();
       await refreshLibraryResources();
       await prefetchHomeImages();
-      await refreshAssetAccessStatus();
-      await checkForLibraryUpdates();
     } catch (error) {
       debugPrint('[updates] initial library check failed: $error');
-    } finally {
-      _startAssetStatusPolling();
     }
   }
 
@@ -18,27 +20,112 @@ extension AppLibraryUpdateController on AppController {
     _assetSourceConfigs.map((source) => source.toMap()).toList(),
   );
 
-  Future<void> checkForLibraryUpdates({bool forcePromptReset = false}) async {
-    if (!_requireLibraryAccess()) return;
-    if (_checkingLibraryUpdate || _applyingLibraryUpdate) return;
+  Future<void> checkForLibraryUpdates({
+    bool forcePromptReset = false,
+    String? catalogSource,
+  }) => _startLibraryCheck(
+    complete: true,
+    forcePromptReset: forcePromptReset,
+    catalogSource: catalogSource,
+  );
+
+  Future<void> checkForLibraryUpdatesQuick({String? catalogSource}) =>
+      _startLibraryCheck(complete: false, catalogSource: catalogSource);
+
+  Future<void> _startLibraryCheck({
+    required bool complete,
+    bool forcePromptReset = false,
+    String? catalogSource,
+  }) {
+    if (_controllerDisposed || _applyingLibraryUpdate) {
+      return Future.value();
+    }
+    if (!_requireLibraryAccess()) {
+      _libraryUpdateError = copy.localized(
+        '请先登录后检查资料',
+        'Sign in before checking library updates',
+      );
+      _notifyListeners();
+      return Future.value();
+    }
+    if (forcePromptReset) _libraryUpdatePromptSeen = false;
+    final active = _libraryCheckFuture;
+    if (active != null) {
+      final requestedEpoch = _identityScopeEpoch;
+      final requestedSignature = _updateSourceSignature;
+      if (_libraryCheckEpoch != requestedEpoch ||
+          _libraryCheckSignature != requestedSignature) {
+        return active.then<void>((_) {
+          if (_controllerDisposed ||
+              requestedEpoch != _identityScopeEpoch ||
+              requestedSignature != _updateSourceSignature) {
+            return Future<void>.value();
+          }
+          return _startLibraryCheck(
+            complete: complete,
+            catalogSource: catalogSource,
+            forcePromptReset: forcePromptReset,
+          );
+        });
+      }
+      if (complete && !_libraryUpdateCheckFull) _libraryFullRequested = true;
+      return active;
+    }
+    final done = Completer<void>();
+    final epoch = _identityScopeEpoch;
+    _libraryCheckFuture = done.future;
+    _libraryCheckEpoch = epoch;
+    _libraryCheckSignature = _updateSourceSignature;
+    _checkingLibraryUpdate = true;
+    _libraryFullRequested = complete;
+    _notifyListeners();
+    unawaited(() async {
+      try {
+        var source = catalogSource;
+        do {
+          _libraryUpdateCheckFull = _libraryFullRequested;
+          _libraryFullRequested = false;
+          await _runLibraryCheck(
+            complete: _libraryUpdateCheckFull,
+            catalogSource: source,
+          );
+          source = null;
+        } while (_libraryFullRequested &&
+            !_controllerDisposed &&
+            epoch == _identityScopeEpoch);
+      } finally {
+        _libraryCheckFuture = null;
+        _checkingLibraryUpdate = false;
+        done.complete();
+        _notifyListeners();
+      }
+    }());
+    return done.future;
+  }
+
+  Future<void> _runLibraryCheck({
+    required bool complete,
+    String? catalogSource,
+  }) async {
     final epoch = _identityScopeEpoch;
     final signature = _updateSourceSignature;
     bool current() =>
+        !_controllerDisposed &&
         epoch == _identityScopeEpoch &&
         signature == _updateSourceSignature &&
-        !_switchingIdentityScope;
-    _checkingLibraryUpdate = true;
+        _identityScopeRequests == 0;
     _libraryUpdateError = null;
-    if (forcePromptReset) _libraryUpdatePromptSeen = false;
     _notifyListeners();
     try {
       final elapsed = Stopwatch()..start();
       final sources = _preferredUpdateSources();
       const catalogPath = 'assets/catalog.json';
-      final remoteSource = await _remoteAssetService.fetchRemoteText(
-        sources: sources,
-        remotePath: catalogPath,
-      );
+      final remoteSource =
+          catalogSource ??
+          await _remoteAssetService.fetchRemoteText(
+            sources: sources,
+            remotePath: catalogPath,
+          );
       if (!current()) return;
       if (remoteSource == null) throw StateError('Catalog unavailable');
       final localSource = await _gameManifestService.loadCatalogSource(
@@ -124,116 +211,135 @@ extension AppLibraryUpdateController on AppController {
           );
         }
       }
-      final tracked = _trackedRemotePaths().toSet().toList();
-      final probes = <String, bool>{};
-      for (var start = 0; start < tracked.length; start += 4) {
-        if (!current()) return;
-        if (elapsed.elapsed > const Duration(minutes: 2)) {
-          throw TimeoutException('Library check deadline');
+      if (complete) {
+        final tracked = _trackedRemotePaths().toSet().toList();
+        final probes = <String, bool>{};
+        for (var start = 0; start < tracked.length; start += 4) {
+          if (!current()) return;
+          if (elapsed.elapsed > const Duration(minutes: 2)) {
+            throw TimeoutException('Library check deadline');
+          }
+          final batch = tracked
+              .skip(start)
+              .take(4)
+              .where((p) => !paths.contains(p));
+          await Future.wait(
+            batch.map((path) async {
+              probes[path] = await _remoteAssetService.hasRemoteChanged(
+                sources: sources,
+                remotePath: path,
+              );
+            }),
+          );
         }
-        final batch = tracked
-            .skip(start)
-            .take(4)
-            .where((p) => !paths.contains(p));
-        await Future.wait(
-          batch.map((path) async {
-            probes[path] = await _remoteAssetService.hasRemoteChanged(
-              sources: sources,
-              remotePath: path,
-            );
-          }),
-        );
-      }
-      for (final path in tracked) {
-        if (!current()) return;
-        if (paths.contains(path) || path == catalogPath) continue;
-        if (probes[path] != true) {
-          continue;
-        }
-        paths.add(path);
-        final title = _gameTitleForRemotePath(path);
-        if (title != null) titles.add(title);
-        final fields = <String>[];
-        final valueChanges = <String, String>{};
-        if (path.endsWith('/game.json') || path.endsWith('/manifest.json')) {
-          final before = await localText(path);
-          final after = await remoteText(path);
-          if (after.isEmpty) throw StateError('Changed metadata unavailable');
-          final previous = before == null
-              ? <String, dynamic>{}
-              : jsonDecode(before) as Map<String, dynamic>;
-          final next = jsonDecode(after) as Map<String, dynamic>;
-          if (path.endsWith('/game.json')) GameManifest.fromJson(next);
-          fields.addAll(changedMetadataFields(previous, next));
-          valueChanges.addAll(metadataValueChanges(previous, next));
-          if (path.endsWith('/manifest.json')) {
-            final slug = RegExp(
-              r'assets/games/([^/]+)/',
-            ).firstMatch(path)!.group(1)!;
-            final oldResources = {
-              for (final r in GameResourceManifest.fromJson(previous).resources)
-                r.path: r,
-            };
-            final newResources = GameResourceManifest.fromJson(next).resources;
-            final activePaths = newResources
-                .where(
-                  (r) => r.enabled && r.isAvailable && !r.isInOthersDirectory,
-                )
-                .map((r) => r.path)
-                .toSet();
-            for (final old in oldResources.values) {
-              if (old.enabled &&
-                  old.isAvailable &&
-                  !old.isInOthersDirectory &&
-                  !activePaths.contains(old.path)) {
-                changes.add(
-                  RemoteLibraryChange(
-                    path: old.assetPathFor(slug),
-                    title: title ?? slug,
-                    kind: RemoteLibraryChangeKind.disabled,
-                  ),
-                );
+        for (final path in tracked) {
+          if (!current()) return;
+          if (paths.contains(path) || path == catalogPath) continue;
+          if (probes[path] != true) {
+            continue;
+          }
+          paths.add(path);
+          final title = _gameTitleForRemotePath(path);
+          if (title != null) titles.add(title);
+          final fields = <String>[];
+          final valueChanges = <String, String>{};
+          if (path.endsWith('/game.json') || path.endsWith('/manifest.json')) {
+            final before = await localText(path);
+            final after = await remoteText(path);
+            if (after.isEmpty) throw StateError('Changed metadata unavailable');
+            final previous = before == null
+                ? <String, dynamic>{}
+                : jsonDecode(before) as Map<String, dynamic>;
+            final next = jsonDecode(after) as Map<String, dynamic>;
+            if (path.endsWith('/game.json')) GameManifest.fromJson(next);
+            fields.addAll(changedMetadataFields(previous, next));
+            valueChanges.addAll(metadataValueChanges(previous, next));
+            if (path.endsWith('/manifest.json')) {
+              final slug = RegExp(
+                r'assets/games/([^/]+)/',
+              ).firstMatch(path)!.group(1)!;
+              final oldResources = {
+                for (final r in GameResourceManifest.fromJson(
+                  previous,
+                ).resources)
+                  r.path: r,
+              };
+              final newResources = GameResourceManifest.fromJson(
+                next,
+              ).resources;
+              final activePaths = newResources
+                  .where(
+                    (r) => r.enabled && r.isAvailable && !r.isInOthersDirectory,
+                  )
+                  .map((r) => r.path)
+                  .toSet();
+              for (final old in oldResources.values) {
+                if (old.enabled &&
+                    old.isAvailable &&
+                    !old.isInOthersDirectory &&
+                    !activePaths.contains(old.path)) {
+                  changes.add(
+                    RemoteLibraryChange(
+                      path: old.assetPathFor(slug),
+                      title: title ?? slug,
+                      kind: RemoteLibraryChangeKind.disabled,
+                    ),
+                  );
+                }
               }
-            }
-            for (final resource in newResources) {
-              if (!resource.enabled ||
-                  !resource.isAvailable ||
-                  resource.isInOthersDirectory) {
-                continue;
-              }
-              final old = oldResources[resource.path];
-              if (old == null || !old.enabled || !old.isAvailable) {
-                final addedPath = resource.assetPathFor(slug);
-                paths.add(addedPath);
-                changes.add(
-                  RemoteLibraryChange(
-                    path: addedPath,
-                    title: title ?? slug,
-                    kind: RemoteLibraryChangeKind.added,
-                  ),
-                );
+              for (final resource in newResources) {
+                if (!resource.enabled ||
+                    !resource.isAvailable ||
+                    resource.isInOthersDirectory) {
+                  continue;
+                }
+                final old = oldResources[resource.path];
+                if (old == null || !old.enabled || !old.isAvailable) {
+                  final addedPath = resource.assetPathFor(slug);
+                  paths.add(addedPath);
+                  changes.add(
+                    RemoteLibraryChange(
+                      path: addedPath,
+                      title: title ?? slug,
+                      kind: RemoteLibraryChangeKind.added,
+                    ),
+                  );
+                }
               }
             }
           }
+          changes.add(
+            RemoteLibraryChange(
+              path: path,
+              title: title ?? path.split('/').last,
+              fields: fields,
+              valueChanges: valueChanges,
+            ),
+          );
         }
-        changes.add(
-          RemoteLibraryChange(
-            path: path,
-            title: title ?? path.split('/').last,
-            fields: fields,
-            valueChanges: valueChanges,
-          ),
-        );
       }
       if (!current()) return;
+      if (complete) _initialLibraryFullPending = false;
       if (paths.isEmpty) {
-        _pendingLibraryUpdate = null;
+        if (complete) _pendingLibraryUpdate = null;
       } else {
+        // A quick catalog read cannot disprove earlier full resource findings.
+        final previous = complete ? null : _pendingLibraryUpdate;
         _setPendingLibraryUpdate(
           RemoteLibraryUpdate(
-            changedPaths: paths.toList(),
-            changedGameTitles: titles.toList()..sort(),
-            changes: changes,
+            changedPaths: {...?previous?.changedPaths, ...paths}.toList(),
+            changedGameTitles: {
+              ...?previous?.changedGameTitles,
+              ...titles,
+            }.toList()..sort(),
+            changes: [
+              ...?previous?.changes.where(
+                (old) => !changes.any(
+                  (next) => next.path == old.path && next.title == old.title,
+                ),
+              ),
+              ...changes,
+            ],
           ),
           identityEpoch: epoch,
         );
@@ -245,9 +351,6 @@ extension AppLibraryUpdateController on AppController {
           'Could not check for updates. Check your connection and retry.',
         );
       }
-    } finally {
-      _checkingLibraryUpdate = false;
-      _notifyListeners();
     }
   }
 
@@ -261,9 +364,10 @@ extension AppLibraryUpdateController on AppController {
     final signature = _updateSourceSignature;
     final sources = List<AssetSourceConfig>.from(_assetSourceConfigs);
     bool current() =>
+        !_controllerDisposed &&
         epoch == _identityScopeEpoch &&
         signature == _updateSourceSignature &&
-        !_switchingIdentityScope;
+        _identityScopeRequests == 0;
     _applyingLibraryUpdate = true;
     _libraryUpdateError = null;
     _libraryUpdateCompleted = 0;

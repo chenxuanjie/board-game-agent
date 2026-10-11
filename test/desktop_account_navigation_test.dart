@@ -8,12 +8,15 @@ import 'package:board_game_agent/features/games/services/game_manifest_service.d
 import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
+import 'package:board_game_agent/features/library/models/asset_source_config.dart';
+import 'package:board_game_agent/core/models/connectivity_status.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/main.dart';
 import 'package:board_game_agent/ui/desktop/workspace.dart';
 import 'package:board_game_agent/ui/desktop/window_controls.dart';
 import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +38,96 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
+  testWidgets(
+    'ready login probes resource access immediately before refreshing the index',
+    (tester) async {
+      await tester.binding.setSurfaceSize(
+        defaultTargetPlatform == TargetPlatform.android
+            ? const Size(390, 844)
+            : const Size(1280, 800),
+      );
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final remote = _ProbeRemote();
+      final controller = _Controller(remote: remote);
+      final gateway = _Gateway()..current = null;
+      final settings = WebDavSettingsController(
+        store: _Store(),
+        connectionTester: _Tester(),
+      );
+      late AccountService account;
+      await tester.runAsync(() async {
+        account = AccountService(
+          controller: controller,
+          webDav: settings,
+          savedLoginStorage: MemoryLoginStorage(),
+          credentialStore: (_) => MemoryLoginStorage(),
+          gatewayFactory: (_) async => gateway,
+          switchScope: (_) async {},
+        );
+        await account.saveConfiguration(
+          AccountConfiguration.fromFields(
+            nasUrl: 'https://nas.example.test:5001',
+          ),
+        );
+      });
+      await tester.pumpWidget(
+        BoardGameAgentApp(
+          controller: controller,
+          accountService: account,
+          updateSettingsController: settings,
+        ),
+      );
+      // Drain native storage replies between frames without waiting for the
+      // empty fixture's content loading animation to settle.
+      for (var attempt = 0; attempt < 20; attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 20));
+        if (find
+            .byKey(const ValueKey('app-startup-loading'))
+            .evaluate()
+            .isEmpty) {
+          break;
+        }
+      }
+      expect(find.byKey(const ValueKey('app-startup-loading')), findsNothing);
+      expect(account.isBusy, isFalse);
+      expect(account.resourceCredentialsReady, isFalse);
+      expect(remote.resourceEvents, isEmpty);
+      late Future<void> login;
+      await tester.runAsync(() async {
+        login = account.signIn(account: 'Fixture', password: 'fixture');
+        await Future<void>.delayed(Duration.zero);
+      });
+      for (var attempt = 0; attempt < 20; attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 20));
+        if (account.resourceCredentialsReady && !account.isBusy) break;
+      }
+      expect(account.resourceCredentialsReady, isTrue);
+      await tester.runAsync(() => login);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(account.resourceCredentialsReady, isTrue);
+      expect(remote.resourceEvents.first, 'access');
+      expect(remote.resourceEvents.last, 'index');
+      expect(
+        remote.resourceEvents.where((e) => e == 'access'),
+        hasLength(controller.assetSourceConfigs.length),
+      );
+      expect(remote.resourceEvents.where((e) => e == 'index'), hasLength(1));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+      await gateway.events.close();
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.windows,
+      TargetPlatform.android,
+    }),
+  );
   for (final slowScope in [false, true]) {
     testWidgets(
       'desktop logout shows login directly without a home frame ($slowScope)',
@@ -206,12 +299,12 @@ void main() {
 }
 
 class _Controller extends AppController {
-  _Controller()
+  _Controller({RemoteAssetService? remote})
     : super(
         preferencesService: PreferencesService(),
         aiService: _Ai(),
         gameManifestService: GameManifestService(),
-        remoteAssetService: RemoteAssetService(),
+        remoteAssetService: remote ?? RemoteAssetService(),
         speechService: _Speech(),
         ttsService: _Tts(),
       );
@@ -219,6 +312,32 @@ class _Controller extends AppController {
   Future<void> initialize() async {}
   @override
   bool get checkForUpdates => false;
+}
+
+class _ProbeRemote extends RemoteAssetService {
+  final resourceEvents = <String>[];
+  @override
+  Future<ConnectivityStatus> checkAccess(
+    AssetSourceConfig source, {
+    Completer<void>? abort,
+    void Function(String catalogSource)? onCatalog,
+  }) async {
+    resourceEvents.add('access');
+    return ConnectivityStatus(
+      state: ConnectivityState.success,
+      message: '可用',
+      checkedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<String?> fetchRemoteText({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+  }) async {
+    if (remotePath == 'assets/catalog.json') resourceEvents.add('index');
+    return null;
+  }
 }
 
 class _Ai extends Fake implements AiService {

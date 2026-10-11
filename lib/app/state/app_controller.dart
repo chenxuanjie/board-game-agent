@@ -287,6 +287,12 @@ class AppController extends ChangeNotifier {
   int _aiServiceStatusGeneration = 0;
   RemoteLibraryUpdate? _pendingLibraryUpdate;
   bool _checkingLibraryUpdate = false;
+  Future<void>? _libraryCheckFuture;
+  bool _libraryFullRequested = false;
+  bool _libraryUpdateCheckFull = false;
+  int? _libraryCheckEpoch;
+  String? _libraryCheckSignature;
+  bool _initialLibraryFullPending = false;
   bool _applyingLibraryUpdate = false;
   bool _libraryUpdatePromptSeen = false;
   int _appUpdateInteractions = 0;
@@ -991,6 +997,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _controllerDisposed = true;
+    _assetStatusTimer?.cancel();
     _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
     super.dispose();
