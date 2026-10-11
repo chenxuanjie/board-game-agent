@@ -29,6 +29,7 @@ import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
 import 'package:board_game_agent/ui/mobile/settings_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_cover.dart';
 import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
+import 'package:board_game_agent/ui/shared/game_ranking_screen.dart';
 import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -50,6 +51,56 @@ part 'mobile/mobile_composer_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets(
+    'home ranking shortcut opens the shared ranking and returns from game details',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      addTearDown(rootBundle.clear);
+      await tester.runAsync(controller.reloadGames);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: const Size(390, 844)),
+            child: child!,
+          ),
+          routes: {
+            GameRankingScreen.routeName: (context) => GameRankingScreen(
+              controller: controller,
+              onOpenGame: (game) => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      GameDetailScreen(controller: controller, game: game),
+                ),
+              ),
+            ),
+          },
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('排行榜'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('game-ranking-screen')), findsOneWidget);
+      expect(find.text('排行'), findsOneWidget);
+      final game = controller.favoriteRankings.first.game;
+      await tester.tap(find.byKey(ValueKey('ranking-game-${game.slug}')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('game-ranking-screen')), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('mobile-home-root')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets('empty model opens and highlights expanded mobile AI settings', (
     tester,
@@ -206,6 +257,7 @@ void main() {
       expect(find.byKey(const ValueKey('mobile-tab-ai')), findsOneWidget);
       expect(find.byKey(const ValueKey('mobile-tab-mine')), findsOneWidget);
       expect(find.text('社区'), findsNothing);
+      expect(find.text('排行榜'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       if (size.width == 390) {

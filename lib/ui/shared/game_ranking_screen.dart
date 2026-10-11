@@ -63,6 +63,7 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
     final copy = controller.copy;
     final statistics = controller.favoriteStatistics;
     final palette = AppPalette.of(context);
+    final compact = MediaQuery.sizeOf(context).width < 760;
     return AnimatedBuilder(
       animation: Listenable.merge([controller, statistics]),
       builder: (context, _) {
@@ -79,15 +80,38 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
         return Scaffold(
           key: const ValueKey('game-ranking-screen'),
           appBar: AppBar(
-            leading: widget.onBack == null
+            leading:
+                compact &&
+                    (widget.onBack != null || Navigator.of(context).canPop())
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 8,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: palette.surface,
+                        border: Border.all(
+                          color: palette.primary.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: BackButton(onPressed: widget.onBack),
+                    ),
+                  )
+                : widget.onBack == null
                 ? null
                 : BackButton(onPressed: widget.onBack),
             backgroundColor: palette.pageBackground,
             toolbarHeight: metrics.px(64),
+            centerTitle: compact,
             title: Text(
-              copy.localized('喜欢榜', 'Most liked'),
+              copy.localized(
+                compact ? '排行' : '喜欢榜',
+                compact ? 'Rankings' : 'Most liked',
+              ),
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontSize: metrics.font(28),
+                fontSize: compact ? 24 : metrics.font(28),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -224,6 +248,149 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
   );
 }
 
+class _MobileRankingContent extends StatelessWidget {
+  const _MobileRankingContent({
+    required this.entry,
+    required this.controller,
+    required this.progress,
+  });
+  final GameRankingEntry entry;
+  final AppController controller;
+  final double progress;
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final copy = controller.copy;
+    final title = Text(
+      entry.game.title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+        fontSize: 18,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+    final count = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.favorite_rounded, color: palette.primary, size: 18),
+        const SizedBox(width: 5),
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: '${entry.favoriteCount}',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              TextSpan(
+                text: copy.localized(
+                  controller.favoriteStatistics.hasCachedRemoteCounts
+                      ? ' 人收藏'
+                      : ' 次喜欢',
+                  ' likes',
+                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 11),
+              ),
+            ],
+          ),
+          key: ValueKey('ranking-count-${entry.game.slug}'),
+        ),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        children: [
+          RankingMedal(
+            rank: entry.rank,
+            decorated: entry.favoriteCount > 0 && entry.rank <= 3,
+            size: 34,
+            crownOnly: true,
+            labelKey: ValueKey('ranking-position-${entry.game.slug}'),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 60,
+            height: 68,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: MobileGameCover(
+                controller: controller,
+                game: entry.game,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final inline =
+                    constraints.maxWidth >= 190 &&
+                    MediaQuery.textScalerOf(context).scale(16) <= 20;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (inline)
+                      Row(
+                        children: [
+                          Expanded(child: title),
+                          const SizedBox(width: 6),
+                          count,
+                        ],
+                      )
+                    else ...[
+                      title,
+                      const SizedBox(height: 4),
+                      count,
+                    ],
+                    const SizedBox(height: 9),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        UiTokens.controlRadius,
+                      ),
+                      child: SizedBox(
+                        key: ValueKey('ranking-bar-${entry.game.slug}'),
+                        height: 7,
+                        child: ColoredBox(
+                          color: palette.surfaceContainer,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              key: ValueKey('ranking-fill-${entry.game.slug}'),
+                              widthFactor: progress,
+                              heightFactor: 1,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      palette.primary,
+                                      RankingMedal.gold,
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RankingRow extends StatelessWidget {
   const _RankingRow({
     required this.entry,
@@ -242,6 +409,10 @@ class _RankingRow extends StatelessWidget {
     final metrics = DesktopMetricsScope.of(context);
     final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
     final leading = entry.rank == 1 && entry.favoriteCount > 0;
+    final mobile = MediaQuery.sizeOf(context).width < 760;
+    final accented =
+        leading || (mobile && entry.rank == 3 && entry.favoriteCount > 0);
+    final accent = entry.rank == 3 ? RankingMedal.bronze : RankingMedal.gold;
     final progress = highestCount == 0
         ? 0.0
         : entry.favoriteCount / highestCount;
@@ -252,16 +423,13 @@ class _RankingRow extends StatelessWidget {
         'Rank ${entry.rank}, ${entry.game.title}, ${entry.favoriteCount} likes',
       ),
       child: Material(
-        color: leading
-            ? Color.alphaBlend(
-                RankingMedal.gold.withValues(alpha: 0.055),
-                palette.surface,
-              )
+        color: accented
+            ? Color.alphaBlend(accent.withValues(alpha: 0.055), palette.surface)
             : palette.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(UiTokens.cardRadius),
-          side: leading
-              ? BorderSide(color: RankingMedal.gold.withValues(alpha: 0.35))
+          side: accented
+              ? BorderSide(color: accent.withValues(alpha: 0.35))
               : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
@@ -273,6 +441,13 @@ class _RankingRow extends StatelessWidget {
               final wide =
                   constraints.maxWidth >= 760 &&
                   (textScale < 1.5 || constraints.maxWidth >= 1000);
+              if (!wide) {
+                return _MobileRankingContent(
+                  entry: entry,
+                  controller: controller,
+                  progress: progress,
+                );
+              }
               final coverWidth = wide ? metrics.px(72) : 44.0;
               final coverHeight = wide ? metrics.px(88) : 64.0;
               final count = Text.rich(

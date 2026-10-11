@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageByteFormat;
+import 'package:flutter/rendering.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -36,6 +38,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() async {
+    await (FontLoader(
+      'MaterialIcons',
+    )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
     await (FontLoader(
       'Noto Sans SC',
     )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
@@ -391,6 +396,86 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+  testWidgets(
+    'mobile ranking uses real covers with crown ranks and proportional bars',
+    (tester) async {
+      addTearDown(rootBundle.clear);
+      final cloud = _Cloud();
+      final app = _app(
+        _Preferences(),
+        cloud: cloud,
+        manifests: GameManifestService(),
+      );
+      await tester.runAsync(app.reloadGames);
+      final games = app.games.take(7).toList();
+      const counts = [128, 96, 74, 58, 46, 38, 32];
+      for (var voter = 1; voter <= 128; voter++) {
+        final id = voter.toRadixString(16).padLeft(32, '0');
+        cloud.ballots[id] = _ballot(id, [
+          for (var i = 0; i < games.length; i++)
+            if (voter <= counts[i]) games[i].slug,
+        ]);
+      }
+      await app.refreshFavoriteRankings();
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const capture = ValueKey('mobile-ranking-capture');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(app.palette),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: const Size(390, 844)),
+            child: child!,
+          ),
+          home: RepaintBoundary(
+            key: capture,
+            child: GameRankingScreen(
+              controller: app,
+              onOpenGame: (_) {},
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future.wait([
+          for (final game in games)
+            precacheImage(
+              AssetImage(game.coverAssetPath),
+              tester.element(find.byKey(capture)),
+            ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      final medals = tester
+          .widgetList<RankingMedal>(find.byType(RankingMedal))
+          .toList();
+      expect(medals.every((m) => m.crownOnly), isTrue);
+      expect(medals.where((m) => m.decorated).length, 3);
+      expect(
+        tester
+            .widget<FractionallySizedBox>(
+              find.byKey(ValueKey('ranking-fill-${games[1].slug}')),
+            )
+            .widthFactor,
+        0.75,
+      );
+      expect(tester.takeException(), isNull);
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(capture),
+      );
+      await tester.runAsync(() async {
+        final rendered = await boundary.toImage(pixelRatio: 2);
+        final bytes = await rendered.toByteData(format: ImageByteFormat.png);
+        rendered.dispose();
+        final output = File('tmp/mobile-ranking-reference.png');
+        await output.parent.create(recursive: true);
+        await output.writeAsBytes(bytes!.buffer.asUint8List());
+      });
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets(
     'ranking read error keeps retry and the full zero-count catalog visible',
@@ -563,11 +648,12 @@ AppController _app(
   _Cloud? cloud,
   RemoteGameVoteStore? Function()? remote,
   String? Function()? scope,
+  GameManifestService? manifests,
 }) {
   final app = AppController(
     preferencesService: prefs,
     aiService: _UnusedAiService(),
-    gameManifestService: _Manifests(),
+    gameManifestService: manifests ?? _Manifests(),
     remoteAssetService: _NoAssets(),
     speechService: SpeechService(),
     ttsService: TtsService(),

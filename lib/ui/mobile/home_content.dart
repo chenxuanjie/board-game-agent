@@ -24,6 +24,7 @@ class MobileHomeContent extends StatefulWidget {
     required this.onOpenGame,
     required this.onOpenConversation,
     required this.onOpenAi,
+    required this.onRankings,
     required this.onFavorites,
     required this.onSettings,
     required this.onActivities,
@@ -36,6 +37,7 @@ class MobileHomeContent extends StatefulWidget {
   final ValueChanged<GameInfo> onOpenGame;
   final ValueChanged<AiConversation> onOpenConversation;
   final VoidCallback onOpenAi;
+  final VoidCallback onRankings;
   final VoidCallback onFavorites;
   final VoidCallback onSettings;
   final VoidCallback onActivities;
@@ -474,10 +476,10 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
         widget.onRules,
       ),
       (
-        Icons.smart_toy_rounded,
-        copy.localized('AI助手', 'AI helper'),
+        Icons.emoji_events_rounded,
+        copy.localized('排行榜', 'Rankings'),
         const Color(0xFFFFEBE6),
-        widget.onOpenAi,
+        widget.onRankings,
       ),
       (
         Icons.favorite_rounded,

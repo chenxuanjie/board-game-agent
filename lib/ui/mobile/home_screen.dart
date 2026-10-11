@@ -9,6 +9,7 @@ import '../../features/games/models/game_info.dart';
 import '../../features/library/models/remote_library_update.dart';
 import '../../core/models/app_activity.dart';
 import '../shared/library_update_review.dart';
+import '../shared/game_ranking_screen.dart';
 import '../../app/state/app_controller.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 import 'settings_screen.dart';
@@ -95,6 +96,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     onOpenGame: _openGame,
                     onOpenConversation: _openConversation,
                     onOpenAi: _openAi,
+                    onRankings: () => Navigator.of(
+                      context,
+                    ).pushNamed(GameRankingScreen.routeName),
                     onFavorites: () => _openSearch(favoritesOnly: true),
                     onSettings: _openSettings,
                     onActivities: _openActivities,
