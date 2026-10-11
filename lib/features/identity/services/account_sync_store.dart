@@ -19,14 +19,23 @@ final class AccountSyncLocalStore implements SyncLocalStore {
   AccountSyncLocalStore({
     required this.datasetId,
     required this.transaction,
+    this.reactionTransaction,
     this.readJournal,
     this.writeJournal,
   });
   final String datasetId;
   final AccountDataTransaction transaction;
+  final AccountDataTransaction? reactionTransaction;
   final Future<String?> Function()? readJournal;
   final Future<void> Function(String)? writeJournal;
   Map<String, dynamic>? _state;
+  Future<void> _writes = Future<void>.value();
+  Future<T> _serialize<T>(Future<T> Function() work) {
+    final result = _writes.then((_) => work());
+    _writes = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
   String get _key => 'account_cloud_v1.$datasetId';
   @override
   String get deviceId => _state!['device'] as String;
@@ -109,6 +118,13 @@ final class AccountSyncLocalStore implements SyncLocalStore {
       .where((op) => op.entityType == 'favorite' || op.entityType == 'vote')
       .toList(growable: false);
 
+  String get publicFingerprint => canonicalJson({
+    for (final op in publicReactions)
+      '${op.entityType}|${op.entityId}': op.toJson(),
+  });
+
+  bool get hasPendingOperations => _outbox.isNotEmpty;
+
   static bool operationWins(SyncOperation incoming, SyncOperation? previous) =>
       previous == null ||
       incoming.logicalClock > previous.logicalClock ||
@@ -116,39 +132,48 @@ final class AccountSyncLocalStore implements SyncLocalStore {
           incoming.operationId.compareTo(previous.operationId) > 0;
 
   /// Import sparse public heads without advancing the private download cursor.
-  Future<void> applyPublicReactions(Iterable<SyncOperation> operations) =>
-      transaction<void>((current, project) async {
-        if (_state!['projectionPending'] == true) {
-          await _recover(current, project);
-        }
-        _capture(current);
-        var changed = false;
-        for (final op in operations) {
-          if (op.datasetId != datasetId ||
-              !{'favorite', 'vote'}.contains(op.entityType)) {
-            throw const SyncProtocolException('公共账号范围不匹配');
-          }
-          _operation(op.toJson());
-          final key = '${op.entityType}|${op.entityId}';
-          final old = _heads[key] == null ? null : _operation(_heads[key]);
-          _state!['clock'] = max(_state!['clock'] as int, op.logicalClock);
-          if (operationWins(op, old)) {
-            _heads[key] = op.toJson();
-            changed = true;
-          }
-        }
-        if (!changed) {
-          await _save();
-          return;
-        }
-        _state!['projectionPending'] = true;
-        _state!['projectionBase'] = current;
-        await _save();
-        await project(_entities());
-        _state!['projectionPending'] = false;
-        _state!.remove('projectionBase');
-        await _save();
+  Future<void> applyPublicReactions(
+    Iterable<SyncOperation> operations, {
+    void Function()? check,
+  }) => _serialize(() async {
+    check?.call();
+    if (_state!['projectionPending'] == true) {
+      await transaction<void>((current, project) async {
+        check?.call();
+        await _recover(current, project);
       });
+    }
+    return (reactionTransaction ?? transaction)<void>((current, project) async {
+      check?.call();
+      _capture(current, reactionsOnly: reactionTransaction != null);
+      var changed = false;
+      for (final op in operations) {
+        if (op.datasetId != datasetId ||
+            !{'favorite', 'vote'}.contains(op.entityType)) {
+          throw const SyncProtocolException('公共账号范围不匹配');
+        }
+        _operation(op.toJson());
+        final key = '${op.entityType}|${op.entityId}';
+        final old = _heads[key] == null ? null : _operation(_heads[key]);
+        _state!['clock'] = max(_state!['clock'] as int, op.logicalClock);
+        if (operationWins(op, old)) {
+          _heads[key] = op.toJson();
+          changed = true;
+        }
+      }
+      if (!changed) {
+        await _save();
+        return;
+      }
+      _state!['projectionPending'] = true;
+      _state!['projectionBase'] = current;
+      await _save();
+      await project(_entities());
+      _state!['projectionPending'] = false;
+      _state!.remove('projectionBase');
+      await _save();
+    });
+  });
 
   Future<void> _save() async {
     final json = jsonEncode(_state);
@@ -200,9 +225,14 @@ final class AccountSyncLocalStore implements SyncLocalStore {
     _outbox.add(op.toJson());
   }
 
-  void _capture(AccountEntities current) {
+  void _capture(AccountEntities current, {bool reactionsOnly = false}) {
     final before = _entities();
     for (final key in {...before.keys, ...current.keys}) {
+      if (reactionsOnly &&
+          !key.startsWith('favorite|') &&
+          !key.startsWith('vote|')) {
+        continue;
+      }
       if (canonicalJson(before[key]) != canonicalJson(current[key])) {
         _change(key, current[key]);
       }
@@ -232,27 +262,50 @@ final class AccountSyncLocalStore implements SyncLocalStore {
     await _save();
   }
 
-  Future<void> capture() => transaction<void>((current, project) async {
-    if (_state!['projectionPending'] == true) {
-      await _recover(current, project);
-    } else {
-      _capture(current);
-    }
-    await _save();
-  });
+  Future<void> capture({void Function()? check}) => _serialize(
+    () => transaction<void>((current, project) async {
+      check?.call();
+      if (_state!['projectionPending'] == true) {
+        await _recover(current, project);
+      } else {
+        _capture(current);
+      }
+      await _save();
+    }),
+  );
+  Future<void> captureReactions({void Function()? check}) =>
+      _serialize(() async {
+        check?.call();
+        if (_state!['projectionPending'] == true) {
+          await transaction<void>((current, project) async {
+            check?.call();
+            await _recover(current, project);
+          });
+        }
+        await (reactionTransaction ?? transaction)<void>((current, _) async {
+          check?.call();
+          _capture(current, reactionsOnly: reactionTransaction != null);
+          await _save();
+        });
+      });
+
   @override
   Future<SyncCheckpoint> loadCheckpoint() async => SyncCheckpoint.fromJson(
     Map<String, Object?>.from(_state!['checkpoint'] as Map),
   );
   @override
-  Future<void> saveCheckpoint(SyncCheckpoint checkpoint) async {
+  Future<void> saveCheckpoint(
+    SyncCheckpoint checkpoint, {
+    void Function()? check,
+  }) => _serialize(() async {
+    check?.call();
     _state!['checkpoint'] = checkpoint.toJson();
     // Uploaded immutable operations remain on NAS; prune acknowledged outbox.
     _outbox.removeWhere(
       (value) => _operation(value).sequence <= checkpoint.uploadSequence,
     );
     await _save();
-  }
+  });
 
   @override
   Future<List<SyncOperation>> pendingOperations({
@@ -267,89 +320,93 @@ final class AccountSyncLocalStore implements SyncLocalStore {
   Future<SyncApplyResult> applyRemoteOperations({
     required Iterable<SyncOperation> operations,
     required SyncCursor currentCursor,
-  }) => transaction<SyncApplyResult>((current, project) async {
-    if (_state!['projectionPending'] == true) {
-      await _recover(current, project);
-    } else {
-      _capture(current);
-    }
-    var cursor = currentCursor, applied = 0, duplicates = 0;
-    final ordered = operations.toList()
-      ..sort(
-        (a, b) => a.logicalClock != b.logicalClock
-            ? a.logicalClock.compareTo(b.logicalClock)
-            : a.operationId.compareTo(b.operationId),
-      );
-    for (final raw in ordered) {
-      final op = _operation(raw.toJson());
-      if (op.sequence <= cursor.forDevice(op.deviceId)) {
-        duplicates++;
-        continue;
+    void Function()? check,
+  }) => _serialize(
+    () => transaction<SyncApplyResult>((current, project) async {
+      check?.call();
+      if (_state!['projectionPending'] == true) {
+        await _recover(current, project);
+      } else {
+        _capture(current);
       }
-      final key = '${op.entityType}|${op.entityId}';
-      final old = _heads[key] == null ? null : _operation(_heads[key]);
-      _state!['clock'] = max(_state!['clock'] as int, op.logicalClock);
-      final concurrent =
-          old != null &&
-          old.operationId != op.operationId &&
-          !(op.entityParents ?? op.parents).contains(old.operationId) &&
-          (op.seen[old.deviceId] ?? 0) < old.sequence &&
-          !(old.entityParents ?? old.parents).contains(op.operationId) &&
-          (old.seen[op.deviceId] ?? 0) < op.sequence;
-      var wins = operationWins(op, old);
-      if ((op.entityType == 'recent' || op.entityType == 'search') &&
-          op.payload != null &&
-          old?.payload != null) {
-        final incoming = DateTime.tryParse(
-          op.payload![op.entityType == 'recent' ? 'viewedAt' : 'searchedAt']
-                  as String? ??
-              '',
+      var cursor = currentCursor, applied = 0, duplicates = 0;
+      final ordered = operations.toList()
+        ..sort(
+          (a, b) => a.logicalClock != b.logicalClock
+              ? a.logicalClock.compareTo(b.logicalClock)
+              : a.operationId.compareTo(b.operationId),
         );
-        final previous = DateTime.tryParse(
-          old!.payload![op.entityType == 'recent' ? 'viewedAt' : 'searchedAt']
-                  as String? ??
-              '',
-        );
-        if (incoming != null && previous != null && incoming != previous) {
-          wins = incoming.isAfter(previous);
+      for (final raw in ordered) {
+        final op = _operation(raw.toJson());
+        if (op.sequence <= cursor.forDevice(op.deviceId)) {
+          duplicates++;
+          continue;
         }
-      }
-      if (concurrent &&
-          op.entityType == 'conversation' &&
-          old.payloadHash != op.payloadHash) {
-        final loser = wins ? old : op;
-        if (loser.payload != null) {
-          final id =
-              'conversation:conflict_${sha256Json([op.entityId, loser.operationId])}';
-          final copy = {
-            ...loser.payload!,
-            'id': id,
-            'title': '${loser.payload!['title'] ?? 'AI 对话'}（冲突副本）',
-          };
-          if (!_heads.containsKey('conversation|$id')) {
-            _change('conversation|$id', copy);
+        final key = '${op.entityType}|${op.entityId}';
+        final old = _heads[key] == null ? null : _operation(_heads[key]);
+        _state!['clock'] = max(_state!['clock'] as int, op.logicalClock);
+        final concurrent =
+            old != null &&
+            old.operationId != op.operationId &&
+            !(op.entityParents ?? op.parents).contains(old.operationId) &&
+            (op.seen[old.deviceId] ?? 0) < old.sequence &&
+            !(old.entityParents ?? old.parents).contains(op.operationId) &&
+            (old.seen[op.deviceId] ?? 0) < op.sequence;
+        var wins = operationWins(op, old);
+        if ((op.entityType == 'recent' || op.entityType == 'search') &&
+            op.payload != null &&
+            old?.payload != null) {
+          final incoming = DateTime.tryParse(
+            op.payload![op.entityType == 'recent' ? 'viewedAt' : 'searchedAt']
+                    as String? ??
+                '',
+          );
+          final previous = DateTime.tryParse(
+            old!.payload![op.entityType == 'recent' ? 'viewedAt' : 'searchedAt']
+                    as String? ??
+                '',
+          );
+          if (incoming != null && previous != null && incoming != previous) {
+            wins = incoming.isAfter(previous);
           }
         }
+        if (concurrent &&
+            op.entityType == 'conversation' &&
+            old.payloadHash != op.payloadHash) {
+          final loser = wins ? old : op;
+          if (loser.payload != null) {
+            final id =
+                'conversation:conflict_${sha256Json([op.entityId, loser.operationId])}';
+            final copy = {
+              ...loser.payload!,
+              'id': id,
+              'title': '${loser.payload!['title'] ?? 'AI 对话'}（冲突副本）',
+            };
+            if (!_heads.containsKey('conversation|$id')) {
+              _change('conversation|$id', copy);
+            }
+          }
+        }
+        if (wins) {
+          _heads[key] = op.toJson();
+          applied++;
+        }
+        cursor = cursor.advance(op.deviceId, op.sequence);
       }
-      if (wins) {
-        _heads[key] = op.toJson();
-        applied++;
-      }
-      cursor = cursor.advance(op.deviceId, op.sequence);
-    }
-    final checkpoint = await loadCheckpoint();
-    _state!['checkpoint'] = checkpoint.copyWith(pullCursor: cursor).toJson();
-    _state!['projectionPending'] = true;
-    _state!['projectionBase'] = current;
-    await _save(); // Journal/cursor first; projection can safely replay after a crash.
-    await project(_entities());
-    _state!['projectionPending'] = false;
-    _state!.remove('projectionBase');
-    await _save();
-    return SyncApplyResult(
-      cursor: cursor,
-      applied: applied,
-      duplicates: duplicates,
-    );
-  });
+      final checkpoint = await loadCheckpoint();
+      _state!['checkpoint'] = checkpoint.copyWith(pullCursor: cursor).toJson();
+      _state!['projectionPending'] = true;
+      _state!['projectionBase'] = current;
+      await _save(); // Journal/cursor first; projection can safely replay after a crash.
+      await project(_entities());
+      _state!['projectionPending'] = false;
+      _state!.remove('projectionBase');
+      await _save();
+      return SyncApplyResult(
+        cursor: cursor,
+        applied: applied,
+        duplicates: duplicates,
+      );
+    }),
+  );
 }

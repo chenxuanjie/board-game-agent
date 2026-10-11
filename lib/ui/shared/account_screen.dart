@@ -292,8 +292,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     title: Text(_text('账号云同步', 'Account cloud sync')),
                     subtitle: Text(
                       _text(
-                        '收藏、想玩、清单、历史、AI 对话与偏好',
-                        'Favorites, votes, lists, history, chats and preferences',
+                        '私人资料与公共收藏、投票统计',
+                        'Personal data, public likes and votes',
                       ),
                     ),
                     value: cloud.enabled,
@@ -307,98 +307,116 @@ class _AccountScreenState extends State<AccountScreen> {
                             ),
                           ),
                   ),
-                  Row(
+                  ExpansionTile(
+                    key: const ValueKey('account-sync-details'),
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: const EdgeInsets.only(bottom: 8),
+                    leading: Icon(
+                      cloud.overallStatus == AccountCloudStatus.synced
+                          ? Icons.cloud_done_outlined
+                          : cloud.overallStatus == AccountCloudStatus.paused
+                          ? Icons.cloud_off_outlined
+                          : Icons.cloud_sync_outlined,
+                      size: 20,
+                    ),
+                    title: Text(switch (cloud.overallStatus) {
+                      AccountCloudStatus.syncing => _text('正在同步…', 'Syncing…'),
+                      AccountCloudStatus.synced => _text('已同步', 'Synced'),
+                      AccountCloudStatus.pending => _text(
+                        cloud.publicError == null && cloud.publicSynced ||
+                                cloud.error == null &&
+                                    cloud.status == AccountCloudStatus.synced
+                            ? '部分数据待重试'
+                            : '等待重试',
+                        cloud.publicError == null && cloud.publicSynced ||
+                                cloud.error == null &&
+                                    cloud.status == AccountCloudStatus.synced
+                            ? 'Some data needs retry'
+                            : 'Retry needed',
+                      ),
+                      AccountCloudStatus.paused => _text('已暂停', 'Paused'),
+                      AccountCloudStatus.idle => _text('待同步', 'Ready to sync'),
+                    }),
+                    subtitle: cloud.overallStatus == AccountCloudStatus.pending
+                        ? Text(
+                            _text(
+                              cloud.publicError == null && cloud.publicSynced
+                                  ? '公共统计已同步，私人资料待重试'
+                                  : cloud.error == null &&
+                                        cloud.status ==
+                                            AccountCloudStatus.synced
+                                  ? '私人资料已同步，公共统计待重试'
+                                  : '本机数据已保留，点击查看详情',
+                              'Local data is saved. Tap for details.',
+                            ),
+                          )
+                        : null,
                     children: [
-                      Icon(
-                        cloud.status == AccountCloudStatus.synced
-                            ? Icons.cloud_done_outlined
-                            : Icons.cloud_sync_outlined,
-                        size: 20,
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(_text('私人资料', 'Personal data')),
+                        subtitle: Text(
+                          cloud.error ??
+                              _text(
+                                switch (cloud.status) {
+                                  AccountCloudStatus.syncing => '正在同步…',
+                                  AccountCloudStatus.synced => '已同步',
+                                  AccountCloudStatus.paused => '已暂停',
+                                  _ => '待同步',
+                                },
+                                cloud.status == AccountCloudStatus.synced
+                                    ? 'Synced'
+                                    : 'Pending',
+                              ),
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(switch (cloud.status) {
-                          AccountCloudStatus.syncing => _text(
-                            '正在同步…',
-                            'Syncing…',
+                      if (cloud.publicReactions != null)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            _text('公共收藏与投票统计', 'Public likes and votes'),
                           ),
-                          AccountCloudStatus.synced => _text('已同步', 'Synced'),
-                          AccountCloudStatus.pending => _text(
-                            '等待重试',
-                            'Retry needed',
+                          subtitle: Text(
+                            cloud.publicError ??
+                                _text(
+                                  !cloud.enabled
+                                      ? '已暂停'
+                                      : cloud.publicSyncing
+                                      ? '正在同步…'
+                                      : cloud.publicSynced
+                                      ? '已同步'
+                                      : '待同步',
+                                  !cloud.enabled
+                                      ? 'Paused'
+                                      : cloud.publicSyncing
+                                      ? 'Syncing…'
+                                      : cloud.publicSynced
+                                      ? 'Synced'
+                                      : 'Pending',
+                                ),
                           ),
-                          AccountCloudStatus.paused => _text('已暂停', 'Paused'),
-                          AccountCloudStatus.idle => _text(
-                            '等待同步',
-                            'Ready to sync',
-                          ),
-                        }),
-                      ),
-                      TextButton(
-                        key: const ValueKey('account-cloud-sync'),
-                        onPressed:
-                            !cloud.enabled ||
-                                cloud.status == AccountCloudStatus.syncing
-                            ? null
-                            : cloud.synchronize,
-                        child: Text(_text('立即同步', 'Sync now')),
-                      ),
+                        ),
                     ],
                   ),
-                  if (cloud.error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      key: const ValueKey('account-cloud-sync'),
+                      onPressed: busy || !cloud.enabled || cloud.syncing
+                          ? null
+                          : cloud.retry,
                       child: Text(
-                        cloud.error!,
-                        style: TextStyle(color: colors.error),
-                      ),
-                    ),
-                  if (cloud.publicReactions != null) ...[
-                    Row(
-                      children: [
-                        const Icon(Icons.leaderboard_outlined, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _text(
-                              cloud.publicSyncing
-                                  ? '公共统计同步中…'
-                                  : cloud.publicReactions!.error != null
-                                  ? '公共统计待重试'
-                                  : cloud.publicSynced
-                                  ? '公共统计已同步'
-                                  : '公共统计待同步',
-                              cloud.publicSyncing
-                                  ? 'Syncing public statistics…'
-                                  : cloud.publicReactions!.error != null
-                                  ? 'Public sync needs retry'
-                                  : cloud.publicSynced
-                                  ? 'Public statistics synced'
-                                  : 'Public statistics pending',
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          key: const ValueKey('account-public-sync'),
-                          onPressed:
-                              busy ||
-                                  cloud.publicSyncing ||
-                                  cloud.status == AccountCloudStatus.syncing
-                              ? null
-                              : cloud.synchronize,
-                          child: Text(_text('刷新', 'Refresh')),
-                        ),
-                      ],
-                    ),
-                    if (cloud.publicReactions!.error case final publicError?)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          publicError,
-                          style: TextStyle(color: colors.error),
+                        _text(
+                          cloud.overallStatus == AccountCloudStatus.pending
+                              ? '重试'
+                              : '同步',
+                          cloud.overallStatus == AccountCloudStatus.pending
+                              ? 'Retry'
+                              : 'Sync',
                         ),
                       ),
-                  ],
+                    ),
+                  ),
                   TextButton.icon(
                     key: const ValueKey('account-edit-nickname'),
                     onPressed: busy ? null : () => _editNickname(service!),

@@ -1,13 +1,70 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:app_identity/app_identity.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_sync/webdav_sync.dart';
 import 'support/account_sync_fixture.dart';
+import 'package:board_game_agent/features/identity/services/account_sync_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'public capture and private acknowledgement serialize journal writes without losing new operations',
+    () async {
+      var entities = <String, Map<String, Object?>>{};
+      String? journal;
+      final entered = Completer<void>(), release = Completer<void>();
+      var hold = false;
+      AccountSyncLocalStore makeStore() => AccountSyncLocalStore(
+        datasetId: 'account-a',
+        transaction: <T>(work) async => work(
+          cloneEntities(entities),
+          (value) async => entities = cloneEntities(value),
+        ),
+        readJournal: () async => journal,
+        writeJournal: (value) async {
+          if (hold && !entered.isCompleted) {
+            entered.complete();
+            await release.future;
+          }
+          journal = value;
+        },
+      );
+      final local = makeStore();
+      await local.initialize();
+      entities['favorite|cabo'] = {'gameSlug': 'cabo'};
+      hold = true;
+      final first = local.captureReactions();
+      await entered.future;
+      final ack = local.saveCheckpoint(
+        SyncCheckpoint.empty().copyWith(uploadSequence: 1),
+      );
+      entities = {
+        'favorite|splendor': {'gameSlug': 'splendor'},
+      };
+      final second = local.captureReactions();
+      release.complete();
+      await Future.wait([first, ack, second]);
+      final restored = makeStore();
+      await restored.initialize();
+      expect((await restored.loadCheckpoint()).uploadSequence, 1);
+      expect(
+        (await restored.pendingOperations(
+          afterSequence: 1,
+        )).map((op) => op.sequence),
+        [2, 3],
+      );
+      expect(
+        restored.publicReactions
+            .where((op) => op.operation == SyncOperationType.upsert)
+            .single
+            .entityId,
+        'splendor',
+      );
+    },
+  );
   test(
     'new devices sync with only a pre-provisioned operations folder',
     () async {

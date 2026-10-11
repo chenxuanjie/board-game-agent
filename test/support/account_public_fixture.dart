@@ -7,6 +7,7 @@ class PublicFixtureHub {
   PrivateFileFailure? failure;
   Completer<void>? readGate;
   int writes = 0;
+  int calls = 0;
 }
 
 class MemoryPublicFiles implements AccountPublicFiles {
@@ -17,6 +18,7 @@ class MemoryPublicFiles implements AccountPublicFiles {
   @override
   void cancelRequests() {}
   void check() {
+    hub.calls++;
     if (hub.failure != null) throw PrivateFileException(hub.failure!);
   }
 

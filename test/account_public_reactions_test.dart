@@ -31,6 +31,137 @@ Future<void> _publish(
 
 void main() {
   test(
+    'simultaneous accounts read after their writes and each sees two likes',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture(), b = SyncDeviceFixture(scope: 'b');
+      await a.start();
+      await b.start();
+      _favorite(a, 'carcassonne_3');
+      _favorite(b, 'carcassonne_3');
+      final bothWritten = Completer<void>();
+      var writes = 0;
+      Future<void> barrier() async {
+        if (++writes == 2) bothWritten.complete();
+        await bothWritten.future;
+      }
+
+      final ra = AccountPublicReactions(
+        _HookPublicFiles(hub, 101)..afterWrite = barrier,
+      );
+      final rb = AccountPublicReactions(
+        _HookPublicFiles(hub, 102)..afterWrite = barrier,
+      );
+      await Future.wait([_publish(ra, a), _publish(rb, b)]);
+      expect(ra.counts(GameVoteBallot.favoritesNamespace)['carcassonne_3'], 1);
+      expect(rb.counts(GameVoteBallot.favoritesNamespace)['carcassonne_3'], 1);
+      expect(hub.writes, 2);
+      expect(ra.submissionConfirmed, isTrue);
+      expect(rb.submissionConfirmed, isTrue);
+    },
+  );
+
+  test(
+    'cancellation during upload publishes a tombstone before completing',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture();
+      await a.start();
+      _favorite(a, 'carcassonne_3');
+      final entered = Completer<void>(), release = Completer<void>();
+      final files = _HookPublicFiles(hub, 101)
+        ..afterWrite = () async {
+          if (!entered.isCompleted) {
+            entered.complete();
+            await release.future;
+          }
+        };
+      final remote = AccountPublicReactions(files);
+      final task = _publish(remote, a);
+      await entered.future;
+      a.entities.clear();
+      await a.local.capture();
+      release.complete();
+      await task;
+      expect(a.entities, isEmpty);
+      expect(hub.writes, 2);
+      expect(
+        jsonDecode(
+          hub.objects.values.single.text,
+        )['operations'].single['operation'],
+        'delete',
+      );
+      expect(remote.confirmedFingerprint, a.local.publicFingerprint);
+    },
+  );
+
+  test(
+    'confirmed upload with failed totals refresh retries without another upload',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture();
+      await a.start();
+      _favorite(a, 'carcassonne_3');
+      final files = _HookPublicFiles(hub, 101);
+      files.afterWrite = () async => files.failRoot = true;
+      final remote = AccountPublicReactions(files);
+      await expectLater(
+        _publish(remote, a),
+        throwsA(isA<PrivateFileException>()),
+      );
+      expect(remote.submissionConfirmed, isTrue);
+      expect(hub.writes, 1);
+      files.failRoot = false;
+      await _publish(remote, a);
+      expect(remote.error, isNull);
+      expect(hub.writes, 1);
+    },
+  );
+
+  test(
+    'lost upload response recovers the remote version without counting twice',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture();
+      await a.start();
+      _favorite(a, 'carcassonne_3');
+      final files = _HookPublicFiles(hub, 101)
+        ..afterWrite = () async {
+          throw const PrivateFileException(PrivateFileFailure.network);
+        };
+      final remote = AccountPublicReactions(files);
+      await expectLater(
+        _publish(remote, a),
+        throwsA(isA<PrivateFileException>()),
+      );
+      expect(remote.submissionConfirmed, isFalse);
+      files.afterWrite = null;
+      await _publish(remote, a);
+      expect(remote.submissionConfirmed, isTrue);
+      expect(hub.writes, 1);
+    },
+  );
+
+  test(
+    'upload readback mismatch cannot confirm or replace cached totals',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture();
+      await a.start();
+      _favorite(a, 'carcassonne_3');
+      final files = _HookPublicFiles(hub, 101)
+        ..afterWrite = () async {
+          final path = hub.objects.keys.single;
+          hub.objects[path] = (owner: 101, text: '{}');
+        };
+      final remote = AccountPublicReactions(files);
+      await expectLater(_publish(remote, a), throwsA(isA<Exception>()));
+      expect(remote.submissionConfirmed, isFalse);
+      expect(remote.counts(GameVoteBallot.favoritesNamespace), isEmpty);
+      expect(a.entities, contains('favorite|carcassonne_3'));
+    },
+  );
+  test(
     'administrator-provisioned folders count their UID namespaces separately',
     () async {
       final hub = PublicFixtureHub()
@@ -283,4 +414,23 @@ void main() {
     expect(hub.writes, writes);
     expect(remote.counts(GameVoteBallot.campaign), isEmpty);
   });
+}
+
+class _HookPublicFiles extends MemoryPublicFiles {
+  _HookPublicFiles(super.hub, super.uid);
+  Future<void> Function()? afterWrite;
+  bool failRoot = false;
+  @override
+  Future<List<AccountPublicEntry>> entries(String relativePath) {
+    if (relativePath.isEmpty && failRoot) {
+      throw const PrivateFileException(PrivateFileFailure.network);
+    }
+    return super.entries(relativePath);
+  }
+
+  @override
+  Future<void> replaceOwn(String relativePath, String content) async {
+    await super.replaceOwn(relativePath, content);
+    await afterWrite?.call();
+  }
 }

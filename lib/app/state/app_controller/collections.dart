@@ -18,7 +18,9 @@ extension AppCollectionController on AppController {
       '${nationalDayGames.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}';
 
   Future<bool> toggleFavorite(GameInfo game) {
-    if (_switchingIdentityScope) return Future<bool>.value(false);
+    if (_switchingIdentityScope || _accountReactionCommit) {
+      return Future<bool>.value(false);
+    }
     final Future<bool> operation = _favoriteMutationQueue
         .catchError((Object _) {})
         .then<bool>((_) => _toggleFavoriteNow(game));

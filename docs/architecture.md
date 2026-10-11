@@ -28,7 +28,7 @@ AI 欢迎区、输入工具区、模型/推理/服务等级弹层与展示动效
 
 配置导入导出共用 `lib/ui/shared/settings_transfer_screen.dart`；格式识别在 `lib/features/settings/models/configuration_transfer.dart`，跨存储保存及中断恢复在 `lib/features/settings/services/settings_transfer_service.dart`。设置页只提供范围入口与应用后的表单刷新，不复制解析或存储路径。格式、依赖补丁和验收边界见 [设置导入与导出](settings-transfer.md)。
 
-喜欢排行榜共用 `lib/ui/shared/game_ranking_screen.dart`，排名规则在 `lib/features/games/services/game_favorite_ranker.dart`，收藏挂接在 `lib/app/state/app_controller/rankings.dart`。统计复用现有投票状态与缓存，通过 FileStation 账号公共快照按 UID 汇总已保存收藏，不与国庆想玩票数混用。桌面侧栏与 Android“我的”公开入口，数据范围、缓存与验收见 [喜欢排行榜](favorite-rankings.md)。
+喜欢排行榜共用 `lib/ui/shared/game_ranking_screen.dart`，排名规则在 `lib/features/games/services/game_favorite_ranker.dart`，收藏挂接在 `lib/app/state/app_controller/rankings.dart`。统计复用现有投票状态与缓存，AccountCloudSync 统一入口下的公共/私人网络链路独立；通过 FileStation 账号公共快照按 UID 汇总已保存收藏，写后核对和重新汇总，本机日志串行提交，不与国庆想玩票数混用。桌面侧栏与 Android“我的”公开入口，数据范围、缓存与验收见 [喜欢排行榜](favorite-rankings.md)。
 
 资料源连接编辑共用 `lib/ui/shared/resource_connection_screen.dart`，手机设置与桌面资料源均可进入。地址和账号保存沿用 `SettingsTransferService` 的安全存储、资料源持久化与失败回滚，保存后用于真实资源请求和更新检查。初始连接、旧地址迁移与发布注入见 [可编辑资源连接](resource-connections.md)。
 

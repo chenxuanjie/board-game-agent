@@ -301,6 +301,11 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
               '同步中',
               '正在同步想玩投票',
             ),
+            GameVoteSyncStatus.paused => (
+              Icons.cloud_off_outlined,
+              '已暂停',
+              '云同步已暂停，投票保存在本机',
+            ),
             GameVoteSyncStatus.synced => (
               Icons.cloud_done_outlined,
               '已同步',

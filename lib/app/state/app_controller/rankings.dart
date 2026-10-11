@@ -26,8 +26,12 @@ extension AppRankingController on AppController {
       GameFavoriteRanker.rank(_games, favoriteStatistics.count);
 
   Future<void> refreshFavoriteRankings() async {
-    if (_switchingIdentityScope) return;
+    if (_controllerDisposed || _identityScopeRequests > 0) return;
     final epoch = _identityScopeEpoch;
+    // A brief journal projection is not an account switch. Queue ranking entry
+    // behind that commit instead of silently dropping its refresh request.
+    await _accountCloudWork?.timeout(const Duration(seconds: 15));
+    if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     if (!_favoriteRecordsLoaded) {
       final read = _favoriteMutationQueue.catchError((Object _) {}).then<bool>((
         _,

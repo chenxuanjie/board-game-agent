@@ -11,6 +11,9 @@ import 'package:board_game_agent/features/assistant/models/ai_conversation.dart'
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
+import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
+import 'package:board_game_agent/features/games/services/game_vote_service.dart';
+import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/ui/mobile/mine_content.dart';
 import 'package:board_game_agent/ui/shared/account_scope.dart';
@@ -70,6 +73,19 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('account-cloud-sync')), findsOneWidget);
+      expect(find.byKey(const ValueKey('account-public-sync')), findsNothing);
+      final cloud = service.cloud!;
+      cloud.status = AccountCloudStatus.pending;
+      cloud.error = 'Personal sync needs retry';
+      cloud.publicSynced = true;
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _mount(tester, service, textScale: 1.5);
+      expect(find.text('Some data needs retry'), findsOneWidget);
+      expect(find.text('Personal sync needs retry'), findsNothing);
+      await _tapAccountAction(tester, 'account-sync-details');
+      await tester.pumpAndSettle();
+      expect(find.text('Personal sync needs retry'), findsOneWidget);
+      expect(tester.takeException(), isNull);
       await _tapAccountAction(tester, 'account-cloud-enabled');
       await tester.pumpAndSettle();
       expect(service.cloud?.enabled, isFalse);
@@ -495,6 +511,19 @@ MobileMineContent _mine(AppController controller) => MobileMineContent(
 );
 
 class _MineFixture extends ChangeNotifier implements AppController {
+  final _votes = GameVoteService(preferences: PreferencesService());
+  final _likes = GameVoteService(preferences: PreferencesService());
+  @override
+  GameVoteService get gameVotes => _votes;
+  @override
+  GameVoteService get favoriteStatistics => _likes;
+  @override
+  void dispose() {
+    _votes.dispose();
+    _likes.dispose();
+    super.dispose();
+  }
+
   @override
   ConnectivityStatus get assetConnectivityStatus =>
       ConnectivityStatus.unknown();

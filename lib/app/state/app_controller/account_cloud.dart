@@ -10,27 +10,54 @@ extension AppAccountCloudController on AppController {
       Future<void> Function(AccountEntities) project,
     )
     work,
-  ) async {
-    if (identityUserId != scope ||
-        !accountCloudIdle ||
-        _accountCloudWork != null) {
-      throw StateError('账号数据暂忙，请稍后同步');
-    }
+  ) => _accountDataTransaction(scope, work, reactionsOnly: false);
+
+  /// Reactions touch only their own durable stores. An active AI response does
+  /// not delay publication or get replaced by a public projection.
+  Future<T> accountCloudReactionTransaction<T>(
+    String scope,
+    Future<T> Function(
+      AccountEntities current,
+      Future<void> Function(AccountEntities) project,
+    )
+    work,
+  ) => _accountDataTransaction(scope, work, reactionsOnly: true);
+
+  Future<T> _accountDataTransaction<T>(
+    String scope,
+    Future<T> Function(
+      AccountEntities current,
+      Future<void> Function(AccountEntities) project,
+    )
+    work, {
+    required bool reactionsOnly,
+  }) async {
+    do {
+      await waitForAccountCloudData(scope, reactionsOnly: reactionsOnly);
+    } while (_accountCloudWork != null ||
+        _switchingIdentityScope ||
+        _accountReactionCommit);
     final done = Completer<void>();
     _accountCloudWork = done.future;
-    _switchingIdentityScope = true;
+    if (reactionsOnly) {
+      _accountReactionCommit = true;
+    } else {
+      _switchingIdentityScope = true;
+    }
     _notifyListeners();
     try {
       await Future.wait<void>([
-        _conversationSaveQueue,
+        if (!reactionsOnly) _conversationSaveQueue,
         _favoriteMutationQueue,
-        _recentGamesMutationQueue,
-        _searchHistoryMutationQueue,
-        _dailyRecommendationSaveQueue,
-        _selectedConversationSaveQueue,
+        if (!reactionsOnly) _recentGamesMutationQueue,
+        if (!reactionsOnly) _searchHistoryMutationQueue,
+        if (!reactionsOnly) _dailyRecommendationSaveQueue,
+        if (!reactionsOnly) _selectedConversationSaveQueue,
         _preferencesService.drainPersonalWrites(),
       ]).timeout(const Duration(seconds: 15));
-      if (_conversationDirty) await _persistConversations(throwOnError: true);
+      if (!reactionsOnly && _conversationDirty) {
+        await _persistConversations(throwOnError: true);
+      }
       void check() {
         if (_controllerDisposed ||
             identityUserId != scope ||
@@ -40,18 +67,121 @@ extension AppAccountCloudController on AppController {
       }
 
       check();
-      final current = await _readCloudEntities(scope);
+      final current = reactionsOnly
+          ? await _readCloudReactions()
+          : await _readCloudEntities(scope);
       return await work(current, (entities) async {
         check();
-        await _projectCloudEntities(scope, entities, current);
+        if (reactionsOnly) {
+          await _projectCloudReactions(entities);
+        } else {
+          await _projectCloudEntities(scope, entities, current);
+        }
         check();
       });
     } finally {
       done.complete();
       _accountCloudWork = null;
-      _switchingIdentityScope = _identityScopeRequests > 0;
+      _accountReactionCommit = false;
+      if (!reactionsOnly) _switchingIdentityScope = _identityScopeRequests > 0;
       _notifyListeners();
     }
+  }
+
+  Future<void> waitForAccountCloudData(
+    String scope, {
+    bool reactionsOnly = false,
+  }) async {
+    // The two network lanes share only this short local commit barrier.
+    // Waiting for another commit is normal scheduling, not a sync failure.
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    bool idle() => reactionsOnly
+        ? !_controllerDisposed &&
+              !_switchingIdentityScope &&
+              !_accountReactionCommit &&
+              !_gameVotes.saving &&
+              !(_nationalDayList?.saving ?? false)
+        : accountCloudIdle;
+    while (!idle() || _accountCloudWork != null) {
+      if (_controllerDisposed ||
+          identityUserId != scope ||
+          _identityScopeRequests > 0) {
+        throw StateError('账号已切换');
+      }
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) throw TimeoutException('本机数据仍在保存');
+      final ready = Completer<void>();
+      void changed() {
+        if (!ready.isCompleted) ready.complete();
+      }
+
+      addListener(changed);
+      try {
+        await ready.future.timeout(remaining);
+      } finally {
+        removeListener(changed);
+      }
+    }
+    if (identityUserId != scope || _controllerDisposed) {
+      throw StateError('账号已切换');
+    }
+  }
+
+  Future<AccountEntities> _readCloudReactions() async {
+    final result = <String, Map<String, Object?>>{};
+    for (final favorite in await _preferencesService.loadFavoriteGames()) {
+      result['favorite|${favorite.gameSlug}'] = favorite.toMap();
+    }
+    final ballot = await _preferencesService.loadGameVoteCache();
+    if (ballot != null) {
+      for (final slug in GameVoteCache.decode(ballot).ballot.games) {
+        result['vote|$slug'] = {
+          'slug': slug,
+          'campaign': GameVoteBallot.campaign,
+        };
+      }
+    }
+    return result;
+  }
+
+  Future<void> _projectCloudReactions(AccountEntities entities) async {
+    final favorites = <FavoriteGameRecord>[], votes = <String>[];
+    for (final entry in entities.entries) {
+      if (entry.key.startsWith('favorite|')) {
+        final record = FavoriteGameRecord.tryFromMap(entry.value);
+        if (record == null || entry.key != 'favorite|${record.gameSlug}') {
+          throw const FormatException('云端收藏格式错误');
+        }
+        favorites.add(record);
+      } else if (entry.key.startsWith('vote|')) {
+        final slug = entry.key.substring(5);
+        if (!GameVoteBallot.slugPattern.hasMatch(slug) ||
+            entry.value['slug'] != slug ||
+            entry.value['campaign'] != GameVoteBallot.campaign) {
+          throw const FormatException('云端投票格式错误');
+        }
+        votes.add(slug);
+      }
+    }
+    if (favorites.length > 2048 || votes.length > 256) {
+      throw const FormatException('云端收藏或投票数量超过上限');
+    }
+    await _gameVotes.load();
+    final raw = await _preferencesService.loadGameVoteCache();
+    if (raw == null) throw const FormatException('本机投票缓存未初始化');
+    final cache = GameVoteCache.decode(raw);
+    favorites.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    await _preferencesService.saveFavoriteGames(favorites);
+    await _preferencesService.saveGameVoteCache(
+      GameVoteCache(
+        ballot: GameVoteBallot(deviceId: cache.ballot.deviceId, games: votes),
+        remoteCounts: cache.remoteCounts,
+        lastScope: cache.lastScope,
+      ).encode(),
+    );
+    await _gameVotes.reload();
+    _favoriteRecordsLoaded = false;
+    await _ensureFavoriteRecords();
   }
 
   Future<AccountEntities> _readCloudEntities(String scope) async {

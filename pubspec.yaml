@@ -240,3 +240,18 @@ flutter:
       platforms: [web, windows, linux, macos, ios]
     - path: assets/games/durian/docs/official/rules/
       platforms: [web, windows, linux, macos, ios]
+    - assets/games/tulip_bubble/images/app/cover/
+    - assets/games/tulip_bubble/images/app/hero/
+    - assets/games/tulip_bubble/images/app/search/
+    - assets/games/tulip_bubble/images/app/thumbnail/
+    - assets/games/tulip_bubble/images/app/gallery/
+    - assets/games/tulip_bubble/game.json
+    - assets/games/tulip_bubble/manifest.json
+    - path: assets/games/tulip_bubble/docs/local/index/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/tulip_bubble/docs/local/knowledge/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/tulip_bubble/docs/local/notes/
+      platforms: [web, windows, linux, macos, ios]
+    - path: assets/games/tulip_bubble/docs/official/other/
+      platforms: [web, windows, linux, macos, ios]

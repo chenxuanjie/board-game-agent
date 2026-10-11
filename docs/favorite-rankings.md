@@ -10,8 +10,10 @@ Windows/Android 登录后以 DSM UID 去重，同账号多个设备仅贡献一�
 
 实现：GameFavoriteRanker、AppController/rankings.dart、GameRankingScreen，及 account_public_reactions.dart；复用现有投票状态与缓存，旧匿名 WebDavGameVoteStore 已移除。
 
-测试：game_ranking_test.dart 验证排序、收藏保存边界、缓存、320/390/1280 dp、150% 字号及详情往返；account_public_reactions_test.dart 验证账号去重、新设备恢复、取消、游标、失败和迟到响应；identity_scope_storage_test.dart 验证真实业务投影、退出隔离和私人同步暂停时公共同步。真实双账号同步和 Android 实机未验收。
+测试：game_ranking_test.dart 验证排序、收藏保存边界、缓存、320/390/1280 dp、150% 字号及详情往返；account_public_reactions_test.dart 验证账号去重、新设备恢复、取消、游标、失败和迟到响应；identity_scope_storage_test.dart 验证真实业务投影、退出隔离和总开关暂停/恢复及私人失败不影响排行。真实双账号同步和 Android 实机未验收。
 
 2026-10-08 样式与零收藏显示：排行榜回归 17 项通过，覆盖真实比例、全部为零、读取失败保留列表、三套主题、320/760/2560 dp 和 150% 字号；主项目全量 513 项及静态分析通过。使用应用打包字体和真实封面渲染宽屏参考布局及 320 dp 深色零收藏列表，宽屏预览人数仅为测试夹具，不写入业务数据或 NAS。Windows Release 已构建至 `build/ranking-redesign/windows/x64/runner/Release`，Flutter 临时构建目录设置已恢复；本次未重新发布 APK，未进行 Android 实机和浏览器人工验收。
 
 回退须配套回退主工程与共享认证包，保留本机收藏与云端快照。
+
+2026-10-10：进入/刷新排行直接加入公共任务，不等待私人 AI 对话传输，也不因私人链路正忙而显示失败。新收藏立即提交，写后读回并重新汇总；只在公共统计实际失败时显示对应提示与重试，加载中不把等待显示成失败，暂停时显示已保存统计。

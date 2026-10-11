@@ -70,9 +70,10 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
         final highestCount = entries.isEmpty ? 0 : entries.first.favoriteCount;
         final metrics = DesktopMetricsScope.of(context);
         final error =
-            _failed ||
+            (_failed && statistics.status != GameVoteSyncStatus.synced) ||
             statistics.loadError != null ||
-            !controller.favoriteRankingSourceReady;
+            (!controller.favoriteRankingSourceReady &&
+                !controller.isSwitchingIdentityScope);
         final syncing =
             _loading || statistics.status == GameVoteSyncStatus.syncing;
         return Scaffold(
@@ -125,18 +126,29 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (syncing) const LinearProgressIndicator(minHeight: 2),
-                      if (!_loading && error)
+                      if (!syncing && error)
                         _notice(
                           copy.localized('喜欢统计读取失败', 'Could not load likes'),
                           action: copy.localized('重试', 'Retry'),
                         )
-                      else if (statistics.status == GameVoteSyncStatus.pending)
+                      else if (!syncing &&
+                          statistics.status == GameVoteSyncStatus.pending)
                         _notice(
                           copy.localized(
-                            statistics.syncError ?? '同步未完成，显示已保存数据',
+                            statistics.syncError ?? '已保存在本机，待同步',
                             'Sync incomplete. Showing saved data',
                           ),
                           action: copy.localized('重试', 'Retry'),
+                        ),
+                      if (statistics.status == GameVoteSyncStatus.paused)
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            copy.localized(
+                              '云同步已暂停，显示已保存数据',
+                              'Cloud sync paused. Showing saved data',
+                            ),
+                          ),
                         ),
                       Expanded(
                         child: RefreshIndicator(

@@ -6,6 +6,12 @@
 
 代码目录及各层职责见 [工程目录说明](docs/architecture.md)。
 
+## 同步与更新检查
+
+桌游资料检查、WebDAV 可用性检测、私人账号数据同步、公共收藏/投票及 APK/EXE 版本检查的定义、频率、并发、共享包与当前实现状态统一见 [同步与更新检查规范](docs/sync-and-update.md)。
+
+资料检查按“初始化完整检查、周期轻量快速检查”规范维护，保留现有 catalog 和资源 manifest，不要求新增 SHA-256 版本清单。当前每 60 秒任务只验证资料目录可用性，周期目录差异比较尚未接入；账号同步的 60 秒补拉、收藏/投票立即提交和应用启动版本检查是不同任务，不能混为同一种“同步”。
+
 ## 当前功能
 
 - Android / Windows 使用群晖账号密码直接登录，按需输入验证码，无需另部署登录服务；Web 暂保留访客模式。详见 [账号接入](docs/identity-integration.md)。
@@ -45,7 +51,7 @@
 
 - 首屏启动优先保证尽快进入首页，不让远端请求阻塞启动
 - 桌游的 `game.json` 和 `manifest.json` 启动时优先使用缓存或包内资源
-- `manifest.resources[]` 中允许 AI 使用的本地 Markdown 会随 APK 提供离线兜底；官方 PDF、HTML 和其他原件仍按需下载缓存
+- Android APK 不内置桌游正文，包括 PDF、Markdown 和知识资料；通过已登录账号访问 NAS，按需下载缓存。资源范围见 [Android APK 资源规则](docs/android-asset-policy.md)。
 - AI 回答优先利用当前桌游知识库，必要时再做智能补充
 
 ## AI 架构参考、规范与借鉴范围
@@ -135,13 +141,13 @@ Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段
 
 ## 相关文档
 
-- 环境安装与 APK 打包步骤见 [BUILD_APK.md](/C:/Study/MyCode/MyProject/board-game-agent/BUILD_APK.md)
-- 启动流程、资源更新与运行逻辑概览见 [DEVELOPER_FLOW_OVERVIEW.md](/C:/Study/MyCode/MyProject/board-game-agent/DEVELOPER_FLOW_OVERVIEW.md)
-- 桌游资源整理规范见 [assets/ASSET_SPEC.md](/C:/Study/MyCode/MyProject/board-game-agent/assets/ASSET_SPEC.md)
+- 环境安装与 APK 打包步骤见 [BUILD_APK.md](BUILD_APK.md)
+- 启动流程、资源更新与运行逻辑概览见 [DEVELOPER_FLOW_OVERVIEW.md](DEVELOPER_FLOW_OVERVIEW.md)
+- 桌游资源整理规范见 [assets/ASSET_SPEC.md](assets/ASSET_SPEC.md)
 
 ## 说明
 
 - 如果首次打开某个规则书或 FAQ，应用可能会先下载远端文件，再进入阅读页
 - AI 和资源访问能力依赖当前配置的接口地址、资源源可达性以及本地缓存状态
 
-账号个人数据云同步已复用公共包增量协议，保存到登录用户的群晖私有 home；范围、离线重试和限制见 [账号云同步](docs/account-cloud-sync.md)。
+账号个人数据云同步已复用公共包增量协议，保存到登录用户的群晖私有 home；同步方式总览见 [同步与更新检查规范](docs/sync-and-update.md)，范围、离线重试和限制见 [账号云同步](docs/account-cloud-sync.md)。

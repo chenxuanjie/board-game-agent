@@ -460,12 +460,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       if (cloud.publicReactions case final reactions?) {
         _controller.configureAccountReactions(
           scope: 'account-public-v1.$target',
-          error: () => reactions.error,
+          error: () => cloud.publicError,
           provider: (namespace) => AccountReactionRemote(
             scope: 'account-public-v1.$target',
             namespace: namespace,
             reactions: reactions,
             refresh: cloud.refreshPublic,
+            isEnabled: () => cloud.enabled,
           ),
         );
       }

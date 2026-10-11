@@ -139,7 +139,7 @@ class AppController extends ChangeNotifier {
   GameVoteService _gameVotes;
   final GameVoteService? _guestVoteTemplate;
   GameVoteService get gameVotes => _gameVotes
-    ..canMutate = (() => !_switchingIdentityScope)
+    ..canMutate = (() => !_switchingIdentityScope && !_accountReactionCommit)
     ..cachedCountVisibility = (() =>
         identityUserId != null || _gameVotes.remoteProvider != null)
     ..accountScopeProvider = (() =>
@@ -153,10 +153,12 @@ class AppController extends ChangeNotifier {
   Future<void> _identityScopeQueue = Future<void>.value();
   int _identityScopeRequests = 0;
   Future<void>? _accountCloudWork;
+  bool _accountReactionCommit = false;
   bool _controllerDisposed = false;
   bool get accountCloudIdle =>
       !_controllerDisposed &&
       !_switchingIdentityScope &&
+      !_accountReactionCommit &&
       !_gameVotes.saving &&
       !(_nationalDayList?.saving ?? false) &&
       !_generationStates.values.any((state) => state.isSending) &&
