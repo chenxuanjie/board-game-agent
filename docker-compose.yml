@@ -1,0 +1,14 @@
+services:
+  board-game-agent:
+    build:
+      context: ..
+      dockerfile: board-game-agent/Dockerfile
+    image: board-game-agent:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8088}:80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
