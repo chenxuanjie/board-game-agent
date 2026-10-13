@@ -1,3 +1,4 @@
+import 'app_modals.dart';
 import 'package:flutter/material.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/models/connectivity_status.dart';
@@ -72,7 +73,7 @@ class ResourceAccessSummary extends StatelessWidget {
   }
 
   void _details(BuildContext context) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (context) => AnimatedBuilder(
         animation: controller,

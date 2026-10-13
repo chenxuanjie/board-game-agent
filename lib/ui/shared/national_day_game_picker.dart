@@ -1,3 +1,4 @@
+import 'app_modals.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -37,7 +38,7 @@ Future<GameInfo?> showNationalDayGamePicker(
     ),
   );
   if (compact) {
-    return showModalBottomSheet<GameInfo>(
+    return showAppBottomSheet<GameInfo>(
       context: context,
       sheetAnimationStyle: AppMotion.panelStyle(context),
       isScrollControlled: true,
@@ -51,7 +52,7 @@ Future<GameInfo?> showNationalDayGamePicker(
       ),
     );
   }
-  return showDialog<GameInfo>(
+  return showAppDialog<GameInfo>(
     context: context,
     animationStyle: AppMotion.menuStyle(context),
     builder: (context) => Dialog(child: content(context)),

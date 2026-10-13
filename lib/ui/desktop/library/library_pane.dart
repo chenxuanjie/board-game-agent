@@ -23,6 +23,9 @@ class DesktopLibraryPane extends StatefulWidget {
 class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
   String? _openingItemId;
   String? _downloadingItemId;
+  bool _choosingDownloadDirectory = false;
+  final Map<String, String> _downloadResults = {};
+  final Set<String> _downloadFailures = {};
 
   @override
   void initState() {
@@ -234,8 +237,20 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
                         _openingItemId == resource.id ||
                         _downloadingItemId == resource.id,
                     isDownloading: _downloadingItemId == resource.id,
-                    onOpen: () => _openItem(resource),
-                    onDownload: () => _downloadItem(resource),
+                    result: _downloadResults[resource.id],
+                    failed: _downloadFailures.contains(resource.id),
+                    onOpen:
+                        _openingItemId != null ||
+                            _downloadingItemId != null ||
+                            _choosingDownloadDirectory
+                        ? null
+                        : () => _openItem(resource),
+                    onDownload:
+                        _openingItemId != null ||
+                            _downloadingItemId != null ||
+                            _choosingDownloadDirectory
+                        ? null
+                        : () => _downloadItem(resource),
                   ),
                 );
               },
@@ -246,7 +261,11 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
   }
 
   Future<void> _openItem(DesktopLibraryResource resource) async {
-    if (_openingItemId != null || _downloadingItemId != null) return;
+    if (_openingItemId != null ||
+        _downloadingItemId != null ||
+        _choosingDownloadDirectory) {
+      return;
+    }
     if (!resource.canOpen) {
       final AppCopy copy = widget.controller.copy;
       ScaffoldMessenger.of(context)
@@ -278,13 +297,17 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
   }
 
   Future<void> _downloadItem(DesktopLibraryResource resource) async {
-    if (_openingItemId != null || _downloadingItemId != null) return;
+    if (_openingItemId != null ||
+        _downloadingItemId != null ||
+        _choosingDownloadDirectory) {
+      return;
+    }
     if (kIsWeb) {
       _showDownloadUnavailable('当前 Web 端不支持选择本地下载目录');
       return;
     }
 
-    setState(() => _downloadingItemId = resource.id);
+    setState(() => _choosingDownloadDirectory = true);
     try {
       final String? directory = await FilePicker.platform.getDirectoryPath(
         dialogTitle: widget.controller.copy.desktopDownloadDirectory,
@@ -292,6 +315,12 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
       if (!mounted || directory == null || directory.trim().isEmpty) {
         return;
       }
+      setState(() {
+        _choosingDownloadDirectory = false;
+        _downloadingItemId = resource.id;
+        _downloadResults.remove(resource.id);
+        _downloadFailures.remove(resource.id);
+      });
       final String? destination = await widget.controller
           .downloadLibraryResource(
             resource: resource,
@@ -299,26 +328,32 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
           );
       if (!mounted) return;
       if (destination == null) {
-        _showDownloadUnavailable(widget.controller.copy.desktopDownloadFailed);
+        setState(() {
+          _downloadFailures.add(resource.id);
+          _downloadResults[resource.id] =
+              widget.controller.copy.desktopDownloadFailed;
+        });
         return;
       }
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.controller.copy.desktopDownloadedTo(destination),
-            ),
-          ),
-        );
+      setState(
+        () => _downloadResults[resource.id] = widget.controller.copy
+            .desktopDownloadedTo(destination),
+      );
     } catch (error) {
       if (mounted) {
-        _showDownloadUnavailable(
-          widget.controller.copy.desktopDownloadError(error),
-        );
+        setState(() {
+          _downloadFailures.add(resource.id);
+          _downloadResults[resource.id] = widget.controller.copy
+              .desktopDownloadError(error);
+        });
       }
     } finally {
-      if (mounted) setState(() => _downloadingItemId = null);
+      if (mounted) {
+        setState(() {
+          _downloadingItemId = null;
+          _choosingDownloadDirectory = false;
+        });
+      }
     }
   }
 
@@ -498,14 +533,18 @@ class _LibraryItemTile extends StatelessWidget {
     required this.isDownloading,
     required this.onOpen,
     required this.onDownload,
+    this.result,
+    this.failed = false,
   });
 
   final DesktopLibraryResource resource;
   final AppCopy copy;
   final bool isLoading;
   final bool isDownloading;
-  final VoidCallback onOpen;
-  final VoidCallback onDownload;
+  final VoidCallback? onOpen;
+  final VoidCallback? onDownload;
+  final String? result;
+  final bool failed;
 
   @override
   Widget build(BuildContext context) {
@@ -558,21 +597,48 @@ class _LibraryItemTile extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      '${resource.gameTitle} · ${_displayTitle()}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${_typeLabel()} · ${_languageLabel()}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                child: AnimatedSize(
+                  duration: AppMotion.duration(context, AppMotion.content),
+                  curve: AppMotion.curve,
+                  alignment: Alignment.topLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '${resource.gameTitle} · ${_displayTitle()}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_typeLabel()} · ${_languageLabel()}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (result != null)
+                        Tooltip(
+                          message: result!,
+                          child: AnimatedSwitcher(
+                            duration: AppMotion.duration(context),
+                            child: Text(
+                              failed
+                                  ? copy.localized(
+                                      '下载未完成，请重试',
+                                      'Download incomplete. Retry.',
+                                    )
+                                  : copy.localized('已下载', 'Downloaded'),
+                              key: ValueKey((result, failed)),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: failed
+                                        ? palette.error
+                                        : palette.success,
+                                  ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               if (isLoading)
@@ -585,20 +651,26 @@ class _LibraryItemTile extends StatelessWidget {
                 PopupMenuButton<_LibraryItemAction>(
                   popUpAnimationStyle: AppMotion.menuStyle(context),
                   key: ValueKey<String>('library-more-${resource.id}'),
-                  tooltip: copy.desktopMore,
+                  enabled: onOpen != null || onDownload != null,
+                  tooltip: onOpen == null && onDownload == null
+                      ? copy.localized(
+                          '正在处理资料，请稍候',
+                          'Processing a resource. Please wait.',
+                        )
+                      : copy.desktopMore,
                   onSelected: (_LibraryItemAction action) {
                     switch (action) {
                       case _LibraryItemAction.open:
-                        onOpen();
+                        onOpen?.call();
                       case _LibraryItemAction.download:
-                        onDownload();
+                        onDownload?.call();
                     }
                   },
                   itemBuilder: (BuildContext context) =>
                       <PopupMenuEntry<_LibraryItemAction>>[
                         PopupMenuItem<_LibraryItemAction>(
                           value: _LibraryItemAction.open,
-                          enabled: resource.canOpen,
+                          enabled: resource.canOpen && onOpen != null,
                           child: Text(
                             resource.canOpen
                                 ? copy.desktopOpen
@@ -607,6 +679,7 @@ class _LibraryItemTile extends StatelessWidget {
                         ),
                         PopupMenuItem<_LibraryItemAction>(
                           value: _LibraryItemAction.download,
+                          enabled: onDownload != null,
                           child: Text(copy.desktopDownload),
                         ),
                       ],

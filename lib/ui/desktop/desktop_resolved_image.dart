@@ -82,9 +82,15 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
         future: _pathFuture,
         builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
           final String? path = snapshot.data;
+          if (snapshot.connectionState != ConnectionState.done &&
+              path == null &&
+              !kIsWeb) {
+            return const ImageLoadingPlaceholder();
+          }
           if (snapshot.hasError || path == null || path.isEmpty) {
             if (!kIsWeb) return _placeholder(context);
             return Image.asset(
+              gaplessPlayback: true,
               widget.assetPath,
               fit: widget.fit,
               frameBuilder: revealImageFrame,
@@ -93,6 +99,7 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
           }
           if (path.startsWith('data:')) {
             return Image.memory(
+              gaplessPlayback: true,
               Uri.parse(path).data!.contentAsBytes(),
               fit: widget.fit,
               frameBuilder: revealImageFrame,
@@ -100,6 +107,7 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
             );
           }
           return Image.file(
+            gaplessPlayback: true,
             frameBuilder: revealImageFrame,
             File(path),
             fit: widget.fit,

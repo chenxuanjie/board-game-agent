@@ -1,3 +1,4 @@
+import 'app_modals.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -169,7 +170,7 @@ class _AccountScreenState extends State<AccountScreen> {
   );
 
   Future<void> _editNickname(AccountService service) async {
-    final value = await showDialog<String>(
+    final value = await showAppDialog<String>(
       context: context,
       builder: (_) => _AccountNicknameDialog(
         nickname: service.displayName,

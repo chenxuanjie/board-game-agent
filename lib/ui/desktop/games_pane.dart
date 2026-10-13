@@ -1,6 +1,9 @@
 // Body layout adapted directly from the read-only Desktop reference.
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
+import '../shared/library_viewport.dart';
+import '../shared/app_modals.dart';
+import '../../app/state/browse_session.dart';
 import '../../core/theme/app_motion.dart';
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
@@ -17,6 +20,7 @@ class DesktopGamesPane extends StatefulWidget {
     required this.onToggleFavorite,
     this.sourceGames,
     this.showPreview = true,
+    this.scrollController,
   });
   final AppController controller;
   final ValueChanged<String> onNavigate;
@@ -24,18 +28,40 @@ class DesktopGamesPane extends StatefulWidget {
   final ValueChanged<GameInfo> onToggleFavorite;
   final List<GameInfo>? sourceGames;
   final bool showPreview;
+  final ScrollController? scrollController;
   @override
   State<DesktopGamesPane> createState() => _DesktopGamesPaneState();
 }
 
 class _DesktopGamesPaneState extends State<DesktopGamesPane> {
-  int _category = 0;
-  _DesktopGameSort _sort = _DesktopGameSort.catalog;
-  String? _playerFilter;
-  String? _durationFilter;
-  final Set<String> _typeFilters = <String>{};
-  String? _weightFilter;
-  double? _minScore;
+  final _favoriteBrowse = LibraryBrowseState();
+  LibraryBrowseState get _browse => widget.sourceGames == null
+      ? widget.controller.browseSession.library
+      : _favoriteBrowse;
+  int get _category => _browse.category;
+  set _category(int value) {
+    _browse.category = value;
+    _browse.resetPosition();
+  }
+
+  _DesktopGameSort get _sort => _DesktopGameSort.values.firstWhere(
+    (s) => s.name == _browse.sort,
+    orElse: () => _DesktopGameSort.catalog,
+  );
+  set _sort(_DesktopGameSort value) {
+    _browse.sort = value.name;
+    _browse.resetPosition();
+  }
+
+  String? get _playerFilter => _browse.player;
+  set _playerFilter(String? value) => _browse.player = value;
+  String? get _durationFilter => _browse.duration;
+  set _durationFilter(String? value) => _browse.duration = value;
+  Set<String> get _typeFilters => _browse.types;
+  String? get _weightFilter => _browse.weight;
+  set _weightFilter(String? value) => _browse.weight = value;
+  double? get _minScore => _browse.minScore;
+  set _minScore(double? value) => _browse.minScore = value;
   bool _sortMenuOpen = false;
   bool _filterMenuOpen = false;
 
@@ -50,125 +76,53 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
     builder: (context, _) {
-      const categories = ['全部', '策略', '家庭', '聚会', '合作', '双人'];
-      final games =
-          (widget.sourceGames ?? widget.controller.games)
-              .where(
-                (g) =>
-                    (_category == 0 ||
-                        (_category == 5
-                            ? g.supportedPlayers.contains(2)
-                            : _gameSearchText(
-                                g,
-                              ).contains(categories[_category]))) &&
-                    _matchesPlayer(g) &&
-                    _matchesDuration(g) &&
-                    _matchesType(g) &&
-                    _matchesWeight(g) &&
-                    _matchesScore(g),
-              )
-              .map((g) => DesktopContentGame(g, widget.controller))
-              .toList()
-            ..sort(_compareGames);
+      final games = _browse
+          .filter(widget.sourceGames ?? widget.controller.games)
+          .map((game) => DesktopContentGame(game, widget.controller))
+          .toList();
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DesktopContentStatus(controller: widget.controller),
-          _LibraryMain(
-            games: games,
-            selectedCategory: _category,
-            onSelectGame: (i) => widget.onOpenGame(games[i].data),
-            onOpenAssistant: (game) {
-              widget.controller.selectGame(game.id);
-              widget.onNavigate('assistant');
-            },
-            onCategory: (i) => setState(() => _category = i),
-            sortLabel: _sort.label,
-            hasFilter: _hasFilter,
-            sortMenuOpen: _sortMenuOpen,
-            filterMenuOpen: _filterMenuOpen,
-            onSort: _chooseSort,
-            onFilter: _chooseFilter,
+          LibraryViewport(
+            state: _browse,
+            ids: games.map((g) => g.data.id).toList(),
+            controller: widget.scrollController,
+            layout: MediaQuery.sizeOf(context),
+            builder: (keys) => _LibraryMain(
+              itemKeys: keys,
+              browse: _browse,
+              games: games,
+              selectedCategory: _category,
+              onSelectGame: (i) => widget.onOpenGame(games[i].data),
+              onOpenAssistant: (game) {
+                widget.controller.selectGame(game.id);
+                widget.onNavigate('assistant');
+              },
+              onCategory: (i) => setState(() => _category = i),
+              sortLabel: _sort.label,
+              hasFilter: _hasFilter,
+              sortMenuOpen: _sortMenuOpen,
+              filterMenuOpen: _filterMenuOpen,
+              onSort: _chooseSort,
+              onFilter: _chooseFilter,
+            ),
           ),
         ],
       );
     },
   );
 
-  String _gameSearchText(GameInfo game) =>
-      '${game.categoryLine} ${game.keywords.join(' ')} ${game.title}';
-
-  int _compareGames(DesktopContentGame a, DesktopContentGame b) =>
-      switch (_sort) {
-        _DesktopGameSort.catalog =>
-          widget.controller.games
-              .indexOf(a.data)
-              .compareTo(widget.controller.games.indexOf(b.data)),
-        _DesktopGameSort.name => a.title.compareTo(b.title),
-        _DesktopGameSort.score => _score(b.data).compareTo(_score(a.data)),
-      };
-
-  double _score(GameInfo game) => double.tryParse(game.score) ?? -1;
-
-  bool _matchesPlayer(GameInfo game) {
-    final filter = _playerFilter;
-    if (filter == null) return true;
-    if (filter == '5+') {
-      return game.supportedPlayers.any((value) => value >= 5);
-    }
-    final target = int.tryParse(filter);
-    return target == null || game.supportedPlayers.contains(target);
-  }
-
-  bool _matchesDuration(GameInfo game) {
-    final filter = _durationFilter;
-    if (filter == null) return true;
-    final values = RegExp(r'\d+')
-        .allMatches('${game.playTime} ${game.perPlayerTime}')
-        .map((match) => int.tryParse(match.group(0) ?? ''))
-        .whereType<int>()
-        .toList();
-    if (values.isEmpty) return false;
-    final low = values.reduce((a, b) => a < b ? a : b);
-    final high = values.reduce((a, b) => a > b ? a : b);
-    return switch (filter) {
-      '<30' => low < 30,
-      '30-60' => high >= 30 && low <= 60,
-      '60-120' => high >= 60 && low <= 120,
-      '>120' => high > 120,
-      _ => true,
-    };
-  }
-
-  bool _matchesType(GameInfo game) {
-    if (_typeFilters.isEmpty) return true;
-    final text = _gameSearchText(game);
-    return _typeFilters.any(text.contains);
-  }
-
-  bool _matchesWeight(GameInfo game) {
-    final filter = _weightFilter;
-    if (filter == null) return true;
-    final value = '${game.complexity} ${game.learningDifficulty}';
-    return switch (filter) {
-      '入门' => value.contains('入门') || value.contains('简单'),
-      '轻度' => value.contains('轻'),
-      '重度' => value.contains('重') || value.contains('困难'),
-      _ => value.contains('中'),
-    };
-  }
-
-  bool _matchesScore(GameInfo game) =>
-      _minScore == null || _score(game) >= _minScore!;
-
   Future<void> _chooseSort(BuildContext anchorContext) async {
+    if (_sortMenuOpen || _filterMenuOpen) return;
     final box = anchorContext.findRenderObject() as RenderBox?;
     final overlay =
         Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) return;
     final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
     setState(() => _sortMenuOpen = true);
+    final lifetime = AppMenuLifetime();
     final value = await showMenu<_DesktopGameSort>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -202,24 +156,31 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
             key: ValueKey<String>('desktop-library-sort-option-${item.name}'),
             value: item,
             height: 72,
-            child: _SortMenuRow(item: item, selected: item == _sort),
+            child: _SortMenuRow(
+              item: item,
+              selected: item == _sort,
+              lifetime: lifetime,
+            ),
           ),
       ],
     );
     if (!mounted) return;
     setState(() {
-      _sortMenuOpen = false;
       if (value != null) _sort = value;
     });
+    await lifetime.closed;
+    if (mounted) setState(() => _sortMenuOpen = false);
   }
 
   Future<void> _chooseFilter(BuildContext anchorContext) async {
+    if (_sortMenuOpen || _filterMenuOpen) return;
     final box = anchorContext.findRenderObject() as RenderBox?;
     final overlay =
         Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) return;
     final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
     setState(() => _filterMenuOpen = true);
+    final lifetime = AppMenuLifetime();
     final result = await showMenu<_DesktopFilterResult>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -235,6 +196,7 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
       popUpAnimationStyle: AppMotion.menuStyle(context),
       items: [
         _FilterPopupEntry(
+          lifetime: lifetime,
           player: _playerFilter,
           duration: _durationFilter,
           types: _typeFilters,
@@ -245,11 +207,12 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
     );
     if (!mounted) return;
     if (result == null) {
+      await lifetime.closed;
+      if (!mounted) return;
       setState(() => _filterMenuOpen = false);
       return;
     }
     setState(() {
-      _filterMenuOpen = false;
       _playerFilter = result.player;
       _durationFilter = result.duration;
       _typeFilters
@@ -257,7 +220,10 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
         ..addAll(result.types);
       _weightFilter = result.weight;
       _minScore = result.minScore;
+      _browse.resetPosition();
     });
+    await lifetime.closed;
+    if (mounted) setState(() => _filterMenuOpen = false);
   }
 }
 
@@ -271,6 +237,8 @@ enum _DesktopGameSort {
 }
 
 class _LibraryMain extends StatelessWidget {
+  final Map<String, GlobalKey> itemKeys;
+  final LibraryBrowseState browse;
   final List<DesktopContentGame> games;
   final int selectedCategory;
   final ValueChanged<int> onSelectGame;
@@ -284,6 +252,8 @@ class _LibraryMain extends StatelessWidget {
   final ValueChanged<BuildContext> onFilter;
 
   const _LibraryMain({
+    required this.itemKeys,
+    required this.browse,
     required this.games,
     required this.selectedCategory,
     required this.onSelectGame,
@@ -406,8 +376,17 @@ class _LibraryMain extends StatelessWidget {
                     ContentEntrance(
                       key: ValueKey('library-entrance-${games[index].data.id}'),
                       order: index,
-                      animate: index < 6,
+                      animate:
+                          index < 6 &&
+                          browse.revealed.add(games[index].data.id),
+                      changeIdentity: (
+                        index,
+                        games[index].data.title,
+                        games[index].data.score,
+                        games[index].data.coverAssetPath,
+                      ),
                       child: SizedBox(
+                        key: itemKeys[games[index].data.id],
                         width: posterWidth,
                         height: posterWidth * 1.49,
                         child: _LibraryGameCard(
@@ -592,13 +571,19 @@ class _OutlineActionState extends State<_OutlineAction> {
 }
 
 class _SortMenuRow extends StatelessWidget {
-  const _SortMenuRow({required this.item, required this.selected});
+  const _SortMenuRow({
+    required this.item,
+    required this.selected,
+    required this.lifetime,
+  });
+  final AppMenuLifetime lifetime;
 
   final _DesktopGameSort item;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    lifetime.capture(context);
     final subtitle = switch (item) {
       _DesktopGameSort.catalog => '按相关性推荐',
       _DesktopGameSort.name => '按游戏名称 A-Z 排序',
@@ -669,12 +654,14 @@ class _DesktopFilterResult {
 
 class _FilterPopupEntry extends PopupMenuEntry<_DesktopFilterResult> {
   const _FilterPopupEntry({
+    required this.lifetime,
     required this.player,
     required this.duration,
     required this.types,
     required this.weight,
     required this.minScore,
   });
+  final AppMenuLifetime lifetime;
 
   final String? player;
   final String? duration;
@@ -719,6 +706,7 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
 
   @override
   Widget build(BuildContext context) {
+    widget.lifetime.capture(context);
     const typeOptions = [
       '策略',
       '家庭',

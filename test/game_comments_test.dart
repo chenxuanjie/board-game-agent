@@ -364,6 +364,95 @@ void main() {
     expect(find.text('登录'), findsOneWidget);
   });
 
+  testWidgets('rapid likes submit once with feedback only on that comment', (
+    tester,
+  ) async {
+    final hub = PublicFixtureHub();
+    final a = service(hub, 101);
+    final id = await a.publish(game: game, text: '点赞测试');
+    await a.synchronize();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GameCommentsPanel(
+              gameSlug: game,
+              gameTitle: '卡卡颂',
+              service: a,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    hub.readGate = Completer<void>();
+    final button = tester.widget<TextButton>(
+      find.byKey(ValueKey('comment-like-$id')),
+    );
+    button.onPressed!();
+    button.onPressed!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      tester
+          .widget<TextButton>(find.byKey(ValueKey('comment-like-$id')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(ValueKey('comment-like-$id')),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    hub.readGate!.complete();
+    await tester.pumpAndSettle();
+    expect(comment(a, id).likes, 1);
+    expect(comment(a, id).likedByMe, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'like failure keeps selection and retry does not toggle it again',
+    (tester) async {
+      final hub = PublicFixtureHub();
+      final a = service(hub, 101);
+      final id = await a.publish(game: game, text: '断网点赞');
+      await a.synchronize();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: GameCommentsPanel(
+                gameSlug: game,
+                gameTitle: '卡卡颂',
+                service: a,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      hub.failure = PrivateFileFailure.unavailable;
+      await tester.tap(find.byKey(ValueKey('comment-like-$id')));
+      await tester.pumpAndSettle();
+      expect(comment(a, id).likedByMe, isTrue);
+      expect(a.likePending(id), isTrue);
+      expect(find.text('重试点赞同步'), findsOneWidget);
+      hub.failure = null;
+      await tester.tap(find.text('重试点赞同步'));
+      await tester.pumpAndSettle();
+      expect(a.likePending(id), isFalse);
+      expect(comment(a, id).likes, 1);
+      expect(comment(a, id).likedByMe, isTrue);
+      expect(find.text('重试点赞同步'), findsNothing);
+    },
+  );
+
   testWidgets(
     'five stars support ten points, clearing, and send feedback stays in button',
     (tester) async {

@@ -7,6 +7,7 @@ import '../../features/community/models/game_comment.dart';
 import '../../features/community/services/game_comments_service.dart';
 import 'account_scope.dart';
 import 'account_screen.dart';
+import 'app_modals.dart';
 
 /// Both platforms share comment state and actions; only entry/composition vary.
 class GameCommentsPanel extends StatefulWidget {
@@ -33,6 +34,8 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
   bool _latest = false;
   int _limit = 20;
   String? _freshId;
+  final Set<String> _liking = {};
+  final Map<String, String> _likeErrors = {};
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -58,6 +61,8 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     _service?.removeListener(_changed);
     _service = service;
     _freshId = null;
+    _liking.clear();
+    _likeErrors.clear();
     service?.addListener(_changed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && identical(_service, service)) {
@@ -67,6 +72,10 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
   }
 
   void _changed() {
+    final service = _service;
+    if (service != null && !service.loading && service.error == null) {
+      _likeErrors.removeWhere((id, _) => !service.likePending(id));
+    }
     if (mounted) setState(() {});
   }
 
@@ -92,6 +101,33 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     }
   }
 
+  Future<void> _like(GameComment comment) async {
+    if (_likeBusy(comment.id)) return;
+    if (!_liking.add(comment.id)) return;
+    final service = _service!;
+    setState(() => _likeErrors.remove(comment.id));
+    try {
+      await service.toggleLike(comment);
+      if (mounted &&
+          identical(service, _service) &&
+          (service.error != null || service.likePending(comment.id))) {
+        _likeErrors[comment.id] = '点赞同步未完成，请重试';
+      }
+    } catch (_) {
+      if (mounted && identical(service, _service)) {
+        _likeErrors[comment.id] = '点赞未完成，请重试';
+      }
+    } finally {
+      if (mounted && identical(service, _service)) {
+        setState(() => _liking.remove(comment.id));
+      }
+    }
+  }
+
+  bool _likeBusy(String id) =>
+      _liking.contains(id) ||
+      _service?.loading == true && _service!.likePending(id);
+
   void _openReplies(GameComment comment) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -108,7 +144,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
   Future<void> _compose([GameComment? reply]) async {
     final service = _service;
     if (service == null || !service.canWrite) return;
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -137,7 +173,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
 
   Future<void> _delete(GameComment comment) async {
     final service = _service;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除评论？'),
@@ -299,17 +335,15 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
           ],
         ),
         const SizedBox(height: 12),
-        if (service.error != null)
+        if (service.error != null &&
+            (_likeErrors.isEmpty || comments.any((c) => c.pending)))
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 8,
               children: [
-                Text(
-                  service.error!,
-                  style: TextStyle(color: palette.warning),
-                ),
+                Text(service.error!, style: TextStyle(color: palette.warning)),
                 TextButton(
                   onPressed: service.loading ? null : service.synchronize,
                   child: const Text('重试'),
@@ -475,15 +509,22 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                       ),
                     ),
                     TextButton.icon(
-                      onPressed: service.canWrite
-                          ? () => _work(() => service.toggleLike(comment))
+                      key: ValueKey('comment-like-${comment.id}'),
+                      onPressed: service.canWrite && !_likeBusy(comment.id)
+                          ? () => _like(comment)
                           : null,
-                      icon: Icon(
-                        comment.likedByMe
-                            ? Icons.thumb_up_alt_rounded
-                            : Icons.thumb_up_alt_outlined,
-                        size: 16,
-                      ),
+                      icon: _likeBusy(comment.id)
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              comment.likedByMe
+                                  ? Icons.thumb_up_alt_rounded
+                                  : Icons.thumb_up_alt_outlined,
+                              size: 16,
+                            ),
                       label: Text('${comment.likes}'),
                       style: TextButton.styleFrom(
                         foregroundColor: comment.likedByMe
@@ -491,6 +532,28 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                             : palette.textSecondary,
                       ),
                     ),
+                    if (_likeErrors[comment.id] != null ||
+                        service.error != null &&
+                            service.likePending(comment.id))
+                      TextButton(
+                        onPressed: _likeBusy(comment.id)
+                            ? null
+                            : () async {
+                                final service = _service!;
+                                if (!_liking.add(comment.id)) return;
+                                setState(() {});
+                                await service.synchronize();
+                                if (mounted && identical(service, _service)) {
+                                  setState(() {
+                                    _liking.remove(comment.id);
+                                    if (service.error == null) {
+                                      _likeErrors.remove(comment.id);
+                                    }
+                                  });
+                                }
+                              },
+                        child: const Text('重试点赞同步'),
+                      ),
                     TextButton(
                       onPressed: service.canWrite
                           ? () => _compose(comment)
@@ -499,6 +562,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                     ),
                     if (op.uid == service.uid)
                       PopupMenuButton<String>(
+                        popUpAnimationStyle: AppMotion.menuStyle(context),
                         tooltip: '更多操作',
                         itemBuilder: (_) => [
                           const PopupMenuItem(
@@ -632,7 +696,7 @@ class _GameCommentsPageState extends State<GameCommentsPage> {
                     active?.canWrite != true ||
                         rootId != null && replyTarget == null
                     ? null
-                    : () => showModalBottomSheet<void>(
+                    : () => showAppBottomSheet<void>(
                         context: context,
                         isScrollControlled: true,
                         useSafeArea: true,

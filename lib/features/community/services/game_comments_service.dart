@@ -34,6 +34,10 @@ final class GameCommentsService extends ChangeNotifier {
   bool get canWrite => !_disposed && isActive();
   bool get pending => _pending.isNotEmpty;
   Set<String> get pendingIds => Set.unmodifiable(_pending);
+  bool likePending(String commentId) => _pending.any(
+    (id) =>
+        _own[id]?.action == CommentAction.like && _own[id]?.target == commentId,
+  );
   CommentProjection get projection => CommentProjection(_events.values, uid);
   String get _key => 'game_comments.v1.$scope';
   static String newId([String prefix = 'c']) {

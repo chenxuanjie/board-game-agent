@@ -636,6 +636,55 @@ void main() {
   });
   _registerMobileNationalDayTests();
   _registerContentDesignTests();
+  testWidgets('library search and category survive tab changes and details', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = _controller(ttsService: _UnavailableTtsService());
+    addTearDown(controller.dispose);
+    rootBundle.clear();
+    await tester.runAsync(controller.reloadGames);
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: HomeScreen(controller: controller, onOpenAbout: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile-library-search')),
+      '卡卡',
+    );
+    await tester.pumpAndSettle();
+    final game = controller.games.firstWhere((g) => g.title.contains('卡卡'));
+    await tester.tap(find.byKey(ValueKey('mobile-library-game-${game.id}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile-library-search')),
+          )
+          .controller!
+          .text,
+      '卡卡',
+    );
+    expect(
+      find.byKey(ValueKey('mobile-library-game-${game.id}')),
+      findsOneWidget,
+    );
+    expect(controller.selectedGame.id, game.id);
+    expect(tester.takeException(), isNull);
+  });
   _registerCompactComposerTests();
   testWidgets(
     'compact cover uses the same Hero into detail and returns safely',

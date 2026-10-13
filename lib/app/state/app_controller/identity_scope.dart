@@ -152,6 +152,7 @@ extension AppIdentityScopeController on AppController {
     _globalUseCurrentGameKnowledge = false;
     _selectedGameId = _games.firstOrNull?.id ?? 'puerto-rico';
     _gameGallerySelections = {};
+    browseSession.reset();
     _favoriteStatistics = null;
     _nationalDayList = null;
     _preferencesService = _basePreferencesService.forIdentityScope(userId);

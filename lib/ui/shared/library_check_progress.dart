@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../app/state/app_controller.dart';
+import 'smooth_progress.dart';
 
 /// Keeps the list usable while its shared update check runs in the background.
 class LibraryCheckProgress extends StatelessWidget {
@@ -20,18 +21,13 @@ class LibraryCheckProgress extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
+          SmoothProgress(
+            visible: checking,
             height: 2,
-            child: checking
-                ? LinearProgressIndicator(
-                    key: const ValueKey('library-check-progress-indicator'),
-                    minHeight: 2,
-                    semanticsLabel: copy.localized(
-                      '正在检查桌游更新',
-                      'Checking game updates',
-                    ),
-                  )
+            key: checking
+                ? const ValueKey('library-check-progress-indicator')
                 : null,
+            label: copy.localized('正在检查桌游更新', 'Checking game updates'),
           ),
           if (failed)
             Padding(

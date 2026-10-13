@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_motion.dart';
+import '../app_modals.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../../core/theme/app_palette.dart';
@@ -24,34 +25,31 @@ Future<void> showConversationDrawer(
     from: context,
     to: Navigator.of(context, rootNavigator: true).context,
   );
-  return showGeneralDialog<void>(
+  return presentAppModal<void>(
     context: context,
-    barrierDismissible: true,
-    barrierLabel: controller.copy.closeConversations,
-    barrierColor: palette.textPrimary.withValues(alpha: .16),
-    transitionDuration: AppMotion.duration(context, AppMotion.panel),
-    pageBuilder: (context, animation, secondaryAnimation) => themes.wrap(
-      SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final left = (bounds?.left ?? 0)
-                .clamp(0.0, math.max(0, constraints.maxWidth - 280))
-                .toDouble();
-            return Padding(
-              padding: EdgeInsets.fromLTRB(left + 12, 12, 12, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: math.min(320, constraints.maxWidth - left - 46),
-                  height: double.infinity,
-                  child: FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: animation
-                          .drive(CurveTween(curve: AppMotion.curve))
-                          .drive(
-                            Tween(begin: const Offset(-1, 0), end: Offset.zero),
-                          ),
+    kind: 'conversation-drawer',
+    route: _ConversationDrawerRoute(
+      reverseDuration: AppMotion.duration(context, AppMotion.menu),
+      barrierDismissible: true,
+      barrierLabel: controller.copy.closeConversations,
+      barrierColor: palette.textPrimary.withValues(alpha: .16),
+      transitionDuration: AppMotion.duration(context, AppMotion.panel),
+      pageBuilder: (context, animation, secondaryAnimation) => themes.wrap(
+        SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final left = (bounds?.left ?? 0)
+                  .clamp(0.0, math.max(0, constraints.maxWidth - 280))
+                  .toDouble();
+              return Padding(
+                padding: EdgeInsets.fromLTRB(left + 12, 12, 12, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: math.min(320, constraints.maxWidth - left - 46),
+                    height: double.infinity,
+                    child: _DrawerMotion(
+                      animation: animation,
                       child: ConversationHistoryPanel(
                         controller: controller,
                         onClose: () => Navigator.of(context).pop(),
@@ -60,13 +58,61 @@ Future<void> showConversationDrawer(
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
+      transitionBuilder: (_, _, _, child) => child,
     ),
-    transitionBuilder: (_, _, _, child) => child,
+  );
+}
+
+class _ConversationDrawerRoute extends RawDialogRoute<void> {
+  _ConversationDrawerRoute({
+    required this.reverseDuration,
+    required super.pageBuilder,
+    required super.barrierDismissible,
+    required super.barrierLabel,
+    required super.barrierColor,
+    required super.transitionDuration,
+    required super.transitionBuilder,
+  });
+  final Duration reverseDuration;
+  @override
+  Duration get reverseTransitionDuration => reverseDuration;
+}
+
+class _DrawerMotion extends StatefulWidget {
+  const _DrawerMotion({required this.animation, required this.child});
+  final Animation<double> animation;
+  final Widget child;
+  @override
+  State<_DrawerMotion> createState() => _DrawerMotionState();
+}
+
+class _DrawerMotionState extends State<_DrawerMotion> {
+  late final _curve = CurvedAnimation(
+    parent: widget.animation,
+    curve: AppMotion.curve,
+    reverseCurve: AppMotion.exitCurve,
+  );
+  @override
+  void dispose() {
+    _curve.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: _curve,
+    child: SlideTransition(
+      position: Tween(
+        begin: const Offset(-1, 0),
+        end: Offset.zero,
+      ).animate(_curve),
+      child: widget.child,
+    ),
   );
 }
 
@@ -180,7 +226,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
   Future<void> _delete(AiConversation conversation) async {
     if (_creating || _deletingId != null) return;
     final copy = widget.controller.copy;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
       builder: (context) => AlertDialog(

@@ -4,6 +4,8 @@
 
 `main.dart` 创建依赖，并按平台与 Web 宽度选择桌面或紧凑界面。两个界面使用同一个 `AppController` 和同一套业务模型、服务；目录划分不代表复制后端。
 
+`app/state/browse_session.dart` 管理本次运行的账号浏览状态，桌面和紧凑外壳共同使用；`ui/shared/library_viewport.dart` 按稳定游戏 ID 恢复网格位置。`app_modals.dart` 统一浮层节奏和关闭过程中的入口保护，`smooth_progress.dart` 仅平滑真实进度。范围及验收见 [浏览位置与交互反馈](interaction-continuity.md)。
+
 | 目录 | 职责 | 修改时从哪里开始 |
 | --- | --- | --- |
 | `lib/app/state/` | 跨界面的应用状态与业务入口 | 状态流转、加载及持久化调用 |

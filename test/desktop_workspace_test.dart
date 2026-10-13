@@ -10,6 +10,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:board_game_agent/core/theme/app_theme.dart';
+import 'package:board_game_agent/ui/mobile/home_screen.dart';
+import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';

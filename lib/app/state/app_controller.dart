@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'browse_session.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
@@ -97,6 +98,7 @@ class _RemoteLibraryIndexResult {
 }
 
 class AppController extends ChangeNotifier {
+  final browseSession = BrowseSession();
   AppController({
     required PreferencesService preferencesService,
     required AiService aiService,

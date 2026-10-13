@@ -1,6 +1,76 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  testWidgets(
+    'library keeps sorting and game anchor through details and shell changes',
+    (tester) async {
+      final controller = context.controller;
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, '游戏库');
+      await tester.tap(
+        find.byKey(const ValueKey('desktop-library-sort-action')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('desktop-library-sort-option-name')),
+      );
+      await tester.pumpAndSettle();
+      final scroll = tester
+          .widget<SingleChildScrollView>(
+            find.byKey(const ValueKey('desktop-page-scroll-games')),
+          )
+          .controller!;
+      scroll.jumpTo(380.clamp(0.0, scroll.position.maxScrollExtent).toDouble());
+      await tester.pumpAndSettle();
+      final offset = scroll.offset;
+      expect(offset, greaterThan(0));
+      final anchor = controller.browseSession.library.anchorId;
+      final game = controller.games.firstWhere((g) {
+        final rect = tester.getRect(
+          find.byKey(ValueKey('desktop-game-card-${g.id}')),
+        );
+        return rect.center.dy > 140 && rect.bottom < 780;
+      });
+      await tester.tap(find.byKey(ValueKey('desktop-game-card-${game.id}')));
+      await tester.pumpAndSettle();
+      expect(controller.selectedGame.id, game.id);
+      await tester.tap(find.byTooltip('返回游戏库'));
+      await tester.pumpAndSettle();
+      expect(controller.browseSession.library.sort, 'name');
+      expect(scroll.offset, closeTo(offset, 5));
+      expect(controller.browseSession.library.anchorId, anchor);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileLibraryContent), findsOneWidget);
+      expect(controller.browseSession.library.sort, 'name');
+      expect(controller.selectedGame.id, game.id);
+      final mobileGrid = tester.widget<GridView>(
+        find.byKey(const ValueKey('mobile-library-grid')),
+      );
+      expect(mobileGrid.controller!.offset, greaterThan(0));
+      final mobileOffset = mobileGrid.controller!.offset;
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<GridView>(find.byKey(const ValueKey('mobile-library-grid')))
+            .controller!
+            .offset,
+        closeTo(mobileOffset, 5),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('detail reopens on the saved third image', (tester) async {
     final controller = context.controller;
     final game = controller.games.firstWhere((g) => g.slug == 'tulip_bubble');

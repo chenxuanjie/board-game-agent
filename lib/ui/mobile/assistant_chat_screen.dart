@@ -1,3 +1,4 @@
+import '../shared/app_modals.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -587,7 +588,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   Future<void> _openContextSheet() async {
     final controller = widget.controller;
     final copy = controller.copy;
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       sheetAnimationStyle: AppMotion.panelStyle(context),
       isScrollControlled: true,

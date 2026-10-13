@@ -41,7 +41,6 @@ class _MobileGameCoverState extends State<MobileGameCover> {
   void _refreshContent() {
     if (_revision == widget.controller.libraryContentRevision) return;
     _revision = widget.controller.libraryContentRevision;
-    _resolvedPath = null;
     _resolutionAttempted = false;
     _resolving = false;
     _resolutionGeneration++;
@@ -103,6 +102,7 @@ class _MobileGameCoverState extends State<MobileGameCover> {
       return _cachedOrPlaceholder();
     }
     return Image.asset(
+      gaplessPlayback: true,
       frameBuilder: revealImageFrame,
       assetPath,
       fit: widget.fit,
@@ -120,6 +120,7 @@ class _MobileGameCoverState extends State<MobileGameCover> {
     if (path == null || path.isEmpty) return _placeholder();
     if (path.startsWith('data:')) {
       return Image.memory(
+        gaplessPlayback: true,
         Uri.parse(path).data!.contentAsBytes(),
         frameBuilder: revealImageFrame,
         fit: widget.fit,
@@ -127,6 +128,7 @@ class _MobileGameCoverState extends State<MobileGameCover> {
       );
     }
     return Image.file(
+      gaplessPlayback: true,
       frameBuilder: revealImageFrame,
       File(path),
       fit: widget.fit,
@@ -136,13 +138,15 @@ class _MobileGameCoverState extends State<MobileGameCover> {
     );
   }
 
-  Widget _placeholder() => ColoredBox(
-    color: Theme.of(context).colorScheme.surfaceContainerLow,
-    child: Center(
-      child: Icon(
-        Icons.casino_rounded,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-    ),
-  );
+  Widget _placeholder() => !_resolutionAttempted
+      ? const ImageLoadingPlaceholder()
+      : ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          child: Center(
+            child: Icon(
+              Icons.casino_rounded,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        );
 }

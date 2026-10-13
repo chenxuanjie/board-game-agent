@@ -143,6 +143,7 @@ Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段
 
 ## 相关文档
 
+- 浏览位置、图片加载、局部反馈与浮层动效见 [浏览位置与交互反馈](docs/interaction-continuity.md)
 - 环境安装与 APK 打包步骤见 [BUILD_APK.md](BUILD_APK.md)
 - 启动流程、资源更新与运行逻辑概览见 [DEVELOPER_FLOW_OVERVIEW.md](DEVELOPER_FLOW_OVERVIEW.md)
 - 桌游资源整理规范见 [assets/ASSET_SPEC.md](assets/ASSET_SPEC.md)

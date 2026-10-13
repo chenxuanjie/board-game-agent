@@ -65,10 +65,21 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
   final _searchTapRegionGroup = Object();
-  final _scroll = ScrollController();
+  final Map<String, ScrollController> _pageScrolls = {};
+  ScrollController get _scroll => _pageScrolls.putIfAbsent(
+    _page,
+    () => ScrollController(keepScrollOffset: false),
+  );
   Timer? _favoriteSnackBarTimer;
   bool _searchOpen = false;
-  String _page = 'home';
+  bool _clearingSearch = false;
+  String _localPage = 'home';
+  String get _page => _localPage;
+  set _page(String value) {
+    _localPage = value;
+    widget.controller.browseSession.destination = value;
+  }
+
   bool _focusAiSettings = false;
   String _gameDetailReturnPage = 'games';
   String? _libraryGameSlug;
@@ -86,7 +97,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   @override
   void initState() {
     super.initState();
-    _page = widget.initialPage;
+    final session = widget.controller.browseSession;
+    _page = widget.initialPage == 'home'
+        ? session.destination
+        : widget.initialPage;
+    if (!_routes.contains(_page) && _page != 'gameDetail') _page = 'home';
+    _gameDetailReturnPage = session.detailReturn;
+    if (_page == 'games') _search.text = session.library.query;
     widget.controller.addListener(_refresh);
     _search.addListener(_refreshSearch);
     _searchFocus.addListener(_handleSearchFocusChanged);
@@ -109,11 +126,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _favoriteSnackBarTimer?.cancel();
     _search.dispose();
     _searchFocus.dispose();
-    _scroll.dispose();
+    for (final controller in _pageScrolls.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   void _navigate(String page, {bool focusAiSettings = false}) {
+    _rememberPosition();
     _coverGeneration++;
     _coverFlight = null;
     _dismissSearch(clearQuery: true);
@@ -122,13 +142,18 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     }
     setState(() {
       _page = page;
+      widget.controller.browseSession.destination = page;
       _focusAiSettings = focusAiSettings;
       if (page == 'library') {
         _libraryGameSlug = null;
         _libraryFilter = null;
       }
     });
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (page == 'games') {
+      _search.text = widget.controller.browseSession.library.query;
+    } else {
+      _restorePageOffset(page);
+    }
     if (page == 'games') _checkGameUpdates();
   }
 
@@ -155,6 +180,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _game(GameInfo game) {
+    _rememberPosition();
     final source = _coverOrigin;
     _coverOrigin = null;
     _coverFlight = null;
@@ -166,8 +192,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     setState(() {
       _gameDetailReturnPage = origin == 'gameDetail' ? 'games' : origin;
       _page = 'gameDetail';
+      widget.controller.browseSession
+        ..destination = 'gameDetail'
+        ..detailReturn = _gameDetailReturnPage;
     });
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+    _restorePageOffset('gameDetail', offset: 0);
     if (source?.matches(game.coverAssetPath) == true &&
         !AppMotion.reduced(context)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -280,6 +309,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     }
 
     final isFavorite = widget.controller.isFavorite(game);
+    // The selected heart already confirms an addition locally. Keep Undo for
+    // removals and global notices only for failures requiring user action.
+    if (isFavorite) return;
     _showFavoriteSnackBar(
       message: isFavorite ? copy.favoriteAdded : copy.favoriteRemoved,
       action: isFavorite
@@ -377,6 +409,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _refreshSearch() {
+    if (_page == 'games' && !_clearingSearch) {
+      final browse = widget.controller.browseSession.library;
+      if (browse.query != _search.text) {
+        browse.query = _search.text;
+        browse.resetPosition();
+      }
+    }
     if (mounted) setState(() {});
   }
 
@@ -398,8 +437,28 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   void _dismissSearch({bool clearQuery = false}) {
     _searchFocus.unfocus();
-    if (clearQuery) _search.clear();
+    if (clearQuery) {
+      _clearingSearch = true;
+      _search.clear();
+      _clearingSearch = false;
+    }
     _searchOpen = false;
+  }
+
+  void _rememberPosition() {
+    if (_scroll.hasClients) {
+      widget.controller.browseSession.pageOffsets[_page] = _scroll.offset;
+    }
+  }
+
+  void _restorePageOffset(String page, {double? offset}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _page != page || !_scroll.hasClients) return;
+      _scroll.jumpTo(
+        (offset ?? widget.controller.browseSession.pageOffsets[page] ?? 0)
+            .clamp(0.0, _scroll.position.maxScrollExtent),
+      );
+    });
   }
 
   void _clearSearch() {
@@ -580,6 +639,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   Scrollbar(
                     controller: _scroll,
                     child: SingleChildScrollView(
+                      key: ValueKey('desktop-page-scroll-$_page'),
                       controller: _scroll,
                       child: Column(
                         children: [
@@ -604,6 +664,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                 onOpenNationalDay: _openNationalDay,
                               ),
                               'games' => DesktopGamesPane(
+                                scrollController: _scroll,
                                 controller: widget.controller,
                                 showPreview: !narrow,
                                 onNavigate: _navigate,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_check_progress.dart';
+import '../shared/library_viewport.dart';
+import '../../app/state/browse_session.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/ui_tokens.dart';
@@ -31,7 +33,9 @@ class MobileLibraryContent extends StatefulWidget {
 
 class _MobileLibraryContentState extends State<MobileLibraryContent> {
   final _search = TextEditingController();
-  int _category = 0;
+  final _scroll = ScrollController(keepScrollOffset: false);
+  LibraryBrowseState get _browse => widget.controller.browseSession.library;
+  int get _category => _browse.category;
 
   static const _categories = [
     ('all', '全部', 'All'),
@@ -45,6 +49,8 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
   @override
   void initState() {
     super.initState();
+    _search.text = _browse.query;
+    _search.addListener(_queryChanged);
     widget.controller.addListener(_refresh);
   }
 
@@ -61,6 +67,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
   void dispose() {
     widget.controller.removeListener(_refresh);
     _search.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -68,30 +75,19 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
     if (mounted) setState(() {});
   }
 
-  bool _matchesCategory(GameInfo game) {
-    if (_category == 0) return true;
-    if (_category == 5) return game.supportedPlayers.contains(2);
-    return game.browseCategories.contains(_categories[_category].$1);
+  void _queryChanged() {
+    if (_browse.query != _search.text) {
+      _browse.query = _search.text;
+      _browse.resetPosition();
+    }
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final copy = widget.controller.copy;
     final query = _search.text.trim().toLowerCase();
-    final games = widget.controller.games
-        .where((game) {
-          if (!_matchesCategory(game)) return false;
-          if (query.isEmpty) return true;
-          return <String>[
-            game.title,
-            game.subtitle,
-            game.categoryLine,
-            ...game.aliases,
-            ...game.designers,
-            ...game.keywords,
-          ].any((value) => value.toLowerCase().contains(query));
-        })
-        .toList(growable: false);
+    final games = _browse.filter(widget.controller.games);
 
     return Center(
       child: ConstrainedBox(
@@ -222,7 +218,10 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       ),
                     ),
                     selected: selected,
-                    onSelected: (_) => setState(() => _category = index),
+                    onSelected: (_) => setState(() {
+                      _browse.category = index;
+                      _browse.resetPosition();
+                    }),
                     showCheckmark: false,
                     backgroundColor: AppPalette.of(context).surfaceContainer,
                     selectedColor: AppPalette.of(context).primary,
@@ -241,6 +240,17 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
               ),
             ),
             const SizedBox(height: 10),
+            if (_browse.hasFilters || _browse.sort != 'catalog')
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  key: const ValueKey('mobile-library-clear-filters'),
+                  onPressed: () => setState(_browse.clearFilters),
+                  child: Text(
+                    copy.localized('清除筛选与排序', 'Clear filters and sorting'),
+                  ),
+                ),
+              ),
             Expanded(
               child: games.isEmpty
                   ? Center(
@@ -261,33 +271,57 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                                   _GameCard.infoHeight(context, game, width),
                             )
                             .reduce((a, b) => a > b ? a : b);
-                        return GridView.builder(
-                          key: const ValueKey('mobile-library-grid'),
-                          padding: const EdgeInsets.fromLTRB(
-                            UiTokens.pageInset,
-                            0,
-                            UiTokens.pageInset,
-                            UiTokens.sectionGap,
+                        return LibraryViewport(
+                          state: _browse,
+                          ids: games.map((g) => g.id).toList(),
+                          layout: (
+                            constraints.maxWidth,
+                            columns,
+                            coverHeight,
+                            infoHeight,
                           ),
-                          itemCount: games.length,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: columns,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                mainAxisExtent: coverHeight + infoHeight,
-                              ),
-                          itemBuilder: (context, index) => ContentEntrance(
-                            key: ValueKey(
-                              'mobile-library-entrance-${games[index].id}',
+                          controller: _scroll,
+                          estimate: (index) =>
+                              (index ~/ columns) *
+                              (coverHeight + infoHeight + 12),
+                          builder: (keys) => GridView.builder(
+                            controller: _scroll,
+                            key: const ValueKey('mobile-library-grid'),
+                            padding: const EdgeInsets.fromLTRB(
+                              UiTokens.pageInset,
+                              0,
+                              UiTokens.pageInset,
+                              UiTokens.sectionGap,
                             ),
-                            order: index,
-                            animate: index < 6,
-                            child: _GameCard(
-                              controller: widget.controller,
-                              game: games[index],
-                              coverHeight: coverHeight,
-                              onOpen: () => widget.onOpenGame(games[index]),
+                            itemCount: games.length,
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: columns,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  mainAxisExtent: coverHeight + infoHeight,
+                                ),
+                            itemBuilder: (context, index) => ContentEntrance(
+                              key: ValueKey(
+                                'mobile-library-entrance-${games[index].id}',
+                              ),
+                              order: index,
+                              animate:
+                                  index < 6 &&
+                                  _browse.revealed.add(games[index].id),
+                              changeIdentity: (
+                                index,
+                                games[index].title,
+                                games[index].score,
+                                games[index].coverAssetPath,
+                              ),
+                              child: _GameCard(
+                                key: keys[games[index].id],
+                                controller: widget.controller,
+                                game: games[index],
+                                coverHeight: coverHeight,
+                                onOpen: () => widget.onOpenGame(games[index]),
+                              ),
                             ),
                           ),
                         );
@@ -348,6 +382,7 @@ class _GameCard extends StatelessWidget {
   }
 
   const _GameCard({
+    super.key,
     required this.controller,
     required this.game,
     required this.coverHeight,

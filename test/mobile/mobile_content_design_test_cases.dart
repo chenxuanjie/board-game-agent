@@ -67,6 +67,8 @@ void _registerContentDesignTests() {
         PaletteRegistry.classic,
       ]) {
         for (final scale in [1.0, 1.25, 2.0]) {
+          // Each size/theme case represents an independent fresh session.
+          controller.browseSession.reset();
           debugPrint(
             'Design verification: $width / $scale / ${palette.nameEn}',
           );

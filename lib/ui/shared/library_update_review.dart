@@ -1,8 +1,10 @@
+import 'app_modals.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_motion.dart';
 import '../../features/library/models/remote_library_update.dart';
+import 'smooth_progress.dart';
 
 Future<void> showLibraryUpdateReview(
   BuildContext context,
@@ -23,7 +25,7 @@ Future<void> showLibraryUpdateReview(
       ),
     );
   } else {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
       builder: (_) => LibraryUpdateReview(
@@ -64,6 +66,9 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
   }
 
   Future<void> _check({bool? complete}) {
+    if (_applied != null) {
+      setState(() => _applied = null);
+    }
     if (complete != null && complete != _completeCheck) {
       setState(() => _completeCheck = complete);
     }
@@ -73,6 +78,9 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
   }
 
   Future<void> _apply() async {
+    if (_applied != null) {
+      setState(() => _applied = null);
+    }
     final controller = widget.controller;
     final update = controller.pendingLibraryUpdate;
     final revision = controller.libraryContentRevision;
@@ -103,12 +111,18 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
       final content = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          SmoothProgress(
+            visible: busy || _applied != null,
+            value: _applied != null
+                ? 1
+                : c.applyingLibraryUpdate &&
+                      update != null &&
+                      update.changedCount > 0
+                ? c.libraryUpdateCompleted / update.changedCount
+                : null,
+            label: copy.localized('资料更新进度', 'Library update progress'),
+          ),
           if (busy) ...[
-            LinearProgressIndicator(
-              value: c.applyingLibraryUpdate && update != null
-                  ? c.libraryUpdateCompleted / update.changedCount
-                  : null,
-            ),
             const SizedBox(height: 12),
             Text(
               c.applyingLibraryUpdate

@@ -1,3 +1,4 @@
+import '../shared/app_modals.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_palette.dart';
@@ -227,7 +228,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
     final key = _activeNicknameKey ?? _nicknameKey;
     final generation = _nicknameGeneration;
     final copy = widget.controller.copy;
-    final next = await showDialog<String>(
+    final next = await showAppDialog<String>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
       builder: (context) {

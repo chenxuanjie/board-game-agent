@@ -1,3 +1,4 @@
+import '../shared/app_modals.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -54,9 +55,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    final session = widget.controller.browseSession;
+    final openingDetail = session.destination == 'gameDetail';
+    final destination = openingDetail
+        ? session.detailReturn
+        : session.destination;
+    _tab = switch (destination) {
+      'games' || 'gameDetail' => 1,
+      'assistant' => 2,
+      'mine' || 'favorites' || 'settings' => 3,
+      _ => 0,
+    };
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkLibraryUpdate());
+    if (openingDetail) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openGame(widget.controller.selectedGame, recordVisit: false);
+        }
+      });
+    }
   }
 
   @override
@@ -140,6 +159,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             widget.controller.openGlobalAssistant();
           }
           setState(() => _tab = index);
+          widget.controller.browseSession.destination = const [
+            'home',
+            'games',
+            'assistant',
+            'mine',
+          ][index];
           if (index == 1 && widget.controller.libraryAccessAllowed) {
             unawaited(widget.controller.checkForLibraryUpdatesQuick());
           }
@@ -195,11 +220,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _openGame(GameInfo game) {
+  void _openGame(GameInfo game, {bool recordVisit = true}) {
     final source = _coverOrigin;
     _coverOrigin = null;
-    unawaited(widget.controller.recordRecentlyViewed(game));
-    widget.controller.selectGame(game.id);
+    if (recordVisit) {
+      unawaited(widget.controller.recordRecentlyViewed(game));
+      widget.controller.selectGame(game.id);
+    }
+    widget.controller.browseSession.destination = const [
+      'home',
+      'games',
+      'assistant',
+      'mine',
+    ][_tab];
     Navigator.of(context).push(
       GameDetailRoute<void>(
         builder: (_) => GameDetailScreen(
@@ -296,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _openActivities() {
     final activities = widget.controller.activities;
     final copy = widget.controller.copy;
-    showModalBottomSheet<void>(
+    showAppBottomSheet<void>(
       context: context,
       sheetAnimationStyle: AppMotion.panelStyle(context),
       showDragHandle: true,
