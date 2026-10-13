@@ -12,6 +12,20 @@ import 'package:board_game_agent/core/theme/palette_registry.dart';
 
 void main() {
   test(
+    'Cinema is independent of removed theme codes and glass saves locally',
+    () async {
+      expect(ColorSchemeOptionX.fromCode('sunset_coast'), defaultColorScheme);
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      expect(await prefs.loadCinemaGlassEnabled(), isTrue);
+      await prefs.saveCinemaGlassEnabled(false);
+      expect(await PreferencesService().loadCinemaGlassEnabled(), isFalse);
+      await prefs.saveCinemaGlassEnabled(true);
+      expect(await PreferencesService().loadCinemaGlassEnabled(), isTrue);
+    },
+  );
+
+  test(
     'secondary containers remain distinct and secondary text stays readable',
     () {
       for (final option in ColorSchemeOption.values) {
@@ -97,13 +111,15 @@ void main() {
 
   test('color scheme codes expose the supported themes', () {
     expect(defaultColorScheme, ColorSchemeOption.warmwoodStudy);
+    expect(ColorSchemeOption.values, [
+      ColorSchemeOption.classic,
+      ColorSchemeOption.cinema,
+      ColorSchemeOption.warmwoodStudy,
+    ]);
     expect(ColorSchemeOption.classic.code, 'classic');
-    expect(ColorSchemeOption.sunsetCoast.code, 'sunset_coast');
+    expect(ColorSchemeOption.cinema.code, 'cinema');
     expect(ColorSchemeOption.warmwoodStudy.code, 'warmwood_study');
-    expect(
-      ColorSchemeOptionX.fromCode('sunset_coast'),
-      ColorSchemeOption.sunsetCoast,
-    );
+    expect(ColorSchemeOptionX.fromCode('cinema'), ColorSchemeOption.cinema);
     expect(
       ColorSchemeOptionX.fromCode('warmwood_study'),
       ColorSchemeOption.warmwoodStudy,
@@ -114,6 +130,11 @@ void main() {
     );
     expect(PaletteRegistry.classic.nameZh, '夜幕棋局');
     expect(PaletteRegistry.classic.nameEn, 'Midnight Table');
+    expect(PaletteRegistry.cinema.nameZh, '影院');
+    expect(PaletteRegistry.cinema.nameEn, 'Cinema');
+    for (final code in ['cinema', '影院']) {
+      expect(ColorSchemeOptionX.fromCode(code), ColorSchemeOption.cinema);
+    }
     expect(
       AppCopy(AppLanguage.zhHans).colorSchemeName(ColorSchemeOption.classic),
       '夜幕棋局',
@@ -150,11 +171,16 @@ void main() {
       );
 
       SharedPreferences.setMockInitialValues(<String, Object>{
-        'color_scheme': 'sunset_coast',
+        'color_scheme': 'cinema',
       });
       expect(
         await PreferencesService().loadColorScheme(),
-        ColorSchemeOption.sunsetCoast,
+        ColorSchemeOption.cinema,
+      );
+      await PreferencesService().saveColorScheme(ColorSchemeOption.cinema);
+      expect(
+        (await SharedPreferences.getInstance()).getString('color_scheme'),
+        'cinema',
       );
     },
   );
@@ -203,7 +229,7 @@ void main() {
       PaletteRegistry.classic.surface,
     );
 
-    activePalette.value = PaletteRegistry.sunsetCoast;
+    activePalette.value = PaletteRegistry.cinema;
     await tester.pumpAndSettle();
 
     expect(
@@ -212,13 +238,13 @@ void main() {
             find.byKey(const ValueKey<String>('theme-background')),
           )
           .color,
-      PaletteRegistry.sunsetCoast.pageBackground,
+      PaletteRegistry.cinema.pageBackground,
     );
     expect(
       AppTheme.buildTheme(
-        PaletteRegistry.sunsetCoast,
+        PaletteRegistry.cinema,
       ).bottomSheetTheme.backgroundColor,
-      PaletteRegistry.sunsetCoast.surface,
+      PaletteRegistry.cinema.surface,
     );
 
     activePalette.value = PaletteRegistry.warmwoodStudy;

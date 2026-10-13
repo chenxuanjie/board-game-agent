@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_viewport.dart';
 import '../shared/app_modals.dart';
+import '../../core/theme/cinema_theme.dart';
+import '../../core/theme/app_palette.dart';
+import '../shared/cinema/cinema_home.dart';
 import '../../app/state/browse_session.dart';
 import '../../core/theme/app_motion.dart';
 import '../../features/games/models/game_info.dart';
@@ -89,7 +92,11 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
             state: _browse,
             ids: games.map((g) => g.data.id).toList(),
             controller: widget.scrollController,
-            layout: MediaQuery.sizeOf(context),
+            layout: (
+              MediaQuery.sizeOf(context),
+              isCinema(context),
+              MediaQuery.textScalerOf(context).scale(16),
+            ),
             builder: (keys) => _LibraryMain(
               itemKeys: keys,
               browse: _browse,
@@ -131,18 +138,22 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
         overlay.size.width - origin.dx - box.size.width,
         0,
       ),
-      constraints: const BoxConstraints.tightFor(width: 335),
-      color: const Color(0xFFFFFEFC),
+      constraints: BoxConstraints.tightFor(width: 335),
+      color: desktopTone(context, Color(0xFFFFFEFC), DesktopToneRole.card),
       elevation: 12,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       popUpAnimationStyle: AppMotion.menuStyle(context),
       items: [
-        const PopupMenuItem<_DesktopGameSort>(
+        PopupMenuItem<_DesktopGameSort>(
           enabled: false,
           height: 48,
           child: Row(
             children: [
-              Icon(Icons.tune_rounded, size: 18, color: DesktopColors.brown),
+              Icon(
+                Icons.tune_rounded,
+                size: 18,
+                color: desktopColors(context).brown,
+              ),
               SizedBox(width: 9),
               Text(
                 '排序方式',
@@ -189,8 +200,8 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
         overlay.size.width - origin.dx - box.size.width,
         0,
       ),
-      constraints: const BoxConstraints.tightFor(width: 372),
-      color: const Color(0xFFFFFEFC),
+      constraints: BoxConstraints.tightFor(width: 372),
+      color: desktopTone(context, Color(0xFFFFFEFC), DesktopToneRole.card),
       elevation: 14,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       popUpAnimationStyle: AppMotion.menuStyle(context),
@@ -285,7 +296,7 @@ class _LibraryMain extends StatelessWidget {
                     selected: selectedCategory == i,
                     onTap: () => onCategory(i),
                   ),
-                  if (i != categories.length - 1) const SizedBox(width: 8),
+                  if (i != categories.length - 1) SizedBox(width: 8),
                 ],
               ],
             );
@@ -294,19 +305,17 @@ class _LibraryMain extends StatelessWidget {
               children: [
                 Builder(
                   builder: (buttonContext) => _OutlineAction(
-                    key: const ValueKey<String>('desktop-library-sort-action'),
+                    key: ValueKey<String>('desktop-library-sort-action'),
                     label: sortLabel,
                     active: sortMenuOpen || sortLabel != '综合排序',
                     expanded: sortMenuOpen,
                     onTap: () => onSort(buttonContext),
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: 10),
                 Builder(
                   builder: (buttonContext) => _OutlineAction(
-                    key: const ValueKey<String>(
-                      'desktop-library-filter-action',
-                    ),
+                    key: ValueKey<String>('desktop-library-filter-action'),
                     label: '筛选',
                     leadingIcon: Icons.filter_alt_outlined,
                     active: filterMenuOpen || hasFilter,
@@ -325,14 +334,14 @@ class _LibraryMain extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: categoryRow,
                   ),
-                  const SizedBox(height: 9),
+                  SizedBox(height: 9),
                   Align(alignment: Alignment.centerRight, child: actions),
                 ],
               );
             }
 
             return SizedBox(
-              height: 38,
+              height: isCinema(context) ? 40 : 38,
               child: Row(
                 children: [
                   Expanded(
@@ -341,18 +350,24 @@ class _LibraryMain extends StatelessWidget {
                       child: categoryRow,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   actions,
                 ],
               ),
             );
           },
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            const gap = 20.0;
-            final columns = constraints.maxWidth >= 1130
+            final cinema = isCinema(context);
+            final gap = cinema ? 16.0 : 20.0;
+            final columns = cinema
+                ? ((constraints.maxWidth + gap) / (192 + gap)).floor().clamp(
+                    1,
+                    6,
+                  )
+                : constraints.maxWidth >= 1130
                 ? 5
                 : constraints.maxWidth >= 860
                 ? 4
@@ -367,7 +382,7 @@ class _LibraryMain extends StatelessWidget {
             return Align(
               alignment: Alignment.topLeft,
               child: Wrap(
-                key: const ValueKey<String>('desktop-library-posters'),
+                key: ValueKey<String>('desktop-library-posters'),
                 spacing: gap,
                 runSpacing: 24,
                 clipBehavior: Clip.none,
@@ -388,7 +403,16 @@ class _LibraryMain extends StatelessWidget {
                       child: SizedBox(
                         key: itemKeys[games[index].data.id],
                         width: posterWidth,
-                        height: posterWidth * 1.49,
+                        height: cinema
+                            ? posterWidth * 4 / 3 +
+                                  MediaQuery.textScalerOf(context).scale(16) *
+                                      2.6 +
+                                  MediaQuery.textScalerOf(context).scale(14) *
+                                      1.55 +
+                                  MediaQuery.textScalerOf(context).scale(12) *
+                                      2.9 +
+                                  48
+                            : posterWidth * 1.49,
                         child: _LibraryGameCard(
                           game: games[index],
                           onTap: () => onSelectGame(index),
@@ -450,28 +474,51 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
         child: AnimatedContainer(
           duration: AppMotion.duration(context, AppMotion.menu),
           curve: AppMotion.curve,
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          height: isCinema(context) ? 40 : 38,
+          padding: EdgeInsets.symmetric(horizontal: 20),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: selected
-                ? const LinearGradient(
-                    colors: [DesktopColors.orange, DesktopColors.orange2],
+                ? LinearGradient(
+                    colors: [
+                      desktopColors(context).orange,
+                      desktopColors(context).orange2,
+                    ],
                   )
                 : null,
             color: selected
                 ? null
-                : (hover ? const Color(0xFFFFF2E9) : DesktopColors.card),
+                : (hover
+                      ? desktopTone(
+                          context,
+                          Color(0xFFFFF2E9),
+                          DesktopToneRole.selected,
+                        )
+                      : desktopColors(context).card),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: selected ? Colors.transparent : const Color(0x219B5435),
+              color: selected
+                  ? Colors.transparent
+                  : desktopTone(
+                      context,
+                      Color(0x219B5435),
+                      DesktopToneRole.line,
+                    ),
             ),
           ),
           child: Text(
             widget.label,
             style: _libraryToolbarTextStyle(
               active: selected,
-              foreground: selected ? Colors.white : const Color(0xFF5E493B),
+              foreground: selected
+                  ? (isCinema(context)
+                        ? AppPalette.of(context).onPrimary
+                        : Colors.white)
+                  : desktopTone(
+                      context,
+                      Color(0xFF5E493B),
+                      DesktopToneRole.text,
+                    ),
             ),
           ),
         ),
@@ -505,7 +552,9 @@ class _OutlineActionState extends State<_OutlineAction> {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = widget.active ? Colors.white : const Color(0xFF5E493B);
+    final foreground = widget.active
+        ? (isCinema(context) ? AppPalette.of(context).onPrimary : Colors.white)
+        : desktopTone(context, Color(0xFF5E493B), DesktopToneRole.text);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hover = true),
@@ -516,23 +565,42 @@ class _OutlineActionState extends State<_OutlineAction> {
         child: AnimatedContainer(
           duration: AppMotion.duration(context, AppMotion.menu),
           curve: AppMotion.curve,
-          height: 38,
-          constraints: const BoxConstraints(minWidth: 104),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          height: isCinema(context) ? 40 : 38,
+          constraints: BoxConstraints(minWidth: 104),
+          padding: EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             gradient: widget.active
-                ? const LinearGradient(
-                    colors: [DesktopColors.orange, DesktopColors.orange2],
+                ? LinearGradient(
+                    colors: [
+                      desktopColors(context).orange,
+                      desktopColors(context).orange2,
+                    ],
                   )
                 : null,
             color: widget.active
                 ? null
-                : (hover ? const Color(0xFFFFF2E9) : DesktopColors.card),
+                : (hover
+                      ? desktopTone(
+                          context,
+                          Color(0xFFFFF2E9),
+                          DesktopToneRole.selected,
+                        )
+                      : desktopColors(context).card),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: widget.active
                   ? Colors.transparent
-                  : (hover ? const Color(0x55FF6846) : const Color(0x219B5435)),
+                  : (hover
+                        ? desktopTone(
+                            context,
+                            Color(0x55FF6846),
+                            DesktopToneRole.primary,
+                          )
+                        : desktopTone(
+                            context,
+                            Color(0x219B5435),
+                            DesktopToneRole.line,
+                          )),
             ),
           ),
           child: Row(
@@ -541,7 +609,7 @@ class _OutlineActionState extends State<_OutlineAction> {
             children: [
               if (widget.leadingIcon != null) ...[
                 Icon(widget.leadingIcon, size: 16, color: foreground),
-                const SizedBox(width: 7),
+                SizedBox(width: 7),
               ],
               Text(
                 widget.label,
@@ -550,9 +618,9 @@ class _OutlineActionState extends State<_OutlineAction> {
                   foreground: foreground,
                 ),
               ),
-              const SizedBox(width: 6),
+              SizedBox(width: 6),
               AnimatedRotation(
-                key: const ValueKey<String>('desktop-library-action-arrow'),
+                key: ValueKey<String>('desktop-library-action-arrow'),
                 turns: widget.expanded ? 0.5 : 0,
                 duration: AppMotion.duration(context, AppMotion.menu),
                 curve: AppMotion.curve,
@@ -590,9 +658,11 @@ class _SortMenuRow extends StatelessWidget {
       _DesktopGameSort.score => '按玩家评分从高到低',
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFFFF0E8) : Colors.transparent,
+        color: selected
+            ? desktopTone(context, Color(0xFFFFF0E8), DesktopToneRole.selected)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -601,10 +671,16 @@ class _SortMenuRow extends StatelessWidget {
             selected
                 ? Icons.radio_button_checked_rounded
                 : Icons.radio_button_off_rounded,
-            color: selected ? DesktopColors.orange : const Color(0xFF8A6E62),
+            color: selected
+                ? desktopColors(context).orange
+                : desktopTone(
+                    context,
+                    Color(0xFF8A6E62),
+                    DesktopToneRole.secondary,
+                  ),
             size: 25,
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -615,16 +691,24 @@ class _SortMenuRow extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: selected
-                        ? const Color(0xFFB64B2F)
-                        : const Color(0xFF493D36),
+                        ? desktopTone(
+                            context,
+                            Color(0xFFB64B2F),
+                            DesktopToneRole.primary,
+                          )
+                        : desktopTone(
+                            context,
+                            Color(0xFF493D36),
+                            DesktopToneRole.text,
+                          ),
                   ),
                 ),
-                const SizedBox(height: 3),
+                SizedBox(height: 3),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: DesktopColors.secondaryText,
+                    color: desktopColors(context).secondaryText,
                   ),
                 ),
               ],
@@ -725,38 +809,38 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
       width: 372,
       height: 758,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+        padding: EdgeInsets.fromLTRB(18, 14, 18, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.filter_alt_outlined,
-                  color: DesktopColors.orange,
+                  color: desktopColors(context).orange,
                   size: 22,
                 ),
-                const SizedBox(width: 10),
-                const Text(
+                SizedBox(width: 10),
+                Text(
                   '筛选条件',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                 ),
-                const Spacer(),
+                Spacer(),
                 TextButton(
                   onPressed: _clear,
-                  child: const Text(
+                  child: Text(
                     '清除全部',
-                    style: TextStyle(color: DesktopColors.orange),
+                    style: TextStyle(color: desktopColors(context).orange),
                   ),
                 ),
               ],
             ),
-            const Divider(height: 10),
+            Divider(height: 10),
             _FilterGridSection(
               title: '玩家人数',
               columns: 5,
               children: [
-                for (final value in const ['1', '2', '3', '4', '5+'])
+                for (final value in ['1', '2', '3', '4', '5+'])
                   _OptionChip(
                     label: value,
                     expand: true,
@@ -770,7 +854,7 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
               title: '游戏时长',
               columns: 3,
               children: [
-                for (final option in const [
+                for (final option in [
                   ('<30', '< 30 分钟'),
                   ('30-60', '30-60 分钟'),
                   ('60-120', '60-120 分钟'),
@@ -805,7 +889,7 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
               title: '难度',
               columns: 4,
               children: [
-                for (final value in const ['入门', '轻度', '中度', '重度'])
+                for (final value in ['入门', '轻度', '中度', '重度'])
                   _OptionChip(
                     label: value,
                     expand: true,
@@ -825,7 +909,7 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
                   selected: minScore == null,
                   onTap: () => setState(() => minScore = null),
                 ),
-                for (final value in const [7.0, 8.0, 9.0])
+                for (final value in [7.0, 8.0, 9.0])
                   _OptionChip(
                     label: '${value.toInt()}+',
                     expand: true,
@@ -834,27 +918,37 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
                   ),
               ],
             ),
-            const Spacer(),
+            Spacer(),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _clear,
                     style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(46),
-                      side: const BorderSide(color: Color(0xFFFFB39B)),
-                      foregroundColor: const Color(0xFFB64B2F),
+                      minimumSize: Size.fromHeight(46),
+                      side: BorderSide(
+                        color: desktopTone(
+                          context,
+                          Color(0xFFFFB39B),
+                          DesktopToneRole.outline,
+                        ),
+                      ),
+                      foregroundColor: desktopTone(
+                        context,
+                        Color(0xFFB64B2F),
+                        DesktopToneRole.primary,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(11),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       '重置',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
                     onPressed: () => Navigator.pop(
@@ -868,13 +962,13 @@ class _FilterPopupEntryState extends State<_FilterPopupEntry> {
                       ),
                     ),
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(46),
-                      backgroundColor: DesktopColors.orange,
+                      minimumSize: Size.fromHeight(46),
+                      backgroundColor: desktopColors(context).orange,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(11),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       '应用筛选',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
@@ -902,15 +996,15 @@ class _FilterGridSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 10),
+    padding: EdgeInsets.only(top: 10),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
         ),
-        const SizedBox(height: 7),
+        SizedBox(height: 7),
         LayoutBuilder(
           builder: (context, constraints) {
             const gap = 8.0;
@@ -950,23 +1044,31 @@ class _OptionChip extends StatelessWidget {
     borderRadius: BorderRadius.circular(12),
     child: AnimatedContainer(
       duration: AppMotion.duration(context, AppMotion.feedback),
-      height: 38,
+      height: isCinema(context) ? 40 : 38,
       width: expand ? double.infinity : null,
-      padding: const EdgeInsets.symmetric(horizontal: 15),
+      padding: EdgeInsets.symmetric(horizontal: 15),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: selected ? DesktopColors.orange : const Color(0xFFFFFEFC),
+        color: selected
+            ? desktopColors(context).orange
+            : desktopTone(context, Color(0xFFFFFEFC), DesktopToneRole.card),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: selected ? DesktopColors.orange : const Color(0xFFE9DFD8),
+          color: selected
+              ? desktopColors(context).orange
+              : desktopTone(context, Color(0xFFE9DFD8), DesktopToneRole.line),
         ),
       ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 11.5,
+          fontSize: isCinema(context) ? 14 : 11.5,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          color: selected ? Colors.white : const Color(0xFF5F554E),
+          color: selected
+              ? (isCinema(context)
+                    ? AppPalette.of(context).onPrimary
+                    : Colors.white)
+              : desktopTone(context, Color(0xFF5F554E), DesktopToneRole.text),
         ),
       ),
     ),
@@ -986,6 +1088,15 @@ class _LibraryGameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isCinema(context)) {
+      return CinemaPoster(
+        key: ValueKey('desktop-game-card-${game.data.id}'),
+        controller: game.controller,
+        game: game.data,
+        onOpen: onTap,
+        details: true,
+      );
+    }
     return DesktopLibraryPosterCard(
       key: ValueKey<String>('desktop-game-card-${game.data.id}'),
       controller: game.controller,

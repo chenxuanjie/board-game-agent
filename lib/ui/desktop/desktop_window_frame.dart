@@ -97,16 +97,16 @@ class DesktopWindowFrame extends StatelessWidget {
                   metrics: metrics,
                   child: Material(
                     color: sidebarVisible
-                        ? DesktopColors.background
+                        ? desktopColors(context).background
                         : Theme.of(context).scaffoldBackgroundColor,
                     child: SizedBox(
-                      key: const ValueKey('desktop-window-titlebar'),
+                      key: ValueKey('desktop-window-titlebar'),
                       height: height,
                       child: Row(
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              key: const ValueKey('desktop-window-drag-area'),
+                              key: ValueKey('desktop-window-drag-area'),
                               behavior: HitTestBehavior.opaque,
                               onPanStart: (_) => windowManager.startDragging(),
                               onDoubleTap: () async {
@@ -125,15 +125,17 @@ class DesktopWindowFrame extends StatelessWidget {
                                       top: 0,
                                       bottom: 0,
                                       width: sidebarWidth,
-                                      child: const DecoratedBox(
+                                      child: DecoratedBox(
                                         key: ValueKey(
                                           'desktop-window-sidebar-background',
                                         ),
                                         decoration: BoxDecoration(
-                                          color: DesktopColors.sidebar,
+                                          color: desktopColors(context).sidebar,
                                           border: Border(
                                             right: BorderSide(
-                                              color: DesktopColors.line,
+                                              color: desktopColors(
+                                                context,
+                                              ).line,
                                             ),
                                           ),
                                         ),
@@ -143,7 +145,7 @@ class DesktopWindowFrame extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const WindowControls(),
+                          WindowControls(),
                         ],
                       ),
                     ),

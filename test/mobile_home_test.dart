@@ -45,6 +45,7 @@ import 'package:board_game_agent/ui/shared/content_cards.dart';
 import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_presentation.dart';
 import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
+import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 
 part 'mobile/mobile_national_day_test_cases.dart';
 part 'mobile/mobile_content_design_test_cases.dart';
@@ -52,6 +53,39 @@ part 'mobile/mobile_composer_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final width in [320.0, 390.0, 720.0]) {
+    testWidgets('Cinema compact navigation and details work at $width', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(c.dispose);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.runAsync(c.reloadGames);
+      await c.setColorScheme(ColorSchemeOption.cinema);
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(c.palette),
+          home: HomeScreen(controller: c, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(CinemaHomeContent), findsOneWidget);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('cinema-hero-details')),
+      );
+      await tester.tap(find.byKey(const ValueKey('cinema-hero-details')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileLibraryContent), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets(
     'home ranking shortcut opens the shared ranking and returns from game details',
     (tester) async {

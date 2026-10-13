@@ -2,6 +2,7 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
+import '../shared/cinema/cinema_surface.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -252,14 +253,14 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                               child: _ThemeChoice(
                                 palette: palette,
                                 title: copy.colorSchemeName(
-                                  ColorSchemeOption.sunsetCoast,
+                                  ColorSchemeOption.cinema,
                                 ),
-                                swatch: PaletteRegistry.sunsetCoast.primary,
+                                swatch: PaletteRegistry.cinema.primary,
                                 selected:
                                     controller.colorScheme ==
-                                    ColorSchemeOption.sunsetCoast,
+                                    ColorSchemeOption.cinema,
                                 onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.sunsetCoast,
+                                  ColorSchemeOption.cinema,
                                 ),
                               ),
                             ),
@@ -267,6 +268,8 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
+                      if (controller.colorScheme == ColorSchemeOption.cinema)
+                        CinemaGlassSetting(controller: controller),
                       if (AccountScope.maybeOf(context) == null)
                         _SectionCard(
                           palette: palette,

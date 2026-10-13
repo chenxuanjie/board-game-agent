@@ -31,15 +31,15 @@ class _GeneralCard extends StatelessWidget {
             child: Theme(
               data: _dropdownTheme(context),
               child: DropdownButtonFormField<AppLanguage>(
-                key: const ValueKey<String>('desktop-settings-language'),
+                key: ValueKey<String>('desktop-settings-language'),
                 initialValue: controller.language,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(_px(context, 12)),
-                dropdownColor: DesktopColors.card,
+                dropdownColor: desktopColors(context).card,
                 decoration: _fieldDecoration(context),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontSize: _font(context, 13),
-                  color: DesktopColors.text,
+                  color: desktopColors(context).text,
                 ),
                 items: AppLanguage.values
                     .map(
@@ -70,9 +70,7 @@ class _GeneralCard extends StatelessWidget {
           ),
           SizedBox(height: _px(context, 7)),
           _SettingSwitchRow(
-            key: const ValueKey<String>(
-              'desktop-settings-startup-update-check',
-            ),
+            key: ValueKey<String>('desktop-settings-startup-update-check'),
             title: copy.localized('启动时检查更新', 'Check for updates on startup'),
             subtitle: copy.localized(
               '当前更新源仅支持 Android APK',
@@ -83,7 +81,7 @@ class _GeneralCard extends StatelessWidget {
           ),
           SizedBox(height: _px(context, 4)),
           _SettingSwitchRow(
-            key: const ValueKey<String>('desktop-settings-voice-reply'),
+            key: ValueKey<String>('desktop-settings-voice-reply'),
             title: copy.localized('语音朗读', 'Voice output'),
             subtitle: controller.voiceReplyAvailable
                 ? ''
@@ -115,7 +113,7 @@ class _AppearanceCard extends StatelessWidget {
     const List<ColorSchemeOption> schemes = [
       ColorSchemeOption.warmwoodStudy,
       ColorSchemeOption.classic,
-      ColorSchemeOption.sunsetCoast,
+      ColorSchemeOption.cinema,
     ];
     final AppCopy copy = controller.copy;
     return _SettingsCard(
@@ -140,6 +138,8 @@ class _AppearanceCard extends StatelessWidget {
               ],
             ],
           ),
+          if (controller.colorScheme == ColorSchemeOption.cinema)
+            CinemaGlassSetting(controller: controller),
         ],
       ),
     );
@@ -182,12 +182,22 @@ class _ThemePreview extends StatelessWidget {
               duration: AppMotion.duration(context),
               padding: EdgeInsets.all(metrics.px(5)),
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFFFFF2E9) : DesktopColors.card,
+                color: selected
+                    ? desktopTone(
+                        context,
+                        Color(0xFFFFF2E9),
+                        DesktopToneRole.selected,
+                      )
+                    : desktopColors(context).card,
                 borderRadius: BorderRadius.circular(metrics.radius(9)),
                 border: Border.all(
                   color: selected
-                      ? DesktopColors.orange
-                      : const Color(0x1AA76D48),
+                      ? desktopColors(context).orange
+                      : desktopTone(
+                          context,
+                          Color(0x1AA76D48),
+                          DesktopToneRole.line,
+                        ),
                   width: selected ? metrics.px(1.5) : 1,
                 ),
               ),
@@ -211,7 +221,7 @@ class _ThemePreview extends StatelessWidget {
                       fontSize: metrics.font(11),
                       height: 1.1,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: DesktopColors.text,
+                      color: desktopColors(context).text,
                     ),
                   ),
                 ],
@@ -233,7 +243,7 @@ class _ThemeMiniature extends StatelessWidget {
   Widget build(BuildContext context) => ColoredBox(
     color: palette.pageBackground,
     child: Padding(
-      padding: const EdgeInsets.all(5),
+      padding: EdgeInsets.all(5),
       child: Column(
         children: <Widget>[
           Row(
@@ -246,11 +256,11 @@ class _ThemeMiniature extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Spacer(),
+              Spacer(),
               Container(width: 7, height: 4, color: palette.textSecondary),
             ],
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Expanded(
             child: Row(
               children: <Widget>[
@@ -261,7 +271,7 @@ class _ThemeMiniature extends StatelessWidget {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(width: 4),
+                SizedBox(width: 4),
                 Expanded(
                   child: Column(
                     children: <Widget>[
@@ -274,7 +284,7 @@ class _ThemeMiniature extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      SizedBox(height: 3),
                       Expanded(
                         child: Row(
                           children: <Widget>[
@@ -283,7 +293,7 @@ class _ThemeMiniature extends StatelessWidget {
                                 color: palette.primaryContainer,
                               ),
                             ),
-                            const SizedBox(width: 3),
+                            SizedBox(width: 3),
                             Expanded(
                               child: ColoredBox(
                                 color: palette.secondaryContainer,

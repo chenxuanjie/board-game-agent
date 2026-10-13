@@ -36,36 +36,37 @@ class PaletteRegistry {
     shadow: Color(0xFF000000),
   );
 
-  static const AppPalette sunsetCoast = AppPalette(
-    scheme: ColorSchemeOption.sunsetCoast,
-    nameZh: '晚霞海岸',
-    nameEn: 'Sunset Coast',
-    pageBackground: Color(0xFFFAF6F5),
-    surface: Color(0xFFFFFDFC),
-    surfaceContainer: Color(0xFFF1E2E6),
-    surfaceVariant: Color(0xFFE5EDF4),
-    inputSurface: Color(0xFFFFFDFC),
-    textPrimary: Color(0xFF3A3035),
-    textSecondary: Color(0xFF70616A),
-    outline: Color(0xFFDCC4CB),
-    primary: Color(0xFF7D98BA),
-    primaryContainer: Color(0xFFE0EAF3),
-    onPrimary: Color(0xFF1F2633),
-    onPrimaryContainer: Color(0xFF293142),
-    secondary: Color(0xFFDD97A6),
-    secondaryContainer: Color(0xFFEECCCA),
-    onSecondary: Color(0xFF3A3035),
-    onSecondaryContainer: Color(0xFF3A3035),
-    success: Color(0xFF497461),
-    onSuccess: Color(0xFFFFFFFF),
-    warning: Color(0xFF945D31),
-    onWarning: Color(0xFFFFFFFF),
-    error: Color(0xFF9F4D5D),
-    onError: Color(0xFFFFFFFF),
-    focusRing: Color(0xFF7D98BA),
-    disabledForeground: Color(0xFFAA9EA3),
-    disabledBackground: Color(0xFFF0E6E7),
-    shadow: Color(0xFF8D747E),
+  /// V5 Cinema foundation. Materials and composition use the separate design spec.
+  static const AppPalette cinema = AppPalette(
+    scheme: ColorSchemeOption.cinema,
+    nameZh: '影院',
+    nameEn: 'Cinema',
+    pageBackground: Color(0xFF0E1015),
+    surface: Color(0xFF171A21),
+    surfaceContainer: Color(0xFF20242D),
+    surfaceVariant: Color(0xFF262B35),
+    inputSurface: Color(0xFF1B2029),
+    textPrimary: Color(0xFFF6F2EC),
+    textSecondary: Color(0xFFB7B8C2),
+    outline: Color(0xFF737B8A),
+    primary: Color(0xFFFF6B5D),
+    primaryContainer: Color(0xFF422725),
+    onPrimary: Color(0xFF191111),
+    onPrimaryContainer: Color(0xFFFFE4DF),
+    secondary: Color(0xFFB7B8C2),
+    secondaryContainer: Color(0xFF262B35),
+    onSecondary: Color(0xFF171A21),
+    onSecondaryContainer: Color(0xFFF6F2EC),
+    success: Color(0xFF73D5A3),
+    onSuccess: Color(0xFF092219),
+    warning: Color(0xFFF2C46D),
+    onWarning: Color(0xFF2B1E09),
+    error: Color(0xFFFF8B9A),
+    onError: Color(0xFF310F18),
+    focusRing: Color(0xFFFFF1CA),
+    disabledForeground: Color(0xFF717786),
+    disabledBackground: Color(0xFF252932),
+    shadow: Color(0xFF000000),
   );
 
   /// Warm ivory, orange and walnut tones used by the desktop workspace.
@@ -105,8 +106,8 @@ class PaletteRegistry {
     switch (scheme) {
       case ColorSchemeOption.classic:
         return classic;
-      case ColorSchemeOption.sunsetCoast:
-        return sunsetCoast;
+      case ColorSchemeOption.cinema:
+        return cinema;
       case ColorSchemeOption.warmwoodStudy:
         return warmwoodStudy;
     }

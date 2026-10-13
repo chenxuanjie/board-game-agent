@@ -569,8 +569,8 @@ class AppCopy {
     switch (scheme) {
       case ColorSchemeOption.classic:
         return isChinese ? '夜幕棋局' : 'Midnight Table';
-      case ColorSchemeOption.sunsetCoast:
-        return isChinese ? '晚霞海岸' : 'Sunset Coast';
+      case ColorSchemeOption.cinema:
+        return isChinese ? '影院' : 'Cinema';
       case ColorSchemeOption.warmwoodStudy:
         return isChinese ? '暖木书房' : 'Warmwood Study';
     }

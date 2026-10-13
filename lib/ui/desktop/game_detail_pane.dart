@@ -11,6 +11,8 @@ import 'desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
+import '../../core/theme/cinema_theme.dart';
+import '../../core/theme/app_palette.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import '../shared/favorite_feedback.dart';
 import '../shared/content_entrance.dart';
@@ -109,17 +111,17 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   @override
   Widget build(BuildContext context) {
     return Column(
-      key: const ValueKey<String>('desktop-game-detail'),
+      key: ValueKey<String>('desktop-game-detail'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ContentEntrance(key: ValueKey(game.id), child: _hero()),
         _gallery(),
         Container(
-          margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+          margin: EdgeInsets.fromLTRB(14, 14, 14, 0),
           decoration: BoxDecoration(
-            color: DesktopColors.card,
+            color: desktopColors(context).card,
             borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: DesktopColors.line),
+            border: Border.all(color: desktopColors(context).line),
           ),
           child: Column(
             children: [
@@ -135,7 +137,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                 duration: AppMotion.duration(context, AppMotion.menu),
                 child: Padding(
                   key: ValueKey<int>(_tab),
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   child: _tabBody(),
                 ),
               ),
@@ -144,13 +146,13 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
         ),
         _relatedSection(),
         Container(
-          key: const ValueKey('desktop-game-comments-section'),
-          margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-          padding: const EdgeInsets.all(16),
+          key: ValueKey('desktop-game-comments-section'),
+          margin: EdgeInsets.fromLTRB(14, 14, 14, 0),
+          padding: EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: DesktopColors.card,
+            color: desktopColors(context).card,
             borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: DesktopColors.line),
+            border: Border.all(color: desktopColors(context).line),
           ),
           child: GameCommentsPanel(
             key: ValueKey('comments-${game.slug}'),
@@ -158,7 +160,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             gameTitle: game.title,
           ),
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
       ],
     );
   }
@@ -208,7 +210,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                   assetPath: heroPath,
                   palette: widget.controller.palette,
                 ),
-                const DecoratedBox(
+                DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.centerLeft,
@@ -222,7 +224,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                     ),
                   ),
                 ),
-                const DecoratedBox(
+                DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
@@ -238,8 +240,8 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                 Padding(
                   padding: metrics.insets(
                     condensed
-                        ? const EdgeInsets.fromLTRB(20, 16, 20, 16)
-                        : const EdgeInsets.fromLTRB(34, 24, 32, 24),
+                        ? EdgeInsets.fromLTRB(20, 16, 20, 16)
+                        : EdgeInsets.fromLTRB(34, 24, 32, 24),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,14 +255,14 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                           ),
                         ],
                       ),
-                      const Spacer(),
+                      Spacer(),
                       ConstrainedBox(
                         constraints: BoxConstraints(maxWidth: metrics.px(640)),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              key: const ValueKey('desktop-detail-title'),
+                              key: ValueKey('desktop-detail-title'),
                               value(game.title),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -372,7 +374,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                               ),
                             ),
                             if (showTags) ...[
-                              const SizedBox(height: 15),
+                              SizedBox(height: 15),
                               Wrap(
                                 spacing: 7,
                                 runSpacing: 7,
@@ -388,7 +390,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                               runSpacing: metrics.px(12),
                               children: [
                                 _HeroButton(
-                                  key: const ValueKey<String>(
+                                  key: ValueKey<String>(
                                     'desktop-detail-favorite-button',
                                   ),
                                   label: widget.controller.isFavorite(game)
@@ -452,24 +454,24 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   Widget _gallery() {
     final paths = _galleryPaths();
     if (paths.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: 96,
         child: Center(
           child: Text(
             '暂无图片',
-            style: TextStyle(color: DesktopColors.secondaryText),
+            style: TextStyle(color: desktopColors(context).secondaryText),
           ),
         ),
       );
     }
     return Container(
       height: 108,
-      color: const Color(0xFFFFF9F2),
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      color: desktopTone(context, Color(0xFFFFF9F2), DesktopToneRole.soft),
+      padding: EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: paths.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => SizedBox(width: 8),
         itemBuilder: (context, index) => Tooltip(
           message: '查看第 ${index + 1} 张图片',
           child: Semantics(
@@ -486,12 +488,12 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                 borderRadius: BorderRadius.circular(9),
                 child: Container(
                   width: 146,
-                  padding: const EdgeInsets.all(2),
+                  padding: EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(9),
                     border: Border.all(
                       color: index == _galleryIndex
-                          ? DesktopColors.orange
+                          ? desktopColors(context).orange
                           : Colors.transparent,
                       width: 2,
                     ),
@@ -528,8 +530,8 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                 border: Border(
                   bottom: BorderSide(
                     color: index == _tab
-                        ? DesktopColors.orange
-                        : DesktopColors.line,
+                        ? desktopColors(context).orange
+                        : desktopColors(context).line,
                     width: index == _tab ? 2 : 1,
                   ),
                 ),
@@ -540,8 +542,8 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                   fontSize: 13,
                   fontWeight: index == _tab ? FontWeight.w800 : FontWeight.w500,
                   color: index == _tab
-                      ? DesktopColors.text
-                      : DesktopColors.secondaryText,
+                      ? desktopColors(context).text
+                      : desktopColors(context).secondaryText,
                 ),
               ),
             ),
@@ -553,38 +555,38 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   Widget _tabBody() => switch (_tab) {
     0 => _introduction(),
     1 => _rules(),
-    _ => const SizedBox.shrink(),
+    _ => SizedBox.shrink(),
   };
 
   Widget _relatedSection() => Container(
-    key: const ValueKey<String>('desktop-related-games-section'),
-    margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-    padding: const EdgeInsets.all(16),
+    key: ValueKey<String>('desktop-related-games-section'),
+    margin: EdgeInsets.fromLTRB(14, 14, 14, 0),
+    padding: EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: DesktopColors.card,
+      color: desktopColors(context).card,
       borderRadius: BorderRadius.circular(13),
-      border: Border.all(color: DesktopColors.line),
+      border: Border.all(color: desktopColors(context).line),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '相关游戏',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: 14),
         _relatedGames(),
       ],
     ),
   );
 
   Widget _relatedGames() {
-    final results = const RelatedGameRecommender().recommend(
+    final results = RelatedGameRecommender().recommend(
       source: game,
       catalog: widget.controller.games,
     );
     if (results.isEmpty) {
-      return const SizedBox(height: 120, child: Center(child: Text('暂无其他游戏')));
+      return SizedBox(height: 120, child: Center(child: Text('暂无其他游戏')));
     }
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -614,11 +616,17 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                         onTap: () => widget.onOpenGame(result.game),
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
-                          padding: const EdgeInsets.all(10),
+                          padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFFCF9),
+                            color: desktopTone(
+                              context,
+                              Color(0xFFFFFCF9),
+                              DesktopToneRole.card,
+                            ),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: DesktopColors.line),
+                            border: Border.all(
+                              color: desktopColors(context).line,
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -634,7 +642,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 11),
+                              SizedBox(width: 11),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,27 +651,29 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                                       result.game.title,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
-                                    const SizedBox(height: 5),
+                                    SizedBox(height: 5),
                                     Text(
                                       _relatedReason(result.reason),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        color: DesktopColors.secondaryText,
+                                        color: desktopColors(
+                                          context,
+                                        ).secondaryText,
                                       ),
                                     ),
-                                    const SizedBox(height: 5),
+                                    SizedBox(height: 5),
                                     Text(
                                       result.game.score,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
-                                        color: DesktopColors.orange,
+                                        color: desktopColors(context).orange,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -706,14 +716,14 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
       if (constraints.maxWidth < 760) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [copy, const SizedBox(height: 14), highlights],
+          children: [copy, SizedBox(height: 14), highlights],
         );
       }
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(flex: 3, child: copy),
-          const SizedBox(width: 14),
+          SizedBox(width: 14),
           Expanded(flex: 2, child: highlights),
         ],
       );
@@ -737,40 +747,40 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
       children: [
         Row(
           children: [
-            const Text(
+            Text(
               '规则资料',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             ),
             if (available.isNotEmpty) ...[
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Text(
                 '${available.length} 份',
-                style: const TextStyle(color: DesktopColors.secondaryText),
+                style: TextStyle(color: desktopColors(context).secondaryText),
               ),
             ],
           ],
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         for (final label in labels.take(5))
           Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: EdgeInsets.only(bottom: 6),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.description_outlined,
                   size: 17,
-                  color: DesktopColors.orange,
+                  color: desktopColors(context).orange,
                 ),
-                const SizedBox(width: 7),
+                SizedBox(width: 7),
                 Expanded(child: Text(label)),
               ],
             ),
           ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         FilledButton.icon(
           onPressed: widget.onOpenRules,
-          icon: const Icon(Icons.menu_book_rounded),
-          label: const Text('打开规则资料'),
+          icon: Icon(Icons.menu_book_rounded),
+          label: Text('打开规则资料'),
         ),
       ],
     );
@@ -790,11 +800,11 @@ class _IntroCopy extends StatelessWidget {
   final AppController controller;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
+    padding: EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: const Color(0xFFFFFCF9),
+      color: desktopTone(context, Color(0xFFFFFCF9), DesktopToneRole.card),
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: DesktopColors.line),
+      border: Border.all(color: desktopColors(context).line),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -811,41 +821,42 @@ class _IntroCopy extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 14),
+        SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 '$title · 游戏介绍',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: 10),
               Text(
                 description,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12.5,
                   height: 1.75,
-                  color: Color(0xFF625851),
+                  color: desktopTone(
+                    context,
+                    Color(0xFF625851),
+                    DesktopToneRole.secondary,
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               Text(
                 '设计师：${game.designers.isEmpty ? '-' : game.designers.join('、')}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: DesktopColors.secondaryText,
+                  color: desktopColors(context).secondaryText,
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: 4),
               Text(
                 '发行：${game.publishers.isEmpty ? '-' : game.publishers.join('、')}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: DesktopColors.secondaryText,
+                  color: desktopColors(context).secondaryText,
                 ),
               ),
             ],
@@ -884,22 +895,22 @@ class _Highlights extends StatelessWidget {
       ),
     ];
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9F5EF),
+        color: desktopTone(context, Color(0xFFF9F5EF), DesktopToneRole.soft),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '游戏亮点',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           GridView.count(
             shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+            physics: NeverScrollableScrollPhysics(),
             crossAxisCount: 2,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
@@ -907,16 +918,20 @@ class _Highlights extends StatelessWidget {
             children: [
               for (final item in data)
                 Container(
-                  padding: const EdgeInsets.all(9),
+                  padding: EdgeInsets.all(9),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: DesktopColors.line),
+                    border: Border.all(color: desktopColors(context).line),
                   ),
                   child: Row(
                     children: [
-                      Icon(item.$1, size: 19, color: DesktopColors.orange),
-                      const SizedBox(width: 7),
+                      Icon(
+                        item.$1,
+                        size: 19,
+                        color: desktopColors(context).orange,
+                      ),
+                      SizedBox(width: 7),
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -924,7 +939,7 @@ class _Highlights extends StatelessWidget {
                           children: [
                             Text(
                               item.$2,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -933,9 +948,9 @@ class _Highlights extends StatelessWidget {
                               item.$3,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 9,
-                                color: DesktopColors.secondaryText,
+                                color: desktopColors(context).secondaryText,
                               ),
                             ),
                           ],
@@ -971,7 +986,7 @@ class _HeroMetric extends StatelessWidget {
     return Container(
       width: width,
       padding: EdgeInsets.only(right: metrics.px(16)),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(right: BorderSide(color: Color(0x55FFFFFF))),
       ),
       child: Row(
@@ -1012,16 +1027,13 @@ class _HeroTag extends StatelessWidget {
   final String label;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+    padding: EdgeInsets.symmetric(horizontal: 13, vertical: 6),
     decoration: BoxDecoration(
-      color: const Color(0x553D2C24),
+      color: Color(0x553D2C24),
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: const Color(0x66FFFFFF)),
+      border: Border.all(color: Color(0x66FFFFFF)),
     ),
-    child: Text(
-      label,
-      style: const TextStyle(color: Colors.white, fontSize: 10),
-    ),
+    child: Text(label, style: TextStyle(color: Colors.white, fontSize: 10)),
   );
 }
 
@@ -1060,7 +1072,13 @@ class _HeroButtonState extends State<_HeroButton> {
         widget.icon == Icons.favorite_border_rounded;
     _confirmed ??= widget.icon == Icons.favorite_rounded;
     if (!widget.busy) _confirmed = widget.icon == Icons.favorite_rounded;
-    final color = widget.light ? const Color(0xFF59463B) : Colors.white;
+    final color = isCinema(context)
+        ? (widget.light
+              ? AppPalette.of(context).textPrimary
+              : AppPalette.of(context).onPrimary)
+        : widget.light
+        ? Color(0xFF59463B)
+        : Colors.white;
     return MouseRegion(
       cursor: widget.onTap == null
           ? SystemMouseCursors.basic
@@ -1083,11 +1101,13 @@ class _HeroButtonState extends State<_HeroButton> {
           padding: EdgeInsets.symmetric(horizontal: metrics.px(20)),
           decoration: BoxDecoration(
             color: widget.light
-                ? const Color(0xEFFCF7F3)
-                : DesktopColors.orange,
+                ? (isCinema(context)
+                      ? AppPalette.of(context).surfaceContainer
+                      : Color(0xEFFCF7F3))
+                : desktopColors(context).orange,
             borderRadius: BorderRadius.circular(metrics.radius(12)),
             boxShadow: hover
-                ? const [
+                ? [
                     BoxShadow(
                       color: Color(0x33000000),
                       blurRadius: 10,
@@ -1158,7 +1178,7 @@ class _RoundIcon extends StatelessWidget {
     child: IconButton(
       onPressed: onTap,
       style: IconButton.styleFrom(
-        backgroundColor: const Color(0x9953443B),
+        backgroundColor: Color(0x9953443B),
         foregroundColor: Colors.white,
       ),
       icon: Icon(icon),

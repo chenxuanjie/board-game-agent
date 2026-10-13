@@ -243,6 +243,14 @@ class AppController extends ChangeNotifier {
 
   AppLanguage _language = AppLanguage.zhHans;
   ColorSchemeOption _colorScheme;
+  bool _cinemaGlassEnabled = true;
+  bool get cinemaGlassEnabled => _cinemaGlassEnabled;
+  Future<void> setCinemaGlassEnabled(bool enabled) async {
+    await _preferencesService.saveCinemaGlassEnabled(enabled);
+    _cinemaGlassEnabled = enabled;
+    _notifyListeners();
+  }
+
   bool _voiceReplyEnabled = true;
   AssistantMode _assistantMode = AssistantMode.textAndDictation;
   bool _checkForUpdates = true;
@@ -786,6 +794,7 @@ class AppController extends ChangeNotifier {
   Future<void> _initialize() async {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
+    _cinemaGlassEnabled = await _preferencesService.loadCinemaGlassEnabled();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
     final AssistantMode savedAssistantMode = await _preferencesService
         .loadAssistantMode();

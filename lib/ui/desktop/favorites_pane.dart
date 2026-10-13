@@ -59,37 +59,34 @@ class _FavoritesEmptyState extends StatelessWidget {
       height: 520,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
+          constraints: BoxConstraints(maxWidth: 360),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.favorite_border_rounded,
                 size: 54,
-                color: DesktopColors.orange,
+                color: desktopColors(context).orange,
               ),
-              const SizedBox(height: 14),
+              SizedBox(height: 14),
               Text(
                 copy.favoritesEmptyTitle,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 copy.favoritesEmptyMessage,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: DesktopColors.secondaryText,
+                style: TextStyle(
+                  color: desktopColors(context).secondaryText,
                   height: 1.6,
                 ),
               ),
-              const SizedBox(height: 18),
+              SizedBox(height: 18),
               FilledButton.icon(
-                key: const ValueKey<String>('desktop-favorites-open-library'),
+                key: ValueKey<String>('desktop-favorites-open-library'),
                 onPressed: onOpenLibrary,
-                icon: const Icon(Icons.casino_rounded),
+                icon: Icon(Icons.casino_rounded),
                 label: Text(copy.favoritesGoToLibrary),
               ),
             ],

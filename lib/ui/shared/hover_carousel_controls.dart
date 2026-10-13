@@ -14,6 +14,7 @@ class HoverCarouselControls extends StatefulWidget {
     this.showControls = true,
     this.onInteractionChanged,
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
+    this.fit = StackFit.expand,
   });
   final Widget child;
   final VoidCallback onPrevious;
@@ -23,6 +24,7 @@ class HoverCarouselControls extends StatefulWidget {
   final bool showControls;
   final ValueChanged<bool>? onInteractionChanged;
   final BorderRadius borderRadius;
+  final StackFit fit;
   @override
   State<HoverCarouselControls> createState() => _HoverCarouselControlsState();
 }
@@ -64,7 +66,7 @@ class _HoverCarouselControlsState extends State<HoverCarouselControls> {
         child: ClipRRect(
           borderRadius: widget.borderRadius,
           child: Stack(
-            fit: StackFit.expand,
+            fit: widget.fit,
             children: [
               widget.child,
               if (widget.showControls) ...[

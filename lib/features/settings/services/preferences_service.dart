@@ -255,6 +255,14 @@ class PreferencesService {
     await prefs.setString(_colorSchemeKey, scheme.code);
   }
 
+  Future<bool> loadCinemaGlassEnabled() async =>
+      (await _prefs).getBool('cinema_glass_enabled') ?? true;
+  Future<void> saveCinemaGlassEnabled(bool enabled) async {
+    if (!await (await _prefs).setBool('cinema_glass_enabled', enabled)) {
+      throw StateError('外观设置未保存');
+    }
+  }
+
   Future<AiApiConfig> loadAiApiConfig() async {
     final prefs = await _prefs;
     final String? stored = prefs.getString(_aiApiConfigKey);

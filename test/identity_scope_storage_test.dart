@@ -198,8 +198,8 @@ void main() {
         AssetSourceConfig.defaults.length,
       );
       expect(await a.loadColorScheme(), ColorSchemeOption.classic);
-      await a.saveColorScheme(ColorSchemeOption.sunsetCoast);
-      expect(await guest.loadColorScheme(), ColorSchemeOption.sunsetCoast);
+      await a.saveColorScheme(ColorSchemeOption.cinema);
+      expect(await guest.loadColorScheme(), ColorSchemeOption.cinema);
     },
   );
 

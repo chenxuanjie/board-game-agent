@@ -4,6 +4,8 @@
 
 `main.dart` 创建依赖，并按平台与 Web 宽度选择桌面或紧凑界面。两个界面使用同一个 `AppController` 和同一套业务模型、服务；目录划分不代表复制后端。
 
+新增影院主题的设计标准见 [影院主题 v1](cinema-theme-v1.md)。V5 开发位于 `codex/v5`；影院以独立编码替换晚霞海岸，`core/theme/cinema_theme.dart` 定义控件主题，`ui/shared/cinema/` 提供首页、海报、氛围和局部玻璃。桌面旧组件通过语义颜色入口接入影院，继续复用现有业务状态；玻璃开关只保存在本机。
+
 `app/state/browse_session.dart` 管理本次运行的账号浏览状态，桌面和紧凑外壳共同使用；`ui/shared/library_viewport.dart` 按稳定游戏 ID 恢复网格位置。`app_modals.dart` 统一浮层节奏和关闭过程中的入口保护，`smooth_progress.dart` 仅平滑真实进度。范围及验收见 [浏览位置与交互反馈](interaction-continuity.md)。
 
 | 目录 | 职责 | 修改时从哪里开始 |

@@ -525,7 +525,7 @@ void main() {
     for (final palette in [
       PaletteRegistry.warmwoodStudy,
       PaletteRegistry.classic,
-      PaletteRegistry.sunsetCoast,
+      PaletteRegistry.cinema,
     ]) {
       for (final width in [320.0, 760.0, 2560.0]) {
         await tester.binding.setSurfaceSize(Size(width, 900));

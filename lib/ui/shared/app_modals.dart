@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../core/theme/app_motion.dart';
+import '../../core/theme/cinema_theme.dart';
+import 'cinema/cinema_surface.dart';
 
 final _activeModals = Expando<Set<String>>();
 
@@ -78,7 +80,13 @@ Future<T?> showAppBottomSheet<T>({
   kind: 'sheet',
   rootNavigator: false,
   route: ModalBottomSheetRoute<T>(
-    builder: builder,
+    backgroundColor: isCinema(context) ? Colors.transparent : null,
+    builder: (context) => isCinema(context)
+        ? CinemaSurface(
+            role: CinemaSurfaceRole.overlay,
+            child: builder(context),
+          )
+        : builder(context),
     capturedThemes: InheritedTheme.capture(
       from: context,
       to: Navigator.of(context).context,

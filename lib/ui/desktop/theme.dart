@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/palette_registry.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/color_scheme_option.dart';
 
 /// Design tokens for the Warmwood Study desktop theme.
 abstract final class DesktopColors {
@@ -19,7 +21,16 @@ abstract final class DesktopColors {
 }
 
 /// Desktop presentation for the persisted Warmwood Study theme.
-ThemeData buildDesktopTheme() {
+ThemeData buildDesktopTheme({
+  AppPalette? activePalette,
+  bool cinemaGlassEnabled = true,
+}) {
+  if (activePalette?.scheme == ColorSchemeOption.cinema) {
+    return AppTheme.buildTheme(
+      activePalette!,
+      cinemaGlassEnabled: cinemaGlassEnabled,
+    );
+  }
   final colorScheme = ColorScheme.fromSeed(
     seedColor: DesktopColors.orange,
     brightness: Brightness.light,
@@ -36,7 +47,7 @@ ThemeData buildDesktopTheme() {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: color, width: width),
       );
-  return base.copyWith(
+  final theme = base.copyWith(
     scaffoldBackgroundColor: DesktopColors.background,
     colorScheme: colorScheme,
     textTheme: base.textTheme.apply(
@@ -105,4 +116,71 @@ ThemeData buildDesktopTheme() {
     focusColor: DesktopColors.orange.withValues(alpha: .16),
     dividerColor: DesktopColors.line,
   );
+  return ThemeData.localize(theme, theme.typography.englishLike);
+}
+
+/// Legacy desktop pages use the same semantic roles when Cinema is selected.
+/// Other themes retain their current V4 presentation until explicitly changed.
+DesktopRoleColors desktopColors(BuildContext context) {
+  final palette = Theme.of(
+    context,
+  ).extension<AppPaletteThemeExtension>()?.palette;
+  return DesktopRoleColors(
+    palette?.scheme == ColorSchemeOption.cinema ? palette : null,
+  );
+}
+
+class DesktopRoleColors {
+  const DesktopRoleColors(this.palette);
+  final AppPalette? palette;
+  Color get background => palette?.pageBackground ?? DesktopColors.background;
+  Color get sidebar => palette?.surfaceContainer ?? DesktopColors.sidebar;
+  Color get card => palette?.surface ?? DesktopColors.card;
+  Color get text => palette?.textPrimary ?? DesktopColors.text;
+  Color get secondaryText =>
+      palette?.textSecondary ?? DesktopColors.secondaryText;
+  Color get brown => palette?.secondary ?? DesktopColors.brown;
+  Color get orange => palette?.primary ?? DesktopColors.orange;
+  Color get orange2 => palette?.primary ?? DesktopColors.orange2;
+  Color get line =>
+      palette == null ? DesktopColors.line : const Color(0xFF353B47);
+  Color get soft => palette?.inputSurface ?? DesktopColors.soft;
+}
+
+enum DesktopToneRole {
+  card,
+  soft,
+  selected,
+  text,
+  secondary,
+  primary,
+  outline,
+  warning,
+  success,
+  error,
+  shadow,
+  line,
+}
+
+Color desktopTone(BuildContext context, Color legacy, DesktopToneRole role) {
+  final palette = Theme.of(
+    context,
+  ).extension<AppPaletteThemeExtension>()?.palette;
+  if (palette == null || palette.scheme != ColorSchemeOption.cinema) {
+    return legacy;
+  }
+  return switch (role) {
+    DesktopToneRole.card => palette.surface,
+    DesktopToneRole.soft => palette.inputSurface,
+    DesktopToneRole.selected => palette.primaryContainer,
+    DesktopToneRole.text => palette.textPrimary,
+    DesktopToneRole.secondary => palette.textSecondary,
+    DesktopToneRole.primary => palette.primary,
+    DesktopToneRole.outline => palette.outline,
+    DesktopToneRole.warning => palette.warning,
+    DesktopToneRole.success => palette.success,
+    DesktopToneRole.error => palette.error,
+    DesktopToneRole.shadow => palette.shadow.withValues(alpha: legacy.a),
+    DesktopToneRole.line => const Color(0xFF353B47),
+  };
 }

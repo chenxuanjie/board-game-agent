@@ -13,6 +13,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
+import 'package:board_game_agent/core/theme/cinema_theme.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
+import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
@@ -65,6 +68,7 @@ part 'desktop/desktop_home_test_cases.dart';
 part 'desktop/desktop_typography_test_cases.dart';
 part 'desktop/desktop_assistant_design_test_cases.dart';
 part 'desktop/desktop_national_day_test_cases.dart';
+part 'desktop/desktop_cinema_test_cases.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -123,6 +127,7 @@ void main() {
   _registerDesktopTypographyTests(workspaceContext);
   _registerAssistantDesignTests(workspaceContext);
   _registerDesktopNationalDayTests(workspaceContext);
+  _registerCinemaTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {
     controller.openGlobalAssistant();
@@ -361,6 +366,7 @@ Future<AppController> _createController({
   PreferencesService? preferencesService,
   TtsService? ttsService,
   AiService? aiService,
+  RemoteAssetService? remoteAssetService,
 }) async {
   if (preferencesService == null) {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -370,7 +376,7 @@ Future<AppController> _createController({
     aiService: aiService ?? _FakeAiService(),
     conversationStore: _WorkspaceConversationStore(),
     gameManifestService: GameManifestService(),
-    remoteAssetService: _NoNetworkAssetService(),
+    remoteAssetService: remoteAssetService ?? _NoNetworkAssetService(),
     speechService: SpeechService(),
     ttsService: ttsService ?? TtsService(),
   );

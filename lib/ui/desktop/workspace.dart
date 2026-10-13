@@ -28,6 +28,9 @@ import '../shared/app_page_transition.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/game_cover_motion.dart';
 import 'desktop_resolved_image.dart';
+import '../../core/theme/cinema_theme.dart';
+import '../shared/cinema/cinema_home.dart';
+import '../shared/cinema/cinema_surface.dart';
 
 class DesktopWorkspace extends StatefulWidget {
   const DesktopWorkspace({
@@ -349,7 +352,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               showWhenUnlinked: false,
               targetAnchor: Alignment.bottomRight,
               followerAnchor: Alignment.topRight,
-              offset: const Offset(0, 8),
+              offset: Offset(0, 8),
               child: UnconstrainedBox(
                 alignment: Alignment.topRight,
                 child: SizedBox(
@@ -551,11 +554,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
           metrics: metrics,
           child: Scaffold(
             key: _scaffoldKey,
-            backgroundColor: DesktopColors.background,
+            backgroundColor: desktopColors(context).background,
             drawer: narrow
                 ? Drawer(
                     width: 280,
-                    shape: const RoundedRectangleBorder(),
+                    shape: RoundedRectangleBorder(),
                     child: SafeArea(
                       child: DesktopSidebar(
                         copy: widget.controller.copy,
@@ -569,7 +572,13 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 : null,
             body: GameCoverMotionScope(
               onCapture: (origin) => _coverOrigin = origin,
-              child: body,
+              child: isCinema(context)
+                  ? CinemaAmbient(
+                      controller: widget.controller,
+                      path: widget.controller.selectedGame.bannerAssetPath,
+                      child: body,
+                    )
+                  : body,
             ),
           ),
         );
@@ -590,12 +599,19 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_page != 'gameDetail') _topBar(compact: compact, narrow: narrow),
+        if (_page != 'gameDetail')
+          if (isCinema(context))
+            CinemaSurface(
+              radius: 0,
+              child: _topBar(compact: compact, narrow: narrow),
+            )
+          else
+            _topBar(compact: compact, narrow: narrow),
         if (_page == 'games')
           LibraryCheckProgress(controller: widget.controller),
         Expanded(
           child: AppPageTransition(
-            key: const ValueKey('desktop-page-transition'),
+            key: ValueKey('desktop-page-transition'),
             identity: (
               _page,
               _page == 'gameDetail' ? widget.controller.selectedGame.id : null,
@@ -632,7 +648,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         onFilterChanged: _setLibraryFilter,
                         onShowAllResources: () => _navigate('library'),
                       ),
-                      _ => const SizedBox.shrink(),
+                      _ => SizedBox.shrink(),
                     },
                   ),
                 if (!_featurePage)
@@ -657,12 +673,26 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                     14,
                                   ),
                             child: switch (_page) {
-                              'home' => DesktopHomePane(
-                                controller: widget.controller,
-                                onNavigate: _navigate,
-                                onOpenGame: _game,
-                                onOpenNationalDay: _openNationalDay,
-                              ),
+                              'home' =>
+                                isCinema(context)
+                                    ? CinemaHomeContent(
+                                        controller: widget.controller,
+                                        scrollable: false,
+                                        onOpenGame: _game,
+                                        onAskGame: _askAi,
+                                        onLibrary: () => _navigate('games'),
+                                        onRankings: () => _navigate('rankings'),
+                                        onFavorites: () =>
+                                            _navigate('favorites'),
+                                        onActivities: _openActivityCenter,
+                                        onTopic: _openNationalDay,
+                                      )
+                                    : DesktopHomePane(
+                                        controller: widget.controller,
+                                        onNavigate: _navigate,
+                                        onOpenGame: _game,
+                                        onOpenNationalDay: _openNationalDay,
+                                      ),
                               'games' => DesktopGamesPane(
                                 scrollController: _scroll,
                                 controller: widget.controller,
@@ -737,7 +767,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                           context,
                                         ).textTheme.headlineSmall,
                                       ),
-                                      const SizedBox(height: 12),
+                                      SizedBox(height: 12),
                                       TextButton(
                                         onPressed: () => _navigate('home'),
                                         child: Text(
@@ -762,17 +792,17 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     right: 12,
                     top: 12,
                     child: IconButton(
-                      key: const ValueKey<String>('desktop-open-navigation'),
+                      key: ValueKey<String>('desktop-open-navigation'),
                       tooltip: widget.controller.copy.localized(
                         '打开导航',
                         'Open navigation',
                       ),
                       onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                       style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xCC5A4B42),
+                        backgroundColor: Color(0xCC5A4B42),
                         foregroundColor: Colors.white,
                       ),
-                      icon: const Icon(Icons.menu_rounded),
+                      icon: Icon(Icons.menu_rounded),
                     ),
                   ),
                 if (_coverFlight case final flight?)
@@ -813,9 +843,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                           maxWidth: DesktopMetricsScope.of(context).px(780),
                         ),
                         child: DesktopHomeSearchOverlay(
-                          key: const ValueKey<String>(
-                            'desktop-home-search-overlay',
-                          ),
+                          key: ValueKey<String>('desktop-home-search-overlay'),
                           query: _search.text,
                           games: widget.controller.games,
                           controller: widget.controller,
@@ -847,7 +875,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     final showSearch = _page == 'home' || _page == 'games';
     final metrics = DesktopMetricsScope.of(context);
     return SizedBox(
-      key: const ValueKey<String>('desktop-top-bar'),
+      key: ValueKey<String>('desktop-top-bar'),
       height: metrics.px(showSearch ? 104 : 48),
       child: Padding(
         padding: metrics.insets(
@@ -857,20 +885,20 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
           children: [
             if (narrow) ...[
               IconButton(
-                key: const ValueKey<String>('desktop-open-navigation'),
+                key: ValueKey<String>('desktop-open-navigation'),
                 tooltip: widget.controller.copy.localized(
                   '打开导航',
                   'Open navigation',
                 ),
                 onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                icon: const Icon(
+                icon: Icon(
                   Icons.menu_rounded,
-                  color: DesktopColors.brown,
+                  color: desktopColors(context).brown,
                 ),
               ),
               SizedBox(width: metrics.px(6)),
             ],
-            if (!showSearch) const Spacer(),
+            if (!showSearch) Spacer(),
             if (showSearch)
               Expanded(
                 child: Align(
@@ -878,7 +906,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: metrics.px(780)),
                     child: SizedBox(
-                      key: const ValueKey<String>('desktop-home-search-shell'),
+                      key: ValueKey<String>('desktop-home-search-shell'),
                       width: double.infinity,
                       height: metrics.px(55),
                       child: AnimatedContainer(
@@ -888,14 +916,18 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         ),
                         decoration: BoxDecoration(
                           color: _searchFocus.hasFocus
-                              ? DesktopColors.card
-                              : const Color(0xFFF8F2EA),
+                              ? desktopColors(context).card
+                              : desktopTone(
+                                  context,
+                                  const Color(0xFFF8F2EA),
+                                  DesktopToneRole.soft,
+                                ),
                           borderRadius: BorderRadius.circular(
-                            metrics.radius(26),
+                            metrics.radius(isCinema(context) ? 12 : 26),
                           ),
                           border: Border.all(
                             color: _searchFocus.hasFocus
-                                ? DesktopColors.orange
+                                ? desktopColors(context).orange
                                 : Colors.transparent,
                           ),
                           boxShadow: _searchFocus.hasFocus
@@ -911,9 +943,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                         child: TapRegion(
                           groupId: _searchTapRegionGroup,
                           child: TextField(
-                            key: const ValueKey<String>(
-                              'desktop-home-search-field',
-                            ),
+                            key: ValueKey<String>('desktop-home-search-field'),
                             controller: _search,
                             focusNode: _searchFocus,
                             onTap: _openSearch,
@@ -932,7 +962,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                               isDense: true,
                               prefixIcon: Icon(
                                 Icons.search_rounded,
-                                color: DesktopColors.brown,
+                                color: desktopColors(context).brown,
                                 size: metrics.px(25),
                               ),
                               suffixIcon: _searchOpen
@@ -952,7 +982,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                       icon: Icon(
                                         Icons.close_rounded,
                                         size: metrics.px(20),
-                                        color: DesktopColors.secondaryText,
+                                        color: desktopColors(
+                                          context,
+                                        ).secondaryText,
                                       ),
                                     )
                                   : null,
@@ -985,9 +1017,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                     '通知',
                     'Notifications',
                   ),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.notifications_none_rounded,
-                    color: DesktopColors.brown,
+                    color: desktopColors(context).brown,
                   ),
                   onPressed: _openActivityCenter,
                 ),

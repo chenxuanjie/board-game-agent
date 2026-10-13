@@ -211,7 +211,12 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
         final bool desktopLayout =
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) ||
             (kIsWeb &&
-                DesktopResponsive.supportsDesktopViewport(constraints.biggest));
+                (widget.controller.colorScheme == ColorSchemeOption.cinema
+                    ? constraints.maxWidth >=
+                          DesktopResponsive.desktopWindowMinimumWidth
+                    : DesktopResponsive.supportsDesktopViewport(
+                        constraints.biggest,
+                      )));
         return MaterialApp(
           builder: (context, child) {
             final accounts = widget.accountService;
@@ -301,8 +306,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
           ],
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           theme: desktopLayout
-              ? buildDesktopTheme()
-              : AppTheme.buildTheme(widget.controller.palette),
+              ? buildDesktopTheme(
+                  activePalette: widget.controller.palette,
+                  cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
+                )
+              : AppTheme.buildTheme(
+                  widget.controller.palette,
+                  cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
+                ),
           home: FutureBuilder<void>(
             future: _initialization,
             builder: (context, snapshot) {
