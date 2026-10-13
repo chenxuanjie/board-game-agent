@@ -114,7 +114,7 @@
 | Zheri 业务数据同步 | 同一个共享增量引擎，业务适配为 SQLite changeset，远端采用 `WebDavSyncStore`；与桌游资料检查不相同 |
 | APK/EXE 更新 | 复用 `app_about`、`remote_update`、`remote_update_webdav` 的清单读取、版本判断、下载校验及安装适配 |
 
-应用安装包的更新清单与游戏资源 manifest 是不同文件，不能混用。应用检查只读取当前平台的安装包清单；下载安装包仍需确认，失败保留可续传部分，完整包校验后才安装。正在检查、下载或安装应用更新时，资料通知不弹出打断，待更新状态保留。详见 [Windows 应用内更新](windows-updates.md)。
+应用安装包的更新清单与游戏资源 manifest 是不同文件，不能混用。应用检查只读取当前平台的安装包清单；下载安装包仍需确认，失败保留可续传部分，完整包校验后才安装。正在检查、下载或安装应用更新时，资料通知不弹出打断，待更新状态保留。详见 [Windows 应用内更新](windows-updates.md)。Android 下载期间的通知、前台服务与安装边界见 [Android 后台更新](android-background-updates.md)。
 
 ## 9. 维护与验收
 

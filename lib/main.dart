@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'core/platform/background_transfer_notifications.dart';
 
 import 'package:app_about/app_about.dart';
 import 'package:flutter/material.dart';
@@ -57,6 +58,7 @@ Future<void> main() async {
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
+    backgroundTransfers: createBackgroundTransferNotifications(),
     gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(),

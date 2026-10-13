@@ -5,6 +5,8 @@ import 'package:app_ai_client/src/default_http_client.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 import '../../library/services/board_game_remote_layout.dart';
 import 'windows_update_service_io.dart';
+import '../../../core/platform/background_transfer_notifications.dart';
+import 'android_background_update_service.dart';
 
 AppUpdateTarget? get boardGameUpdateTarget => Platform.isWindows
     ? AppUpdateTarget.windows
@@ -26,10 +28,12 @@ AppUpdateService createBoardGameUpdateService({
       onInstallerLaunched: onWindowsInstallerLaunched,
     );
   }
-  return createWebDavAndroidUpdateService(
+  final notifications = createBackgroundTransferNotifications();
+  late AndroidBackgroundUpdateService service;
+  final inner = createWebDavAndroidUpdateService(
     settingsProvider: settingsProvider,
     settingsCandidates: settingsCandidates,
-    beforeInstall: beforeInstall,
+    beforeInstall: () => service.beforeInstall(beforeInstall),
     clientFactory: createDefaultAiHttpClient,
     config: const WebDavAndroidUpdateConfig(
       appId: 'board_game_agent',
@@ -39,4 +43,9 @@ AppUpdateService createBoardGameUpdateService({
       directoryName: 'board_game_agent_updates',
     ),
   );
+  service = AndroidBackgroundUpdateService(
+    inner: inner,
+    notifications: notifications,
+  );
+  return service;
 }

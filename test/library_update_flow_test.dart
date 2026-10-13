@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:board_game_agent/core/platform/background_transfer_notifications.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -164,7 +165,11 @@ class _Manifests extends GameManifestService {
   ];
 }
 
-Future<(AppController, _Remote)> _fixture({bool initialCheck = true}) async {
+Future<(AppController, _Remote)> _fixture({
+  bool initialCheck = true,
+  BackgroundTransferNotifications notices =
+      const NoBackgroundTransferNotifications(),
+}) async {
   SharedPreferences.setMockInitialValues({});
   final remote = _Remote();
   final game = await rootBundle.loadString(
@@ -178,6 +183,7 @@ Future<(AppController, _Remote)> _fixture({bool initialCheck = true}) async {
   remote.texts['assets/games/cabo/game.json'] = jsonEncode(next);
   remote.changed.add('assets/games/cabo/game.json');
   final c = AppController(
+    backgroundTransfers: notices,
     preferencesService: PreferencesService(),
     aiService: _NoAi(),
     gameManifestService: _Manifests(remote, game),
@@ -190,8 +196,86 @@ Future<(AppController, _Remote)> _fixture({bool initialCheck = true}) async {
   return (c, remote);
 }
 
+class _LibraryNotices extends NoBackgroundTransferNotifications {
+  final progressValues = <(int, int)>[];
+  final finishes = <bool>[];
+  bool deny = false;
+  @override
+  Future<void> start({
+    required String id,
+    required String title,
+    required String message,
+    int total = 0,
+  }) async {
+    if (deny) throw BackgroundTransferFailure('请允许通知并重试');
+  }
+
+  @override
+  void progress({
+    required String id,
+    required String message,
+    required int completed,
+    required int total,
+  }) {
+    progressValues.add((completed, total));
+  }
+
+  @override
+  Future<void> finish({
+    required String id,
+    required String message,
+    bool failed = false,
+  }) async {
+    finishes.add(failed);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'library notification success follows committed resources and reload',
+    () async {
+      final notices = _LibraryNotices();
+      final (c, remote) = await _fixture(notices: notices);
+      addTearDown(c.dispose);
+      final count = c.pendingLibraryUpdate!.changedCount;
+      await c.applyPendingLibraryUpdate();
+      expect(remote.writes.length, count);
+      expect(notices.progressValues.last, (count, count));
+      expect(c.games.first.score, '8.2');
+      expect(c.pendingLibraryUpdate, isNull);
+      expect(notices.finishes, [false]);
+    },
+  );
+  test(
+    'partial library failure retains retry and finishes notification as failed',
+    () async {
+      final notices = _LibraryNotices();
+      final (c, remote) = await _fixture(notices: notices);
+      addTearDown(c.dispose);
+      remote.failPath = 'assets/catalog.json';
+      await c.applyPendingLibraryUpdate();
+      expect(c.pendingLibraryUpdate, isNotNull);
+      expect(
+        notices.progressValues.last.$1,
+        lessThan(notices.progressValues.last.$2),
+      );
+      expect(notices.finishes, [true]);
+      expect(c.applyingLibraryUpdate, isFalse);
+    },
+  );
+  test(
+    'denied notifications preserve library data and show the retry reason',
+    () async {
+      final notices = _LibraryNotices()..deny = true;
+      final (c, remote) = await _fixture(notices: notices);
+      addTearDown(c.dispose);
+      await c.applyPendingLibraryUpdate();
+      expect(remote.writes, isEmpty);
+      expect(c.pendingLibraryUpdate, isNotNull);
+      expect(c.libraryUpdateError, contains('允许通知'));
+    },
+  );
   testWidgets(
     'unavailable check actions are disabled and show a hover explanation',
     (tester) async {

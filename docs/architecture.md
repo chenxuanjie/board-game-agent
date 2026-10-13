@@ -2,6 +2,8 @@
 
 桌游评论模型与独立 NAS 数据链路位于 `features/community/`，账号作用域服务由 `AccountService.comments` 管理；两端复用 `ui/shared/game_comments.dart`，评论区均位于相关游戏之后，桌面直接展示完整列表，App 使用预览、完整列表和回复页。评分规则、目录、重试与验证见 [桌游评论](game-comments.md)。
 
+`core/platform/background_transfer_notifications.dart` 是 Android 下载执行优先级及通知的适配入口；`android/` 的 DownloadProgressService 不承担网络协议或文件校验。APK 包装服务位于 `features/settings/services/android_background_update_service.dart`，复用共享更新器，见 [Android 后台更新](android-background-updates.md)。
+
 `main.dart` 创建依赖，并按平台与 Web 宽度选择桌面或紧凑界面。两个界面使用同一个 `AppController` 和同一套业务模型、服务；目录划分不代表复制后端。
 
 新增影院主题的设计标准见 [影院主题 v1](cinema-theme-v1.md)。V5 开发位于 `codex/v5`；影院以独立编码替换晚霞海岸，`core/theme/cinema_theme.dart` 定义控件主题，`ui/shared/cinema/` 提供首页、海报、氛围和局部玻璃。桌面旧组件通过语义颜色入口接入影院，继续复用现有业务状态；玻璃开关只保存在本机。

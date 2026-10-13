@@ -372,8 +372,16 @@ extension AppLibraryUpdateController on AppController {
     _libraryUpdateError = null;
     _libraryUpdateCompleted = 0;
     _notifyListeners();
+    var notificationStarted = false;
     try {
       // Metadata last: failed downloads retain the pending review for retry.
+      await _backgroundTransfers.start(
+        id: 'library',
+        title: '桌游资料更新',
+        message: '正在更新 0/${pending.changedCount} 项',
+        total: pending.changedCount,
+      );
+      notificationStarted = true;
       final ordered = pending.changedPaths.toList()
         ..sort((a, b) {
           int priority(String path) => path == 'assets/catalog.json'
@@ -400,9 +408,19 @@ extension AppLibraryUpdateController on AppController {
         }
         if (!current()) throw StateError('Connection changed');
         _libraryUpdateCompleted++;
+        _backgroundTransfers.progress(
+          id: 'library',
+          message: '已更新 $_libraryUpdateCompleted/${pending.changedCount} 项',
+          completed: _libraryUpdateCompleted,
+          total: pending.changedCount,
+        );
         _notifyListeners();
       }
-      final games = await _loadGamesForLanguage(_language);
+      final remaining = const Duration(minutes: 15) - elapsed.elapsed;
+      if (remaining <= Duration.zero) {
+        throw TimeoutException('Library update deadline');
+      }
+      final games = await _loadGamesForLanguage(_language).timeout(remaining);
       if (!current()) throw StateError('Connection changed');
       _games = games;
       _resolvedAssetPaths.clear();
@@ -422,14 +440,29 @@ extension AppLibraryUpdateController on AppController {
         ),
       );
       unawaited(refreshLibraryResources(force: true));
-    } catch (_) {
+      await _backgroundTransfers.finish(
+        id: 'library',
+        message: '已更新 ${pending.changedCount} 项桌游资料',
+      );
+      notificationStarted = false;
+    } catch (error) {
       if (current()) {
-        _libraryUpdateError = copy.localized(
-          '更新未完成（$_libraryUpdateCompleted/${pending.changedCount}），请重试。',
-          'Update incomplete ($_libraryUpdateCompleted/${pending.changedCount}). Retry.',
-        );
+        _libraryUpdateError = error is BackgroundTransferFailure
+            ? error.message.toString()
+            : copy.localized(
+                '更新未完成（$_libraryUpdateCompleted/${pending.changedCount}），请重试。',
+                'Update incomplete ($_libraryUpdateCompleted/${pending.changedCount}). Retry.',
+              );
       }
     } finally {
+      if (notificationStarted) {
+        await _backgroundTransfers.finish(
+          id: 'library',
+          message:
+              '更新未完成 $_libraryUpdateCompleted/${pending.changedCount} 项，请重试',
+          failed: true,
+        );
+      }
       _applyingLibraryUpdate = false;
       _notifyListeners();
     }

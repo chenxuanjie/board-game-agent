@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'browse_session.dart';
+import '../../core/platform/background_transfer_notifications.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
@@ -112,6 +113,8 @@ class AppController extends ChangeNotifier {
     RemoteGameVoteStore? Function()? favoriteRemoteProvider,
     String? Function()? favoriteScopeProvider,
     ConversationStore? conversationStore,
+    BackgroundTransferNotifications backgroundTransfers =
+        const NoBackgroundTransferNotifications(),
   }) : _preferencesService = preferencesService,
        _favoriteRemoteProvider = favoriteRemoteProvider,
        _favoriteScopeProvider = favoriteScopeProvider,
@@ -125,6 +128,7 @@ class AppController extends ChangeNotifier {
        _conversationStore = conversationStore ?? const ConversationStore(),
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
+       _backgroundTransfers = backgroundTransfers,
        _speechService = speechService,
        _ttsService = ttsService,
        _realtimeVoiceService =
@@ -237,6 +241,7 @@ class AppController extends ChangeNotifier {
   ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
+  final BackgroundTransferNotifications _backgroundTransfers;
   final SpeechService _speechService;
   final TtsService _ttsService;
   final RealtimeVoiceService _realtimeVoiceService;
