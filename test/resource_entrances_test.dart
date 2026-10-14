@@ -311,7 +311,7 @@ void main() {
         late Future<void> check;
         await tester.pumpWidget(
           MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context).copyWith(disableAnimations: reduced),
               child: child!,
@@ -378,7 +378,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(
-          theme: AppTheme.buildTheme(PaletteRegistry.classic),
+          theme: AppTheme.buildTheme(PaletteRegistry.cinema),
           home: Scaffold(
             body: ResourceAccessSummary(
               controller: app,

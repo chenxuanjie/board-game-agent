@@ -4,38 +4,6 @@ import 'color_scheme_option.dart';
 import 'app_palette.dart';
 
 class PaletteRegistry {
-  static const AppPalette classic = AppPalette(
-    scheme: ColorSchemeOption.classic,
-    nameZh: '夜幕棋局',
-    nameEn: 'Midnight Table',
-    pageBackground: Color(0xFF0B1119),
-    surface: Color(0xFF121D2A),
-    surfaceContainer: Color(0xFF172535),
-    surfaceVariant: Color(0xFF0E1722),
-    inputSurface: Color(0xFF121D2A),
-    textPrimary: Color(0xFFEDF3F8),
-    textSecondary: Color(0xFF8496AA),
-    outline: Color(0xFF3B5068),
-    primary: Color(0xFF72E0D1),
-    primaryContainer: Color(0xFF172535),
-    onPrimary: Color(0xFF06221F),
-    onPrimaryContainer: Color(0xFFEDF3F8),
-    secondary: Color(0xFFFF8E68),
-    secondaryContainer: Color(0xFF4A2D30),
-    onSecondary: Color(0xFF2D150A),
-    onSecondaryContainer: Color(0xFFFFDCCF),
-    success: Color(0xFF83D9A9),
-    onSuccess: Color(0xFF062419),
-    warning: Color(0xFFF1C979),
-    onWarning: Color(0xFF2A1600),
-    error: Color(0xFFFF7E88),
-    onError: Color(0xFF31060A),
-    focusRing: Color(0xFF5CE9EE),
-    disabledForeground: Color(0xFF758198),
-    disabledBackground: Color(0xFF252D3E),
-    shadow: Color(0xFF000000),
-  );
-
   /// V5 Cinema foundation. Materials and composition use the separate design spec.
   static const AppPalette cinema = AppPalette(
     scheme: ColorSchemeOption.cinema,
@@ -137,8 +105,6 @@ class PaletteRegistry {
 
   static AppPalette of(ColorSchemeOption scheme) {
     switch (scheme) {
-      case ColorSchemeOption.classic:
-        return classic;
       case ColorSchemeOption.cinema:
         return cinema;
       case ColorSchemeOption.spatialCinema:

@@ -217,14 +217,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         palette: palette,
                         child: LayoutBuilder(
                           builder: (context, box) {
-                            final columns = box.maxWidth < 500 ? 2 : 4;
+                            final columns = box.maxWidth < 500 ? 2 : 3;
                             return Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: [
                                 for (final scheme in const [
                                   ColorSchemeOption.warmwoodStudy,
-                                  ColorSchemeOption.classic,
                                   ColorSchemeOption.cinema,
                                   ColorSchemeOption.spatialCinema,
                                 ])

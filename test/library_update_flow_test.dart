@@ -349,7 +349,7 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(
           MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,
@@ -410,7 +410,7 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(
           MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,

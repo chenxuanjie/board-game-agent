@@ -14,7 +14,14 @@ void main() {
   test(
     'Cinema is independent of removed theme codes and glass saves locally',
     () async {
-      expect(ColorSchemeOptionX.fromCode('sunset_coast'), defaultColorScheme);
+      for (final code in [
+        'sunset_coast',
+        'classic',
+        '夜幕棋局',
+        'Midnight Table',
+      ]) {
+        expect(ColorSchemeOptionX.fromCode(code), defaultColorScheme);
+      }
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();
       expect(await prefs.loadCinemaGlassEnabled(), isTrue);
@@ -112,12 +119,10 @@ void main() {
   test('color scheme codes expose the supported themes', () {
     expect(defaultColorScheme, ColorSchemeOption.warmwoodStudy);
     expect(ColorSchemeOption.values, [
-      ColorSchemeOption.classic,
       ColorSchemeOption.cinema,
       ColorSchemeOption.warmwoodStudy,
       ColorSchemeOption.spatialCinema,
     ]);
-    expect(ColorSchemeOption.classic.code, 'classic');
     expect(ColorSchemeOption.cinema.code, 'cinema');
     expect(ColorSchemeOption.warmwoodStudy.code, 'warmwood_study');
     expect(ColorSchemeOptionX.fromCode('cinema'), ColorSchemeOption.cinema);
@@ -129,20 +134,18 @@ void main() {
       ColorSchemeOptionX.fromCode('removed_theme'),
       ColorSchemeOption.warmwoodStudy,
     );
-    expect(PaletteRegistry.classic.nameZh, '夜幕棋局');
-    expect(PaletteRegistry.classic.nameEn, 'Midnight Table');
     expect(PaletteRegistry.cinema.nameZh, '影院');
     expect(PaletteRegistry.cinema.nameEn, 'Cinema');
     for (final code in ['cinema', '影院']) {
       expect(ColorSchemeOptionX.fromCode(code), ColorSchemeOption.cinema);
     }
     expect(
-      AppCopy(AppLanguage.zhHans).colorSchemeName(ColorSchemeOption.classic),
-      '夜幕棋局',
+      AppCopy(AppLanguage.zhHans).colorSchemeName(ColorSchemeOption.cinema),
+      '影院',
     );
     expect(
-      AppCopy(AppLanguage.en).colorSchemeName(ColorSchemeOption.classic),
-      'Midnight Table',
+      AppCopy(AppLanguage.en).colorSchemeName(ColorSchemeOption.cinema),
+      'Cinema',
     );
   });
 
@@ -166,10 +169,7 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'color_scheme': 'classic',
       });
-      expect(
-        await PreferencesService().loadColorScheme(),
-        ColorSchemeOption.classic,
-      );
+      expect(await PreferencesService().loadColorScheme(), defaultColorScheme);
 
       SharedPreferences.setMockInitialValues(<String, Object>{
         'color_scheme': 'cinema',
@@ -190,7 +190,7 @@ void main() {
     WidgetTester tester,
   ) async {
     final ValueNotifier<AppPalette> activePalette = ValueNotifier(
-      PaletteRegistry.classic,
+      PaletteRegistry.spatialCinema,
     );
 
     await tester.pumpWidget(
@@ -221,13 +221,13 @@ void main() {
             find.byKey(const ValueKey<String>('theme-background')),
           )
           .color,
-      PaletteRegistry.classic.pageBackground,
+      PaletteRegistry.spatialCinema.pageBackground,
     );
     expect(
       AppTheme.buildTheme(
-        PaletteRegistry.classic,
+        PaletteRegistry.spatialCinema,
       ).bottomSheetTheme.backgroundColor,
-      PaletteRegistry.classic.surface,
+      PaletteRegistry.spatialCinema.surface,
     );
 
     activePalette.value = PaletteRegistry.cinema;

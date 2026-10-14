@@ -110,14 +110,19 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
       );
       expect(voiceSwitch.onChanged, isNull);
 
-      final Finder nightTheme = find.byKey(
+      expect(find.text('夜幕棋局'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('desktop-settings-theme-classic')),
+        findsNothing,
+      );
+      final Finder cinemaTheme = find.byKey(
         ValueKey<String>(
-          'desktop-settings-theme-${ColorSchemeOption.classic.code}',
+          'desktop-settings-theme-${ColorSchemeOption.cinema.code}',
         ),
       );
-      await tester.tap(nightTheme);
+      await tester.tap(cinemaTheme);
       await tester.pumpAndSettle();
-      expect(context.preferences._colorScheme, ColorSchemeOption.classic);
+      expect(context.preferences._colorScheme, ColorSchemeOption.cinema);
 
       final Finder warmwoodTheme = find.byKey(
         ValueKey<String>(

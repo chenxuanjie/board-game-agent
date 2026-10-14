@@ -619,9 +619,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.language, AppLanguage.en);
     expect(find.byType(MobileSettingsScreen), findsOneWidget);
-    await tester.tap(find.text('Midnight Table'));
+    expect(find.text('Midnight Table'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile-settings-theme-classic')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Cinema'));
     await tester.pumpAndSettle();
-    expect(controller.colorScheme, ColorSchemeOption.classic);
+    expect(controller.colorScheme, ColorSchemeOption.cinema);
 
     final aiSection = find.byKey(const ValueKey('mobile-settings-ai'));
     await tester.ensureVisible(aiSection);

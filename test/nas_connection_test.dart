@@ -235,7 +235,7 @@ void main() {
           AccountScope(
             service: f.account,
             child: MaterialApp(
-              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              theme: AppTheme.buildTheme(PaletteRegistry.cinema),
               home: const AccountScreen(),
             ),
           ),
@@ -311,7 +311,7 @@ void main() {
           AccountScope(
             service: f.account,
             child: MaterialApp(
-              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              theme: AppTheme.buildTheme(PaletteRegistry.cinema),
               home: const AccountScreen(),
             ),
           ),
@@ -427,7 +427,7 @@ void main() {
           AccountScope(
             service: f.account,
             child: MaterialApp(
-              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              theme: AppTheme.buildTheme(PaletteRegistry.cinema),
               home: const AccountScreen(showConnections: true),
             ),
           ),
@@ -575,7 +575,7 @@ void main() {
         AccountScope(
           service: f.account,
           child: MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             home: const AccountScreen(),
           ),
         ),
@@ -1122,7 +1122,7 @@ void main() {
           AccountScope(
             service: f.account,
             child: MaterialApp(
-              theme: AppTheme.buildTheme(PaletteRegistry.classic),
+              theme: AppTheme.buildTheme(PaletteRegistry.cinema),
               builder: (context, child) => MediaQuery(
                 data: MediaQuery.of(
                   context,

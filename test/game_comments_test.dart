@@ -288,7 +288,7 @@ void main() {
         await tester.binding.setSurfaceSize(Size(width, 1000));
         for (final palette in [
           PaletteRegistry.warmwoodStudy,
-          PaletteRegistry.classic,
+          PaletteRegistry.cinema,
         ]) {
           await tester.pumpWidget(
             MaterialApp(

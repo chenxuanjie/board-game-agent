@@ -112,7 +112,6 @@ class _AppearanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const List<ColorSchemeOption> schemes = [
       ColorSchemeOption.warmwoodStudy,
-      ColorSchemeOption.classic,
       ColorSchemeOption.cinema,
       ColorSchemeOption.spatialCinema,
     ];

@@ -1,12 +1,10 @@
-enum ColorSchemeOption { classic, cinema, warmwoodStudy, spatialCinema }
+enum ColorSchemeOption { cinema, warmwoodStudy, spatialCinema }
 
 const ColorSchemeOption defaultColorScheme = ColorSchemeOption.warmwoodStudy;
 
 extension ColorSchemeOptionX on ColorSchemeOption {
   String get code {
     switch (this) {
-      case ColorSchemeOption.classic:
-        return 'classic';
       case ColorSchemeOption.cinema:
         return 'cinema';
       case ColorSchemeOption.spatialCinema:
@@ -18,8 +16,6 @@ extension ColorSchemeOptionX on ColorSchemeOption {
 
   static ColorSchemeOption fromCode(String? code) {
     switch (code?.trim().toLowerCase()) {
-      case 'classic':
-        return ColorSchemeOption.classic;
       case 'spatial_cinema':
       case '空间影院':
         return ColorSchemeOption.spatialCinema;

@@ -51,7 +51,7 @@ void main() {
     });
     for (final palette in [
       PaletteRegistry.warmwoodStudy,
-      PaletteRegistry.classic,
+      PaletteRegistry.cinema,
     ]) {
       await tester.binding.setSurfaceSize(const Size(390, 844));
       final boundaryKey = GlobalKey();
@@ -92,7 +92,7 @@ void main() {
             format: ImageByteFormat.png,
           );
           await Directory('tmp').create(recursive: true);
-          final label = palette == PaletteRegistry.classic ? 'dark' : 'warm';
+          final label = palette == PaletteRegistry.cinema ? 'dark' : 'warm';
           await File(
             'tmp/mobile-profile-$label.png',
           ).writeAsBytes(bytes!.buffer.asUint8List());
@@ -409,7 +409,7 @@ void main() {
           tester,
           service,
           textScale: 2,
-          theme: AppTheme.buildTheme(PaletteRegistry.classic),
+          theme: AppTheme.buildTheme(PaletteRegistry.cinema),
           home: Scaffold(
             body: MobileMineContent(
               key: ValueKey(width),
@@ -561,7 +561,7 @@ Future<void> _mount(
     AccountScope(
       service: service,
       child: MaterialApp(
-        theme: theme ?? AppTheme.buildTheme(PaletteRegistry.classic),
+        theme: theme ?? AppTheme.buildTheme(PaletteRegistry.cinema),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
