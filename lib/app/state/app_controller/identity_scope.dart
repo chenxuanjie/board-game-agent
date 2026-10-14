@@ -142,6 +142,9 @@ extension AppIdentityScopeController on AppController {
     _searchHistory = [];
     _recentGameRecords = [];
     _dailyRecommendationHistory = [];
+    _personalizedCatalog = null;
+    _personalizedFavoriteSlugs = {};
+    _personalizedSlate = const [];
     _searchHistoryStateVersion++;
     _recentGamesStateVersion++;
     _selectedConversationId = null;

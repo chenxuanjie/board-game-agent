@@ -12,6 +12,8 @@
 
 第四主题“空间影院”有独立的 `ui/shared/spatial/` 展示外壳、首页、材质与参考原语，不通过 `DesktopWorkspace` 换色实现。Windows 透明实体窗口由 `core/platform/native_window_surface.dart` 复用 `window_manager` 实现，移除原 runner 裁切通道；`DesktopWindowFrame` 统一绘制顶部与内容的连续底色。第一阶段临时业务适配页及未完成边界见 [空间影院](spatial-cinema-theme.md)。
 
+空间影院的十款个性推荐由 `features/games/services/personal_game_recommender.dart` 根据收藏类型计算，状态缓存与账号边界位于 `AppController.personalizedRecommendedGames`。首页只展示完整预览卡片，独立推荐页与共用海报位于 `ui/shared/spatial/spatial_recommendations.dart`，见 [收藏偏好推荐](personal-game-recommendations.md)。
+
 | 目录 | 职责 | 修改时从哪里开始 |
 | --- | --- | --- |
 | `lib/app/state/` | 跨界面的应用状态与业务入口 | 状态流转、加载及持久化调用 |

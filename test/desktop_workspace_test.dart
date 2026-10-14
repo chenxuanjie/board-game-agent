@@ -21,6 +21,7 @@ import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_workspace.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_material.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_primitives.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_recommendations.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';

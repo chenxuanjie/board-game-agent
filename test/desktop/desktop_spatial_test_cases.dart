@@ -104,7 +104,9 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
           ),
         );
         final posterSize = tester.getSize(
-          find.byKey(ValueKey('spatial-game-${c.games.first.id}')),
+          find.byKey(
+            ValueKey('spatial-game-${c.personalizedRecommendedGames.first.id}'),
+          ),
         );
         expect(posterSize.width / posterSize.height, closeTo(141 / 216, .001));
         expect(
@@ -190,7 +192,9 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
         await tester.tap(find.byKey(const ValueKey('spatial-menu-home')));
         await tester.pumpAndSettle();
         await tester.tap(
-          find.byKey(ValueKey('spatial-game-${c.games.first.id}')),
+          find.byKey(
+            ValueKey('spatial-game-${c.personalizedRecommendedGames.first.id}'),
+          ),
         );
         await tester.pumpAndSettle();
         expect(find.byType(GameDetailScreen), findsOneWidget);
@@ -204,6 +208,81 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
       expect(tester.takeException(), isNull);
     });
   }
+  for (final size in [
+    const Size(1440, 1000),
+    const Size(900, 800),
+    const Size(390, 844),
+  ]) {
+    testWidgets(
+      'Spatial recommendation preview fits whole cards and arrow opens ten games at $size',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final c = context.controller;
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await c.setColorScheme(ColorSchemeOption.spatialCinema);
+        await _mountSpatial(tester, c, size);
+        final shelf = find.byKey(const ValueKey('spatial-game-shelf'));
+        expect(
+          find.descendant(of: shelf, matching: find.byType(Scrollable)),
+          findsNothing,
+        );
+        final posters = find.descendant(
+          of: shelf,
+          matching: find.byType(SpatialGamePoster),
+        );
+        expect(
+          posters,
+          findsNWidgets(
+            size.width >= 1020
+                ? 6
+                : size.width >= 760
+                ? 4
+                : 2,
+          ),
+        );
+        final shelfRect = tester.getRect(shelf);
+        for (final element in posters.evaluate()) {
+          final rect = tester.getRect(find.byWidget(element.widget));
+          expect(rect.left, greaterThanOrEqualTo(shelfRect.left - .01));
+          expect(rect.right, lessThanOrEqualTo(shelfRect.right + .01));
+        }
+        await tester.tap(
+          find.byKey(const ValueKey('spatial-more-recommendations')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(SpatialRecommendationsPage), findsOneWidget);
+        expect(find.byType(MobileLibraryContent), findsNothing);
+        final grid = tester.widget<SliverGrid>(find.byType(SliverGrid));
+        expect(grid.delegate.estimatedChildCount, 10);
+        final first = c.personalizedRecommendedGames.first;
+        await tester.tap(find.byKey(ValueKey('spatial-game-${first.id}')));
+        await tester.pumpAndSettle();
+        expect(find.byType(GameDetailScreen), findsOneWidget);
+        await tester.tap(find.byTooltip('返回'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SpatialRecommendationsPage), findsOneWidget);
+        await tester.tap(find.byTooltip('返回'));
+        await tester.pumpAndSettle();
+        expect(shelf, findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  test(
+    'Spatial slate reacts to favorites and preserves its cache across unrelated reads',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = context.controller;
+      final slate = c.personalizedRecommendedGames;
+      expect(identical(c.personalizedRecommendedGames, slate), isTrue);
+      final liked = slate.first;
+      expect(await c.toggleFavorite(liked), isTrue);
+      final personalized = c.personalizedRecommendedGames;
+      expect(personalized, hasLength(10));
+      expect(personalized.any((g) => g.slug == liked.slug), isFalse);
+      expect(identical(personalized, slate), isFalse);
+    },
+  );
   testWidgets(
     'Spatial source material and searchable real catalog are independent of Cinema',
     (tester) async {

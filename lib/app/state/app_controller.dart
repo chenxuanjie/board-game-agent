@@ -47,6 +47,7 @@ import '../../features/assistant/services/ai_service.dart';
 import '../../features/assistant/services/conversation_store.dart';
 import '../../features/settings/services/preferences_service.dart';
 import '../../features/games/services/daily_game_recommender.dart';
+import '../../features/games/services/personal_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
 import '../../features/games/services/game_vote_service.dart';
 import '../../features/games/services/game_favorite_ranker.dart';
@@ -277,6 +278,9 @@ class AppController extends ChangeNotifier {
   int _aiModelRefreshGeneration = 0;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
+  List<GameInfo>? _personalizedCatalog;
+  Set<String> _personalizedFavoriteSlugs = {};
+  List<GameInfo> _personalizedSlate = const [];
   List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
@@ -453,6 +457,21 @@ class AppController extends ChangeNotifier {
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
+  List<GameInfo> get personalizedRecommendedGames {
+    if (_switchingIdentityScope) return const [];
+    final favorites = _favoriteCreatedAtBySlug.keys.toSet();
+    if (!identical(_personalizedCatalog, _games) ||
+        !setEquals(favorites, _personalizedFavoriteSlugs)) {
+      _personalizedSlate = const PersonalGameRecommender().recommend(
+        catalog: _games,
+        favoriteSlugs: favorites,
+      );
+      _personalizedCatalog = _games;
+      _personalizedFavoriteSlugs = favorites;
+    }
+    return _personalizedSlate;
+  }
+
   List<GameInfo> get dailyRecommendedGames {
     if (_switchingIdentityScope) return const <GameInfo>[];
     final today = DailyGameRecommender.localDateKey(DateTime.now());

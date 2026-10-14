@@ -7,7 +7,6 @@ import '../../../app/state/app_controller.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../features/games/models/game_info.dart';
 import '../../../features/settings/services/settings_transfer_service.dart';
-import '../../desktop/desktop_resolved_image.dart';
 import '../../mobile/game_detail_screen.dart';
 import '../../mobile/library_content.dart';
 import '../../mobile/settings_screen.dart';
@@ -17,11 +16,11 @@ import '../../mobile/rule_materials_screen.dart';
 import '../account_screen.dart';
 import '../game_ranking_screen.dart';
 import '../library_update_review.dart';
-import '../hover_horizontal_scrollbar.dart';
 import '../app_modals.dart';
 import 'spatial_material.dart';
 import 'spatial_primitives.dart';
 import 'spatial_banner.dart';
+import 'spatial_recommendations.dart';
 
 /// Fourth theme: a separate presentation shell, never DesktopWorkspace repaint.
 /// Secondary pages are temporary business adapters until their layout review.
@@ -349,6 +348,11 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
 
   Widget _businessPage() {
     final body = switch (_page) {
+      'recommendations' => SpatialRecommendationsPage(
+        controller: c,
+        onBack: _back,
+        onOpenGame: _openGame,
+      ),
       'games' => MobileLibraryContent(
         controller: c,
         onOpenGame: _openGame,
@@ -373,7 +377,9 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
       'recent' => _collection(c.recentlyViewedGames, '最近浏览'),
       _ => const SizedBox.shrink(),
     };
-    return ColoredBox(color: AppPalette.of(context).surface, child: body);
+    return _page == 'recommendations'
+        ? body
+        : ColoredBox(color: AppPalette.of(context).surface, child: body);
   }
 
   Widget _collection(List<GameInfo> games, String title) => Scaffold(
@@ -395,7 +401,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
 
   Widget _home({required bool mobile, required bool tablet}) {
     final query = _search.text.trim().toLowerCase();
-    final games = c.games
+    final games = (query.isEmpty ? c.personalizedRecommendedGames : c.games)
         .where(
           (game) =>
               query.isEmpty ||
@@ -509,8 +515,10 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
                 ),
               ),
               IconButton(
-                onPressed: () => _select('games'),
-                tooltip: '查看全部桌游',
+                key: const ValueKey('spatial-more-recommendations'),
+                tooltip: query.isEmpty ? '查看推荐桌游' : '查看桌游库',
+                onPressed: () =>
+                    _select(query.isEmpty ? 'recommendations' : 'games'),
                 style: mobile
                     ? null
                     : IconButton.styleFrom(
@@ -610,47 +618,31 @@ class _SpatialShelf extends StatelessWidget {
       : LayoutBuilder(
           builder: (context, box) {
             final width = (box.maxWidth - (count - 1) * 10) / count;
-            return HoverHorizontalScrollbar(
-              keyPrefix: 'spatial-game-shelf',
-              builder: (scroll) => ListView.separated(
-                controller: scroll,
-                key: const ValueKey('spatial-game-shelf'),
-                scrollDirection: Axis.horizontal,
-                itemCount: games.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
-                itemBuilder: (context, i) => SizedBox(
-                  width: width,
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    // Original wide Web card: 141 dp wide, 216 dp high.
-                    // Extra native window height must not stretch the poster.
-                    child: SizedBox(
-                      height: width * 216 / 141,
-                      child: SpatialPoster(
-                        key: ValueKey('spatial-game-${games[i].id}'),
-                        title: games[i].title,
-                        match: '★ ${games[i].score}',
-                        genres: games[i].categoryLine,
-                        badge: '桌游',
-                        imageUrl: '',
-                        isCompact: true,
-                        image: DesktopResolvedImage(
+            final visible = games.take(count).toList();
+            return Row(
+              key: const ValueKey('spatial-game-shelf'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < visible.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  SizedBox(
+                    width: width,
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      // Original wide Web card: 141 dp wide, 216 dp high.
+                      // Extra native window height must not stretch the poster.
+                      child: SizedBox(
+                        height: width * 216 / 141,
+                        child: SpatialGamePoster(
                           controller: controller,
-                          assetPath: games[i].coverAssetPath,
-                          palette: controller.palette,
-                          fit: BoxFit.cover,
+                          game: visible[i],
+                          onOpen: () => onOpenGame(visible[i]),
                         ),
-                        fallbackGradient: const [
-                          Color(0xFF192523),
-                          Color(0xFF6E7A72),
-                          Color(0xFF0C0E0F),
-                        ],
-                        onSelect: () => onOpenGame(games[i]),
                       ),
                     ),
                   ),
-                ),
-              ),
+                ],
+              ],
             );
           },
         );
