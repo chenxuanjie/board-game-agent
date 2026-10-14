@@ -115,6 +115,7 @@ void main() {
       ColorSchemeOption.classic,
       ColorSchemeOption.cinema,
       ColorSchemeOption.warmwoodStudy,
+      ColorSchemeOption.spatialCinema,
     ]);
     expect(ColorSchemeOption.classic.code, 'classic');
     expect(ColorSchemeOption.cinema.code, 'cinema');

@@ -215,59 +215,43 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       const SizedBox(height: 10),
                       _SectionCard(
                         palette: palette,
-                        child: Row(
-                          children: <Widget>[
-                            Expanded(
-                              child: _ThemeChoice(
-                                palette: palette,
-                                title: copy.colorSchemeName(
+                        child: LayoutBuilder(
+                          builder: (context, box) {
+                            final columns = box.maxWidth < 500 ? 2 : 4;
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final scheme in const [
                                   ColorSchemeOption.warmwoodStudy,
-                                ),
-                                swatch: PaletteRegistry.warmwoodStudy.primary,
-                                selected:
-                                    controller.colorScheme ==
-                                    ColorSchemeOption.warmwoodStudy,
-                                onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.warmwoodStudy,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _ThemeChoice(
-                                palette: palette,
-                                title: copy.colorSchemeName(
                                   ColorSchemeOption.classic,
-                                ),
-                                swatch: PaletteRegistry.classic.primary,
-                                selected:
-                                    controller.colorScheme ==
-                                    ColorSchemeOption.classic,
-                                onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.classic,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _ThemeChoice(
-                                palette: palette,
-                                title: copy.colorSchemeName(
                                   ColorSchemeOption.cinema,
-                                ),
-                                swatch: PaletteRegistry.cinema.primary,
-                                selected:
-                                    controller.colorScheme ==
-                                    ColorSchemeOption.cinema,
-                                onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.cinema,
-                                ),
-                              ),
-                            ),
-                          ],
+                                  ColorSchemeOption.spatialCinema,
+                                ])
+                                  SizedBox(
+                                    width:
+                                        (box.maxWidth - (columns - 1) * 8) /
+                                        columns,
+                                    child: _ThemeChoice(
+                                      key: ValueKey(
+                                        'mobile-settings-theme-${scheme.code}',
+                                      ),
+                                      palette: palette,
+                                      title: copy.colorSchemeName(scheme),
+                                      swatch: PaletteRegistry.of(
+                                        scheme,
+                                      ).primary,
+                                      selected:
+                                          controller.colorScheme == scheme,
+                                      onTap: () =>
+                                          controller.setColorScheme(scheme),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(height: 24),
                       if (controller.colorScheme == ColorSchemeOption.cinema)
                         CinemaGlassSetting(controller: controller),
                       if (AccountScope.maybeOf(context) == null)
@@ -1020,6 +1004,7 @@ class _SectionCard extends StatelessWidget {
 
 class _ThemeChoice extends StatelessWidget {
   const _ThemeChoice({
+    super.key,
     required this.palette,
     required this.title,
     required this.swatch,

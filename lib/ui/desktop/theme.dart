@@ -25,7 +25,8 @@ ThemeData buildDesktopTheme({
   AppPalette? activePalette,
   bool cinemaGlassEnabled = true,
 }) {
-  if (activePalette?.scheme == ColorSchemeOption.cinema) {
+  if ((activePalette?.scheme == ColorSchemeOption.cinema ||
+      activePalette?.scheme == ColorSchemeOption.spatialCinema)) {
     return AppTheme.buildTheme(
       activePalette!,
       cinemaGlassEnabled: cinemaGlassEnabled,
@@ -126,7 +127,10 @@ DesktopRoleColors desktopColors(BuildContext context) {
     context,
   ).extension<AppPaletteThemeExtension>()?.palette;
   return DesktopRoleColors(
-    palette?.scheme == ColorSchemeOption.cinema ? palette : null,
+    (palette?.scheme == ColorSchemeOption.cinema ||
+            palette?.scheme == ColorSchemeOption.spatialCinema)
+        ? palette
+        : null,
   );
 }
 

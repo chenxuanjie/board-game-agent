@@ -114,6 +114,7 @@ class _AppearanceCard extends StatelessWidget {
       ColorSchemeOption.warmwoodStudy,
       ColorSchemeOption.classic,
       ColorSchemeOption.cinema,
+      ColorSchemeOption.spatialCinema,
     ];
     final AppCopy copy = controller.copy;
     return _SettingsCard(
@@ -240,63 +241,133 @@ class _ThemeMiniature extends StatelessWidget {
   final AppPalette palette;
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: palette.pageBackground,
-    child: Padding(
-      padding: EdgeInsets.all(5),
-      child: Column(
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Container(
-                width: 12,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: palette.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Spacer(),
-              Container(width: 7, height: 4, color: palette.textSecondary),
-            ],
-          ),
-          SizedBox(height: 4),
-          Expanded(
+  Widget build(BuildContext context) =>
+      palette.scheme == ColorSchemeOption.spatialCinema
+      ? Container(
+          color: const Color(0xFF93836D),
+          padding: const EdgeInsets.all(5),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: palette.surfaceContainer.withValues(alpha: .85),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: Colors.white.withValues(alpha: .22)),
+            ),
             child: Row(
-              children: <Widget>[
-                Container(
-                  width: 16,
-                  decoration: BoxDecoration(
-                    color: palette.surfaceContainer,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                SizedBox(width: 4),
+              children: [
+                Container(width: 9, color: palette.surface),
+                const SizedBox(width: 3),
                 Expanded(
                   child: Column(
-                    children: <Widget>[
+                    children: [
                       Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: palette.surface,
-                            borderRadius: BorderRadius.circular(2),
-                            border: Border.all(color: palette.outline),
-                          ),
+                        flex: 2,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: ColoredBox(color: palette.secondary),
+                            ),
+                            const SizedBox(width: 2),
+                            Expanded(
+                              flex: 2,
+                              child: ColoredBox(color: palette.surfaceVariant),
+                            ),
+                            const SizedBox(width: 2),
+                            Expanded(
+                              flex: 2,
+                              child: ColoredBox(color: palette.surfaceVariant),
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Expanded(
                         child: Row(
+                          children: [
+                            for (var i = 0; i < 4; i++)
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 2),
+                                  child: ColoredBox(
+                                    color: palette.primaryContainer,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )
+      : ColoredBox(
+          color: palette.pageBackground,
+          child: Padding(
+            padding: EdgeInsets.all(5),
+            child: Column(
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 12,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: palette.primary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Spacer(),
+                    Container(
+                      width: 7,
+                      height: 4,
+                      color: palette.textSecondary,
+                    ),
+                  ],
+                ),
+                SizedBox(height: 4),
+                Expanded(
+                  child: Row(
+                    children: <Widget>[
+                      Container(
+                        width: 16,
+                        decoration: BoxDecoration(
+                          color: palette.surfaceContainer,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Expanded(
+                        child: Column(
                           children: <Widget>[
                             Expanded(
-                              child: ColoredBox(
-                                color: palette.primaryContainer,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: palette.surface,
+                                  borderRadius: BorderRadius.circular(2),
+                                  border: Border.all(color: palette.outline),
+                                ),
                               ),
                             ),
-                            SizedBox(width: 3),
+                            SizedBox(height: 3),
                             Expanded(
-                              child: ColoredBox(
-                                color: palette.secondaryContainer,
+                              child: Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: ColoredBox(
+                                      color: palette.primaryContainer,
+                                    ),
+                                  ),
+                                  SizedBox(width: 3),
+                                  Expanded(
+                                    child: ColoredBox(
+                                      color: palette.secondaryContainer,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -308,8 +379,5 @@ class _ThemeMiniature extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
-    ),
-  );
+        );
 }

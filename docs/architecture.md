@@ -10,6 +10,8 @@
 
 `app/state/browse_session.dart` 管理本次运行的账号浏览状态，桌面和紧凑外壳共同使用；`ui/shared/library_viewport.dart` 按稳定游戏 ID 恢复网格位置。`app_modals.dart` 统一浮层节奏和关闭过程中的入口保护，`smooth_progress.dart` 仅平滑真实进度。范围及验收见 [浏览位置与交互反馈](interaction-continuity.md)。
 
+第四主题“空间影院”有独立的 `ui/shared/spatial/` 展示外壳、首页、材质与参考原语，不通过 `DesktopWorkspace` 换色实现。Windows 透明实体窗口由 `core/platform/native_window_surface.dart` 复用 `window_manager` 实现，移除原 runner 裁切通道；`DesktopWindowFrame` 统一绘制顶部与内容的连续底色。第一阶段临时业务适配页及未完成边界见 [空间影院](spatial-cinema-theme.md)。
+
 | 目录 | 职责 | 修改时从哪里开始 |
 | --- | --- | --- |
 | `lib/app/state/` | 跨界面的应用状态与业务入口 | 状态流转、加载及持久化调用 |

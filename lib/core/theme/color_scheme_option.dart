@@ -1,4 +1,4 @@
-enum ColorSchemeOption { classic, cinema, warmwoodStudy }
+enum ColorSchemeOption { classic, cinema, warmwoodStudy, spatialCinema }
 
 const ColorSchemeOption defaultColorScheme = ColorSchemeOption.warmwoodStudy;
 
@@ -9,6 +9,8 @@ extension ColorSchemeOptionX on ColorSchemeOption {
         return 'classic';
       case ColorSchemeOption.cinema:
         return 'cinema';
+      case ColorSchemeOption.spatialCinema:
+        return 'spatial_cinema';
       case ColorSchemeOption.warmwoodStudy:
         return 'warmwood_study';
     }
@@ -18,6 +20,9 @@ extension ColorSchemeOptionX on ColorSchemeOption {
     switch (code?.trim().toLowerCase()) {
       case 'classic':
         return ColorSchemeOption.classic;
+      case 'spatial_cinema':
+      case '空间影院':
+        return ColorSchemeOption.spatialCinema;
       case 'cinema':
       case '影院':
         return ColorSchemeOption.cinema;

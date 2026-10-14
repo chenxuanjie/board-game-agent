@@ -13,9 +13,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
+import 'package:board_game_agent/ui/mobile/settings_screen.dart';
+import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
 import 'package:board_game_agent/core/theme/cinema_theme.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_workspace.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_material.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_primitives.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
@@ -57,6 +62,7 @@ import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
+import 'package:board_game_agent/ui/desktop/desktop_window_frame.dart';
 import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
 import 'package:board_game_agent/ui/shared/favorite_feedback.dart';
 import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
@@ -69,6 +75,7 @@ part 'desktop/desktop_typography_test_cases.dart';
 part 'desktop/desktop_assistant_design_test_cases.dart';
 part 'desktop/desktop_national_day_test_cases.dart';
 part 'desktop/desktop_cinema_test_cases.dart';
+part 'desktop/desktop_spatial_test_cases.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -128,6 +135,7 @@ void main() {
   _registerAssistantDesignTests(workspaceContext);
   _registerDesktopNationalDayTests(workspaceContext);
   _registerCinemaTests(workspaceContext);
+  _registerSpatialTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {
     controller.openGlobalAssistant();

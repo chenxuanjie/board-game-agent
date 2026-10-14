@@ -69,6 +69,39 @@ class PaletteRegistry {
     shadow: Color(0xFF000000),
   );
 
+  /// The prototype's warm grey/green surfaces; its layout is a separate shell.
+  static const AppPalette spatialCinema = AppPalette(
+    scheme: ColorSchemeOption.spatialCinema,
+    nameZh: '空间影院',
+    nameEn: 'Spatial Cinema',
+    pageBackground: Color(0xFF080907),
+    surface: Color(0xFF161813),
+    surfaceContainer: Color(0xFF2C2A22),
+    surfaceVariant: Color(0xFF24261D),
+    inputSurface: Color(0xFF232720),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xFFB8BEAE),
+    outline: Color(0xFF788D6A),
+    primary: Color(0xFFE50914),
+    onPrimary: Color(0xFFFFFFFF),
+    primaryContainer: Color(0xFF481015),
+    onPrimaryContainer: Color(0xFFFFE6E6),
+    secondary: Color(0xFFC9D7B5),
+    onSecondary: Color(0xFF13180F),
+    secondaryContainer: Color(0xFF333C29),
+    onSecondaryContainer: Color(0xFFF4FFE8),
+    success: Color(0xFF91C185),
+    onSuccess: Color(0xFF12200C),
+    warning: Color(0xFFEFC487),
+    onWarning: Color(0xFF281B09),
+    error: Color(0xFFFFA3A8),
+    onError: Color(0xFF300D10),
+    focusRing: Color(0xFFD9E9C1),
+    disabledForeground: Color(0xFF7C8274),
+    disabledBackground: Color(0xFF303329),
+    shadow: Color(0xFF000000),
+  );
+
   /// Warm ivory, orange and walnut tones used by the desktop workspace.
   static const AppPalette warmwoodStudy = AppPalette(
     scheme: ColorSchemeOption.warmwoodStudy,
@@ -108,6 +141,8 @@ class PaletteRegistry {
         return classic;
       case ColorSchemeOption.cinema:
         return cinema;
+      case ColorSchemeOption.spatialCinema:
+        return spatialCinema;
       case ColorSchemeOption.warmwoodStudy:
         return warmwoodStudy;
     }
