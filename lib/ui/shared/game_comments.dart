@@ -8,6 +8,8 @@ import '../../features/community/services/game_comments_service.dart';
 import 'account_scope.dart';
 import 'account_screen.dart';
 import 'app_modals.dart';
+import 'app_failure_notice.dart';
+import 'favorite_feedback.dart';
 
 /// Both platforms share comment state and actions; only entry/composition vary.
 class GameCommentsPanel extends StatefulWidget {
@@ -36,6 +38,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
   String? _freshId;
   final Set<String> _liking = {};
   final Map<String, String> _likeErrors = {};
+  int _actionEpoch = 0;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -47,6 +50,9 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.gameSlug != widget.gameSlug ||
         oldWidget.rootId != widget.rootId) {
+      ++_actionEpoch;
+      _liking.clear();
+      _likeErrors.clear();
       _limit = 20;
       _freshId = null;
     }
@@ -58,6 +64,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
 
   void _bind(GameCommentsService? service) {
     if (identical(service, _service)) return;
+    ++_actionEpoch;
     _service?.removeListener(_changed);
     _service = service;
     _freshId = null;
@@ -105,28 +112,49 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     if (_likeBusy(comment.id)) return;
     if (!_liking.add(comment.id)) return;
     final service = _service!;
+    final epoch = _actionEpoch;
     setState(() => _likeErrors.remove(comment.id));
     try {
       await service.toggleLike(comment);
       if (mounted &&
           identical(service, _service) &&
-          (service.error != null || service.likePending(comment.id))) {
-        _likeErrors[comment.id] = '点赞同步未完成，请重试';
+          epoch == _actionEpoch &&
+          service.canWrite &&
+          service.likePending(comment.id)) {
+        final reason = service.error;
+        _likeErrors[comment.id] =
+            reason != null && ['登录', '权限', '目录', '数据'].any(reason.contains)
+            ? reason
+            : comment.likedByMe
+            ? '取消点赞未完成，请检查网络后重试'
+            : '点赞未完成，请检查网络后重试';
+        showAppFailureNotice(context, _likeErrors[comment.id]!);
+      } else if (mounted &&
+          epoch == _actionEpoch &&
+          identical(service, _service) &&
+          service.error != null) {
+        // Acknowledged likes remain successful if the later list refresh fails.
+        _likeErrors[comment.id] = service.error!;
       }
-    } catch (_) {
-      if (mounted && identical(service, _service)) {
-        _likeErrors[comment.id] = '点赞未完成，请重试';
+    } catch (failure) {
+      if (mounted &&
+          epoch == _actionEpoch &&
+          identical(service, _service) &&
+          service.canWrite) {
+        _likeErrors[comment.id] = failure is StateError
+            ? failure.message.toString()
+            : '点赞失败，请检查网络后重试';
+        showAppFailureNotice(context, _likeErrors[comment.id]!);
       }
     } finally {
-      if (mounted && identical(service, _service)) {
+      if (mounted && epoch == _actionEpoch && identical(service, _service)) {
         setState(() => _liking.remove(comment.id));
       }
     }
   }
 
   bool _likeBusy(String id) =>
-      _liking.contains(id) ||
-      _service?.loading == true && _service!.likePending(id);
+      _liking.contains(id) || _service?.likeInFlight(id) == true;
 
   void _openReplies(GameComment comment) {
     Navigator.of(context).push(
@@ -336,6 +364,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
         ),
         const SizedBox(height: 12),
         if (service.error != null &&
+            !service.onlyLikesPending &&
             (_likeErrors.isEmpty || comments.any((c) => c.pending)))
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -438,6 +467,8 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     bool rootContext = false,
   }) {
     final palette = AppPalette.of(context), service = _service!;
+    final liked = service.optimisticLike(comment.id) ?? comment.likedByMe;
+    final likes = comment.likes + (liked ? 1 : 0) - (comment.likedByMe ? 1 : 0);
     final op = comment.operation;
     final parent = all.where((v) => v.id == op.replyTo).firstOrNull;
     final replies =
@@ -510,50 +541,20 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                     ),
                     TextButton.icon(
                       key: ValueKey('comment-like-${comment.id}'),
-                      onPressed: service.canWrite && !_likeBusy(comment.id)
-                          ? () => _like(comment)
-                          : null,
-                      icon: _likeBusy(comment.id)
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              comment.likedByMe
-                                  ? Icons.thumb_up_alt_rounded
-                                  : Icons.thumb_up_alt_outlined,
-                              size: 16,
-                            ),
-                      label: Text('${comment.likes}'),
+                      onPressed: service.canWrite ? () => _like(comment) : null,
+                      icon: FavoriteFeedbackIcon(
+                        selected: liked,
+                        size: 16,
+                        selectedIcon: Icons.thumb_up_alt_rounded,
+                        unselectedIcon: Icons.thumb_up_alt_outlined,
+                      ),
+                      label: Text('$likes'),
                       style: TextButton.styleFrom(
-                        foregroundColor: comment.likedByMe
+                        foregroundColor: liked
                             ? palette.primary
                             : palette.textSecondary,
                       ),
                     ),
-                    if (_likeErrors[comment.id] != null ||
-                        service.error != null &&
-                            service.likePending(comment.id))
-                      TextButton(
-                        onPressed: _likeBusy(comment.id)
-                            ? null
-                            : () async {
-                                final service = _service!;
-                                if (!_liking.add(comment.id)) return;
-                                setState(() {});
-                                await service.synchronize();
-                                if (mounted && identical(service, _service)) {
-                                  setState(() {
-                                    _liking.remove(comment.id);
-                                    if (service.error == null) {
-                                      _likeErrors.remove(comment.id);
-                                    }
-                                  });
-                                }
-                              },
-                        child: const Text('重试点赞同步'),
-                      ),
                     TextButton(
                       onPressed: service.canWrite
                           ? () => _compose(comment)

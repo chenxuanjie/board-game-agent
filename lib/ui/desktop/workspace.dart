@@ -31,6 +31,7 @@ import 'desktop_resolved_image.dart';
 import '../../core/theme/cinema_theme.dart';
 import '../shared/cinema/cinema_home.dart';
 import '../shared/cinema/cinema_surface.dart';
+import '../shared/app_failure_notice.dart';
 
 class DesktopWorkspace extends StatefulWidget {
   const DesktopWorkspace({
@@ -64,6 +65,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   _coverFlight;
   int _coverGeneration = 0;
   final Set<String> _favoriteSaving = {};
+  final Map<String, bool> _favoritePreview = {};
   final _activityLink = LayerLink();
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
@@ -295,19 +297,29 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
 
   Future<void> _toggleFavorite(GameInfo game) async {
     if (_favoriteSaving.contains(game.id)) return;
-    setState(() => _favoriteSaving.add(game.id));
+    setState(() {
+      _favoriteSaving.add(game.id);
+      _favoritePreview[game.id] = !widget.controller.isFavorite(game);
+    });
     _dismissFavoriteSnackBar();
     var saved = false;
     try {
       saved = await widget.controller.toggleFavorite(game);
+    } catch (_) {
+      saved = false;
     } finally {
-      if (mounted) setState(() => _favoriteSaving.remove(game.id));
+      if (mounted) {
+        setState(() {
+          _favoriteSaving.remove(game.id);
+          _favoritePreview.remove(game.id);
+        });
+      }
     }
     if (!mounted) return;
 
     final copy = widget.controller.copy;
     if (!saved) {
-      _showFavoriteSnackBar(message: copy.favoriteSaveFailed);
+      showAppFailureNotice(context, copy.favoriteSaveFailed);
       return;
     }
 
@@ -713,6 +725,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                 favoriteSaving: _favoriteSaving.contains(
                                   widget.controller.selectedGame.id,
                                 ),
+                                favoritePreview:
+                                    _favoritePreview[widget
+                                        .controller
+                                        .selectedGame
+                                        .id],
                                 controller: widget.controller,
                                 game: widget.controller.selectedGame,
                                 backTooltip: switch (_gameDetailReturnPage) {

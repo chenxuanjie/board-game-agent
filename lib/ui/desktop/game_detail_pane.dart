@@ -31,6 +31,7 @@ class DesktopGameDetailPane extends StatefulWidget {
     required this.onOpenGame,
     this.coverKey,
     this.favoriteSaving = false,
+    this.favoritePreview,
   });
 
   final AppController controller;
@@ -43,6 +44,7 @@ class DesktopGameDetailPane extends StatefulWidget {
   final ValueChanged<GameInfo> onOpenGame;
   final Key? coverKey;
   final bool favoriteSaving;
+  final bool? favoritePreview;
 
   @override
   State<DesktopGameDetailPane> createState() => _DesktopGameDetailPaneState();
@@ -64,6 +66,8 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   }
 
   GameInfo get game => widget.game;
+  bool get _isFavorite =>
+      widget.favoritePreview ?? widget.controller.isFavorite(game);
   String value(String text) => desktopContentValue(text);
 
   void _selectGalleryImage(int index, int count) {
@@ -393,10 +397,8 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                                   key: ValueKey<String>(
                                     'desktop-detail-favorite-button',
                                   ),
-                                  label: widget.controller.isFavorite(game)
-                                      ? '已喜欢'
-                                      : '喜欢',
-                                  icon: widget.controller.isFavorite(game)
+                                  label: _isFavorite ? '已喜欢' : '喜欢',
+                                  icon: _isFavorite
                                       ? Icons.favorite_rounded
                                       : Icons.favorite_border_rounded,
                                   onTap: widget.favoriteSaving
@@ -1063,15 +1065,12 @@ class _HeroButton extends StatefulWidget {
 
 class _HeroButtonState extends State<_HeroButton> {
   bool hover = false;
-  bool? _confirmed;
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
     final heart =
         widget.icon == Icons.favorite_rounded ||
         widget.icon == Icons.favorite_border_rounded;
-    _confirmed ??= widget.icon == Icons.favorite_rounded;
-    if (!widget.busy) _confirmed = widget.icon == Icons.favorite_rounded;
     final color = isCinema(context)
         ? (widget.light
               ? AppPalette.of(context).textPrimary
@@ -1124,16 +1123,16 @@ class _HeroButtonState extends State<_HeroButton> {
                 alignment: Alignment.center,
                 children: [
                   Opacity(
-                    opacity: widget.busy ? 0 : 1,
+                    opacity: widget.busy && !heart ? 0 : 1,
                     child: heart
                         ? FavoriteFeedbackIcon(
-                            selected: _confirmed!,
+                            selected: widget.icon == Icons.favorite_rounded,
                             color: color,
                             size: metrics.px(24),
                           )
                         : Icon(widget.icon, color: color, size: metrics.px(24)),
                   ),
-                  if (widget.busy)
+                  if (widget.busy && !heart)
                     SizedBox(
                       width: metrics.px(24),
                       height: metrics.px(24),
@@ -1146,7 +1145,7 @@ class _HeroButtonState extends State<_HeroButton> {
               ),
               SizedBox(width: metrics.px(10)),
               Text(
-                widget.busy
+                widget.busy && !heart
                     ? widget.pendingLabel ?? widget.label
                     : widget.label,
                 style: TextStyle(

@@ -458,7 +458,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
   );
 
   _assistantDesignTest(
-    'favorite feedback waits for persistence, blocks duplicate presses and reports rollback',
+    'favorite feedback shows intent immediately, guards duplicate presses and reports rollback',
     (tester) async {
       final preferences = _ControlledFavoritePreferences();
       final controller = AppController(
@@ -485,19 +485,23 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
           ),
         ),
       );
-      await tester.tap(find.byType(IconButton));
+      final button = find.descendant(
+        of: find.byType(FavoriteToggleButton),
+        matching: find.byType(IconButton),
+      );
+      await tester.tap(button);
       await tester.pump();
       expect(preferences.calls, 1);
-      expect(
-        tester.widget<IconButton>(find.byType(IconButton)).onPressed,
-        isNull,
-      );
+      expect(tester.widget<IconButton>(button).onPressed, isNotNull);
       expect(
         tester
             .widget<FavoriteFeedbackIcon>(find.byType(FavoriteFeedbackIcon))
             .selected,
-        isFalse,
+        isTrue,
       );
+      tester.widget<IconButton>(button).onPressed!();
+      await tester.pump();
+      expect(preferences.calls, 1);
       preferences.completion.complete();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 40));
@@ -522,16 +526,13 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
       preferences.completion = Completer<void>();
       preferences.fail = true;
-      await tester.tap(find.byType(IconButton));
+      await tester.tap(button);
       await tester.pump();
       preferences.completion.complete();
       await tester.pumpAndSettle();
       expect(controller.isFavorite(game), isTrue);
       expect(find.text(controller.copy.favoriteSaveFailed), findsOneWidget);
-      expect(
-        tester.widget<IconButton>(find.byType(IconButton)).onPressed,
-        isNotNull,
-      );
+      expect(tester.widget<IconButton>(button).onPressed, isNotNull);
       expect(preferences.calls, 2);
       expect(tester.takeException(), isNull);
     },

@@ -20,6 +20,9 @@ final class GameCommentsService extends ChangeNotifier {
   final String Function() displayName;
   final Map<String, CommentOperation> _events = {}, _own = {};
   final Set<String> _pending = {};
+  final Set<String> _confirmedLikes = {};
+  final Map<String, bool> _optimisticLikes = {};
+  final Map<String, Future<void>> _likeTasks = {};
   Future<void> _localQueue = Future.value();
   Future<void>? _syncTask;
   Future<void>? _ready;
@@ -38,7 +41,22 @@ final class GameCommentsService extends ChangeNotifier {
     (id) =>
         _own[id]?.action == CommentAction.like && _own[id]?.target == commentId,
   );
-  CommentProjection get projection => CommentProjection(_events.values, uid);
+  // Pending reactions are an intention, not a confirmed remote vote. The UI
+  // temporarily overlays the intention while its actual request is in flight.
+  CommentProjection get projection => CommentProjection(
+    _events.values.where(
+      (op) =>
+          op.action != CommentAction.like ||
+          !_pending.contains(op.id) ||
+          _confirmedLikes.contains(op.id),
+    ),
+    uid,
+  );
+  bool? optimisticLike(String commentId) => _optimisticLikes[commentId];
+  bool likeInFlight(String commentId) => _likeTasks.containsKey(commentId);
+  bool get onlyLikesPending =>
+      _pending.isNotEmpty &&
+      _pending.every((id) => _own[id]?.action == CommentAction.like);
   String get _key => 'game_comments.v1.$scope';
   static String newId([String prefix = 'c']) {
     final random = Random.secure();
@@ -80,6 +98,26 @@ final class GameCommentsService extends ChangeNotifier {
       if (!_pending.every(_own.containsKey)) {
         throw const FormatException('待发评论记录无效');
       }
+      final confirmed = data['confirmedLikes'];
+      if (confirmed != null && confirmed is! List) {
+        throw const FormatException('点赞确认记录无效');
+      }
+      _confirmedLikes.addAll(
+        confirmed == null
+            ? _own.values
+                  .where(
+                    (op) =>
+                        op.action == CommentAction.like &&
+                        !_pending.contains(op.id),
+                  )
+                  .map((op) => op.id)
+            : (confirmed as List).cast<String>(),
+      );
+      if (!_confirmedLikes.every(
+        (id) => _own[id]?.action == CommentAction.like,
+      )) {
+        throw const FormatException('点赞确认记录无效');
+      }
     }
     _notify();
   }
@@ -105,6 +143,7 @@ final class GameCommentsService extends ChangeNotifier {
       'own': _own.values.map((v) => v.toJson()).toList(),
       'events': _events.values.map((v) => v.toJson()).toList(),
       'pending': _pending.toList(),
+      'confirmedLikes': _confirmedLikes.toList(),
     });
     if (!await _prefs!.setString(_key, content)) throw StateError('评论未保存到本机');
   }
@@ -178,15 +217,50 @@ final class GameCommentsService extends ChangeNotifier {
     await synchronize();
   }
 
-  Future<void> toggleLike(GameComment comment) async {
+  Future<void> toggleLike(GameComment comment) {
+    final existing = _likeTasks[comment.id];
+    if (existing != null) return existing;
+    if (!canWrite || comment.deleted) return Future.error(StateError('请刷新后重试'));
+    final desired = !comment.likedByMe;
+    _optimisticLikes[comment.id] = desired;
+    late final Future<void> task;
+    task = _setLike(comment, desired).whenComplete(() {
+      if (identical(_likeTasks[comment.id], task)) {
+        _likeTasks.remove(comment.id);
+        _optimisticLikes.remove(comment.id);
+        _notify();
+      }
+    });
+    _likeTasks[comment.id] = task;
+    _notify();
+    return task;
+  }
+
+  Future<void> _setLike(GameComment comment, bool desired) async {
     await initialize();
     await _local(() async {
-      if (!canWrite || projection.deleted.contains(comment.id)) {
+      if (!canWrite ||
+          !projection.comments.containsKey(comment.id) ||
+          projection.deleted.contains(comment.id)) {
         throw StateError('请刷新后重试');
       }
-      final current = projection
-          .forGame(comment.operation.game, _pending)
-          .firstWhere((c) => c.id == comment.id);
+      final reactions =
+          _events.values
+              .where(
+                (op) =>
+                    op.uid == uid &&
+                    op.action == CommentAction.like &&
+                    op.target == comment.id,
+              )
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+      // A failed click retries the same durable intention, rather than
+      // accidentally turning the vote off or adding a duplicate event.
+      if (reactions.isNotEmpty &&
+          reactions.first.liked == desired &&
+          _pending.contains(reactions.first.id)) {
+        return;
+      }
       await _append(
         CommentOperation(
           id: newId(),
@@ -196,7 +270,7 @@ final class GameCommentsService extends ChangeNotifier {
           revision: _nextRevision,
           at: DateTime.now().toUtc(),
           target: comment.id,
-          liked: !current.likedByMe,
+          liked: desired,
         ),
       );
     });
@@ -279,6 +353,11 @@ final class GameCommentsService extends ChangeNotifier {
         await _local(() async {
           _check(generation);
           _pending.removeAll(upload.keys);
+          _confirmedLikes.addAll(
+            upload.values
+                .where((op) => op.action == CommentAction.like)
+                .map((op) => op.id),
+          );
           await _save();
           _notify();
         });
@@ -419,6 +498,7 @@ final class GameCommentsService extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _generation++;
     _retry?.cancel();

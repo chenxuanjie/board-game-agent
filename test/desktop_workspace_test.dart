@@ -434,6 +434,9 @@ class _InMemoryPreferencesService extends PreferencesService {
   ColorSchemeOption? _colorScheme;
   bool? _checkForUpdates;
   Map<String, DateTime> _favoriteGames = <String, DateTime>{};
+  Completer<void>? favoriteWriteGate;
+  bool failFavoriteWrite = false;
+  int favoriteWrites = 0;
   List<DesktopLibraryResource> _desktopLibraryResources =
       <DesktopLibraryResource>[];
   List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
@@ -480,6 +483,9 @@ class _InMemoryPreferencesService extends PreferencesService {
 
   @override
   Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
+    ++favoriteWrites;
+    await favoriteWriteGate?.future;
+    if (failFavoriteWrite) throw StateError('本机存储不可用');
     _favoriteGames = <String, DateTime>{
       for (final record in records) record.gameSlug: record.createdAt,
     };
