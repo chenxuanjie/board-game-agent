@@ -24,7 +24,8 @@
 | `lib/features/library/` | 资料、资源源、WebDAV 与缓存 | 资料获取及打开前的数据处理 |
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 | AI 请求及状态模型 |
 | `lib/features/settings/` | 偏好、桌面 AI 设置与更新配置 | 设置的保存与读取 |
-| `lib/features/identity/` | 原生群晖直连认证、恢复、个人数据切换与账号云同步；Web 访客模式 | 公共认证包与应用业务的接线 |
+| `lib/features/identity/` | 原生群晖直连、Web 同源账号适配、恢复、个人数据切换与原生账号云同步 | 公共认证包与应用业务的接线 |
+| `services/web_account/` | Web 登录网关，固定 DSM 上游、HttpOnly 站点会话、OTP 与退出 | 部署环境、服务端路由与假 DSM 测试 |
 | `integration_test/` | 实际 Windows 登录、安全存储、恢复与退出验证 | 仅在私有测试环境提供凭据时运行 |
 | `lib/ui/desktop/` | 桌面及宽屏 Web 的外壳、页面 | 桌面布局与交互 |
 | `lib/ui/mobile/` | Android 及窄屏 Web 的外壳、页面 | 手机布局与交互 |
@@ -67,3 +68,5 @@ ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppC
 手机“我的”资料卡由 `MobileMineContent` 合并头像与名称为账户详情入口，统计分别进入收藏和共用会话历史；登录状态及昵称沿用 AccountScope，详见 [手机资料卡片](mobile-profile-card.md)。
 
 登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。
+
+Web 账号通过 `features/identity/services/web_account_gateway.dart` 接入同一个 IdentityController 与本机账号作用域；不调用原生安全存储，不保存密码或 NAS SID。Nginx 将 `/api/account/` 转到独立 Starlette/HTTPX 网关。登录已接入，Web 云同步、评论、挂载资料读取仍未接入，详见 [Web 账号](web-account.md)。

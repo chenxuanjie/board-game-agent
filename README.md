@@ -16,7 +16,7 @@
 
 ## 当前功能
 
-- Android / Windows 使用群晖账号密码直接登录，按需输入验证码，无需另部署登录服务；Web 暂保留访客模式。详见 [账号接入](docs/identity-integration.md)。
+- Android / Windows 使用群晖账号密码直接登录，按需输入验证码，无需另部署登录服务；Web 通过同源账号网关登录、恢复与退出，本机数据按账号隔离，云同步与挂载资料读取仍待接入。详见 [账号接入](docs/identity-integration.md) 和 [Web 账号](docs/web-account.md)。
 - 默认简体中文，同时支持英文界面切换
 - 多桌游目录首页，卡片与详情页基于 `assets/catalog.json` 和各游戏 `game.json` 生成
 - 每个桌游都有独立 AI 助手入口，首页还有一个通用 AI 入口

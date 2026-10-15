@@ -427,44 +427,45 @@ class _AccountScreenState extends State<AccountScreen> {
                   const SizedBox(height: UiTokens.itemGap),
                 ],
                 if (!signedIn && service != null && service.supportsSignIn) ...[
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(
-                      'account-login-server-${loginConfig!.nasOrigin}',
-                    ),
-                    initialValue: _selectedServer,
-                    isExpanded: true,
-                    isDense: false,
-                    itemHeight: MediaQuery.textScalerOf(context).scale(72),
-                    decoration: fieldDecoration.copyWith(
-                      labelText: _text('登录网址', 'Sign-in address'),
-                    ),
-                    items: [
-                      for (final server in loginConfig.servers)
-                        DropdownMenuItem(
-                          value: server.id,
-                          child: _serverLabel(server),
-                        ),
-                      DropdownMenuItem(
-                        value: _customChoice,
-                        child: Text(_text('自定义网址', 'Custom address')),
+                  if (!service.usesWebAccount)
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(
+                        'account-login-server-${loginConfig!.nasOrigin}',
                       ),
-                    ],
-                    onChanged: busy || otp
-                        ? null
-                        : (value) {
-                            setState(() {
-                              if (value == _customChoice &&
-                                  _customServer.text.isEmpty) {
-                                _customServer.text = loginConfig
-                                    .activeServer
-                                    .loginOrigin
-                                    .toString();
-                              }
-                              _selectedServer = value;
-                              _failure = null;
-                            });
-                          },
-                  ),
+                      initialValue: _selectedServer,
+                      isExpanded: true,
+                      isDense: false,
+                      itemHeight: MediaQuery.textScalerOf(context).scale(72),
+                      decoration: fieldDecoration.copyWith(
+                        labelText: _text('登录网址', 'Sign-in address'),
+                      ),
+                      items: [
+                        for (final server in loginConfig.servers)
+                          DropdownMenuItem(
+                            value: server.id,
+                            child: _serverLabel(server),
+                          ),
+                        DropdownMenuItem(
+                          value: _customChoice,
+                          child: Text(_text('自定义网址', 'Custom address')),
+                        ),
+                      ],
+                      onChanged: busy || otp
+                          ? null
+                          : (value) {
+                              setState(() {
+                                if (value == _customChoice &&
+                                    _customServer.text.isEmpty) {
+                                  _customServer.text = loginConfig
+                                      .activeServer
+                                      .loginOrigin
+                                      .toString();
+                                }
+                                _selectedServer = value;
+                                _failure = null;
+                              });
+                            },
+                    ),
                   if (_selectedServer == _customChoice) ...[
                     const SizedBox(height: UiTokens.itemGap),
                     TextFormField(
@@ -631,19 +632,20 @@ class _AccountScreenState extends State<AccountScreen> {
                       if (!otp && !busy) _signIn();
                     },
                   ),
-                  CheckboxListTile(
-                    key: const ValueKey('account-save-password'),
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(_text('保存密码', 'Save password')),
-                    value: _savePassword,
-                    onChanged: busy || otp
-                        ? null
-                        : (value) => setState(() {
-                            _credentialsEdited = true;
-                            _savePassword = value ?? false;
-                          }),
-                  ),
+                  if (!service.usesWebAccount)
+                    CheckboxListTile(
+                      key: const ValueKey('account-save-password'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(_text('保存密码', 'Save password')),
+                      value: _savePassword,
+                      onChanged: busy || otp
+                          ? null
+                          : (value) => setState(() {
+                              _credentialsEdited = true;
+                              _savePassword = value ?? false;
+                            }),
+                    ),
                   if (otp) ...[
                     const SizedBox(height: UiTokens.itemGap),
                     TextFormField(
@@ -787,7 +789,7 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
       ),
     );
-    final resources = service?.configuration == null
+    final resources = service?.configuration == null || service!.usesWebAccount
         ? null
         : Card(
             key: _resourcesKey,
@@ -795,7 +797,7 @@ class _AccountScreenState extends State<AccountScreen> {
               padding: const EdgeInsets.all(UiTokens.sectionGap),
               child: AccountResourcesSection(
                 key: ValueKey(
-                  'resources-${signedIn ? service!.user!.id : 'guest'}-${service!.configuration!.environmentId}',
+                  'resources-${signedIn ? service.user!.id : 'guest'}-${service.configuration!.environmentId}',
                 ),
                 service: service,
                 expanded: widget.showConnections,

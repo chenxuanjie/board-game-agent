@@ -15,6 +15,7 @@ import '../../settings/services/preferences_service.dart';
 import 'account_cloud_sync.dart';
 import 'account_public_reactions.dart';
 import 'saved_login_store.dart';
+import 'web_account_gateway.dart';
 import '../../community/services/game_comments_service.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
@@ -27,6 +28,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     Future<IdentityGateway> Function(AccountConfiguration)? gatewayFactory,
     @visibleForTesting Future<void> Function(String?)? switchScope,
     @visibleForTesting bool? signInSupported,
+    @visibleForTesting bool? browserAccounts,
+    @visibleForTesting
+    Future<AccountConfiguration> Function()? webConfigurationLoader,
     @visibleForTesting
     AccountPrivateFiles Function(IdentityGateway)? privateFilesFactory,
     @visibleForTesting
@@ -38,7 +42,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
        _privateFilesFactory = privateFilesFactory,
        _publicFilesFactory = publicFilesFactory,
        _credentialStore = credentialStore,
-       supportsSignIn = signInSupported ?? !kIsWeb;
+       usesWebAccount = browserAccounts ?? kIsWeb,
+       _webConfigurationLoader = webConfigurationLoader,
+       supportsSignIn = signInSupported ?? true;
+  final bool usesWebAccount;
+  final Future<AccountConfiguration> Function()? _webConfigurationLoader;
+  Duration get _identityTimeout =>
+      usesWebAccount ? const Duration(seconds: 40) : authenticationTimeout;
   static const _configurationKey =
       'board_game_agent.identity.synology.direct.configuration.v3';
   static const authenticationTimeout = Duration(seconds: 3);
@@ -54,7 +64,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       .toList(growable: false);
 
   Future<void> loadSavedLogins() async {
-    if (!supportsSignIn || _disposed) return;
+    if (!supportsSignIn || usesWebAccount || _disposed) return;
     try {
       await _savedLogins.load();
       _savedLoginError = null;
@@ -117,6 +127,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _projectResources() {
+    // Browser sessions deliberately have no NAS password/WebDAV projection.
+    if (usesWebAccount) return Future.value();
     if (webDav == null || _configuration == null) return Future.value();
     final work = _resourceQueue.then((_) async {
       if (_disposed) return;
@@ -175,6 +187,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _migrateResourceCredential() async {
+    if (usesWebAccount) return;
     final identity = user;
     final config = _configuration;
     final legacy = webDav?.saved;
@@ -347,6 +360,16 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _setupError = null;
     notifyListeners();
     try {
+      if (usesWebAccount && supportsSignIn) {
+        final config =
+            await (_webConfigurationLoader ??
+                WebAccountGateway.loadConfiguration)();
+        if (_disposed) return;
+        _configuration = config;
+        await _disconnect();
+        await _connect();
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_configurationKey);
       if (saved != null) {
@@ -369,7 +392,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         await _projectResources();
       }
     } catch (_) {
-      _setupError = '无法读取账号配置或安全存储，请重试';
+      _setupError = usesWebAccount ? '账号服务暂不可用，请重试连接' : '无法读取账号配置或安全存储，请重试';
     } finally {
       _initializing = false;
       if (!_disposed) notifyListeners();
@@ -381,6 +404,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     IdentityGateway gateway;
     if (_gatewayFactory != null) {
       gateway = await _gatewayFactory(config);
+    } else if (usesWebAccount) {
+      gateway = WebAccountGateway();
     } else {
       final adapter = SynologyIdentityGateway(
         origin: config.nasOrigin,
@@ -409,9 +434,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _gateway = gateway;
     _identity = IdentityController(
       gateway: gateway,
-      requestTimeout: authenticationTimeout,
-      signInTimeout: authenticationTimeout,
-      failedSignInCleanupTimeout: const Duration(milliseconds: 500),
+      requestTimeout: _identityTimeout,
+      signInTimeout: _identityTimeout,
+      failedSignInCleanupTimeout: usesWebAccount
+          ? const Duration(seconds: 5)
+          : const Duration(milliseconds: 500),
     )..addListener(_identityChanged);
     if (restoreSession) await _identity!.initialize();
     _identityChanged();
@@ -561,6 +588,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
+    if (usesWebAccount && customOrigin != null) {
+      _setupError = '请使用当前站点配置的账号服务';
+      notifyListeners();
+      return;
+    }
     if (isBusy || _disposed || isSignedIn) return;
     if (account.trim().isEmpty || password.isEmpty) {
       _setupError = '请输入账号和密码';
@@ -638,6 +670,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         await _scopeQueue;
         if (_disposed || generation != _loginGeneration) return;
         if (isSignedIn) {
+          if (usesWebAccount) return;
           await _persistConfiguration();
           _pendingLoginConfiguration = null;
           try {
@@ -742,7 +775,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       final scope = user == null
           ? null
           : _configuration!.accountScope(user!.id);
-      if (scope != null && webDav != null) await _credentials(scope).delete();
+      if (!usesWebAccount && scope != null && webDav != null) {
+        await _credentials(scope).delete();
+      }
       await _identity?.signOut();
       await _scopeQueue;
       await _projectResources();
@@ -753,6 +788,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> saveConfiguration(AccountConfiguration next) async {
+    if (usesWebAccount) throw StateError('连接由当前站点管理');
     if (isBusy) throw StateError('连接正在处理中');
     final current = _configuration;
     final keepsIdentity =

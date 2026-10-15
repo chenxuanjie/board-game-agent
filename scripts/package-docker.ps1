@@ -40,7 +40,7 @@ function Add-PackagePath([string]$Source, [string]$ArchivePath) {
 }
 
 # Only ship runtime sources and deployment inputs, not the whole checkout.
-foreach ($relative in @('Dockerfile', 'Dockerfile.dockerignore', 'docker-compose.yml', 'pubspec.yaml', 'pubspec.lock', 'lib', 'web', 'packaging/docker', 'scripts/package-docker.ps1', 'docs/docker-deployment.md')) {
+foreach ($relative in @('Dockerfile', 'Dockerfile.dockerignore', 'docker-compose.yml', 'pubspec.yaml', 'pubspec.lock', 'lib', 'web', 'services/web_account/app.py', 'services/web_account/requirements.txt', 'services/web_account/Dockerfile', 'services/web_account/Dockerfile.dockerignore', 'packaging/docker', 'scripts/package-docker.ps1', 'docs/docker-deployment.md', 'docs/web-account.md')) {
     Add-PackagePath (Join-Path $projectRoot $relative) "board-game-agent/$relative"
 }
 

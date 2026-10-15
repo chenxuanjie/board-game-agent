@@ -233,6 +233,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     if (service == null) {
       final account = AccountScope.maybeOf(context);
       final unavailable = account != null && !account.supportsSignIn;
+      final webUnavailable = account?.usesWebAccount == true;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Column(
@@ -243,7 +244,9 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
             ),
             const SizedBox(height: 12),
             Text(
-              unavailable
+              webUnavailable
+                  ? '网页版评论暂未开放'
+                  : unavailable
                   ? '请在 App 或桌面端登录后查看评论'
                   : account?.isSignedIn == true
                   ? '评论连接尚未就绪，请联网后重试'
@@ -251,7 +254,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
               textAlign: TextAlign.center,
               style: TextStyle(color: palette.textSecondary),
             ),
-            if (!unavailable)
+            if (!unavailable && !webUnavailable)
               TextButton(
                 onPressed: () {
                   if (account?.isSignedIn == true) {

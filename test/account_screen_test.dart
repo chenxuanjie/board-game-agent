@@ -121,6 +121,93 @@ void main() {
     },
   );
 
+  for (final width in [320.0, 1440.0]) {
+    testWidgets('Web account login, OTP, scope and logout work at $width', (
+      tester,
+    ) async {
+      final app = _MineFixture();
+      final gateway = _UiGateway();
+      final scopes = <String?>[];
+      final config = AccountConfiguration(
+        nasOrigin: Uri.parse('https://nas.example:5001'),
+        identityOrigin: Uri.parse('https://canonical.example:5001'),
+      );
+      final service = (await tester.runAsync(
+        () async => AccountService(
+          controller: app,
+          browserAccounts: true,
+          webConfigurationLoader: () async => config,
+          gatewayFactory: (_) async => gateway,
+          credentialStore: (_) =>
+              throw StateError('Web must not touch native secrets'),
+          switchScope: (scope) async {
+            scopes.add(scope);
+          },
+        ),
+      ))!;
+      addTearDown(service.dispose);
+      addTearDown(app.dispose);
+      addTearDown(gateway.events.close);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pump();
+      await tester.runAsync(service.initialize);
+      expect(service.error, isNull);
+      expect(service.supportsSignIn, isTrue);
+      await _mount(tester, service, textScale: 1.5);
+      expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+      expect(find.byKey(const ValueKey('account-save-password')), findsNothing);
+      expect(find.byKey(const ValueKey('account-custom-server')), findsNothing);
+      expect(find.byKey(const ValueKey('account-resources')), findsNothing);
+      await tester.enterText(
+        find.byKey(const ValueKey('account-username')),
+        'Shane',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('account-password')),
+        'transient-password',
+      );
+      await _tapAccountAction(tester, 'account-sign-in');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('account-otp')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('account-otp')),
+        '123456',
+      );
+      await _tapAccountAction(tester, 'account-sign-in');
+      await tester.pumpAndSettle();
+      expect(service.isSignedIn, isTrue);
+      expect(scopes.last, config.accountScope('fixture-user'));
+      expect(service.error, isNull);
+      expect(service.resourceCredentialsReady, isFalse);
+      expect(find.byKey(const ValueKey('account-sign-out')), findsOneWidget);
+      await _tapAccountAction(tester, 'account-sign-out');
+      await tester.pumpAndSettle();
+      expect(service.isSignedIn, isFalse);
+      expect(scopes.last, isNull);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Web gateway unavailable keeps a retryable account form', (
+    tester,
+  ) async {
+    final app = _MineFixture();
+    final service = AccountService(
+      controller: app,
+      browserAccounts: true,
+      webConfigurationLoader: () async => throw StateError('offline'),
+    );
+    addTearDown(service.dispose);
+    addTearDown(app.dispose);
+    await tester.runAsync(service.initialize);
+    await _mount(tester, service);
+    expect(find.byKey(const ValueKey('account-username')), findsOneWidget);
+    expect(find.byKey(const ValueKey('account-restore')), findsOneWidget);
+    expect(service.isSignedIn, isFalse);
+    expect(service.error, '账号服务暂不可用，请重试连接');
+  });
+
   testWidgets('account tolerates missing scope and theme extension', (
     tester,
   ) async {

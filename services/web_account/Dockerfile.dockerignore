@@ -1,0 +1,8 @@
+# Relative to the repository root used by the web-account Compose service.
+**
+!services/
+!services/web_account/
+!services/web_account/app.py
+!services/web_account/requirements.txt
+!services/web_account/Dockerfile
+!services/web_account/Dockerfile.dockerignore

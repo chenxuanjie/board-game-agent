@@ -5,8 +5,30 @@ services:
       dockerfile: board-game-agent/Dockerfile
     image: board-game-agent:${IMAGE_TAG:-local}
     restart: unless-stopped
+    depends_on:
+      - web-account
     ports:
-      - "${WEB_PORT:-8088}:80"
+      - "${WEB_PORT:-8887}:80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  web-account:
+    build:
+      context: .
+      dockerfile: services/web_account/Dockerfile
+    restart: unless-stopped
+    environment:
+      SYNOLOGY_ORIGIN: ${SYNOLOGY_ORIGIN:?Set the trusted DSM HTTPS origin}
+      SYNOLOGY_IDENTITY_ORIGIN: ${SYNOLOGY_IDENTITY_ORIGIN:-${SYNOLOGY_ORIGIN}}
+      WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?Set the browser site origin}
+      WEB_ALLOW_INSECURE_HTTP: ${WEB_ALLOW_INSECURE_HTTP:-false}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
