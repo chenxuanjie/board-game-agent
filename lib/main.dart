@@ -17,6 +17,7 @@ import 'features/games/services/game_vote_service.dart';
 import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
+import 'features/library/services/same_origin_library_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
 import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
@@ -71,12 +72,22 @@ Future<void> main() async {
       ),
     ),
     gameManifestService: GameManifestService(),
-    remoteAssetService: RemoteAssetService(
-      settingsProvider: () => updateSettingsController.saved,
-      accessAllowed: () => accountService.resourceCredentialsReady,
-      resourceSettingsProvider: (target) =>
-          accountService.settingsForResource(target),
-    ),
+    remoteAssetService: kIsWeb
+        ? SameOriginLibraryService(
+            accessAllowed: () => accountService.resourceCredentialsReady,
+            accountScope: () =>
+                accountService.dataScopeReady && accountService.user != null
+                ? accountService.configuration!.accountScope(
+                    accountService.user!.id,
+                  )
+                : null,
+          )
+        : RemoteAssetService(
+            settingsProvider: () => updateSettingsController.saved,
+            accessAllowed: () => accountService.resourceCredentialsReady,
+            resourceSettingsProvider: (target) =>
+                accountService.settingsForResource(target),
+          ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),

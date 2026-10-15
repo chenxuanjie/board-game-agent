@@ -2,7 +2,7 @@
 
 Android / Windows → HTTPS `SYNO.API.Auth` v6 → NAS 验证账号密码。
 无需 Supabase、SSO 应用注册或新增会话服务。群晖要求双重验证时才显示验证码。
-Web 不尝试直连认证，改由同源网关完成账号登录与 Cookie 会话，范围见 [Web 账号](web-account.md)；私人云同步与知识库读取尚未接入 Web 网关。
+Web 不尝试直连认证，改由同源网关完成账号登录与 Cookie 会话，范围见 [Web 账号](web-account.md)；知识库已通过 [同源只读资料源](web-library.md) 接入，私人云同步尚未接入。
 
 公共包 `app_identity` 0.3.0 与主项目均使用 `codex/synology-direct-auth` 分支。
 运行路径依赖时必须同步切换公共包；只切主项目会造成接口不兼容。

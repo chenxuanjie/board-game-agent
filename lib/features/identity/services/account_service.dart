@@ -106,12 +106,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
               environment: scope,
             ),
       );
-  bool get resourceCredentialsReady =>
-      isSignedIn &&
-      _resourceProjectionReady &&
-      _resourceUserId == user?.id &&
-      webDav?.saved.username.isNotEmpty == true &&
-      webDav?.saved.password.isNotEmpty == true;
+  bool get resourceCredentialsReady => usesWebAccount
+      ? isSignedIn && !isOffline && dataScopeReady
+      : isSignedIn &&
+            _resourceProjectionReady &&
+            _resourceUserId == user?.id &&
+            webDav?.saved.username.isNotEmpty == true &&
+            webDav?.saved.password.isNotEmpty == true;
   WebDavSettings settingsForResource(Uri target) {
     final config = _configuration;
     if (config == null || !resourceCredentialsReady) {

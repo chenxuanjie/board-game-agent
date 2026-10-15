@@ -32,6 +32,24 @@ import 'package:board_game_agent/core/theme/palette_registry.dart';
 class _NoAi extends Fake implements AiService {}
 
 class _Remote extends RemoteAssetService {
+  bool sameOrigin = false;
+  bool failReload = false;
+  int accountCacheClears = 0;
+  final publishedChecks = <bool>[];
+  @override
+  bool get usesSameOriginLibrary => sameOrigin;
+  @override
+  void clearAccountCache() => accountCacheClears++;
+  @override
+  Future<bool> refreshPublishedLibrary({
+    bool complete = false,
+    String? checkedCatalog,
+  }) async {
+    publishedChecks.add(complete);
+    cached.addAll(texts);
+    return true;
+  }
+
   bool available = true;
   int accessReads = 0;
   bool allowed = true, deliverCatalog = false;
@@ -158,11 +176,14 @@ class _Manifests extends GameManifestService {
     required RemoteAssetService remoteAssetService,
     List<AssetSourceConfig> sources = const [],
     bool preferRemote = false,
-  }) async => [
-    GameManifest.fromJson(
-      jsonDecode(remote.cached['assets/games/cabo/game.json'] ?? game),
-    ),
-  ];
+  }) async {
+    if (remote.failReload) throw StateError('Fixture reload failed');
+    return [
+      GameManifest.fromJson(
+        jsonDecode(remote.cached['assets/games/cabo/game.json'] ?? game),
+      ),
+    ];
+  }
 }
 
 Future<(AppController, _Remote)> _fixture({
@@ -232,6 +253,42 @@ class _LibraryNotices extends NoBackgroundTransferNotifications {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'same-origin changes refresh silently without native download or update prompt',
+    () async {
+      final (c, remote) = await _fixture(initialCheck: false);
+      addTearDown(c.dispose);
+      remote.sameOrigin = true;
+      await c.checkForLibraryUpdatesQuick();
+      expect(c.games.first.score, '8.2');
+      expect(c.pendingLibraryUpdate, isNull);
+      expect(c.libraryUpdateError, isNull);
+      expect(remote.writes, isEmpty);
+      expect(remote.probes, isEmpty);
+      expect(remote.publishedChecks, [false]);
+      await c.checkForLibraryUpdates();
+      expect(remote.publishedChecks, [false, true]);
+      expect(c.pendingLibraryUpdate, isNull);
+    },
+  );
+  test(
+    'failed same-origin reload preserves visible games and resets baseline for retry',
+    () async {
+      final (c, remote) = await _fixture(initialCheck: false);
+      addTearDown(c.dispose);
+      final score = c.games.first.score;
+      remote.sameOrigin = true;
+      remote.failReload = true;
+      await c.checkForLibraryUpdatesQuick();
+      expect(c.games.first.score, score);
+      expect(c.libraryUpdateError, isNotNull);
+      expect(remote.accountCacheClears, 1);
+      remote.failReload = false;
+      await c.checkForLibraryUpdatesQuick();
+      expect(c.games.first.score, '8.2');
+      expect(c.libraryUpdateError, isNull);
+    },
+  );
   test(
     'library notification success follows committed resources and reload',
     () async {

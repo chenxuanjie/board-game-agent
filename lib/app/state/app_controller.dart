@@ -953,9 +953,10 @@ class AppController extends ChangeNotifier {
 
   Future<void> reloadGames() async {
     final epoch = _identityScopeEpoch;
-    _games = await _loadGamesForLanguage(_language);
-    _refreshLibraryGameTitles();
+    final games = await _loadGamesForLanguage(_language);
     if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
+    _games = games;
+    _refreshLibraryGameTitles();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(

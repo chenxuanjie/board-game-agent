@@ -4,6 +4,8 @@
 !board-game-agent/Dockerfile
 !board-game-agent/pubspec.yaml
 !board-game-agent/pubspec.lock
+!board-game-agent/scripts/
+!board-game-agent/scripts/prepare-web-assets.py
 !board-game-agent/lib/
 !board-game-agent/lib/**
 !board-game-agent/web/
@@ -31,3 +33,5 @@
 **/*.keystore
 **/*.p12
 **/*.pfx
+board-game-agent/assets/games/**/docs
+board-game-agent/assets/games/**/*.pdf

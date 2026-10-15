@@ -10,8 +10,8 @@ import '../../core/theme/app_palette.dart';
 
 /// Resolves a logical asset path through the controller's remote/cache layer.
 ///
-/// Native workspaces use the file cache; Web prefers confirmed updates in the
-/// browser cache and falls back to bundled assets.
+/// Native workspaces use the file cache; signed-in Web uses scoped same-origin
+/// image URLs. Guest Web can still display bundled preview images.
 class DesktopResolvedImage extends StatefulWidget {
   const DesktopResolvedImage({
     super.key,
@@ -92,6 +92,15 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
             return Image.asset(
               gaplessPlayback: true,
               widget.assetPath,
+              fit: widget.fit,
+              frameBuilder: revealImageFrame,
+              errorBuilder: (_, _, _) => _placeholder(context),
+            );
+          }
+          if (path.startsWith('https://') || path.startsWith('http://')) {
+            return Image.network(
+              path,
+              gaplessPlayback: true,
               fit: widget.fit,
               frameBuilder: revealImageFrame,
               errorBuilder: (_, _, _) => _placeholder(context),

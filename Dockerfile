@@ -3,7 +3,7 @@ FROM ubuntu:22.04 AS builder
 ARG FLUTTER_VERSION=3.41.9
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git unzip xz-utils zip libglu1-mesa \
+    ca-certificates curl git unzip xz-utils zip libglu1-mesa python3 \
     && rm -rf /var/lib/apt/lists/*
 RUN git clone --depth 1 --branch "${FLUTTER_VERSION}" \
     https://github.com/flutter/flutter.git /opt/flutter
@@ -13,7 +13,8 @@ WORKDIR /workspace
 COPY shared_packages ./shared_packages
 COPY board-game-agent ./board-game-agent
 WORKDIR /workspace/board-game-agent
-RUN flutter pub get && flutter build web --release --base-href=/
+RUN python3 scripts/prepare-web-assets.py pubspec.yaml --apply \
+    && flutter pub get && flutter build web --release --base-href=/
 
 FROM nginx:1.28-alpine AS runtime
 COPY board-game-agent/packaging/docker/nginx.conf /etc/nginx/conf.d/default.conf

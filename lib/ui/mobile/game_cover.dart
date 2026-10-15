@@ -118,6 +118,15 @@ class _MobileGameCoverState extends State<MobileGameCover> {
   Widget _cachedOrPlaceholder() {
     final path = _resolvedPath;
     if (path == null || path.isEmpty) return _placeholder();
+    if (path.startsWith('https://') || path.startsWith('http://')) {
+      return Image.network(
+        path,
+        gaplessPlayback: true,
+        frameBuilder: revealImageFrame,
+        fit: widget.fit,
+        errorBuilder: (_, _, _) => _placeholder(),
+      );
+    }
     if (path.startsWith('data:')) {
       return Image.memory(
         gaplessPlayback: true,

@@ -40,6 +40,7 @@ extension AppIdentityScopeController on AppController {
     }
     _identityScopeRequests++;
     _switchingIdentityScope = true;
+    _remoteAssetService.clearAccountCache();
     _invalidateActiveRuns();
     _gameVotes.dispose();
     _favoriteStatistics?.dispose();

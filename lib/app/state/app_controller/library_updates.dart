@@ -117,6 +117,22 @@ extension AppLibraryUpdateController on AppController {
     _libraryUpdateError = null;
     _notifyListeners();
     try {
+      if (_remoteAssetService.usesSameOriginLibrary) {
+        final changed = await _remoteAssetService.refreshPublishedLibrary(
+          complete: complete,
+          checkedCatalog: catalogSource,
+        );
+        if (!current()) return;
+        if (changed) {
+          await reloadGames();
+          if (!current()) return;
+          _resolvedAssetPaths.clear();
+          _libraryContentRevision++;
+          await refreshLibraryResources(force: true);
+        }
+        if (complete && current()) _initialLibraryFullPending = false;
+        return;
+      }
       final elapsed = Stopwatch()..start();
       final sources = _preferredUpdateSources();
       const catalogPath = 'assets/catalog.json';
@@ -346,6 +362,11 @@ extension AppLibraryUpdateController on AppController {
       }
     } catch (_) {
       if (current()) {
+        if (_remoteAssetService.usesSameOriginLibrary) {
+          // A transport comparison is not an applied catalog. A failed reload
+          // must be retried even when the next catalog body is unchanged.
+          _remoteAssetService.clearAccountCache();
+        }
         _libraryUpdateError = copy.localized(
           '无法检查资料更新，请检查连接后重试。',
           'Could not check for updates. Check your connection and retry.',

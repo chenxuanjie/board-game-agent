@@ -179,7 +179,7 @@ void main() {
       expect(service.isSignedIn, isTrue);
       expect(scopes.last, config.accountScope('fixture-user'));
       expect(service.error, isNull);
-      expect(service.resourceCredentialsReady, isFalse);
+      expect(service.resourceCredentialsReady, isTrue);
       expect(find.byKey(const ValueKey('account-sign-out')), findsOneWidget);
       await _tapAccountAction(tester, 'account-sign-out');
       await tester.pumpAndSettle();

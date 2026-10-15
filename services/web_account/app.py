@@ -2,7 +2,7 @@
 
 Starlette owns HTTP/ASGI and HTTPX owns upstream TLS, pooling and deadlines.
 DSM discovery/Auth v6/FileStation.Info follow the same protocol as app_identity.
-This service intentionally has no filesystem, generic proxy or file-write API.
+The mounted library is read-only; there is no generic proxy or file-write API.
 """
 from __future__ import annotations
 
@@ -17,13 +17,17 @@ import re
 import secrets
 import ssl
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
 
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
+try:
+    from .library import Library, LibraryError
+except ImportError:  # Docker's /app module layout.
+    from library import Library, LibraryError
 
 
 class Failure(Exception):
@@ -55,6 +59,8 @@ class Settings:
     max_sessions: int = 1024
     idle_seconds: int = 1800
     lifetime_seconds: int = 28800
+    library_root: str = "/data/library"
+    library_nas_path: str = "/friend/apps/board_game_agent/board-game-lib"
 
     def __post_init__(self):
         object.__setattr__(self, "nas_origin", origin(self.nas_origin))
@@ -62,13 +68,19 @@ class Settings:
         object.__setattr__(self, "public_origin", origin(self.public_origin, allow_http=self.insecure_http))
         if min(self.max_sessions, self.idle_seconds, self.lifetime_seconds) <= 0:
             raise ValueError("Positive session limits are required")
+        if (not self.library_nas_path.startswith("/") or any(
+                part in ("", ".", "..") for part in self.library_nas_path[1:].split("/"))
+                or any(c in self.library_nas_path for c in "\\\x00\r\n")):
+            raise ValueError("A fixed NAS library path is required")
 
     @classmethod
     def from_env(cls):
         nas = os.environ["SYNOLOGY_ORIGIN"]
         return cls(nas, os.getenv("SYNOLOGY_IDENTITY_ORIGIN", nas),
                    os.environ["WEB_PUBLIC_ORIGIN"],
-                   os.getenv("WEB_ALLOW_INSECURE_HTTP", "false").lower() == "true")
+                   os.getenv("WEB_ALLOW_INSECURE_HTTP", "false").lower() == "true",
+                   library_root=os.getenv("LIBRARY_ROOT", "/data/library"),
+                   library_nas_path=os.getenv("LIBRARY_NAS_PATH", "/friend/apps/board_game_agent/board-game-lib"))
 
 
 @dataclass
@@ -91,6 +103,7 @@ class Dsm:
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.settings, self.client = settings, client
         self.paths: tuple[str, str] | None = None
+        self.download_path: str | None = None
 
     async def api(self, path, fields):
         if not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.cgi", path):
@@ -186,6 +199,50 @@ class Dsm:
                 pass
             raise
 
+    async def readable(self, session, logical):
+        # Ask DSM to authorize this exact file with this user's SID. Only the
+        # permission probe goes through FileStation; the real body is local.
+        if not self.download_path:
+            info = await self.api("entry.cgi", {"api": "SYNO.API.Info", "version": "1", "method": "query",
+                                             "query": "SYNO.FileStation.Download"})
+            spec = info.get("SYNO.FileStation.Download", {})
+            path = spec.get("path")
+            if (not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.cgi", path)
+                    or type(spec.get("minVersion")) is not int or type(spec.get("maxVersion")) is not int
+                    or not spec["minVersion"] <= 2 <= spec["maxVersion"]):
+                raise Failure("providerUnavailable")
+            self.download_path = path
+        fields = {"api": "SYNO.FileStation.Download", "version": "2", "method": "download", "mode": "download",
+                  "path": json.dumps([self.settings.library_nas_path + "/" + logical]), "_sid": session.sid,
+                  **({"SynoToken": session.token} if session.token else {})}
+        try:
+            async with self.client.stream("POST", f"{self.settings.nas_origin}/webapi/{self.download_path}", data=fields,
+                                          headers={"Range": "bytes=0-0", "Cookie": ""}, follow_redirects=False) as response:
+                if response.status_code not in (200, 206):
+                    raise Failure("accountDenied", 403)
+                if ("json" in response.headers.get("content-type", "")
+                        and "content-disposition" not in response.headers):
+                    payload = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(payload) + len(chunk) > 65536:
+                            raise Failure("providerUnavailable")
+                        payload.extend(chunk)
+                    code = json.loads(payload).get("error", {}).get("code")
+                    if code in (106, 107, 119, 150):
+                        raise Failure("sessionRejected", 401)
+                    raise Failure("accountDenied", 403)
+                # Do not download a whole PDF if DSM ignores the Range header.
+                async for chunk in response.aiter_bytes(chunk_size=1):
+                    if chunk:
+                        return
+                raise Failure("providerUnavailable")
+        except httpx.TimeoutException:
+            raise Failure("timeout", 504) from None
+        except httpx.HTTPError:
+            raise Failure("network", 502) from None
+        except (ValueError, AttributeError):
+            raise Failure("providerUnavailable") from None
+
 
 @dataclass
 class BrowserSession:
@@ -203,6 +260,8 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
                                               verify=ssl.create_default_context(cafile=os.getenv("DSM_CA_FILE")),
                                               limits=httpx.Limits(max_connections=32, max_keepalive_connections=16))
     dsm = Dsm(settings, upstream)
+    library = Library(settings.library_root)
+    library_lock = asyncio.Lock()
     sessions: dict[str, BrowserSession] = {}
     attempts: OrderedDict[str, list[float]] = OrderedDict()
     cookie = "bga_account_dev" if settings.insecure_http else "__Host-bga_account"
@@ -247,13 +306,78 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
                                 secure=not settings.insecure_http, samesite="strict", path="/")
         return response
 
-    def guard(request):
+    def guard(request, resource=False):
         # A browser cannot attach this custom header cross-origin without a
         # successful CORS preflight. This service deliberately offers no CORS.
-        if (request.headers.get("x-board-game-request") != "1"
+        if ((not resource and request.headers.get("x-board-game-request") != "1")
                 or request.headers.get("origin", settings.public_origin) != settings.public_origin
                 or request.headers.get("sec-fetch-site") == "cross-site"):
             raise Failure("accountDenied", 403)
+
+    async def authorized(request, logical):
+        guard(request, resource=True)
+        _, state, _ = session(request)
+        if state is None or state.nas is None:
+            raise Failure("sessionRejected", 401)
+        nas, revision = state.nas, state.revision
+        async with asyncio.timeout(12):
+            await dsm.readable(nas, logical)
+        if state.revision != revision or state.nas is not nas:
+            raise Failure("sessionRejected", 401)
+
+    def signed_in(request):
+        guard(request, resource=True)
+        _, state, _ = session(request)
+        if state is None or state.nas is None:
+            raise Failure("sessionRejected", 401)
+
+    async def library_file(request):
+        signed_in(request)
+        path = request.path_params["path"]
+        # Resolve against the published manifests before touching DSM. The
+        # internal Nginx directory is inaccessible without this authorization.
+        async with library_lock:
+            await asyncio.to_thread(library.resolve, path)
+        await authorized(request, path)
+        stat = await asyncio.to_thread(lambda: library.resolve(path).stat())
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        # Authorization must precede 304, including after logout/ACL changes.
+        # Nginx drops upstream ETag during X-Accel-Redirect, so compare here
+        # and re-attach it in the internal file location for 200/206/HEAD.
+        if any(value.strip() in ("*", etag, "W/" + etag)
+               for value in request.headers.get("if-none-match", "").split(",")):
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-cache"})
+        # Cache/security headers belong to the Nginx internal file location,
+        # otherwise an internal redirect duplicates these response fields.
+        return Response(headers={"X-Accel-Redirect": "/_library_files/" + quote(path, safe="/"),
+                                 "ETag": etag})
+
+    async def library_files(request):
+        guard(request)
+        signed_in(request)
+        directory = request.query_params.get("path", "assets")
+        try:
+            depth = min(10, max(0, int(request.query_params.get("depth", "6"))))
+            maximum = min(1000, max(1, int(request.query_params.get("limit", "1000"))))
+        except ValueError:
+            raise Failure("providerUnavailable", 400) from None
+        # A game manifest grants visibility of its registered file names. Each
+        # actual file request still proves that file's own read permission.
+        parts = directory.split("/")
+        proof = "/".join(parts[:3]) + "/manifest.json" if len(parts) >= 3 and parts[:2] == ["assets", "games"] else "assets/catalog.json"
+        async with library_lock:
+            await asyncio.to_thread(library.resolve, proof)
+            entries = await asyncio.to_thread(library.entries, directory, depth, maximum)
+        await authorized(request, proof)
+        return answer({"files": entries})
+
+    async def library_versions(request):
+        guard(request)
+        signed_in(request)
+        await authorized(request, "assets/catalog.json")
+        async with library_lock:
+            values = await asyncio.to_thread(library.versions)
+        return answer({"files": values})
 
     def limit(request, account):
         now = time.monotonic()
@@ -349,6 +473,9 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
     async def failure_handler(request, error):
         return answer({"error": error.code}, status=error.status)
 
+    async def library_error(request, error):
+        return answer({"error": "missing" if error.status == 404 else "providerUnavailable"}, status=error.status)
+
     async def unexpected_handler(request, error):
         # Provider errors, request bodies and upstream URLs never enter replies.
         return answer({"error": "timeout" if isinstance(error, TimeoutError) else "providerUnavailable"}, status=503)
@@ -364,5 +491,9 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
 
     return Starlette(routes=[Route("/api/account/config", config), Route("/api/account/session", current),
                              Route("/api/account/login", login, methods=["POST"]),
-                             Route("/api/account/logout", logout, methods=["POST"])],
-                     exception_handlers={Failure: failure_handler, Exception: unexpected_handler}, lifespan=lifespan)
+                             Route("/api/account/logout", logout, methods=["POST"]),
+                             Route("/library/{path:path}", library_file, methods=["GET", "HEAD"]),
+                             Route("/api/library/files", library_files),
+                             Route("/api/library/versions", library_versions)],
+                     exception_handlers={Failure: failure_handler, LibraryError: library_error,
+                                         Exception: unexpected_handler}, lifespan=lifespan)

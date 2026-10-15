@@ -32,6 +32,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
   int _currentPage = 1;
   int _totalPages = 0;
   int _viewerRevision = 0;
+  Uri? _webUri;
 
   @override
   void initState() {
@@ -41,7 +42,12 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
 
   void _loadDocument() {
     if (kIsWeb) {
-      _webBytesFuture = widget.controller.loadDocumentBytes(widget.remotePath);
+      _webUri = widget.controller.documentUri(widget.remotePath);
+      if (_webUri == null) {
+        _webBytesFuture = widget.controller.loadDocumentBytes(
+          widget.remotePath,
+        );
+      }
     } else {
       _localPathFuture = widget.controller.cacheDocument(widget.remotePath);
     }
@@ -62,7 +68,17 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       backgroundColor: palette.pageBackground,
-      body: kIsWeb
+      body: _webUri != null
+          ? PdfViewer.uri(
+              _webUri!,
+              key: ValueKey(_viewerRevision),
+              controller: _pdfController,
+              preferRangeAccess: true,
+              withCredentials: true,
+              timeout: const Duration(seconds: 20),
+              params: _viewerParams(palette, copy),
+            )
+          : kIsWeb
           ? FutureBuilder<List<int>?>(
               future: _webBytesFuture,
               builder: (context, snapshot) {

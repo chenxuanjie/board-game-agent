@@ -51,6 +51,10 @@ class GameManifestService {
             jsonDecode(resourceSource) as Map<String, dynamic>,
           );
         } catch (error) {
+          if (remoteAssetService.usesSameOriginLibrary &&
+              remoteAssetService.accessAllowed) {
+            rethrow;
+          }
           debugPrint(
             '[manifests] resource manifest unavailable for ${entry.slug}: $error',
           );
@@ -62,6 +66,10 @@ class GameManifestService {
         );
         manifests.add(manifest);
       } catch (error) {
+        if (remoteAssetService.usesSameOriginLibrary &&
+            remoteAssetService.accessAllowed) {
+          rethrow;
+        }
         debugPrint(
           '[manifests] skipping ${entry.slug} because game.json could not be loaded: $error',
         );
@@ -92,6 +100,15 @@ class GameManifestService {
     }
 
     // 1. Check local cache
+    if (remoteAssetService.usesSameOriginLibrary &&
+        remoteAssetService.accessAllowed) {
+      final text = await remoteAssetService.loadText(
+        sources: sources,
+        remotePath: remotePath,
+      );
+      if (text == null) throw StateError('Library metadata unavailable');
+      return text;
+    }
     if (kIsWeb) {
       final cachedSource = await remoteAssetService.loadCachedOrBundledText(
         remotePath: remotePath,
@@ -150,6 +167,15 @@ class GameManifestService {
     required RemoteAssetService remoteAssetService,
   }) async {
     final GameCatalogManifest local = await loadBundledCatalogManifest();
+    if (remoteAssetService.usesSameOriginLibrary &&
+        remoteAssetService.accessAllowed) {
+      final source = await remoteAssetService.loadText(
+        sources: const [],
+        remotePath: 'assets/catalog.json',
+      );
+      if (source == null) throw StateError('Library catalog unavailable');
+      return GameCatalogManifest.fromJson(jsonDecode(source));
+    }
     if (kIsWeb) {
       final source = await remoteAssetService.loadCachedOrBundledText(
         remotePath: 'assets/catalog.json',
