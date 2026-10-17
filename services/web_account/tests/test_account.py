@@ -95,7 +95,8 @@ class AccountTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_config_uses_only_deployment_origins(self):
         value = (await self.client.get("/api/account/config")).json()
-        self.assertEqual(value, {"version": 1, "nasOrigin": self.settings.nas_origin, "identityOrigin": self.settings.identity_origin})
+        self.assertEqual(value, {"version": 1, "nasOrigin": self.settings.nas_origin, "identityOrigin": self.settings.identity_origin,
+                                 "storageFolder": self.settings.shared_folder})
 
     async def test_otp_failure_mapping_and_retry(self):
         for code, name in ((400, "invalidCredentials"), (403, "otpRequired"), (404, "invalidOtp"),

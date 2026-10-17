@@ -518,6 +518,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         _cloud != null ||
         !dataScopeReady ||
         !(_gateway is SynologyIdentityGateway ||
+            _gateway is WebAccountGateway ||
             _privateFilesFactory != null)) {
       return;
     }
@@ -525,6 +526,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final files = _privateFilesFactory != null
           ? _privateFilesFactory(_gateway!)
+          : _gateway is WebAccountGateway
+          ? (_gateway as WebAccountGateway).privateFiles()
           : (_gateway as SynologyIdentityGateway).privateFiles(
               appId: 'board_game_agent',
             );
@@ -534,6 +537,10 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         files: files,
         publicReactions: _publicFilesFactory != null
             ? AccountPublicReactions(_publicFilesFactory(_gateway!))
+            : _gateway is WebAccountGateway
+            ? AccountPublicReactions(
+                (_gateway as WebAccountGateway).publicFiles(),
+              )
             : _gateway is SynologyIdentityGateway
             ? AccountPublicReactions(
                 (_gateway as SynologyIdentityGateway).publicFiles(

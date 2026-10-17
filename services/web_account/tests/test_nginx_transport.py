@@ -110,6 +110,7 @@ class NginxTransportTests(unittest.TestCase):
                     uri = "/library/assets/games/sample/docs/rules.pdf"
                     self.assertEqual(client.get(uri).status_code, 200)
                     self.assertEqual(client.get('/api/comments/entries').json(), {'entries': []})
+                    self.assertEqual(client.get('/api/sync/private/entries?path=operations').status_code, 401)
                     self.assertEqual(client.post('/api/comments/file?path=u1001/d' + 'a' * 32 + '.json',
                                                  json={'content': 'x' * 16000}).status_code, 401)
                     client.get("/api/account/session")

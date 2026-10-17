@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/account_configuration.dart';
+import 'web_sync_files.dart';
 
 /// Browser identity uses an opaque HttpOnly cookie owned by the same-origin
 /// server. Passwords, DSM SIDs and SynoToken are never persisted in JavaScript.
@@ -29,6 +30,31 @@ final class WebAccountGateway
   int? _nasUid;
   int? get nasUid => _user == null ? null : _nasUid;
 
+  WebSyncTransport _syncTransport(String lane) {
+    final id = _user?.id;
+    final uid = nasUid;
+    final generation = _generation;
+    if (id == null || uid == null) {
+      throw const PrivateFileException(PrivateFileFailure.session);
+    }
+    return WebSyncTransport(
+      client: _client,
+      site: _site,
+      lane: lane,
+      uid: uid,
+      isActive: () =>
+          !_disposed &&
+          _generation == generation &&
+          _user?.id == id &&
+          nasUid == uid,
+    );
+  }
+
+  AccountPrivateFiles privateFiles() =>
+      WebPrivateSyncFiles(_syncTransport('private'));
+  AccountPublicFiles publicFiles() =>
+      WebPublicSyncFiles(_syncTransport('public'), uid: nasUid!);
+
   static Future<AccountConfiguration> loadConfiguration({
     http.Client? client,
     Uri? site,
@@ -42,6 +68,7 @@ final class WebAccountGateway
       return AccountConfiguration(
         nasOrigin: Uri.parse(value['nasOrigin'] as String),
         identityOrigin: Uri.parse(value['identityOrigin'] as String),
+        storageFolder: value['storageFolder'] as String? ?? 'friend',
       );
     } on IdentityFailure {
       rethrow;

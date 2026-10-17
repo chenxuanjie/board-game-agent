@@ -132,6 +132,7 @@ def synology_compose(root, manifest, settings=None):
            for key in ('NAS_READER_UID', 'NAS_READER_GID')):
         raise ReleaseError('Use the existing NAS owner numeric UID/GID, without root or permission changes')
     values = {
+        '${ACCOUNT_SHARED_FOLDER:-friend}': defaults['ACCOUNT_SHARED_FOLDER'],
         '${SYNOLOGY_HOST:-cznas.pp.ua}': defaults['SYNOLOGY_HOST'],
         '${SYNOLOGY_LAN_IP:-192.168.1.55}': defaults['SYNOLOGY_LAN_IP'],
         '${COMMENTS_PATH:?Set the existing NAS comments folder}': defaults['COMMENTS_PATH'],
@@ -158,7 +159,7 @@ def synology_compose(root, manifest, settings=None):
         compose = compose.replace(token, json.dumps(str(value), ensure_ascii=False))
     if '${' in compose:
         raise ReleaseError('Unresolved variable in Synology Compose')
-    return ('# ===== 桌游伙伴 V5 · 群晖部署配置 NAS-R2 =====\n'
+    return (f'# ===== 桌游伙伴 {manifest.get("applicationVersion", "V5")} · 群晖部署配置 =====\n'
             f'# 对应镜像标签：{manifest["imageTag"]}\n'
             '# 本版识别：端口 8887:8080；两个服务均使用 NAS 读取身份。\n'
             '# 如仍看到 8887:80 或旧镜像标签，说明尚未替换为本文件。\n'

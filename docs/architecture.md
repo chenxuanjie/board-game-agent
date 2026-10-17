@@ -25,7 +25,7 @@
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 | AI 请求及状态模型 |
 | `lib/features/settings/` | 偏好、桌面 AI 设置与更新配置 | 设置的保存与读取 |
 | `lib/features/identity/` | 原生群晖直连、Web 同源账号适配、恢复、个人数据切换与原生账号云同步 | 公共认证包与应用业务的接线 |
-| `services/web_account/` | Web 登录及只读资料网关，固定 DSM 上游、站点会话、文件读取资格与发布清单 | 部署环境、只读挂载、服务端路由与模拟 DSM/Nginx 测试 |
+| `services/web_account/` | Web 登录、账号同步及只读资料网关，固定 DSM 上游、站点会话、文件读取资格与发布清单 | 部署环境、只读挂载、服务端路由与模拟 DSM/Nginx 测试 |
 | `integration_test/` | 实际 Windows 登录、安全存储、恢复与退出验证 | 仅在私有测试环境提供凭据时运行 |
 | `lib/ui/desktop/` | 桌面及宽屏 Web 的外壳、页面 | 桌面布局与交互 |
 | `lib/ui/mobile/` | Android 及窄屏 Web 的外壳、页面 | 手机布局与交互 |
@@ -69,7 +69,7 @@ ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppC
 
 登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。
 
-Web 账号通过 `features/identity/services/web_account_gateway.dart` 接入同一个 IdentityController 与本机账号作用域；不调用原生安全存储，不保存密码或 NAS SID。`features/library/services/same_origin_library_service.dart` 复用 RemoteAssetService 接口，供游客与登录用户使用同源公开资料 URI、有限内存缓存和检查；原生端仍使用原服务。Nginx 将 `/api/account/`、`/api/library/`、`/library/` 和 `/api/comments/` 转到独立 Starlette/HTTPX 网关。`services/web_account/library.py` 限制已发布资源，再内部转给 Nginx 返回只读挂载文件；`comments.py` 校验公开快照及当前账号的 DSM 写入，Flutter `WebPublicCommentsFiles` 复用原评论服务。Web 私人云同步及收藏/排行榜公共写入尚未接入，详见 [Web 账号](web-account.md)、[Web 同源资料](web-library.md) 和 [桌游评论](game-comments.md)。
+Web 账号通过 `features/identity/services/web_account_gateway.dart` 接入同一个 IdentityController 与本机账号作用域；不调用原生安全存储，不保存密码或 NAS SID。`features/library/services/same_origin_library_service.dart` 复用 RemoteAssetService 接口，供游客与登录用户使用同源公开资料 URI、有限内存缓存和检查；原生端仍使用原服务。Nginx 将 `/api/account/`、`/api/library/`、`/library/`、`/api/comments/` 和 `/api/sync/` 转到独立 Starlette/HTTPX 网关。`services/web_account/library.py` 限制已发布资源，再内部转给 Nginx 返回只读挂载文件；`comments.py` 校验公开快照及当前账号的 DSM 写入，Flutter `WebPublicCommentsFiles` 复用原评论服务。`web_sync_files.dart` 与服务端 `account_files.py` 为 Web 提供同协议的私人日志和公共收藏/投票传输，复用 AccountCloudSync 和 webdav_sync，详见 [Web 账号](web-account.md)、[Web 同源资料](web-library.md) 和 [桌游评论](game-comments.md)。
 
 Docker 根目录 `docker-compose.yml` 是参数化开发模板，构建通过 `docker-compose.build.yml` 显式启用；`scripts/build-docker-release.py` 在构建电脑构建并导出唯一固定名称 TAR，成功后同名覆盖，不生成部署 ZIP。交付目录 `release/reports/docker-linux-amd64/docker-compose.yml` 直接固定匹配 TAR 的两个镜像引用、架构和 NAS 设置，群晖 GUI 上传不需要 `.env`。PowerShell 提供 Windows 入口；`packaging/docker/deploy.sh` 在 NAS 校验、导入并启动，不执行编译。见 [Docker 部署](docker-deployment.md)。
 

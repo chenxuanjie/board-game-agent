@@ -20,10 +20,12 @@
 powershell -ExecutionPolicy Bypass -File scripts/build-docker-release.ps1
 ```
 
-Linux/WSL/构建环境也可使用：
+该入口统一调用 flutter-release-publisher，已启用构建号递增与失败回退。`-Mode plan` 仅检查配置，`-Mode verify` 仅验证现有镜像，不改版本。
+
+Linux/WSL/构建环境使用同一 Skill publisher（profile 的 projectDir 须匹配运行环境）：
 
 ```sh
-python3 scripts/build-docker-release.py --platform linux/amd64
+python3 /path/to/flutter-release-publisher/scripts/flutter_docker_release.py --project /workspace/app --profile /private/profile.json --mode build
 ```
 
 脚本检查 Docker/Buildx、Linux 引擎和标签冲突，构建 `board-game-agent:<标签>` 与 `board-game-agent-web-account:<同一标签>`，核验 OS、架构和镜像 ID，再用 `docker image save` 合并导出。Flutter 在构建主机的平台执行，最终 Nginx/Python 镜像使用目标 NAS 平台。

@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse
 import http.cookiejar
+import hashlib
 import json
 import importlib.util
 import os
@@ -155,6 +156,7 @@ for root in (pathlib.Path('/test/library'),pathlib.Path('/test/comments')):
         check('anonymous published PDF readable',request('/library/assets/games/sample/docs/rules.pdf')[0]==200)
         check('anonymous comments list readable',request('/api/comments/entries')[0]==200)
         check('anonymous comment writes blocked',request('/api/comments/file?path=u1001/d'+'a'*32+'.json','POST',{'content':'{}'})[0]==401)
+        check('anonymous personal sync blocked',request('/api/sync/private/entries?path=operations')[0]==401)
         check('internal file alias inaccessible',request('/_library_files/assets/catalog.json')[0]==404)
         check('PDF not bundled into public static assets',request('/assets/assets/games/sample/docs/rules.pdf')[0]==404)
         runtime=run(compose+['ps','-q','board-game-agent'],env=env,capture_output=True).stdout.strip()
@@ -172,27 +174,7 @@ for root in (pathlib.Path('/test/library'),pathlib.Path('/test/comments')):
         run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=mock-dsm','-addext','subjectAltName=DNS:mock-dsm'],capture_output=True)
         key.chmod(0o644)
         mock=stage/'mock_dsm.py'
-        mock.write_text('''from http.server import BaseHTTPRequestHandler,HTTPServer
-from urllib.parse import parse_qs
-import json,ssl
-class Handler(BaseHTTPRequestHandler):
- def log_message(self,*args): pass
- def do_POST(self):
-  f={k:v[0] for k,v in parse_qs(self.rfile.read(int(self.headers['Content-Length'])).decode()).items()}
-  if f.get('api')!='SYNO.API.Info' and f.get('method')!='login':
-   if self.headers.get('Cookie')!='id=fake-private-sid' or self.headers.get('X-SYNO-TOKEN')!='fake-token':
-    raw=json.dumps({'success':False,'error':{'code':119}}).encode();self.send_response(200);self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
-  if f.get('method')=='download':
-   self.send_response(206);self.send_header('Content-Type','application/octet-stream');self.send_header('Content-Disposition','attachment');self.send_header('Content-Length','1');self.end_headers();self.wfile.write(b'x');return
-  if f['api']=='SYNO.API.Info':
-   data={name:{'path':'entry.cgi','minVersion':1,'maxVersion':7} for name in ('SYNO.API.Auth','SYNO.FileStation.Info','SYNO.FileStation.Download')}
-  elif f['method']=='login': data={'sid':'fake-private-sid','synotoken':'fake-token'}
-  elif f['method']=='get': data={'uid':1001}
-  else: data={}
-  raw=json.dumps({'success':True,'data':data}).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
-server=HTTPServer(('0.0.0.0',5443),Handler)
-tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.load_cert_chain('/test/test-cert.pem','/test/test-key.pem');server.socket=tls.wrap_socket(server.socket,server_side=True);server.serve_forever()
-''')
+        mock.write_text((ROOT/'scripts/docker-mock-dsm.py').read_text(encoding='utf-8'))
         override=stage/'test-override.json'
         override.write_text(json.dumps({'services':{
             'web-account':{'environment':{'DSM_CA_FILE':'/test/test-cert.pem'},'volumes':[f'{stage}:/test:ro']},
@@ -216,6 +198,31 @@ tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.load_cert_chain('/test/test-cert
             raise AssertionError(('mock DSM login failed',login))
         check('HTTPS DSM login via real Nginx and gateway containers',json.loads(login[2])['user']['displayName']=='test-user')
         check('cookie session restores authenticated identity',json.loads(request('/api/account/session')[2])['user'] is not None)
+        sync_headers={'X-BGA-Account-UID':'1001'}
+        check('private operations initialize only through authenticated DSM',request('/api/sync/private/entries?path=operations',headers=sync_headers)[0]==200)
+        environment=hashlib.sha256(b'synology-direct-v1|https://mock-dsm:5443').hexdigest()
+        identity=hashlib.sha256(b'synology-direct-v1|https://mock-dsm:5443|1001').hexdigest()
+        scope=hashlib.sha256(f'{environment}|{identity}'.encode()).hexdigest()
+        device='d'+'a'*32
+        operation={'protocolVersion':1,'datasetId':scope,'deviceId':device,'sequence':1,'logicalClock':1,
+            'operationId':device+'_1','entityType':'favorite','entityId':'catan','operation':'upsert',
+            'payload':{'gameSlug':'catan','createdAt':'2026-10-18T00:00:00Z'},'parents':[],
+            'changedAt':'2026-10-18T00:00:00Z','payloadHash':'sha256:'+hashlib.sha256(
+                json.dumps({'gameSlug':'catan','createdAt':'2026-10-18T00:00:00Z'},sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+        content=json.dumps(operation)
+        private_uri=f'/api/sync/private/file?path=operations/{device}.0000000000000001.json'
+        check('native-format private log roundtrip through Nginx and HTTPS DSM',
+            request(private_uri,'POST',{'content':content},sync_headers)[0]==200 and
+            json.loads(request(private_uri,headers=sync_headers)[2])['content']==content)
+        check('private retry is idempotent and conflicting overwrite is rejected',
+            request(private_uri,'POST',{'content':content},sync_headers)[0]==200 and
+            request(private_uri,'POST',{'content':json.dumps({**operation,'entityId':'splendor'})},sync_headers)[0]==409)
+        public_uri=f'/api/sync/public/file?path=u1001/{device}.json'
+        snapshot=json.dumps({'version':1,'uid':1001,'device':device,'operations':[operation]})
+        check('public favorites snapshot roundtrip without an additional data mount',
+            request(public_uri,'POST',{'content':snapshot},sync_headers)[0]==200 and
+            json.loads(request(public_uri,headers=sync_headers)[2])['content']==snapshot)
+        check('stale browser account binding is rejected',request(private_uri,headers={'X-BGA-Account-UID':'2002'})[0]==401)
         uri='/library/assets/games/sample/docs/rules.pdf'
         code,headers,body=request(uri,headers={'Range':'bytes=100-199'})
         lower={k.lower():v for k,v in headers.items()}
@@ -225,6 +232,7 @@ tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.load_cert_chain('/test/test-cert
         check('authenticated mounted catalog readable',request('/library/assets/catalog.json')[0]==200)
         check('missing library file returns 404',request('/library/assets/missing.pdf')[0]==404)
         check('logout retains public PDF but revokes account',request('/api/account/logout','POST')[0]==200 and request(uri)[0]==200 and json.loads(request('/api/account/session')[2])['user'] is None)
+        check('logout revokes private and public account sync',request(private_uri,headers=sync_headers)[0]==401 and request(public_uri,headers=sync_headers)[0]==401)
         check('full deployment completes without creating or reading .env',not (deploy/'.env').exists())
         result['passed']=True
     finally:

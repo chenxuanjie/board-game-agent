@@ -43,6 +43,7 @@ services:
       SYNOLOGY_IDENTITY_ORIGIN: ${SYNOLOGY_IDENTITY_ORIGIN:-${SYNOLOGY_ORIGIN}}
       WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?Set the browser site origin}
       WEB_ALLOW_INSECURE_HTTP: ${WEB_ALLOW_INSECURE_HTTP:-false}
+      ACCOUNT_SHARED_FOLDER: ${ACCOUNT_SHARED_FOLDER:-friend}
       LIBRARY_ROOT: /data/library
       LIBRARY_NAS_PATH: ${LIBRARY_NAS_PATH:?Set the matching FileStation library path}
       COMMENTS_ROOT: /data/comments

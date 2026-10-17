@@ -87,7 +87,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(manifest['platform'], 'linux/amd64')
         self.assertTrue(manifest['dirtySource'])
         self.assertEqual(manifest['artifact']['sha256'], release.sha256(archive))
-        compose = (support / 'docker-compose.yml').read_text()
+        compose = (support / 'docker-compose.yml').read_text(encoding='utf-8')
         self.assertIn('board-game-agent:4.1.0-37-test', compose)
         self.assertIn('board-game-agent-web-account:4.1.0-37-test', compose)
         self.assertNotIn('${', compose)

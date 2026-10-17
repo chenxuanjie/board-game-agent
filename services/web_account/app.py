@@ -29,9 +29,11 @@ from starlette.routing import Route
 try:
     from .library import Library, LibraryError
     from .comments import Comments
+    from .account_files import AccountFiles
 except ImportError:  # Docker's /app module layout.
     from library import Library, LibraryError
     from comments import Comments
+    from account_files import AccountFiles
 
 
 class Failure(Exception):
@@ -67,6 +69,7 @@ class Settings:
     library_nas_path: str = "/friend/apps/board_game_agent/board-game-lib"
     comments_root: str = "/data/comments"
     comments_nas_path: str = "/friend/apps/board_game_agent_comments/public/v1"
+    shared_folder: str = "friend"
 
     def __post_init__(self):
         object.__setattr__(self, "nas_origin", origin(self.nas_origin))
@@ -74,6 +77,10 @@ class Settings:
         object.__setattr__(self, "public_origin", origin(self.public_origin, allow_http=self.insecure_http))
         if min(self.max_sessions, self.idle_seconds, self.lifetime_seconds) <= 0:
             raise ValueError("Positive session limits are required")
+        if (not self.shared_folder or len(self.shared_folder) > 240 or any(
+                part in ("", ".", "..") or not re.fullmatch(r"[\w .-]+", part)
+                for part in self.shared_folder.split("/"))):
+            raise ValueError("A fixed account shared folder is required")
         if (not self.comments_nas_path.startswith("/") or any(
                 part in ("", ".", "..") for part in self.comments_nas_path[1:].split("/"))
                 or any(c in self.comments_nas_path for c in "\\\x00\r\n")):
@@ -90,6 +97,7 @@ class Settings:
                    os.environ["WEB_PUBLIC_ORIGIN"],
                    os.getenv("WEB_ALLOW_INSECURE_HTTP", "false").lower() == "true",
                    library_root=os.getenv("LIBRARY_ROOT", "/data/library"),
+                   shared_folder=os.getenv("ACCOUNT_SHARED_FOLDER", "friend"),
                    comments_root=os.getenv("COMMENTS_ROOT", "/data/comments"),
                    comments_nas_path=os.getenv("COMMENTS_NAS_PATH", "/friend/apps/board_game_agent_comments/public/v1"),
                    library_nas_path=os.getenv("LIBRARY_NAS_PATH", "/friend/apps/board_game_agent/board-game-lib"))
@@ -135,7 +143,7 @@ class Dsm:
                 headers["X-SYNO-TOKEN"] = token
         return headers
 
-    async def api(self, path, fields, *, session=None, file=None):
+    async def api(self, path, fields, *, session=None, file=None, raw_limit=None):
         if not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.cgi", path):
             raise Failure("providerUnavailable")
         try:
@@ -153,9 +161,11 @@ class Dsm:
                 payload = bytearray()
                 async for chunk in response.aiter_bytes():
                     payload.extend(chunk)
-                    if len(payload) > 65536:
+                    if len(payload) > (raw_limit or 256 * 1024):
                         raise Failure("providerUnavailable")
             value = json.loads(payload)
+            if raw_limit is not None and not (isinstance(value, dict) and value.get("success") is False):
+                return bytes(payload)
             if not isinstance(value, dict) or type(value.get("success")) is not bool:
                 raise Failure("providerUnavailable")
             if not value["success"]:
@@ -166,9 +176,9 @@ class Dsm:
                              407: "rateLimited", 408: "passwordChangeRequired",
                              409: "passwordChangeRequired", 410: "passwordChangeRequired"}.get(code, "providerUnavailable")
                 else:
-                    error = "missing" if code == 408 else "accountDenied" if code in (105, 403, 404, 407, 411) else (
+                    error = "storageQuota" if code in (415, 416) else "missing" if code == 408 else "accountDenied" if code in (105, 403, 404, 407, 411) else (
                         "sessionRejected" if code in (106, 107, 119, 150, 400) else "providerUnavailable")
-                raise Failure(error, 404 if error == "missing" else 401 if error in ("invalidCredentials", "sessionRejected") else 403)
+                raise Failure(error, 507 if error == "storageQuota" else 404 if error == "missing" else 401 if error in ("invalidCredentials", "sessionRejected") else 403)
             data = value.get("data", {})
             if not isinstance(data, dict):
                 raise Failure("providerUnavailable")
@@ -198,8 +208,10 @@ class Dsm:
         self.paths = tuple(paths)
         return self.paths
 
-    async def file_api(self, session, api, method, fields, *, file=None):
+    async def file_api(self, session, api, method, fields, *, file=None, raw_limit=None):
         if (api, method) not in {("SYNO.FileStation.List", "getinfo"),
+                                 ("SYNO.FileStation.List", "list"),
+                                 ("SYNO.FileStation.Download", "download"),
                                  ("SYNO.FileStation.CreateFolder", "create"),
                                  ("SYNO.FileStation.Upload", "upload")}:
             raise Failure("accountDenied", 403)
@@ -210,7 +222,7 @@ class Dsm:
                 or not spec["minVersion"] <= 2 <= spec["maxVersion"]):
             raise Failure("providerUnavailable")
         return await self.api(spec.get("path", ""), {"api": api, "version": "2", "method": method, **fields},
-                              session=session, file=file)
+                              session=session, file=file, raw_limit=raw_limit)
 
     async def uid(self, session):
         data = await self.api(session.info_path, {"api": "SYNO.FileStation.Info", "version": "2", "method": "get"},
@@ -308,6 +320,8 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
     library = Library(settings.library_root)
     comments = Comments(settings.comments_root, settings.comments_nas_path, Failure)
     comment_locks = WeakValueDictionary()
+    account_files = AccountFiles(settings, Failure)
+    sync_locks = WeakValueDictionary()
     library_lock = asyncio.Lock()
     sessions: dict[str, BrowserSession] = {}
     attempts: OrderedDict[str, list[float]] = OrderedDict()
@@ -367,6 +381,58 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
         if state is None or state.nas is None:
             raise Failure("sessionRejected", 401)
         return state
+
+    async def sync_files(request):
+        guard(request)
+        state = signed_in(request)
+        nas, revision = state.nas, state.revision
+        lane, action = request.path_params["lane"], request.path_params["action"]
+        if request.headers.get("x-bga-account-uid") != str(nas.uid):
+            raise Failure("sessionRejected", 401)
+        relative = request.query_params.get("path", "")
+        if lane not in ("private", "public") or action not in ("entries", "file"):
+            raise Failure("missing", 404)
+        writing = request.method == "POST"
+        if writing and action != "file":
+            raise Failure("accountDenied", 400)
+        account_files.path(lane, relative, listing=action == "entries", writing=writing)
+        def check():
+            if state.nas is not nas or state.revision != revision:
+                raise Failure("sessionRejected", 401)
+        async def call(api, method, fields, **kwargs):
+            check()
+            value = await dsm.file_api(nas, api, method, fields, **kwargs)
+            check()
+            return value
+        content = None
+        if writing:
+            limit(request, nas.account, bucket="sync-write", maximum=240)
+            raw = bytearray()
+            async for chunk in request.stream():
+                raw.extend(chunk)
+                if len(raw) > 50 * 1024 * 1024:
+                    raise Failure("accountDenied", 413)
+            try:
+                content = json.loads(raw)["content"]
+                account_files.validate(lane, relative, content, nas.uid)
+            except (ValueError, TypeError, KeyError):
+                raise Failure("accountDenied", 400) from None
+        # Only uploads and first-use private-directory initialization serialize.
+        lock = sync_locks.setdefault((nas.uid, lane), asyncio.Lock())
+        async with asyncio.timeout(30), lock:
+            check()
+            if await dsm.uid(nas) != nas.uid:
+                raise Failure("sessionRejected", 401)
+            check()
+            if writing:
+                await account_files.write(call, lane, relative, content, nas.uid)
+                value = {"saved": True}
+            elif action == "entries":
+                value = {"entries": await account_files.entries(call, lane, relative)}
+            else:
+                value = {"content": await account_files.read(call, lane, relative)}
+            check()
+        return answer(value)
 
     async def comment_entries(request):
         guard(request)
@@ -465,7 +531,8 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
 
     async def config(request):
         guard(request)
-        return answer({"version": 1, "nasOrigin": settings.nas_origin, "identityOrigin": settings.identity_origin})
+        return answer({"version": 1, "nasOrigin": settings.nas_origin, "identityOrigin": settings.identity_origin,
+                       "storageFolder": settings.shared_folder})
 
     async def current(request):
         guard(request)
@@ -566,6 +633,7 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
                              Route("/api/account/logout", logout, methods=["POST"]),
                              Route("/api/comments/entries", comment_entries),
                              Route("/api/comments/file", comment_file, methods=["GET", "POST"]),
+                             Route("/api/sync/{lane:str}/{action:str}", sync_files, methods=["GET", "POST"]),
                              Route("/library/{path:path}", library_file, methods=["GET", "HEAD"]),
                              Route("/api/library/files", library_files),
                              Route("/api/library/versions", library_versions)],

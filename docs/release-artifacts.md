@@ -32,7 +32,7 @@ Docker 只交付 TAR 的直接链接，用户在 Container Manager“映像 → 
 
 ## Docker
 
-`scripts/build-docker-release.ps1` / `.py` 在两个镜像构建、导出及 TAR 内容校验完成后，通过同文件系统原子替换覆盖固定交付文件。空导出、损坏 TAR、平台/镜像不符以及构建失败均保留旧 TAR。每次只做一轮镜像构建和一次合并导出，不再制作 ZIP；配套目录中的 `validation.json` 在新构建后失效，不沿用旧成功记录。
+`scripts/build-docker-release.ps1` 调用 Skill publisher，项目 Docker profile 已启用 `bumpBuild: true`：每次 build 将 pubspec 构建号递增一次（5.0.0+38 → 5.0.0+39），构建/验证失败恢复，plan/verify 不变；两个镜像、YAML 与报告均使用该版本。底层 `.py` 仅供 publisher 调用，本身不递增版本。在两个镜像构建、导出及 TAR 内容校验完成后，通过同文件系统原子替换覆盖固定交付文件。空导出、损坏 TAR、平台/镜像不符以及构建失败均保留旧 TAR。每次只做一轮镜像构建和一次合并导出，不再制作 ZIP；配套目录中的 `validation.json` 在新构建后失效，不沿用旧成功记录。
 
 实际命令链为脚本调用 `docker buildx build --load --platform linux/amd64` 构建镜像，再用 `docker image save --output images.tar <网页镜像> <账号网关镜像>` 导出。交付 TAR 是 Docker 保存的真实镜像归档，包含两个镜像，不是源码压缩包，也不是把 ZIP 改扩展名。
 

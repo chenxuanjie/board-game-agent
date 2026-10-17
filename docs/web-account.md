@@ -1,6 +1,6 @@
 # Web 账号接入
 
-2026-10-17。当前源码支持 Web 群晖账号登录、按需 OTP、服务器验证后的稳定身份、刷新恢复、退出、取消、账号本机数据隔离，以及 [公开挂载资料访问](web-library.md) 和 [桌游评论](game-comments.md)。游客可以读取已发布资料及公开评论；发布、回复、点赞与删除自己的评论要求登录。**尚未接入 Web 私人云同步或公共统计写入**。Android/Windows 保留原生直连及原安全存储。
+2026-10-17。当前源码支持 Web 群晖账号登录、按需 OTP、服务器验证后的稳定身份、刷新恢复、退出、取消、账号本机数据隔离，以及 [公开挂载资料访问](web-library.md) 和 [桌游评论](game-comments.md)。游客可以读取已发布资料及公开评论；发布、回复、点赞与删除自己的评论要求登录。2026-10-18 源码已通过同源 `/api/sync/` 接入私人云同步和收藏/投票公共统计，复用原有增量引擎，不另建账号数据库；待构建与 NAS 部署验收。Android/Windows 保留原生直连及原安全存储。
 
 群晖不支持公网回环时，交付 Compose 的 `extra_hosts` 将 `cznas.pp.ua` 固定解析到 **192.168.1.55**，仅影响账号容器。DSM 请求仍使用 `https://cznas.pp.ua:5001`，HTTP Host、TLS SNI 和证书校验保留，实际 TCP 连接到内网 IP；不能直接把 HTTPS URL 改成 IP 并关闭证书校验。浏览器入口与原生端地址不变。当前开发电脑不能连通该内网地址，尚未完成 NAS 内部署后的验证；本轮仅修改源码和部署模板，没有更新已交付 TAR。
 
@@ -72,3 +72,15 @@ WEB_ALLOW_INSECURE_HTTP=false
 服务端测试运行 `PYTHONPATH=<测试依赖目录> python -m unittest discover -s services/web_account/tests -v`；2026-10-16 资料接入后共 36 项通过（设置 `NGINX_BIN` 包含真实 Nginx 传输测试），使用 HTTPX 假 DSM，不访问实际 NAS。Flutter 全量 677 项通过，覆盖同源请求、OTP、恢复、退出补偿、晚到响应、320/1440 dp 大字体账户页、资料缓存/静默检查及旧原生行为；静态检查通过。此前 Chrome 浏览器测试停留在加载阶段后终止，未计作通过；不能将宿主机 widget 测试视为完整浏览器联调。本轮不构建、上传、启动 NAS 容器或测试真实凭据。真实 DSM（含 OTP）、HTTPS Cookie、NAS 反向代理及容器联调需部署后验收。
 
 回滚使用前一版 Web 与 Compose 配置。网关无持久数据库，停止服务即可使站点会话失效；保留浏览器各账号业务数据，不清理 NAS 文件。同源资料源已作为后台替换接入，不新增前台切换提示；状态与检查界面本轮未调整。
+
+## Web 账号同步适配（2026-10-18）
+
+`WebAccountGateway` 为 `AccountCloudSync` 提供 `WebPrivateSyncFiles` 与 `WebPublicSyncFiles`，同一浏览器 HttpOnly 会话经 Nginx `/api/sync/{private|public}/{entries|file}` 到 DSM FileStation。个人日志在 `/home/Apps/board_game_agent/sync/v1/<environment>/operations`，环境、身份和 dataset ID 沿用原生端的历史 identity origin；收藏/投票公共快照在 `/<ACCOUNT_SHARED_FOLDER>/apps/board_game_agent/public/v1`。共享目录默认 friend，由服务器配置返回给前端，不接收任意客户端 NAS 路径。
+
+不增加私人目录宿主机挂载，不用容器读取身份代替用户访问 home。登录后的初始化同步、收藏/投票立即发布、其他修改 4 秒防抖、60 秒补拉，以及账号页暂停/重试都复用 AccountCloudSync；原生网络传输不变。浏览器已有本地数据和待上传记录参与同一引擎合并，不清空覆盖；取消收藏保留删除版本。
+
+每次请求要求站点会话、同源请求头和绑定的 DSM UID，并校验上游当前身份；账号切换/退出递增会话版本，在每次 DSM 调用前后拒绝旧请求。私人上传仅接受当前账号 dataset、匹配文件名的不可变操作，旧设备目录仅读；公共上传只允许自身 uUID 的收藏/投票快照，读取前后核对 DSM 所有者。上传始终 create_parents=false；只有明确 408 才逐级初始化固定私人目录链或自身公共目录，force_parent=false；共享根由管理员准备。不存在删除、迁移、权限变更或任意 URL 代理。
+
+模拟 DSM 测试覆盖首次初始化、幂等写/冲突、拒绝越权、过期、退出中断、分页及旧日志。Flutter 测试覆盖原生/Web 收藏合并、删除、断网恢复、公共快照及账号切换。模拟通过不等于当前 NAS 已上线；当前交付 TAR 仍是此前 5.0.0+38，未包含本轮改动。
+
+验证记录：55 项 Dart 同步/账号测试通过，相关文件静态检查通过；Linux 网关套件 60 项中 59 项通过、真实 Nginx 测试跳过，该项在 Windows 真实 Nginx 中补验通过（Windows 因 Unix UID 元数据跳过的两项在 Linux 已通过）。源码覆盖现有镜像的 29 项容器检查通过，包括 Nginx → 网关 → HTTPS 模拟 DSM 的私人日志、公共快照、重复上传、冲突拒绝与退出撤销。这里的源码覆盖仅用于开发验证，不代表导出的旧 TAR 已包含新代码。Chrome 测试两次停在套件加载阶段，已终止，未计为通过；未进行真实 NAS 账号数据写入或部署验收。回滚可使用先前匹配的 TAR/YAML，保留浏览器和 NAS 日志，不清理任何账号数据。

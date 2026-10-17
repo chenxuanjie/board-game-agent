@@ -55,6 +55,7 @@ void main() {
       expect(identical(guest, own), isFalse);
       expect(own.canWrite, isTrue);
       expect(own.uid, 101);
+      expect(service.cloud, isNotNull);
       expect(guest.canWrite, isFalse);
       await service.signOut();
       final nextGuest = service.comments!;

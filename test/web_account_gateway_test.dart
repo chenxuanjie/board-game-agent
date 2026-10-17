@@ -20,6 +20,41 @@ void main() {
       http.Response(jsonEncode(value), status);
 
   test(
+    'verified Web gateway exposes bound private and public sync adapters',
+    () async {
+      var calls = 0;
+      final gateway = WebAccountGateway(
+        site: site,
+        client: MockClient((request) async {
+          if (request.url.path.contains('/api/sync/')) {
+            calls++;
+            expect(request.headers['X-BGA-Account-UID'], '101');
+            return json({'entries': []});
+          }
+          return json({
+            'user': {'id': id, 'displayName': 'Shane', 'uid': 101},
+          });
+        }),
+      );
+      addTearDown(gateway.dispose);
+      await gateway.verifyCurrentUser();
+      final private = gateway.privateFiles(), public = gateway.publicFiles();
+      expect(await private.list('operations'), isEmpty);
+      expect(await public.entries(''), isEmpty);
+      await gateway.clearLocalSession();
+      await expectLater(
+        private.list('operations'),
+        throwsA(isA<PrivateFileException>()),
+      );
+      await expectLater(
+        public.entries(''),
+        throwsA(isA<PrivateFileException>()),
+      );
+      expect(calls, 2);
+    },
+  );
+
+  test(
     'Web configuration comes from same origin and exposes no secrets',
     () async {
       final config = await WebAccountGateway.loadConfiguration(
