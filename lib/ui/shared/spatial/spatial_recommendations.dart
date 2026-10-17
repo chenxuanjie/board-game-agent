@@ -12,10 +12,12 @@ class SpatialGamePoster extends StatelessWidget {
     required this.controller,
     required this.game,
     required this.onOpen,
+    this.compact = true,
   });
   final AppController controller;
   final GameInfo game;
   final VoidCallback onOpen;
+  final bool compact;
   static const aspectRatio = 141 / 216;
   @override
   Widget build(BuildContext context) => SpatialPoster(
@@ -25,7 +27,7 @@ class SpatialGamePoster extends StatelessWidget {
     genres: game.categoryLine,
     badge: '桌游',
     imageUrl: '',
-    isCompact: true,
+    isCompact: compact,
     image: DesktopResolvedImage(
       controller: controller,
       assetPath: game.coverAssetPath,

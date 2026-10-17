@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import '../../../app/state/app_controller.dart';
+import '../../../app/state/browse_session.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../features/games/models/game_info.dart';
 import '../../../features/settings/services/settings_transfer_service.dart';
@@ -17,13 +18,22 @@ import '../account_screen.dart';
 import '../game_ranking_screen.dart';
 import '../library_update_review.dart';
 import '../app_modals.dart';
+import '../app_failure_notice.dart';
+import '../../desktop/business_panes.dart';
+import '../../desktop/games_pane.dart';
+import '../../desktop/game_detail_pane.dart';
+import '../../desktop/settings_pane.dart';
+import '../../desktop/national_day_page.dart';
+import '../../desktop/desktop_responsive.dart';
 import 'spatial_material.dart';
 import 'spatial_primitives.dart';
 import 'spatial_banner.dart';
 import 'spatial_recommendations.dart';
 
+part 'spatial_business_pages.dart';
+
 /// Fourth theme: a separate presentation shell, never DesktopWorkspace repaint.
-/// Secondary pages are temporary business adapters until their layout review.
+/// Business pages select desktop or touch compositions inside the same shell.
 class SpatialWorkspace extends StatefulWidget {
   const SpatialWorkspace({
     super.key,
@@ -44,16 +54,43 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
   String _menu = 'home';
   String? _page, _sample;
   GameInfo? _detail;
+  final _pageScrolls = <String, ScrollController>{};
+  final _collectionBrowse = <String, LibraryBrowseState>{};
+  final _favoriteSaving = <String>{};
+  final _favoritePreview = <String, bool>{};
+  bool _restoringSearch = false;
+  bool? _compactLayout;
   AppController get c => widget.controller;
   @override
   void initState() {
     super.initState();
     c.addListener(_refresh);
-    _search.addListener(_refresh);
+    _search.addListener(_searchChanged);
   }
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+
+  void _searchChanged() {
+    if (_restoringSearch) return;
+    if (_page == 'games' && c.browseSession.library.query != _search.text) {
+      c.browseSession.library
+        ..query = _search.text
+        ..resetPosition();
+    }
+    _refresh();
+  }
+
+  void _restoreLibrarySearch() {
+    final query = c.browseSession.library.query;
+    if (_search.text == query) return;
+    _restoringSearch = true;
+    _search.value = TextEditingValue(
+      text: query,
+      selection: TextSelection.collapsed(offset: query.length),
+    );
+    _restoringSearch = false;
   }
 
   @override
@@ -69,6 +106,9 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
   void dispose() {
     c.removeListener(_refresh);
     _search.dispose();
+    for (final scroll in _pageScrolls.values) {
+      scroll.dispose();
+    }
     super.dispose();
   }
 
@@ -77,6 +117,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
       _menu = menu;
       _detail = null;
       _page = menu == 'home' ? null : menu;
+      if (menu == 'games') _restoreLibrarySearch();
     });
     if (menu == 'games') unawaited(c.checkForLibraryUpdatesQuick());
     if (menu == 'assistant') c.openGlobalAssistant();
@@ -99,6 +140,45 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
     });
   }
 
+  void _askSpatialAi(GameInfo game) {
+    if (!c.openGameAssistant(game.id)) return;
+    setState(() {
+      _detail = null;
+      _page = _menu = 'assistant';
+    });
+  }
+
+  void _openDesktopRules(GameInfo game) => _navigator.currentState?.push<void>(
+    MaterialPageRoute(
+      builder: (context) => Scaffold(
+        appBar: AppBar(title: Text(game.title)),
+        body: DesktopLibraryPane(controller: c, gameSlug: game.slug),
+      ),
+    ),
+  );
+
+  Future<void> _toggleSpatialFavorite(GameInfo game) async {
+    if (_favoriteSaving.contains(game.id)) return;
+    setState(() {
+      _favoriteSaving.add(game.id);
+      _favoritePreview[game.id] = !c.isFavorite(game);
+    });
+    var saved = false;
+    try {
+      saved = await c.toggleFavorite(game);
+    } catch (_) {
+      saved = false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _favoriteSaving.remove(game.id);
+          _favoritePreview.remove(game.id);
+        });
+        if (!saved) showAppFailureNotice(context, c.copy.favoriteSaveFailed);
+      }
+    }
+  }
+
   void _activities() => showLibraryUpdateReview(
     _navigator.currentState?.overlay?.context ?? context,
     c,
@@ -112,6 +192,10 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
       builder: (context, box) {
         final mobile = box.maxWidth < 760,
             tablet = box.maxWidth >= 760 && box.maxWidth < 1020;
+        if (_compactLayout != mobile) {
+          _compactLayout = mobile;
+          if (_page == 'games') _restoreLibrarySearch();
+        }
         final width = mobile
             ? box.maxWidth * .95
             : tablet
@@ -129,60 +213,66 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
             children: [
               if (!mobile) _sidebar(tablet),
               Expanded(
-                child: Navigator(
-                  key: _navigator,
-                  onGenerateRoute: (settings) {
-                    if (settings.name == '/settings/ai') {
-                      return MaterialPageRoute<void>(
-                        settings: settings,
-                        builder: (_) => MobileSettingsScreen(
-                          controller: c,
-                          focusAiSettings: true,
-                          transferService: widget.transferService,
-                          onOpenAbout: widget.onOpenAbout,
+                child: LayoutBuilder(
+                  builder: (context, contentBox) => DesktopMetricsScope(
+                    metrics: DesktopResponsive.metricsFor(contentBox.biggest),
+                    child: Navigator(
+                      key: _navigator,
+                      onGenerateRoute: (settings) {
+                        if (settings.name == '/settings/ai') {
+                          return MaterialPageRoute<void>(
+                            settings: settings,
+                            builder: (context) => LayoutBuilder(
+                              builder: (_, box) => _settingsPage(
+                                wide: MediaQuery.sizeOf(context).width >= 760,
+                                focusAi: true,
+                              ),
+                            ),
+                          );
+                        }
+                        if (settings.name == GameRankingScreen.routeName) {
+                          return MaterialPageRoute<void>(
+                            settings: settings,
+                            builder: (_) => GameRankingScreen(
+                              controller: c,
+                              onOpenGame: _openGame,
+                            ),
+                          );
+                        }
+                        return null;
+                      },
+                      pages: [
+                        MaterialPage<void>(
+                          key: const ValueKey('spatial-home-route'),
+                          child: _home(mobile: mobile, tablet: tablet),
                         ),
-                      );
-                    }
-                    if (settings.name == GameRankingScreen.routeName) {
-                      return MaterialPageRoute<void>(
-                        settings: settings,
-                        builder: (_) => GameRankingScreen(
-                          controller: c,
-                          onOpenGame: _openGame,
-                        ),
-                      );
-                    }
-                    return null;
-                  },
-                  pages: [
-                    MaterialPage<void>(
-                      key: const ValueKey('spatial-home-route'),
-                      child: _home(mobile: mobile, tablet: tablet),
+                        if (_page != null)
+                          MaterialPage<void>(
+                            key: ValueKey('spatial-$_page-route'),
+                            child: _businessPage(wide: !mobile),
+                          ),
+                        if (_detail != null)
+                          MaterialPage<void>(
+                            key: ValueKey('spatial-detail-${_detail!.id}'),
+                            child: _detailPage(wide: !mobile),
+                          ),
+                      ],
+                      onDidRemovePage: (page) {
+                        if (!mounted) return;
+                        if (_detail != null &&
+                            page.key ==
+                                ValueKey('spatial-detail-${_detail!.id}')) {
+                          setState(() => _detail = null);
+                        } else if (_page != null &&
+                            page.key == ValueKey('spatial-$_page-route')) {
+                          setState(() {
+                            _page = null;
+                            _menu = 'home';
+                          });
+                        }
+                      },
                     ),
-                    if (_page != null)
-                      MaterialPage<void>(
-                        key: ValueKey('spatial-$_page-route'),
-                        child: _businessPage(),
-                      ),
-                    if (_detail != null)
-                      MaterialPage<void>(
-                        key: ValueKey('spatial-detail-${_detail!.id}'),
-                        child: GameDetailScreen(controller: c, game: _detail!),
-                      ),
-                  ],
-                  onDidRemovePage: (page) {
-                    if (!mounted) return;
-                    if (_detail != null &&
-                        page.key == ValueKey('spatial-detail-${_detail!.id}')) {
-                      setState(() => _detail = null);
-                    } else if (_page != null &&
-                        page.key == ValueKey('spatial-$_page-route')) {
-                      setState(() {
-                        _page = null;
-                        _menu = 'home';
-                      });
-                    }
-                  },
+                  ),
                 ),
               ),
             ],
@@ -265,6 +355,12 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
                 child: TextField(
                   key: const ValueKey('spatial-search'),
                   controller: _search,
+                  onSubmitted: (query) {
+                    c.browseSession.library
+                      ..query = query
+                      ..resetPosition();
+                    _select('games');
+                  },
                   style: const TextStyle(fontSize: 11.5, color: Colors.white),
                   decoration: const InputDecoration(
                     hintText: '搜索桌游',
@@ -345,59 +441,6 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
           _select(item.$1);
         },
       );
-
-  Widget _businessPage() {
-    final body = switch (_page) {
-      'recommendations' => SpatialRecommendationsPage(
-        controller: c,
-        onBack: _back,
-        onOpenGame: _openGame,
-      ),
-      'games' => MobileLibraryContent(
-        controller: c,
-        onOpenGame: _openGame,
-        onActivities: _activities,
-        onProfile: () => _select('account'),
-      ),
-      'rankings' => GameRankingScreen(
-        controller: c,
-        onOpenGame: _openGame,
-        onBack: _back,
-      ),
-      'assistant' => UniversalAiScreen(controller: c),
-      'topic' => MobileNationalDayScreen(controller: c, onOpenGame: _openGame),
-      'downloads' => MobileRuleMaterialsScreen(controller: c),
-      'account' => AccountScreen(onBack: _back),
-      'settings' => MobileSettingsScreen(
-        controller: c,
-        onOpenAbout: widget.onOpenAbout,
-        transferService: widget.transferService,
-      ),
-      'favorites' => _collection(c.favoriteGames, '我的喜欢'),
-      'recent' => _collection(c.recentlyViewedGames, '最近浏览'),
-      _ => const SizedBox.shrink(),
-    };
-    return _page == 'recommendations'
-        ? body
-        : ColoredBox(color: AppPalette.of(context).surface, child: body);
-  }
-
-  Widget _collection(List<GameInfo> games, String title) => Scaffold(
-    appBar: AppBar(
-      title: Text(title),
-      leading: IconButton(onPressed: _back, icon: const Icon(Icons.arrow_back)),
-    ),
-    body: games.isEmpty
-        ? const Center(child: Text('暂无内容'))
-        : ListView.builder(
-            itemCount: games.length,
-            itemBuilder: (_, i) => ListTile(
-              title: Text(games[i].title),
-              subtitle: Text(games[i].categoryLine),
-              onTap: () => _openGame(games[i]),
-            ),
-          ),
-  );
 
   Widget _home({required bool mobile, required bool tablet}) {
     final query = _search.text.trim().toLowerCase();

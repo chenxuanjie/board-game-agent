@@ -24,6 +24,9 @@ class DesktopGamesPane extends StatefulWidget {
     this.sourceGames,
     this.showPreview = true,
     this.scrollController,
+    this.browseState,
+    this.posterBuilder,
+    this.posterAspectRatio,
   });
   final AppController controller;
   final ValueChanged<String> onNavigate;
@@ -32,15 +35,20 @@ class DesktopGamesPane extends StatefulWidget {
   final List<GameInfo>? sourceGames;
   final bool showPreview;
   final ScrollController? scrollController;
+  final LibraryBrowseState? browseState;
+  final Widget Function(GameInfo game, VoidCallback onOpen)? posterBuilder;
+  final double? posterAspectRatio;
   @override
   State<DesktopGamesPane> createState() => _DesktopGamesPaneState();
 }
 
 class _DesktopGamesPaneState extends State<DesktopGamesPane> {
   final _favoriteBrowse = LibraryBrowseState();
-  LibraryBrowseState get _browse => widget.sourceGames == null
-      ? widget.controller.browseSession.library
-      : _favoriteBrowse;
+  LibraryBrowseState get _browse =>
+      widget.browseState ??
+      (widget.sourceGames == null
+          ? widget.controller.browseSession.library
+          : _favoriteBrowse);
   int get _category => _browse.category;
   set _category(int value) {
     _browse.category = value;
@@ -101,6 +109,8 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
               itemKeys: keys,
               browse: _browse,
               games: games,
+              posterBuilder: widget.posterBuilder,
+              posterAspectRatio: widget.posterAspectRatio,
               selectedCategory: _category,
               onSelectGame: (i) => widget.onOpenGame(games[i].data),
               onOpenAssistant: (game) {
@@ -248,6 +258,8 @@ enum _DesktopGameSort {
 }
 
 class _LibraryMain extends StatelessWidget {
+  final Widget Function(GameInfo game, VoidCallback onOpen)? posterBuilder;
+  final double? posterAspectRatio;
   final Map<String, GlobalKey> itemKeys;
   final LibraryBrowseState browse;
   final List<DesktopContentGame> games;
@@ -263,6 +275,8 @@ class _LibraryMain extends StatelessWidget {
   final ValueChanged<BuildContext> onFilter;
 
   const _LibraryMain({
+    this.posterBuilder,
+    this.posterAspectRatio,
     required this.itemKeys,
     required this.browse,
     required this.games,
@@ -362,7 +376,12 @@ class _LibraryMain extends StatelessWidget {
           builder: (context, constraints) {
             final cinema = isCinema(context);
             final gap = cinema ? 16.0 : 20.0;
-            final columns = cinema
+            final columns = posterAspectRatio != null
+                ? ((constraints.maxWidth + gap) / (190 + gap)).floor().clamp(
+                    1,
+                    12,
+                  )
+                : cinema
                 ? ((constraints.maxWidth + gap) / (192 + gap)).floor().clamp(
                     1,
                     6,
@@ -377,7 +396,9 @@ class _LibraryMain extends StatelessWidget {
             final fittedWidth =
                 (constraints.maxWidth - gap * (columns - 1)) / columns;
             final posterWidth =
-                (columns == 5 ? fittedWidth.clamp(198.0, 210.0) : fittedWidth)
+                (posterAspectRatio == null && columns == 5
+                        ? fittedWidth.clamp(198.0, 210.0)
+                        : fittedWidth)
                     .toDouble();
             return Align(
               alignment: Alignment.topLeft,
@@ -403,7 +424,9 @@ class _LibraryMain extends StatelessWidget {
                       child: SizedBox(
                         key: itemKeys[games[index].data.id],
                         width: posterWidth,
-                        height: cinema
+                        height: posterAspectRatio != null
+                            ? posterWidth / posterAspectRatio!
+                            : cinema
                             ? posterWidth * 4 / 3 +
                                   MediaQuery.textScalerOf(context).scale(16) *
                                       2.6 +
@@ -413,12 +436,17 @@ class _LibraryMain extends StatelessWidget {
                                       2.9 +
                                   48
                             : posterWidth * 1.49,
-                        child: _LibraryGameCard(
-                          game: games[index],
-                          onTap: () => onSelectGame(index),
-                          onOpenAssistant: () =>
-                              onOpenAssistant(games[index].data),
-                        ),
+                        child:
+                            posterBuilder?.call(
+                              games[index].data,
+                              () => onSelectGame(index),
+                            ) ??
+                            _LibraryGameCard(
+                              game: games[index],
+                              onTap: () => onSelectGame(index),
+                              onOpenAssistant: () =>
+                                  onOpenAssistant(games[index].data),
+                            ),
                       ),
                     ),
                 ],

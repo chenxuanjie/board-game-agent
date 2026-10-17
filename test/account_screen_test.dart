@@ -31,6 +31,29 @@ import 'support/memory_login_storage.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'spatial account uses available split view and stacks large text',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(940, 900));
+      final (service, _) = await _configuredService(tester);
+      await _mount(
+        tester,
+        service,
+        theme: AppTheme.buildTheme(PaletteRegistry.spatialCinema),
+      );
+      expect(find.byKey(const ValueKey('account-wide-layout')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _mount(
+        tester,
+        service,
+        theme: AppTheme.buildTheme(PaletteRegistry.spatialCinema),
+        textScale: 1.5,
+      );
+      expect(find.byKey(const ValueKey('account-wide-layout')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('curved profile keeps artwork and readable theme layers', (
     tester,
   ) async {

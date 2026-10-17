@@ -36,6 +36,176 @@ Future<void> _mountSpatial(
 }
 
 void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
+  for (final size in [const Size(1440, 1000), const Size(900, 800)]) {
+    testWidgets('Spatial wide business pages use desktop content at $size', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = context.controller;
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await c.setColorScheme(ColorSchemeOption.spatialCinema);
+      await tester.runAsync(() async {
+        await c.toggleFavorite(c.games.first);
+        await c.recordRecentlyViewed(c.games.first);
+      });
+      await _mountSpatial(tester, c, size);
+      for (final (page, type) in <(String, Type)>[
+        ('games', DesktopGamesPane),
+        ('favorites', DesktopGamesPane),
+        ('recent', DesktopGamesPane),
+        ('assistant', DesktopAssistantPane),
+        ('downloads', DesktopLibraryPane),
+        ('topic', DesktopNationalDayPage),
+        ('account', AccountScreen),
+        ('settings', DesktopSettingsPane),
+      ]) {
+        final menu = find.byKey(ValueKey('spatial-menu-$page'));
+        await tester.ensureVisible(menu);
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        expect(find.byType(type), findsOneWidget, reason: page);
+        expect(find.byType(MobileLibraryContent), findsNothing);
+        expect(find.byType(MobileSettingsScreen), findsNothing);
+        expect(tester.takeException(), isNull, reason: page);
+      }
+    });
+  }
+  testWidgets(
+    'Spatial library uses available width, desktop filters and restores query across layouts',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = context.controller;
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await c.setColorScheme(ColorSchemeOption.spatialCinema);
+      await _mountSpatial(tester, c, const Size(1440, 1000));
+      await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
+      await tester.pumpAndSettle();
+      final grid = find.byKey(const ValueKey('desktop-library-posters'));
+      expect(tester.getSize(grid).width, greaterThan(850));
+      expect(
+        find.byKey(const ValueKey('desktop-library-sort-action')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('desktop-library-filter-action')),
+        findsOneWidget,
+      );
+      final category = find.descendant(
+        of: find.byKey(const ValueKey('desktop-library-category-1')),
+        matching: find.byType(Text),
+      );
+      expect(tester.widget<Text>(category).style!.color, c.palette.textPrimary);
+      expect(find.byKey(const ValueKey('mobile-library-search')), findsNothing);
+      await tester.enterText(
+        find.byKey(const ValueKey('spatial-search')),
+        '卡卡',
+      );
+      await tester.pumpAndSettle();
+      expect(c.browseSession.library.query, '卡卡');
+      await _mountSpatial(tester, c, const Size(390, 844));
+      expect(find.byType(MobileLibraryContent), findsOneWidget);
+      final search = find.byKey(const ValueKey('mobile-library-search'));
+      expect(tester.widget<TextField>(search).controller!.text, '卡卡');
+      await tester.enterText(search, '波多');
+      await tester.pumpAndSettle();
+      await _mountSpatial(tester, c, const Size(1440, 1000));
+      expect(find.byType(DesktopGamesPane), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('spatial-search')))
+            .controller!
+            .text,
+        '波多',
+      );
+      expect(c.browseSession.library.query, '波多');
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('Spatial native library adds complete columns on large windows', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final c = context.controller;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await c.setColorScheme(ColorSchemeOption.spatialCinema);
+      await _mountSpatial(tester, c, const Size(1920, 1000));
+      await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
+      await tester.pumpAndSettle();
+      final grid = tester.getRect(
+        find.byKey(const ValueKey('desktop-library-posters')),
+      );
+      final cards = find.descendant(
+        of: find.byType(DesktopGamesPane),
+        matching: find.byType(SpatialGamePoster),
+      );
+      final rects = tester
+          .widgetList(cards)
+          .map((widget) => tester.getRect(find.byWidget(widget)))
+          .toList();
+      final firstRow = rects
+          .where((r) => (r.top - rects.first.top).abs() < 1)
+          .toList();
+      expect(firstRow.length, greaterThanOrEqualTo(7));
+      expect(firstRow.last.right, closeTo(grid.right, 1));
+      expect(
+        firstRow.every((r) => r.left >= grid.left && r.right <= grid.right + 1),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+  testWidgets('Spatial desktop sort and scroll survive detail roundtrip', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final c = context.controller;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await c.setColorScheme(ColorSchemeOption.spatialCinema);
+    await _mountSpatial(tester, c, const Size(1440, 1000));
+    await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('desktop-library-sort-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('desktop-library-sort-option-score')),
+    );
+    await tester.pumpAndSettle();
+    expect(c.browseSession.library.sort, 'score');
+    final scroll = find.byKey(
+      const PageStorageKey('spatial-desktop-scroll-games'),
+    );
+    await tester.drag(scroll, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    final position = tester
+        .widget<SingleChildScrollView>(scroll)
+        .controller!
+        .offset;
+    expect(position, greaterThan(100));
+    final viewport = tester.getRect(scroll);
+    final posters = find.descendant(
+      of: find.byType(DesktopGamesPane),
+      matching: find.byType(SpatialGamePoster),
+    );
+    final visible = posters.evaluate().firstWhere(
+      (element) =>
+          viewport.contains(tester.getCenter(find.byWidget(element.widget))),
+    );
+    await tester.tap(find.byWidget(visible.widget));
+    await tester.pumpAndSettle();
+    expect(find.byType(DesktopGameDetailPane), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(c.browseSession.library.sort, 'score');
+    expect(
+      tester.widget<SingleChildScrollView>(scroll).controller!.offset,
+      closeTo(position, 1),
+    );
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'Spatial Windows fills the window with the solid panel and integrated controls',
     (tester) async {
@@ -182,13 +352,18 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
       }
       await tester.tap(find.byKey(const ValueKey('spatial-menu-settings')));
       await tester.pumpAndSettle();
-      expect(find.byType(MobileSettingsScreen), findsOneWidget);
+      expect(
+        find.byType(
+          size.width >= 760 ? DesktopSettingsPane : MobileSettingsScreen,
+        ),
+        findsOneWidget,
+      );
       expect(find.text('空间影院'), findsOneWidget);
       // Picking another page must not be erased by the removed route callback.
       if (size.width >= 760) {
         await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
         await tester.pumpAndSettle();
-        expect(find.byType(MobileLibraryContent), findsOneWidget);
+        expect(find.byType(DesktopGamesPane), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('spatial-menu-home')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -197,7 +372,12 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(GameDetailScreen), findsOneWidget);
+        expect(
+          find.byType(
+            size.width >= 760 ? DesktopGameDetailPane : GameDetailScreen,
+          ),
+          findsOneWidget,
+        );
         await tester.tap(find.byTooltip('返回'));
         await tester.pumpAndSettle();
         expect(
@@ -257,7 +437,12 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
         final first = c.personalizedRecommendedGames.first;
         await tester.tap(find.byKey(ValueKey('spatial-game-${first.id}')));
         await tester.pumpAndSettle();
-        expect(find.byType(GameDetailScreen), findsOneWidget);
+        expect(
+          find.byType(
+            size.width >= 760 ? DesktopGameDetailPane : GameDetailScreen,
+          ),
+          findsOneWidget,
+        );
         await tester.tap(find.byTooltip('返回'));
         await tester.pumpAndSettle();
         expect(find.byType(SpatialRecommendationsPage), findsOneWidget);
@@ -365,6 +550,24 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
             image.dispose();
           }
         });
+        for (final page in ['games', 'settings']) {
+          await tester.ensureVisible(
+            find.byKey(ValueKey('spatial-menu-$page')),
+          );
+          await tester.tap(find.byKey(ValueKey('spatial-menu-$page')));
+          await tester.pumpAndSettle();
+          await tester.runAsync(() async {
+            final image = await boundary.toImage(pixelRatio: 1);
+            try {
+              final bytes = await image.toByteData(format: ImageByteFormat.png);
+              await File(
+                'build/diagnostics/spatial-wide-$page.png',
+              ).writeAsBytes(bytes!.buffer.asUint8List());
+            } finally {
+              image.dispose();
+            }
+          });
+        }
         expect(tester.takeException(), isNull);
       },
     );

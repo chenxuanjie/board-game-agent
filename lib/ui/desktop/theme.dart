@@ -170,7 +170,9 @@ Color desktopTone(BuildContext context, Color legacy, DesktopToneRole role) {
   final palette = Theme.of(
     context,
   ).extension<AppPaletteThemeExtension>()?.palette;
-  if (palette == null || palette.scheme != ColorSchemeOption.cinema) {
+  if (palette == null ||
+      (palette.scheme != ColorSchemeOption.cinema &&
+          palette.scheme != ColorSchemeOption.spatialCinema)) {
     return legacy;
   }
   return switch (role) {
@@ -185,6 +187,9 @@ Color desktopTone(BuildContext context, Color legacy, DesktopToneRole role) {
     DesktopToneRole.success => palette.success,
     DesktopToneRole.error => palette.error,
     DesktopToneRole.shadow => palette.shadow.withValues(alpha: legacy.a),
-    DesktopToneRole.line => const Color(0xFF353B47),
+    DesktopToneRole.line =>
+      palette.scheme == ColorSchemeOption.spatialCinema
+          ? palette.outline.withValues(alpha: .28)
+          : const Color(0xFF353B47),
   };
 }

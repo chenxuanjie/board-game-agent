@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/ui_tokens.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/color_scheme_option.dart';
 import 'account_scope.dart';
 import 'account_resources_section.dart';
 import '../../features/identity/services/account_cloud_sync.dart';
@@ -815,8 +817,14 @@ class _AccountScreenState extends State<AccountScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, box) {
+            final spatial =
+                Theme.of(
+                  context,
+                ).extension<AppPaletteThemeExtension>()?.palette.scheme ==
+                ColorSchemeOption.spatialCinema;
             final wide =
-                box.maxWidth >= 1000 &&
+                (!spatial || resources != null) &&
+                box.maxWidth >= (spatial ? 840 : 1000) &&
                 MediaQuery.textScalerOf(context).scale(1) < 1.5;
             return SingleChildScrollView(
               padding: const EdgeInsets.all(UiTokens.pageInset),
