@@ -1,10 +1,12 @@
 # Web 账号接入
 
-2026-10-16。当前实现范围：Web 群晖账号登录、按需 OTP、服务器验证后的稳定身份、刷新恢复、退出、取消、账号本机数据隔离，以及 [只读挂载资料访问](web-library.md)。**尚未接入 Web 私人云同步、公共统计写入或评论**；登录不代表数据已同步或所有文件均可读取。Android/Windows 保留原生直连及原安全存储。
+2026-10-17。当前源码支持 Web 群晖账号登录、按需 OTP、服务器验证后的稳定身份、刷新恢复、退出、取消、账号本机数据隔离，以及 [公开挂载资料访问](web-library.md) 和 [桌游评论](game-comments.md)。游客可以读取已发布资料及公开评论；发布、回复、点赞与删除自己的评论要求登录。**尚未接入 Web 私人云同步或公共统计写入**。Android/Windows 保留原生直连及原安全存储。
+
+群晖不支持公网回环时，交付 Compose 的 `extra_hosts` 将 `cznas.pp.ua` 固定解析到 **192.168.1.55**，仅影响账号容器。DSM 请求仍使用 `https://cznas.pp.ua:5001`，HTTP Host、TLS SNI 和证书校验保留，实际 TCP 连接到内网 IP；不能直接把 HTTPS URL 改成 IP 并关闭证书校验。浏览器入口与原生端地址不变。当前开发电脑不能连通该内网地址，尚未完成 NAS 内部署后的验证；本轮仅修改源码和部署模板，没有更新已交付 TAR。
 
 ## 结构与复用
 
-浏览器 → 同源 `/api/account/` → Nginx → `web-account:8000` → 固定配置的 DSM HTTPS API。网关不开放宿主机端口，没有任意 URL 代理、文件写入或 NAS 目录初始化接口；新增只读资料校验与内部文件转发见专项文档。前端在 `web_account_gateway.dart` 实现现有 `IdentityGateway`，继续复用 `app_identity` 的 `IdentityController`、已验证身份状态与 `AccountService` 的账号作用域，不修改共享包。
+浏览器 → 同源 `/api/account/` → Nginx → `web-account:8000` → 固定配置的 DSM HTTPS API。网关不开放宿主机端口，没有任意 URL 代理或任意文件写入接口；仅评论写接口允许当前账号按固定快照协议写自己的记录、受控初始化自己的 UID 目录。公开资料校验与内部文件转发见专项文档。前端在 `web_account_gateway.dart` 实现现有 `IdentityGateway`，继续复用 `app_identity` 的 `IdentityController`、已验证身份状态与 `AccountService` 的账号作用域，不修改共享包。
 
 共享 `SynologyIdentityGateway` 明确拒绝 Web，依赖原生安全存储，不能直接用于浏览器；Python 网关也不能导入 Flutter 包。因此仅将它的 API 发现 → Auth v6 → FileStation.Info v2 验证 UID 流程适配到 HTTPX，HTTP/ASGI、Cookie 和路由复用 Starlette，不实现第二套用户数据库。协议依据：[DSM 官方登录流程](https://kb.synology.com/en-global/DG/DSM_Login_Web_API_Guide/2)。
 

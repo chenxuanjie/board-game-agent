@@ -37,6 +37,63 @@ GameComment comment(GameCommentsService service, String id) => service
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'Web guest reads real comments at both widths with login-only writing',
+    (tester) async {
+      final hub = PublicFixtureHub();
+      final author = service(hub, 101);
+      final id = await author.publish(game: game, text: '游客可以读到这条评论');
+      await author.synchronize();
+      final guest = GameCommentsService(
+        files: MemoryPublicFiles(hub, 0),
+        scope: 'web-guest',
+        isActive: () => true,
+        displayName: () => '',
+        readOnly: true,
+      );
+      addTearDown(guest.dispose);
+      await guest.synchronize();
+      expect(guest.canWrite, isFalse);
+      expect(guest.projection.forGame(game, guest.pendingIds).single.id, id);
+      final writes = hub.writes;
+      await expectLater(
+        guest.publish(game: game, text: '禁止游客发布'),
+        throwsStateError,
+      );
+      expect(hub.writes, writes);
+      for (final width in [390.0, 1200.0]) {
+        tester.view.physicalSize = Size(width, 1400);
+        tester.view.devicePixelRatio = 1;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: GameCommentsPanel(
+                  gameSlug: game,
+                  gameTitle: '卡卡颂',
+                  service: guest,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('游客可以读到这条评论'), findsOneWidget);
+        expect(find.text('登录后评论'), findsOneWidget);
+        expect(find.byKey(const ValueKey('comment-input')), findsNothing);
+        expect(
+          tester
+              .widget<TextButton>(find.byKey(ValueKey('comment-like-$id')))
+              .onPressed,
+          isNull,
+        );
+        expect(tester.takeException(), isNull);
+      }
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    },
+  );
   test(
     'optional score, per-account latest score and deletion never revive old score',
     () async {

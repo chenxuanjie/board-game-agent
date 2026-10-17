@@ -79,7 +79,7 @@ def stage_build_context(root, destination):
             shutil.copyfile(source, target)
     project = destination / "board-game-agent"
     for name in ("Dockerfile", "Dockerfile.dockerignore", "pubspec.yaml", "pubspec.lock", "lib", "web",
-                 "scripts/prepare-web-assets.py", "services/web_account", "packaging/docker/nginx.conf"):
+                 "scripts/prepare-web-assets.py", "services/web_account", "packaging/docker/nginx.conf", "packaging/docker/nginx-main.conf"):
         copy(root / name, project / name)
     spec = importlib.util.spec_from_file_location("web_asset_plan", root / "scripts/prepare-web-assets.py")
     helper = importlib.util.module_from_spec(spec)
@@ -128,7 +128,13 @@ def synology_compose(root, manifest, settings=None):
             name, value = line.split('=', 1)
             defaults[name] = value
     defaults.update(settings or {})
+    if any(not str(defaults.get(key, '')).isdigit() or not 1 <= int(defaults[key]) <= 2147483647
+           for key in ('NAS_READER_UID', 'NAS_READER_GID')):
+        raise ReleaseError('Use the existing NAS owner numeric UID/GID, without root or permission changes')
     values = {
+        '${SYNOLOGY_HOST:-cznas.pp.ua}': defaults['SYNOLOGY_HOST'],
+        '${SYNOLOGY_LAN_IP:-192.168.1.55}': defaults['SYNOLOGY_LAN_IP'],
+        '${COMMENTS_PATH:?Set the existing NAS comments folder}': defaults['COMMENTS_PATH'],
         '${SYNOLOGY_IDENTITY_ORIGIN:-${SYNOLOGY_ORIGIN}}': defaults['SYNOLOGY_IDENTITY_ORIGIN'],
         '${IMAGE_TAG:?Set the imported release image tag}': manifest['imageTag'],
         '${BGA_IMAGE_PLATFORM:-linux/amd64}': manifest['platform'],
@@ -139,7 +145,11 @@ def synology_compose(root, manifest, settings=None):
         '${LIBRARY_NAS_PATH:?Set the matching FileStation library path}': defaults['LIBRARY_NAS_PATH'],
     }
     compose = (root / 'docker-compose.yml').read_text(encoding='utf-8-sig')
-    compose = compose.replace('"${WEB_PORT:-8887}:80"', json.dumps(f'{defaults["WEB_PORT"]}:80'))
+    compose = compose.replace('"${NAS_READER_UID:-1028}:${NAS_READER_GID:-100}"',
+                              json.dumps(f'{defaults["NAS_READER_UID"]}:{defaults["NAS_READER_GID"]}'))
+    compose = compose.replace('"${SYNOLOGY_HOST:-cznas.pp.ua}:${SYNOLOGY_LAN_IP:-192.168.1.55}"',
+                              json.dumps(f'{defaults["SYNOLOGY_HOST"]}:{defaults["SYNOLOGY_LAN_IP"]}'))
+    compose = compose.replace('"${WEB_PORT:-8887}:8080"', json.dumps(f'{defaults["WEB_PORT"]}:8080'))
     # Image refs need to be quoted as a whole; all other values occupy entire scalars.
     for repository in REPOSITORIES:
         token = repository + ':${IMAGE_TAG:?Set the imported release image tag}'
@@ -148,7 +158,12 @@ def synology_compose(root, manifest, settings=None):
         compose = compose.replace(token, json.dumps(str(value), ensure_ascii=False))
     if '${' in compose:
         raise ReleaseError('Unresolved variable in Synology Compose')
-    return ('# Synology Container Manager: import the matching TAR, then upload this file.\n'
+    return ('# ===== 桌游伙伴 V5 · 群晖部署配置 NAS-R2 =====\n'
+            f'# 对应镜像标签：{manifest["imageTag"]}\n'
+            '# 本版识别：端口 8887:8080；两个服务均使用 NAS 读取身份。\n'
+            '# 如仍看到 8887:80 或旧镜像标签，说明尚未替换为本文件。\n'
+            '# ==========================================\n'
+            '# Synology Container Manager: import the matching TAR, then upload this file.\n'
             '# No .env or build tools required. Edit NAS paths and site/DSM URLs here.\n'
             '# Browser URL must match WEB_PUBLIC_ORIGIN; update it if the site address changes.\n'
             + compose)

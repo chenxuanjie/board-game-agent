@@ -26,6 +26,8 @@ final class WebAccountGateway
   int _generation = 0;
   bool _disposed = false;
   IdentityUser? _user;
+  int? _nasUid;
+  int? get nasUid => _user == null ? null : _nasUid;
 
   static Future<AccountConfiguration> loadConfiguration({
     http.Client? client,
@@ -120,6 +122,7 @@ final class WebAccountGateway
   }
 
   IdentityUser? _decodeUser(Map<String, dynamic> value) {
+    _nasUid = null;
     if (value['user'] == null && value.containsKey('user')) return null;
     final user = value['user'];
     if (user is! Map<String, dynamic> ||
@@ -129,6 +132,9 @@ final class WebAccountGateway
         (user['displayName'] as String).isEmpty ||
         (user['displayName'] as String).length > 200) {
       throw const IdentityFailure(IdentityFailureCode.providerUnavailable);
+    }
+    if (user['uid'] is int && (user['uid'] as int) > 0) {
+      _nasUid = user['uid'] as int;
     }
     return IdentityUser(
       id: user['id'] as String,

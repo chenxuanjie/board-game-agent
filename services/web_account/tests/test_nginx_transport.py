@@ -34,6 +34,8 @@ class NginxTransportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="bga-nginx-") as temp:
             root = Path(temp)
             library = root / "library"
+            comments = root / "comments"
+            comments.mkdir()
             game = library / "assets/games/sample"
             (game / "docs").mkdir(parents=True)
             (root / "logs").mkdir()
@@ -70,7 +72,7 @@ class NginxTransportTests(unittest.TestCase):
 
             web_port, api_port = unused_port(), unused_port()
             settings = Settings("https://nas.example:5001", "https://nas.example:5001", f"http://127.0.0.1:{web_port}",
-                                insecure_http=True, library_root=str(library))
+                                insecure_http=True, library_root=str(library), comments_root=str(comments))
             upstream = httpx.AsyncClient(transport=httpx.MockTransport(dsm))
             app = create_app(settings, upstream)
             server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=api_port, log_level="error", loop="asyncio"))
@@ -79,7 +81,7 @@ class NginxTransportTests(unittest.TestCase):
             nginx = None
             try:
                 config = (repo / "packaging/docker/nginx.conf").read_text()
-                config = config.replace("listen 80;", f"listen 127.0.0.1:{web_port};")
+                config = config.replace("listen 8080;", f"listen 127.0.0.1:{web_port};")
                 config = config.replace("root /usr/share/nginx/html;", f'root "{(root / "web").as_posix()}";')
                 config = config.replace("include /etc/nginx/mime.types;", f'include "{(binary.parent / "conf/mime.types").as_posix()}";')
                 config = config.replace("http://web-account:8000", f"http://127.0.0.1:{api_port}")
@@ -106,7 +108,10 @@ class NginxTransportTests(unittest.TestCase):
                         time.sleep(.02)
                     self.assertTrue(server.started)
                     uri = "/library/assets/games/sample/docs/rules.pdf"
-                    self.assertEqual(client.get(uri).status_code, 401)
+                    self.assertEqual(client.get(uri).status_code, 200)
+                    self.assertEqual(client.get('/api/comments/entries').json(), {'entries': []})
+                    self.assertEqual(client.post('/api/comments/file?path=u1001/d' + 'a' * 32 + '.json',
+                                                 json={'content': 'x' * 16000}).status_code, 401)
                     client.get("/api/account/session")
                     self.assertEqual(client.post("/api/account/login", json={"account": "test", "password": "test"}).status_code, 200)
                     partial = client.get(uri, headers={"Range": "bytes=100-199"})
@@ -136,7 +141,7 @@ class NginxTransportTests(unittest.TestCase):
                     self.assertEqual(client.get("/_library_files/assets/games/sample/docs/rules.pdf").status_code, 404)
                     self.assertEqual(client.get("/library/assets/missing.pdf").status_code, 404)
                     self.assertEqual(client.post("/api/account/logout").status_code, 200)
-                    self.assertEqual(client.get(uri, headers={"If-None-Match": etag}).status_code, 401)
+                    self.assertEqual(client.get(uri, headers={"If-None-Match": etag}).status_code, 200)
             finally:
                 if nginx is not None:
                     subprocess.run(command + ["-s", "quit"], capture_output=True, **options)

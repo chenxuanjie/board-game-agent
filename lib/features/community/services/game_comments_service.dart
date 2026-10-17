@@ -13,11 +13,13 @@ final class GameCommentsService extends ChangeNotifier {
     required this.scope,
     required this.isActive,
     required this.displayName,
+    this.readOnly = false,
   });
   final AccountPublicFiles files;
   final String scope;
   final bool Function() isActive;
   final String Function() displayName;
+  final bool readOnly;
   final Map<String, CommentOperation> _events = {}, _own = {};
   final Set<String> _pending = {};
   final Set<String> _confirmedLikes = {};
@@ -34,7 +36,7 @@ final class GameCommentsService extends ChangeNotifier {
   int _attempts = 0;
   String? error;
   late final int uid = files.uid;
-  bool get canWrite => !_disposed && isActive();
+  bool get canWrite => !readOnly && !_disposed && isActive();
   bool get pending => _pending.isNotEmpty;
   Set<String> get pendingIds => Set.unmodifiable(_pending);
   bool likePending(String commentId) => _pending.any(

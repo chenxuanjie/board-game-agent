@@ -35,6 +35,26 @@ void main() {
   });
 
   test(
+    'guest published PDF uses same-origin HEAD without account credentials',
+    () async {
+      final guest = SameOriginLibraryService(
+        accountScope: () => 'web_guest',
+        accessAllowed: () => true,
+        site: Uri.parse('https://games.example/'),
+        client: MockClient((request) async {
+          expect(request.method, 'HEAD');
+          expect(request.url.queryParameters['account'], 'web_guest');
+          expect(request.headers.containsKey('Authorization'), isFalse);
+          return http.Response('', 200, headers: {'etag': '"guest-pdf"'});
+        }),
+      );
+      final cached = await guest.ensureCached(sources: [], remotePath: path);
+      expect(cached!.localPath, contains('/library/$path'));
+      expect(guest.accessAllowed, isTrue);
+    },
+  );
+
+  test(
     'resource URI is same-origin, scoped, and never contains credentials',
     () {
       final uri = service.resourceUri(path)!;

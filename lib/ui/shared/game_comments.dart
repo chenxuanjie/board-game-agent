@@ -245,7 +245,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
             const SizedBox(height: 12),
             Text(
               webUnavailable
-                  ? '网页版评论暂未开放'
+                  ? '评论连接尚未就绪，请重试'
                   : unavailable
                   ? '请在 App 或桌面端登录后查看评论'
                   : account?.isSignedIn == true
@@ -254,7 +254,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
               textAlign: TextAlign.center,
               style: TextStyle(color: palette.textSecondary),
             ),
-            if (!unavailable && !webUnavailable)
+            if (!unavailable)
               TextButton(
                 onPressed: () {
                   if (account?.isSignedIn == true) {
@@ -383,7 +383,16 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
               ],
             ),
           ),
-        if (!mobile &&
+        if (service.readOnly && !widget.preview)
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
+            ),
+            icon: const Icon(Icons.login_rounded),
+            label: const Text('登录后评论'),
+          ),
+        if (!service.readOnly &&
+            !mobile &&
             !widget.preview &&
             (widget.rootId == null ||
                 root != null && !projection.deleted.contains(root.id)))
@@ -456,9 +465,17 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
           ),
         if (widget.preview)
           OutlinedButton.icon(
-            onPressed: service.canWrite ? () => _compose() : null,
+            onPressed: service.canWrite
+                ? () => _compose()
+                : service.readOnly
+                ? () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AccountScreen(),
+                    ),
+                  )
+                : null,
             icon: const Icon(Icons.edit_outlined),
-            label: const Text('写评论'),
+            label: Text(service.readOnly ? '登录后评论' : '写评论'),
           ),
       ],
     );
@@ -695,10 +712,21 @@ class _GameCommentsPageState extends State<GameCommentsPage> {
               minimum: const EdgeInsets.all(12),
               child: FilledButton.icon(
                 icon: const Icon(Icons.edit_outlined),
-                label: Text(rootId == null ? '写评论' : '写回复'),
-                onPressed:
-                    active?.canWrite != true ||
-                        rootId != null && replyTarget == null
+                label: Text(
+                  active?.readOnly == true
+                      ? '登录后评论'
+                      : rootId == null
+                      ? '写评论'
+                      : '写回复',
+                ),
+                onPressed: active?.readOnly == true
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const AccountScreen(),
+                        ),
+                      )
+                    : active?.canWrite != true ||
+                          rootId != null && replyTarget == null
                     ? null
                     : () => showAppBottomSheet<void>(
                         context: context,

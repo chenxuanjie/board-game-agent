@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx
@@ -90,6 +91,22 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(LibraryError):
             self.library.paths()
 
+    def test_permission_denied_is_not_reported_as_missing(self):
+        with patch.object(Path, 'resolve', side_effect=PermissionError('test mount denied')):
+            with self.assertRaises(LibraryError) as raised:
+                self.library.resolve('assets/catalog.json')
+        self.assertEqual(raised.exception.status, 503)
+        self.assertEqual(raised.exception.code, 'libraryUnreadable')
+
+    def test_listing_and_versions_do_not_hide_unreadable_files_as_missing(self):
+        path='assets/games/sample/docs/rules.pdf'
+        with patch.object(self.library, 'paths', return_value={path}), patch.object(
+                self.library, 'file', side_effect=LibraryError(503, 'libraryUnreadable')):
+            for action in (lambda: self.library.entries('assets', 6, 100), self.library.versions):
+                with self.assertRaises(LibraryError) as raised:
+                    action()
+                self.assertEqual(raised.exception.code, 'libraryUnreadable')
+
 
 class LibraryGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -147,10 +164,16 @@ class LibraryGatewayTests(unittest.IsolatedAsyncioTestCase):
         await self.client.get("/api/account/session")
         self.assertEqual((await self.client.post("/api/account/login", json={"account": "Shane", "password": "test"})).status_code, 200)
 
-    async def test_anonymous_cannot_access_files_or_versions(self):
+    async def test_anonymous_can_access_published_files_and_versions_without_dsm(self):
         for path in ("/library/assets/catalog.json", "/api/library/versions", "/api/library/files"):
-            self.assertEqual((await self.client.get(path)).status_code, 401)
+            self.assertEqual((await self.client.get(path)).status_code, 200)
         self.assertEqual(self.fields, [])
+
+    async def test_unreadable_mount_has_a_distinct_sanitized_failure(self):
+        with patch.object(Library, 'resolve', side_effect=LibraryError(503, 'libraryUnreadable')):
+            response = await self.client.get('/library/assets/catalog.json')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {'error': 'libraryUnreadable'})
 
     async def test_file_uses_internal_redirect_after_exact_read_proof(self):
         await self.login()
@@ -160,27 +183,20 @@ class LibraryGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.headers["x-accel-redirect"], "/_library_files/assets/catalog.json")
             self.assertEqual(response.content, b"")
             self.assertNotIn("private-sid", str(response.headers))
-        self.assertEqual(len([f for f in self.fields if f.get("query") == "SYNO.FileStation.Download"]), 1)
+        self.assertFalse(any(f.get("method") == "download" for f in self.fields))
 
-    async def test_rejected_permission_and_expired_sid_never_redirect(self):
+    async def test_public_files_remain_readable_when_dsm_session_expires(self):
         await self.login()
-        for code, status in ((407, 403), (119, 401)):
+        for code in (407, 119):
             self.download_error = code
             response = await self.client.get("/library/assets/catalog.json")
-            self.assertEqual(response.status_code, status)
-            self.assertNotIn("x-accel-redirect", response.headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("x-accel-redirect", response.headers)
 
-    async def test_logout_during_permission_probe_rejects_late_file(self):
+    async def test_logout_does_not_revoke_public_read_access(self):
         await self.login()
-        self.download_gate = asyncio.Event()
-        pending = asyncio.create_task(self.client.get("/library/assets/catalog.json"))
-        for _ in range(100):
-            if any(f.get("method") == "download" for f in self.fields):
-                break
-            await asyncio.sleep(.001)
         self.assertEqual((await self.client.post("/api/account/logout")).status_code, 200)
-        self.download_gate.set()
-        self.assertEqual((await pending).status_code, 401)
+        self.assertEqual((await self.client.get("/library/assets/catalog.json")).status_code, 200)
 
     async def test_cross_origin_and_unregistered_paths_are_rejected(self):
         await self.login()

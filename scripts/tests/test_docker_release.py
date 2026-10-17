@@ -91,6 +91,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn('board-game-agent:4.1.0-37-test', compose)
         self.assertIn('board-game-agent-web-account:4.1.0-37-test', compose)
         self.assertNotIn('${', compose)
+        self.assertIn('cznas.pp.ua:192.168.1.55', compose)
+        self.assertIn('/data/comments', compose)
+        self.assertEqual(compose.count('user: "1028:100"'), 2)
+        self.assertIn('8887:8080', compose)
         self.assertFalse((support / '.env.example').exists())
         self.assertNotIn(b'\r', (support / 'image-tag.txt').read_bytes())
         self.assertNotIn(b'\r', (support / 'image-platform.txt').read_bytes())
@@ -199,7 +203,7 @@ class BuildContextTests(unittest.TestCase):
         self.root = self.workspace / 'board-game-agent'
         self.stage = self.workspace / 'isolated'
         for name in ('Dockerfile', 'Dockerfile.dockerignore', 'pubspec.lock', 'lib/main.dart',
-                     'web/index.html', 'services/web_account/app.py', 'packaging/docker/nginx.conf',
+                     'web/index.html', 'services/web_account/app.py', 'packaging/docker/nginx.conf', 'packaging/docker/nginx-main.conf',
                      'assets/catalog.json', 'assets/games/sample/game.json',
                      'assets/games/sample/docs/private.pdf', '.env', 'tmp/private.txt',
                      '../unrelated-project/private.txt', '../shared_packages/example/lib/client.dart',

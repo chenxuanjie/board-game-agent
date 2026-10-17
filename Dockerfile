@@ -20,9 +20,12 @@ RUN python3 scripts/prepare-web-assets.py pubspec.yaml --apply \
     && flutter pub get --enforce-lockfile && flutter build web --release --no-pub --base-href=/
 
 FROM nginx:1.28-alpine AS runtime
+COPY board-game-agent/packaging/docker/nginx-main.conf /etc/nginx/nginx.conf
 COPY board-game-agent/packaging/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /workspace/board-game-agent/build/web /usr/share/nginx/html
-EXPOSE 80
+USER 65532:65532
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1
-CMD ["nginx", "-g", "daemon off;"]
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off;"]

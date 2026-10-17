@@ -4,6 +4,12 @@
 
 ## 在开发电脑构建镜像版
 
+2026-10-18 读取身份修复（已构建）：NAS FileStation 只读核验确认资料/评论路径存在，所有者为 UID 1028/GID 100，启用 Synology ACL；先前部署的网关却以 65532:65532 运行。受限临时目录在旧身份下复现 catalog 404/评论 503，匹配 1028:100 后正常。Compose 为 Nginx 与网关都配置 `user: "1028:100"`，使用现有 NAS 读取身份，不修改 NAS ACL/所有者。Nginx 使用非特权 8080、只读根文件系统与可写临时目录，外部仍是 8887。权限错误返回 `libraryUnreadable` 或 `commentsUnreadable`，不再当作 404。
+
+受限目录容器测试增加到 22 项，并验证错误 UID 确实读不到测试文件。先完成源码覆盖模式回归，随后通过 Skill publisher 重新构建 V5 5.0.0+38；新 TAR 无源码挂载的 22 项检查全部通过，报告为 `release/reports/docker-linux-amd64/validation.json`，模式是 `imported release images without source mounts`。TAR SHA-256 为 `b2f74477757193bfd4dc978f85e60d1df1f71bd6500ca0b4e4af2d8255476eac`。新 Nginx 启动配置与 YAML 须随新 TAR 一起部署，不能只换 YAML。未修改 NAS 容器配置、权限或真实文件；旧部署已通过真实账号登录/UID 验证，但目录仍 404，新读取身份在 NAS 上尚待更新后验收。
+
+2026-10-17 源码部署模板增加账号容器的 `extra_hosts: ["cznas.pp.ua:192.168.1.55"]`：DSM 的 HTTPS 域名保留，实际访问 NAS 内网 IP，不依赖公网回环。另将既有 `/volume2/friend/apps/board_game_agent_comments/public/v1` 只读挂到账号容器的 `/data/comments`，供游客读评论；评论写入经当前登录账号的 DSM 会话完成。目录须已存在，不自动创建共享根或改权限。浏览器入口仍为 `http://cznas.pp.ua:8887`。这些模板改动须在下次构建后随匹配镜像重新部署；当前 TAR 尚未更新，开发电脑无法直连该内网地址，未声称已完成 NAS 实测。
+
 需要 Python 3、可用的 Linux Docker 引擎和 Buildx；Windows Docker 须使用 Linux 容器。2026-10-16 已在本机 Ubuntu WSL 安装 Docker Engine 29.9.1、Buildx 0.38.0、Compose 5.6.0，真实构建、镜像包和本地容器验收已完成。Windows 10 LTSC 19044 未安装不兼容的新版 Docker Desktop。
 
 默认目标为 `linux/amd64`。参考工程现有 `usv_server` 的 ELF machine 为 62（x86-64），用户要求使用相同架构；此证据不是远程 NAS 实测。脚本可显式选择 `linux/arm64`，但 ARM 构建和运行尚未验证，构建环境须自行具备对应平台支持。
@@ -36,7 +42,7 @@ python3 scripts/build-docker-release.py --platform linux/amd64
 
 | 配置 | 用途 |
 | --- | --- |
-| `ports` 中的 `8887:80` | 宿主机网站端口，Nginx 容器内为 80 |
+| `ports` 中的 `8887:8080` | 宿主机网站端口仍是 8887，非特权 Nginx 容器内为 8080 |
 | 两处挂载 `source` | 同一个已存在的 NAS 物理目录，如 `/volume1/friend/apps/board_game_agent/board-game-lib` |
 | `LIBRARY_NAS_PATH` | 同一目录的 FileStation 路径，如 `/friend/apps/board_game_agent/board-game-lib` |
 | `SYNOLOGY_ORIGIN` | 容器可访问、证书有效的 DSM HTTPS 地址 |

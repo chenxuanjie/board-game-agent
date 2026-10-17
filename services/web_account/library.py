@@ -5,8 +5,9 @@ import re
 
 
 class LibraryError(Exception):
-    def __init__(self, status):
+    def __init__(self, status, code=None):
         self.status = status
+        self.code = code or ("missing" if status == 404 else "providerUnavailable")
 
 
 def logical_path(value):
@@ -41,8 +42,12 @@ class Library:
             if not candidate.is_file():
                 raise LibraryError(404)
             return candidate
-        except (OSError, RuntimeError):
+        except PermissionError:
+            raise LibraryError(503, "libraryUnreadable") from None
+        except (FileNotFoundError, NotADirectoryError, RuntimeError):
             raise LibraryError(404) from None
+        except OSError:
+            raise LibraryError(503, "libraryUnavailable") from None
 
     def _json(self, path):
         file = self.file(path)
@@ -53,6 +58,8 @@ class Library:
             if not isinstance(value, dict):
                 raise ValueError()
             return value
+        except PermissionError:
+            raise LibraryError(503, "libraryUnreadable") from None
         except (ValueError, OSError):
             raise LibraryError(503) from None
 
@@ -74,7 +81,9 @@ class Library:
             try:
                 stat = self.file(path).stat()
                 signature.append((path, stat.st_mtime_ns, stat.st_size))
-            except LibraryError:
+            except LibraryError as error:
+                if error.status != 404:
+                    raise
                 signature.append((path, None, None))
         signature = tuple(signature)
         if signature == self._signature:
@@ -143,7 +152,9 @@ class Library:
                 continue
             try:
                 stat = self.file(path).stat()
-            except LibraryError:
+            except LibraryError as error:
+                if error.status != 404:
+                    raise
                 continue
             values.append({"path": path, "name": PurePosixPath(path).name,
                            "etag": f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'})
@@ -157,6 +168,8 @@ class Library:
             try:
                 stat = self.file(path).stat()
                 values.append({"path": path, "version": f"{stat.st_mtime_ns:x}-{stat.st_size:x}", "exists": True})
-            except LibraryError:
+            except LibraryError as error:
+                if error.status != 404:
+                    raise
                 values.append({"path": path, "exists": False})
         return values

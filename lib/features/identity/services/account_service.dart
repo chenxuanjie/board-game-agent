@@ -17,6 +17,7 @@ import 'account_public_reactions.dart';
 import 'saved_login_store.dart';
 import 'web_account_gateway.dart';
 import '../../community/services/game_comments_service.dart';
+import '../../community/services/web_public_comments_files.dart';
 
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
@@ -237,10 +238,32 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   GameCommentsService? _comments;
   bool _commentsClosing = false;
   GameCommentsService? get comments {
-    if (!isSignedIn || !dataScopeReady || _disposed || _commentsClosing) {
+    if ((!isSignedIn && !usesWebAccount) ||
+        !dataScopeReady ||
+        _disposed ||
+        _commentsClosing) {
       return null;
     }
     if (_comments != null) return _comments;
+    if (usesWebAccount) {
+      final identityId = user?.id;
+      final uid = _gateway is WebAccountGateway
+          ? (_gateway as WebAccountGateway).nasUid ?? 0
+          : 0;
+      return _comments = GameCommentsService(
+        files: WebPublicCommentsFiles(uid: uid),
+        scope: identityId == null
+            ? 'web_comments_guest'
+            : _configuration!.accountScope(identityId),
+        readOnly: identityId == null || uid == 0,
+        displayName: () => displayName,
+        isActive: () =>
+            !_disposed &&
+            !_commentsClosing &&
+            dataScopeReady &&
+            user?.id == identityId,
+      );
+    }
     if (_gateway is! SynologyIdentityGateway || isOffline) return null;
     final identityId = user!.id;
     final files = (_gateway as SynologyIdentityGateway).publicFiles(

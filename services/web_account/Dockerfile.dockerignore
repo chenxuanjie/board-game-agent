@@ -4,6 +4,7 @@
 !services/web_account/
 !services/web_account/app.py
 !services/web_account/library.py
+!services/web_account/comments.py
 !services/web_account/requirements.txt
 !services/web_account/Dockerfile
 !services/web_account/Dockerfile.dockerignore

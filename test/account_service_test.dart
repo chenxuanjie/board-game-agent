@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
+import 'package:board_game_agent/features/identity/services/web_account_gateway.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +15,55 @@ AccountConfiguration configuration([String host = 'app.example.test']) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'Web comments switch between guest read-only and verified UID without reusing old service',
+    () async {
+      final app = FixtureApp();
+      final id = 'a' * 64;
+      var signed = false;
+      final gateway = WebAccountGateway(
+        site: Uri.parse('https://games.example'),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/login')) signed = true;
+          if (request.url.path.endsWith('/logout')) signed = false;
+          return http.Response(
+            jsonEncode({
+              'user': signed
+                  ? {'id': id, 'displayName': 'Shane', 'uid': 101}
+                  : null,
+            }),
+            200,
+          );
+        }),
+      );
+      final service = AccountService(
+        controller: app,
+        browserAccounts: true,
+        webConfigurationLoader: () async => configuration(),
+        gatewayFactory: (_) async => gateway,
+        switchScope: (_) async {},
+      );
+      addTearDown(service.dispose);
+      addTearDown(app.dispose);
+      await service.initialize();
+      final guest = service.comments!;
+      expect(guest.readOnly, isTrue);
+      expect(guest.uid, 0);
+      await service.signIn(account: 'Shane', password: 'fixture');
+      expect(service.error, isNull);
+      final own = service.comments!;
+      expect(identical(guest, own), isFalse);
+      expect(own.canWrite, isTrue);
+      expect(own.uid, 101);
+      expect(guest.canWrite, isFalse);
+      await service.signOut();
+      final nextGuest = service.comments!;
+      expect(nextGuest.readOnly, isTrue);
+      expect(nextGuest.uid, 0);
+      expect(own.canWrite, isFalse);
+      expect(identical(nextGuest, own), isFalse);
+    },
+  );
   test(
     'Web stays guest and never creates a native gateway or prompts for credentials',
     () async {

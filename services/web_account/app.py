@@ -2,7 +2,8 @@
 
 Starlette owns HTTP/ASGI and HTTPX owns upstream TLS, pooling and deadlines.
 DSM discovery/Auth v6/FileStation.Info follow the same protocol as app_identity.
-The mounted library is read-only; there is no generic proxy or file-write API.
+Mounts are read-only; only authenticated own-comment snapshots can be uploaded
+through the user's DSM session. There is no generic proxy or file-write API.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import secrets
 import ssl
 import time
 from urllib.parse import urlsplit, quote
+from weakref import WeakValueDictionary
 
 import httpx
 from starlette.applications import Starlette
@@ -26,8 +28,10 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 try:
     from .library import Library, LibraryError
+    from .comments import Comments
 except ImportError:  # Docker's /app module layout.
     from library import Library, LibraryError
+    from comments import Comments
 
 
 class Failure(Exception):
@@ -61,6 +65,8 @@ class Settings:
     lifetime_seconds: int = 28800
     library_root: str = "/data/library"
     library_nas_path: str = "/friend/apps/board_game_agent/board-game-lib"
+    comments_root: str = "/data/comments"
+    comments_nas_path: str = "/friend/apps/board_game_agent_comments/public/v1"
 
     def __post_init__(self):
         object.__setattr__(self, "nas_origin", origin(self.nas_origin))
@@ -68,6 +74,10 @@ class Settings:
         object.__setattr__(self, "public_origin", origin(self.public_origin, allow_http=self.insecure_http))
         if min(self.max_sessions, self.idle_seconds, self.lifetime_seconds) <= 0:
             raise ValueError("Positive session limits are required")
+        if (not self.comments_nas_path.startswith("/") or any(
+                part in ("", ".", "..") for part in self.comments_nas_path[1:].split("/"))
+                or any(c in self.comments_nas_path for c in "\\\x00\r\n")):
+            raise ValueError("A fixed NAS comments path is required")
         if (not self.library_nas_path.startswith("/") or any(
                 part in ("", ".", "..") for part in self.library_nas_path[1:].split("/"))
                 or any(c in self.library_nas_path for c in "\\\x00\r\n")):
@@ -80,6 +90,8 @@ class Settings:
                    os.environ["WEB_PUBLIC_ORIGIN"],
                    os.getenv("WEB_ALLOW_INSECURE_HTTP", "false").lower() == "true",
                    library_root=os.getenv("LIBRARY_ROOT", "/data/library"),
+                   comments_root=os.getenv("COMMENTS_ROOT", "/data/comments"),
+                   comments_nas_path=os.getenv("COMMENTS_NAS_PATH", "/friend/apps/board_game_agent_comments/public/v1"),
                    library_nas_path=os.getenv("LIBRARY_NAS_PATH", "/friend/apps/board_game_agent/board-game-lib"))
 
 
@@ -123,8 +135,8 @@ class Dsm:
                 headers["X-SYNO-TOKEN"] = token
         return headers
 
-    async def api(self, path, fields, *, session=None):
-        if not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.cgi", path):
+    async def api(self, path, fields, *, session=None, file=None):
+        if not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.cgi", path):
             raise Failure("providerUnavailable")
         try:
             # DSM authenticates the request before parsing some POST APIs.
@@ -132,6 +144,7 @@ class Dsm:
             # Use request-local Cookie + token header, keeping secrets out of URLs.
             async with self.client.stream("POST", f"{self.settings.nas_origin}/webapi/{path}",
                                           data=fields, headers=self.headers(session),
+                                          **({"files": {"file": file}} if file else {}),
                                           follow_redirects=False) as response:
                 if response.status_code == 429:
                     raise Failure("rateLimited", 429)
@@ -153,9 +166,9 @@ class Dsm:
                              407: "rateLimited", 408: "passwordChangeRequired",
                              409: "passwordChangeRequired", 410: "passwordChangeRequired"}.get(code, "providerUnavailable")
                 else:
-                    error = "accountDenied" if code == 105 else (
+                    error = "missing" if code == 408 else "accountDenied" if code in (105, 403, 404, 407, 411) else (
                         "sessionRejected" if code in (106, 107, 119, 150, 400) else "providerUnavailable")
-                raise Failure(error, 401 if error in ("invalidCredentials", "sessionRejected") else 403)
+                raise Failure(error, 404 if error == "missing" else 401 if error in ("invalidCredentials", "sessionRejected") else 403)
             data = value.get("data", {})
             if not isinstance(data, dict):
                 raise Failure("providerUnavailable")
@@ -184,6 +197,20 @@ class Dsm:
             paths.append(spec["path"])
         self.paths = tuple(paths)
         return self.paths
+
+    async def file_api(self, session, api, method, fields, *, file=None):
+        if (api, method) not in {("SYNO.FileStation.List", "getinfo"),
+                                 ("SYNO.FileStation.CreateFolder", "create"),
+                                 ("SYNO.FileStation.Upload", "upload")}:
+            raise Failure("accountDenied", 403)
+        data = await self.api("entry.cgi", {"api": "SYNO.API.Info", "version": "1",
+                                           "method": "query", "query": api})
+        spec = data.get(api, {})
+        if (type(spec.get("minVersion")) is not int or type(spec.get("maxVersion")) is not int
+                or not spec["minVersion"] <= 2 <= spec["maxVersion"]):
+            raise Failure("providerUnavailable")
+        return await self.api(spec.get("path", ""), {"api": api, "version": "2", "method": method, **fields},
+                              session=session, file=file)
 
     async def uid(self, session):
         data = await self.api(session.info_path, {"api": "SYNO.FileStation.Info", "version": "2", "method": "get"},
@@ -279,6 +306,8 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
                                               limits=httpx.Limits(max_connections=32, max_keepalive_connections=16))
     dsm = Dsm(settings, upstream)
     library = Library(settings.library_root)
+    comments = Comments(settings.comments_root, settings.comments_nas_path, Failure)
+    comment_locks = WeakValueDictionary()
     library_lock = asyncio.Lock()
     sessions: dict[str, BrowserSession] = {}
     attempts: OrderedDict[str, list[float]] = OrderedDict()
@@ -286,7 +315,7 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
 
     def user(nas):
         return {"id": hashlib.sha256(f"synology-direct-v1|{settings.identity_origin}|{nas.uid}".encode()).hexdigest(),
-                "displayName": nas.account}
+                "displayName": nas.account, "uid": nas.uid}
 
     async def revoke_quiet(nas):
         if nas:
@@ -332,34 +361,64 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
                 or request.headers.get("sec-fetch-site") == "cross-site"):
             raise Failure("accountDenied", 403)
 
-    async def authorized(request, logical):
-        guard(request, resource=True)
-        _, state, _ = session(request)
-        if state is None or state.nas is None:
-            raise Failure("sessionRejected", 401)
-        nas, revision = state.nas, state.revision
-        async with asyncio.timeout(12):
-            await dsm.readable(nas, logical)
-        if state.revision != revision or state.nas is not nas:
-            raise Failure("sessionRejected", 401)
-
     def signed_in(request):
         guard(request, resource=True)
         _, state, _ = session(request)
         if state is None or state.nas is None:
             raise Failure("sessionRejected", 401)
+        return state
+
+    async def comment_entries(request):
+        guard(request)
+        try:
+            values = await asyncio.to_thread(comments.entries, request.query_params.get("path", ""))
+        except PermissionError:
+            raise Failure("commentsUnreadable", 503) from None
+        return answer({"entries": values})
+
+    async def comment_file(request):
+        guard(request)
+        path = request.query_params.get("path", "")
+        if request.method == "GET":
+            try:
+                return answer({"content": await asyncio.to_thread(comments.read, path)})
+            except PermissionError:
+                raise Failure("commentsUnreadable", 503) from None
+        state = signed_in(request)
+        nas, revision = state.nas, state.revision
+        limit(request, nas.account, bucket="comments", maximum=60)
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 4 * 1024 * 1024:
+                raise Failure("accountDenied", 413)
+        try:
+            value = json.loads(raw)
+            content = value["content"]
+            comments.validate(path, content, nas.uid)
+        except (ValueError, TypeError, KeyError):
+            raise Failure("accountDenied", 400) from None
+        lock = comment_locks.setdefault(nas.uid, asyncio.Lock())
+        async with asyncio.timeout(30), lock:
+            if state.nas is not nas or state.revision != revision:
+                raise Failure("sessionRejected", 401)
+            if await dsm.uid(nas) != nas.uid:
+                raise Failure("sessionRejected", 401)
+            await comments.replace(dsm, nas, path, content)
+            if state.nas is not nas or state.revision != revision:
+                raise Failure("sessionRejected", 401)
+        return answer({"saved": True})
 
     async def library_file(request):
-        signed_in(request)
+        guard(request, resource=True)
         path = request.path_params["path"]
-        # Resolve against the published manifests before touching DSM. The
-        # internal Nginx directory is inaccessible without this authorization.
+        # Anonymous readers may only access enabled, published manifest paths.
+        # The raw Nginx directory remains inaccessible from the browser.
         async with library_lock:
             await asyncio.to_thread(library.resolve, path)
-        await authorized(request, path)
         stat = await asyncio.to_thread(lambda: library.resolve(path).stat())
         etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
-        # Authorization must precede 304, including after logout/ACL changes.
+        # Recheck the published allowlist before 304, including after removal.
         # Nginx drops upstream ETag during X-Accel-Redirect, so compare here
         # and re-attach it in the internal file location for 200/206/HEAD.
         if any(value.strip() in ("*", etag, "W/" + etag)
@@ -372,37 +431,32 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
 
     async def library_files(request):
         guard(request)
-        signed_in(request)
         directory = request.query_params.get("path", "assets")
         try:
             depth = min(10, max(0, int(request.query_params.get("depth", "6"))))
             maximum = min(1000, max(1, int(request.query_params.get("limit", "1000"))))
         except ValueError:
             raise Failure("providerUnavailable", 400) from None
-        # A game manifest grants visibility of its registered file names. Each
-        # actual file request still proves that file's own read permission.
+        # A published game manifest grants visibility of its registered files.
         parts = directory.split("/")
         proof = "/".join(parts[:3]) + "/manifest.json" if len(parts) >= 3 and parts[:2] == ["assets", "games"] else "assets/catalog.json"
         async with library_lock:
             await asyncio.to_thread(library.resolve, proof)
             entries = await asyncio.to_thread(library.entries, directory, depth, maximum)
-        await authorized(request, proof)
         return answer({"files": entries})
 
     async def library_versions(request):
         guard(request)
-        signed_in(request)
-        await authorized(request, "assets/catalog.json")
         async with library_lock:
             values = await asyncio.to_thread(library.versions)
         return answer({"files": values})
 
-    def limit(request, account):
+    def limit(request, account, *, bucket="login", maximum=10):
         now = time.monotonic()
         remote = request.headers.get("x-real-ip", request.client.host if request.client else "unknown")[:80]
-        for key in ("ip:" + remote, "account:" + account.casefold()):
+        for key in (bucket + ":ip:" + remote, bucket + ":account:" + account.casefold()):
             times = [stamp for stamp in attempts.pop(key, []) if now - stamp < 60]
-            if len(times) >= 10:
+            if len(times) >= maximum:
                 attempts[key] = times
                 raise Failure("rateLimited", 429)
             attempts[key] = times + [now]
@@ -492,7 +546,7 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
         return answer({"error": error.code}, status=error.status)
 
     async def library_error(request, error):
-        return answer({"error": "missing" if error.status == 404 else "providerUnavailable"}, status=error.status)
+        return answer({"error": error.code}, status=error.status)
 
     async def unexpected_handler(request, error):
         # Provider errors, request bodies and upstream URLs never enter replies.
@@ -510,6 +564,8 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
     return Starlette(routes=[Route("/api/account/config", config), Route("/api/account/session", current),
                              Route("/api/account/login", login, methods=["POST"]),
                              Route("/api/account/logout", logout, methods=["POST"]),
+                             Route("/api/comments/entries", comment_entries),
+                             Route("/api/comments/file", comment_file, methods=["GET", "POST"]),
                              Route("/library/{path:path}", library_file, methods=["GET", "HEAD"]),
                              Route("/api/library/files", library_files),
                              Route("/api/library/versions", library_versions)],

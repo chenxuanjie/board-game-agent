@@ -74,13 +74,13 @@ Future<void> main() async {
     gameManifestService: GameManifestService(),
     remoteAssetService: kIsWeb
         ? SameOriginLibraryService(
-            accessAllowed: () => accountService.resourceCredentialsReady,
+            accessAllowed: () => true,
             accountScope: () =>
                 accountService.dataScopeReady && accountService.user != null
                 ? accountService.configuration!.accountScope(
                     accountService.user!.id,
                   )
-                : null,
+                : 'web_guest',
           )
         : RemoteAssetService(
             settingsProvider: () => updateSettingsController.saved,
