@@ -578,23 +578,25 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         child: LibraryCheckActions(controller: controller),
                       ),
                       const SizedBox(height: 24),
-                      _SectionTitle(
-                        title: copy.appUpdateTitle,
-                        icon: Icons.system_update_outlined,
-                      ),
-                      const SizedBox(height: 10),
-                      _SectionCard(
-                        palette: palette,
-                        child: SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: controller.checkForUpdates,
-                          onChanged: controller.setCheckForUpdates,
-                          title: Text(copy.checkForUpdatesTitle),
-                          subtitle: Text(copy.checkForUpdatesHint),
-                          secondary: const Icon(Icons.system_update_outlined),
+                      if (!kIsWeb) ...[
+                        _SectionTitle(
+                          title: copy.appUpdateTitle,
+                          icon: Icons.system_update_outlined,
                         ),
-                      ),
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 10),
+                        _SectionCard(
+                          palette: palette,
+                          child: SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: controller.checkForUpdates,
+                            onChanged: controller.setCheckForUpdates,
+                            title: Text(copy.checkForUpdatesTitle),
+                            subtitle: Text(copy.checkForUpdatesHint),
+                            secondary: const Icon(Icons.system_update_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _SectionCard(
                         palette: palette,
                         padding: EdgeInsets.zero,

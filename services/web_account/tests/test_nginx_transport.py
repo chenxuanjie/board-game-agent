@@ -48,11 +48,18 @@ class NginxTransportTests(unittest.TestCase):
 
             async def dsm(request):
                 fields = {k: v[0] for k, v in parse_qs((await request.aread()).decode()).items()}
+                self.assertEqual(request.url.query, b'')
+                self.assertNotIn('_sid', fields)
+                self.assertNotIn('SynoToken', fields)
+                if fields['api'] != 'SYNO.API.Info' and fields['method'] != 'login':
+                    if (request.headers.get('cookie') != 'id=fake-private-sid'
+                            or request.headers.get('x-syno-token') != 'fake-token'):
+                        return httpx.Response(200, json={'success': False, 'error': {'code': 119}})
                 if fields["api"] == "SYNO.API.Info":
                     data = {name: {"path": "entry.cgi", "minVersion": 1, "maxVersion": 7} for name in (
                         "SYNO.API.Auth", "SYNO.FileStation.Info", "SYNO.FileStation.Download")}
                 elif fields["method"] == "login":
-                    data = {"sid": "fake-private-sid"}
+                    data = {"sid": "fake-private-sid", "synotoken": "fake-token"}
                 elif fields["method"] == "get":
                     data = {"uid": 1001}
                 elif fields["method"] == "download":

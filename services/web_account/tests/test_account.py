@@ -36,8 +36,17 @@ class AccountTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.method, "POST")
         self.assertEqual(request.url.query, b"")
         self.assertEqual(request.url.host, "nas.example")
-        self.assertEqual(request.headers.get("cookie", ""), "")
         fields = {key: values[0] for key, values in parse_qs((await request.aread()).decode()).items()}
+        self.assertNotIn('_sid', fields)
+        self.assertNotIn('SynoToken', fields)
+        if fields['api'] == 'SYNO.API.Info' or fields['method'] == 'login':
+            self.assertEqual(request.headers.get('cookie', ''), '')
+            self.assertNotIn('x-syno-token', request.headers)
+        else:
+            # Real DSM returns 119 for body-only session credentials.
+            if (request.headers.get('cookie') != 'id=secret-sid'
+                    or request.headers.get('x-syno-token') != 'secret-token'):
+                return httpx.Response(200, json={'success': False, 'error': {'code': 119}})
         self.events.append(fields)
         if self.auth_status != 200:
             return httpx.Response(self.auth_status)

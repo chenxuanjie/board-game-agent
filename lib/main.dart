@@ -414,7 +414,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   void _scheduleStartupUpdateCheck(BuildContext context) {
-    if (_startupUpdateCheckScheduled || !widget.controller.checkForUpdates) {
+    // Web is upgraded by replacing/rebuilding the Docker deployment. Persisted
+    // native update preferences must never trigger an installer check here.
+    if (kIsWeb ||
+        _startupUpdateCheckScheduled ||
+        !widget.controller.checkForUpdates) {
       return;
     }
     _startupUpdateCheckScheduled = true;
@@ -425,6 +429,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   Future<void> _checkStartupUpdate(BuildContext context) async {
+    if (kIsWeb) return;
     final release = widget.controller.suspendLibraryUpdatePrompts();
     try {
       await checkForUpdateOnStartup(
@@ -445,14 +450,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       await navigator.push<void>(
         MaterialPageRoute<void>(
           builder: (_) => AppAboutPage(
-            checkOnOpen: checkOnOpen,
+            checkOnOpen: !kIsWeb && checkOnOpen,
             config: AppAboutConfig(
               appName: '桌游导师',
               subtitle: '桌游入口与统一 AI 助手',
               appIcon: const _BoardGameAppMark(),
               fallbackVersion: '版本不可用',
               fallbackBuild: '—',
-              showUpdate: boardGameUpdateTarget != null,
+              showUpdate: !kIsWeb && boardGameUpdateTarget != null,
               updateCheckSubtitle:
                   boardGameUpdateTarget == AppUpdateTarget.windows
                   ? '检查 Windows 安装包更新'

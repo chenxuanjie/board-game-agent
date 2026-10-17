@@ -1,0 +1,191 @@
+"""Real local Docker smoke test. Uses only an isolated temporary library/fake DSM."""
+from pathlib import Path
+import argparse
+import http.cookiejar
+import json
+import os
+import subprocess
+import socket
+import shutil
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from release_retention import inspect_docker_archive, digest
+
+ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--archive', type=Path)
+arguments = parser.parse_args()
+bundle = arguments.archive or ROOT / 'release/board-game-agent-linux-amd64-images.tar'
+bundle = bundle.resolve()
+details = inspect_docker_archive(bundle)
+source_support = bundle.parent / 'reports' / f'docker-{details["platform"].replace("/", "-")}'
+result = {'archive':bundle.name, 'archiveSha256':digest(bundle), 'environment':'Ubuntu WSL x86_64; existing local image cache', 'checks':[], 'seconds':{}}
+project = f'bga-bundle-validation-{os.getpid()}'
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+with socket.socket() as candidate:
+    candidate.bind(('127.0.0.1', 0))
+    port = candidate.getsockname()[1]
+base = f'http://127.0.0.1:{port}'
+
+def request(path, method='GET', payload=None, headers=None):
+    values = {'X-Board-Game-Request':'1', 'Origin':base, **(headers or {})}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode()
+        values['Content-Type']='application/json'
+    req = urllib.request.Request(base+path, data=data, headers=values, method=method)
+    try:
+        response = opener.open(req, timeout=10)
+    except urllib.error.HTTPError as error:
+        response = error
+    return response.status, dict(response.headers), response.read()
+
+def check(name, expression):
+    assert expression, name
+    result['checks'].append(name)
+    print('PASS',name,flush=True)
+
+def run(args, **kwargs):
+    return subprocess.run(args, check=True, text=True, timeout=180, **kwargs)
+
+started = time.perf_counter()
+with tempfile.TemporaryDirectory(prefix='bga-bundle-validation-') as temporary:
+    stage = Path(temporary)
+    t = time.perf_counter()
+    deploy = stage / 'release/reports' / source_support.name
+    shutil.copytree(source_support, deploy, ignore=shutil.ignore_patterns('.env', 'validation.json'))
+    shutil.copyfile(bundle, stage / 'release' / bundle.name)
+    result['seconds']['archiveCopySeconds'] = time.perf_counter()-t
+    release = json.loads((deploy/'release.json').read_text())
+    assert release['artifact']['fileName'] == bundle.name and release['artifact']['sha256'] == result['archiveSha256']
+    env = dict(os.environ, COMPOSE_PROJECT_NAME=project)
+    for name in ('IMAGE_TAG', 'BGA_IMAGE_PLATFORM', 'LIBRARY_PATH', 'SYNOLOGY_ORIGIN', 'WEB_PUBLIC_ORIGIN'):
+        env.pop(name, None)
+    # Check the actual delivered YAML first, in a folder without any .env.
+    # This models the GUI upload configuration step; it does not contact DSM.
+    compose=['docker','compose','-p',project,'-f',str(deploy/'docker-compose.yml')]
+    configuration = json.loads(run(compose+['config','--format','json'],env=env,cwd=deploy,capture_output=True).stdout)
+    check('delivered YAML resolves without .env or image-tag environment variables',not (deploy/'.env').exists() and '${' not in (deploy/'docker-compose.yml').read_text())
+    check('delivered YAML references exactly the two imported images',
+          {item['image'] for item in configuration['services'].values()} == {item['reference'] for item in release['images']})
+    library = stage/'library'
+    game = library/'assets/games/sample'
+    (game/'docs').mkdir(parents=True)
+    pdf = b'%PDF-' + bytes(range(256))*4096
+    (game/'docs/rules.pdf').write_bytes(pdf)
+    (game/'game.json').write_text('{}')
+    (game/'manifest.json').write_text(json.dumps({'resources':[{'path':'docs/rules.pdf','enabled':True,'status':'available'}]}))
+    (library/'assets/catalog.json').write_text('{"games":[{"slug":"sample","enabled":true}]}')
+    # Non-root gateway and nginx workers must be able to traverse the test mount.
+    stage.chmod(0o755)
+    for directory in library.rglob('*'):
+        directory.chmod(0o755 if directory.is_dir() else 0o644)
+    # Only host-dependent settings are replaced for the isolated runtime test.
+    # JSON is valid YAML; image refs and runtime service options stay unchanged.
+    web = configuration['services']['board-game-agent']
+    web['ports'] = [{'target':80,'published':str(port),'host_ip':'127.0.0.1','protocol':'tcp'}]
+    for service in configuration['services'].values():
+        for mount in service.get('volumes',[]):
+            if mount.get('target') == '/data/library':
+                mount['source'] = str(library)
+    configuration['services']['web-account']['environment'].update({
+        'SYNOLOGY_ORIGIN':'https://mock-dsm:5443',
+        'SYNOLOGY_IDENTITY_ORIGIN':'https://mock-dsm:5443',
+        'WEB_PUBLIC_ORIGIN':base, 'WEB_ALLOW_INSECURE_HTTP':'true',
+    })
+    (deploy/'docker-compose.yml').write_text(json.dumps(configuration))
+    try:
+        t=time.perf_counter()
+        run(['sh',str(deploy/'deploy.sh'),'../../'+bundle.name],cwd=deploy,env=env)
+        result['seconds']['packageDeployScript']=time.perf_counter()-t
+        t=time.perf_counter()
+        for attempt in range(100):
+            try:
+                if request('/healthz')[0]==200 and request('/api/account/config')[0]==200:
+                    break
+            except OSError:
+                pass
+            time.sleep(.1)
+        else:
+            raise AssertionError('containers not ready')
+        result['seconds']['waitForWebAndGateway']=time.perf_counter()-t
+        result['seconds']['fromArchiveToReady']=time.perf_counter()-started
+        check('production deploy.sh starts both containers without build/pull',True)
+        check('homepage HTML and compiled Flutter JS served',request('/')[0]==200 and request('/main.dart.js')[0]==200)
+        check('anonymous PDF blocked',request('/library/assets/games/sample/docs/rules.pdf')[0]==401)
+        check('internal file alias inaccessible',request('/_library_files/assets/catalog.json')[0]==404)
+        check('PDF not bundled into public static assets',request('/assets/assets/games/sample/docs/rules.pdf')[0]==404)
+        runtime=run(compose+['ps','-q','board-game-agent'],env=env,capture_output=True).stdout.strip()
+        process=subprocess.run(['docker','exec',runtime,'find','/usr/share/nginx/html','-type','f'],capture_output=True,text=True,check=True)
+        paths = process.stdout.splitlines()
+        check('runtime Web image contains no PDF',not any(p.lower().endswith('.pdf') or ('/games/' in p and '/docs/' in p) for p in paths))
+        mounts=json.loads(run(['docker','inspect',runtime],capture_output=True).stdout)[0]['Mounts']
+        check('library bind mount is read-only',any(m['Destination']=='/data/library' and m['RW'] is False for m in mounts))
+        # Add a local HTTPS DSM test fixture; production images/config stay intact.
+        cert=stage/'test-cert.pem'; key=stage/'test-key.pem'
+        run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=mock-dsm','-addext','subjectAltName=DNS:mock-dsm'],capture_output=True)
+        key.chmod(0o644)
+        mock=stage/'mock_dsm.py'
+        mock.write_text('''from http.server import BaseHTTPRequestHandler,HTTPServer
+from urllib.parse import parse_qs
+import json,ssl
+class Handler(BaseHTTPRequestHandler):
+ def log_message(self,*args): pass
+ def do_POST(self):
+  f={k:v[0] for k,v in parse_qs(self.rfile.read(int(self.headers['Content-Length'])).decode()).items()}
+  if f.get('api')!='SYNO.API.Info' and f.get('method')!='login':
+   if self.headers.get('Cookie')!='id=fake-private-sid' or self.headers.get('X-SYNO-TOKEN')!='fake-token':
+    raw=json.dumps({'success':False,'error':{'code':119}}).encode();self.send_response(200);self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
+  if f.get('method')=='download':
+   self.send_response(206);self.send_header('Content-Type','application/octet-stream');self.send_header('Content-Disposition','attachment');self.send_header('Content-Length','1');self.end_headers();self.wfile.write(b'x');return
+  if f['api']=='SYNO.API.Info':
+   data={name:{'path':'entry.cgi','minVersion':1,'maxVersion':7} for name in ('SYNO.API.Auth','SYNO.FileStation.Info','SYNO.FileStation.Download')}
+  elif f['method']=='login': data={'sid':'fake-private-sid','synotoken':'fake-token'}
+  elif f['method']=='get': data={'uid':1001}
+  else: data={}
+  raw=json.dumps({'success':True,'data':data}).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
+server=HTTPServer(('0.0.0.0',5443),Handler)
+tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.load_cert_chain('/test/test-cert.pem','/test/test-key.pem');server.socket=tls.wrap_socket(server.socket,server_side=True);server.serve_forever()
+''')
+        override=stage/'test-override.json'
+        override.write_text(json.dumps({'services':{
+            'web-account':{'environment':{'DSM_CA_FILE':'/test/test-cert.pem'},'volumes':[f'{stage}:/test:ro']},
+            'mock-dsm':{'image':release['images'][1]['reference'],'pull_policy':'never','command':['python','/test/mock_dsm.py'],'volumes':[f'{stage}:/test:ro']}}}))
+        tested=compose+['-f',str(override)]
+        run(tested+['up','-d','--no-build','--pull','never'],env=env)
+        # The fixture recreates only the gateway; refresh Nginx's startup DNS
+        # resolution to its new container IP before exercising authentication.
+        run(tested+['restart','board-game-agent'],env=env)
+        login = None
+        for attempt in range(100):
+            try:
+                if request('/api/account/session')[0]==200:
+                    login=request('/api/account/login','POST',{'account':'test-user','password':'test-only'})
+                    if login[0]==200:
+                        break
+            except OSError:
+                pass
+            time.sleep(.1)
+        else:
+            raise AssertionError(('mock DSM login failed',login))
+        check('HTTPS DSM login via real Nginx and gateway containers',json.loads(login[2])['user']['displayName']=='test-user')
+        check('cookie session restores authenticated identity',json.loads(request('/api/account/session')[2])['user'] is not None)
+        uri='/library/assets/games/sample/docs/rules.pdf'
+        code,headers,body=request(uri,headers={'Range':'bytes=100-199'})
+        lower={k.lower():v for k,v in headers.items()}
+        check('mounted PDF Range 206 returns exact bytes',code==206 and body==pdf[100:200])
+        check('mounted PDF ETag 304 revalidation',request(uri,headers={'If-None-Match':lower['etag']})[0]==304)
+        check('mounted PDF HEAD length',int(request(uri,'HEAD')[1]['Content-Length'])==len(pdf))
+        check('authenticated mounted catalog readable',request('/library/assets/catalog.json')[0]==200)
+        check('missing library file returns 404',request('/library/assets/missing.pdf')[0]==404)
+        check('logout revokes browser access',request('/api/account/logout','POST')[0]==200 and request(uri)[0]==401)
+        check('full deployment completes without creating or reading .env',not (deploy/'.env').exists())
+        result['passed']=True
+    finally:
+        cleanup=locals().get('tested',compose)
+        subprocess.run(cleanup+['down','--remove-orphans'],env=env,text=True,timeout=90)
+        result['seconds']['completeVerification']=time.perf_counter()-started
+        (source_support / 'validation.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2),flush=True)

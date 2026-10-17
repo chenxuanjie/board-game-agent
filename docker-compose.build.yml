@@ -1,0 +1,13 @@
+# Explicit source-build entry for development; never included in image bundles.
+# Paths resolve relative to docker-compose.yml, not the current shell directory.
+services:
+  board-game-agent:
+    pull_policy: build
+    build:
+      context: ..
+      dockerfile: board-game-agent/Dockerfile
+  web-account:
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: services/web_account/Dockerfile

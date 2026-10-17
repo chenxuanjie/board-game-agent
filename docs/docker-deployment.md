@@ -1,57 +1,119 @@
 # Docker 部署
 
-沿用 usv_ground_station 的多阶段构建、Compose 端口映射和自动重启方式。编译阶段使用 Flutter 3.41.9，运行阶段由 Nginx 提供 Web 文件和只读挂载的 NAS 资料，独立账号网关校验群晖身份与文件读取资格。AI 代理尚未接入。登录见 [Web 账号](web-account.md)，目录结构、缓存及验收边界见 [Web 同源资料](web-library.md)。
+2026-10-16 起，默认交付预构建的两个 Linux 运行镜像。Flutter 编译、Python 依赖安装在开发电脑或构建环境完成，NAS 只导入并运行。外部端口保持 **8887**，账号协议与只读资料挂载不变，见 [Web 账号](web-account.md) 和 [Web 同源资料](web-library.md)。
 
-## 与参考工程的区别
+## 在开发电脑构建镜像版
 
-2026-10-15 核对本机 `apps/usv_ground_station/` 的 `Dockerfile`、`docker-compose.yml`、`config_default.ini` 和 `usv_server.cpp`：
+需要 Python 3、可用的 Linux Docker 引擎和 Buildx；Windows Docker 须使用 Linux 容器。2026-10-16 已在本机 Ubuntu WSL 安装 Docker Engine 29.9.1、Buildx 0.38.0、Compose 5.6.0，真实构建、镜像包和本地容器验收已完成。Windows 10 LTSC 19044 未安装不兼容的新版 Docker Desktop。
 
-| 项目 | USV Ground Station | 本项目 |
-| --- | --- | --- |
-| 构建阶段 | Ubuntu 编译 C++；独立 Node 20 阶段用 Babel 编译前端 | Ubuntu 中使用 Flutter 3.41.9 编译 Web |
-| 运行阶段 | Ubuntu，启动 `./usv_server` | Nginx 1.28 Alpine，启动 `nginx -g 'daemon off;'` |
-| 容器职责 | C++ 同时托管网页、接受 WebSocket、作为 TCP 客户端连接无人艇 | Nginx 提供 Web 文件；独立 Python 账号网关处理 DSM 登录，Flutter Web 界面逻辑仍在浏览器执行 |
-| 默认端口 | `8888:8888`，服务监听由 `config.ini` 的 `local_web_port` 决定 | `8887:80`，`.env` 的 `WEB_PORT` 决定外部端口，Nginx 固定监听 80 |
-| 配置与存储 | 挂载 `config.ini`，服务可读写配置 | `.env` 指定既有 NAS 资料目录，只读挂载至 `/data/library`；浏览器数据仍按网站 origin 保存 |
-| 构建输入 | 当前工程目录，排除构建与 Node 缓存 | 父目录作为上下文，白名单纳入本项目与实际引用的本地共享包 |
-| 运维 | Compose，`restart: unless-stopped` | 相同重启策略，另有日志轮转和 `/healthz` HTTP 存活检查 |
-
-共同点是编译环境与运行环境分离，最终镜像不携带编译工具，修改源码后重新构建镜像。这里的源码 ZIP 需要解压后构建，不是可通过 `docker load` 导入的镜像归档。`/healthz` 只表示 Nginx 能响应，不代表账号、NAS 或 AI 服务都已验证可用。上述为配置与源码对比，不代表已实测镜像大小、启动速度或 NAS 运行效果。
-
-## 生成部署压缩包
+默认目标为 `linux/amd64`。参考工程现有 `usv_server` 的 ELF machine 为 62（x86-64），用户要求使用相同架构；此证据不是远程 NAS 实测。脚本可显式选择 `linux/arm64`，但 ARM 构建和运行尚未验证，构建环境须自行具备对应平台支持。
 
 在工程目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-docker-release.ps1
+```
+
+Linux/WSL/构建环境也可使用：
+
+```sh
+python3 scripts/build-docker-release.py --platform linux/amd64
+```
+
+脚本检查 Docker/Buildx、Linux 引擎和标签冲突，构建 `board-game-agent:<标签>` 与 `board-game-agent-web-account:<同一标签>`，核验 OS、架构和镜像 ID，再用 `docker image save` 合并导出。Flutter 在构建主机的平台执行，最终 Nginx/Python 镜像使用目标 NAS 平台。
+
+构建脚本先创建白名单临时上下文，只复制 Web 声明资源、运行源码与递归 path 依赖，不直接把整个父目录交给 Docker。本次约 82.6 MiB。包源与现有 `pubspec.lock` 保持一致，`flutter pub get --enforce-lockfile` 禁止静默升级依赖。Windows 没有原生 Docker CLI 时，PowerShell 入口自动调用 Ubuntu WSL；其他发行版可用 `-WslDistribution` 指定。
+
+唯一交付文件为 `release/board-game-agent-linux-amd64-images.tar`。每次成功构建、导出并校验后原子替换同名文件，不生成部署 ZIP，不累积版本或时间戳文件。镜像内部标签记录应用版本、Git 修订、dirty 状态与构建时间；显式使用已存在镜像标签仍拒绝覆盖，默认自动生成新的内部标签，不影响固定 TAR 覆盖。构建失败、空导出或无效 TAR 时保留旧文件。不自动安装 Docker、不连接 NAS、不上传。
+
+配套小文件位于 `release/reports/docker-linux-amd64/`：群晖专用 Compose、部署脚本、`release.json`、`checksums.sha256`、`timings.json` 和实际验证后生成的 `validation.json`。交付 YAML 已固定匹配 TAR 的两个镜像引用和架构，所有 NAS 设置直接写在 YAML 中，不依赖 `.env`。目录不打成另一份压缩包，同名更新；新构建清除旧验证结果。首次下载和缓存命中影响实测时间，见 [本地交付产物](release-artifacts.md)。
+
+镜像版不包含完整 Flutter 工程、共享包源码、Flutter SDK、真实 `.env` 或 NAS 正文资料；界面图片、字体和轻量元数据仍属于运行资源。Python 网关的运行代码与依赖位于其镜像中，不是转换为二进制程序。大小以真实构建结果为准，不承诺比源码版更小。
+
+## NAS 导入运行
+
+在 Container Manager“映像 → 导入”直接选择 TAR，确认两个镜像均已导入。随后使用 `release/reports/docker-linux-amd64/docker-compose.yml` 创建/更新项目，不使用根目录开发模板，不需要 `.env`。直接编辑配套 YAML 中的真实配置：
+
+| 配置 | 用途 |
+| --- | --- |
+| `ports` 中的 `8887:80` | 宿主机网站端口，Nginx 容器内为 80 |
+| 两处挂载 `source` | 同一个已存在的 NAS 物理目录，如 `/volume1/friend/apps/board_game_agent/board-game-lib` |
+| `LIBRARY_NAS_PATH` | 同一目录的 FileStation 路径，如 `/friend/apps/board_game_agent/board-game-lib` |
+| `SYNOLOGY_ORIGIN` | 容器可访问、证书有效的 DSM HTTPS 地址 |
+| `SYNOLOGY_IDENTITY_ORIGIN` | 与原生端相同的 canonical origin，保持账号身份一致 |
+| `WEB_PUBLIC_ORIGIN` | 浏览器实际网站 origin；HTTPS 反向代理转到 8887 |
+| `WEB_ALLOW_INSECURE_HTTP` | 仅局域网 HTTP 测试填字符串 `"true"`；HTTPS 网站填 `"false"` |
+
+当前交付已预填 FileStation `getinfo` 真实确认的 `/volume2/friend/apps/board_game_agent/board-game-lib`、用户确认并通过证书校验的 DSM 地址 `https://cznas.pp.ua:5001`，网站入口按直接 HTTP 访问 `http://cznas.pp.ua:8887` 配置，HTTP 会话选项为 `"true"`。旧域名只保留在 `SYNOLOGY_IDENTITY_ORIGIN` 中作为原生端历史账号 ID 命名空间，不作为请求地址。8887 从开发电脑目前连接被拒绝，外网转发和容器监听状态尚未确认。更换网站入口时同步修改 origin 和 HTTP 选项。YAML 不填写用户账号密码。根目录 `docker-compose.yml` 的 `.env` 仅用于后面的开发构建入口。
+
+资料根内须有 `assets/catalog.json`。两个服务均只读挂载，缺失目录不会自动创建，不调整 NAS 权限。账号网关 8000 端口不向宿主机发布。证书与 HTTP 测试选项见账号文档。
+
+```sh
+cd reports/docker-linux-amd64
+sh deploy.sh ../../board-game-agent-linux-amd64-images.tar
+```
+
+脚本先校验文件校验和、NAS 架构和 Compose 配置，再导入镜像，以 `--no-build --pull never` 启动。默认 Compose 没有 `build` 字段，并设置 `pull_policy: never`，不会在 NAS 编译或拉取不存在的标签。依据：[Compose pull_policy](https://docs.docker.com/reference/compose-file/services/#pull_policy)、[Docker image save](https://docs.docker.com/reference/cli/docker/image/save/)。需要 Docker Compose v2。
+
+默认 Compose 项目名为 `board-game-agent`；已有自定义项目须保留原名称：
+
+```sh
+COMPOSE_PROJECT_NAME=原项目名 sh deploy.sh ../../board-game-agent-linux-amd64-images.tar
+```
+
+命令行部署时复制 TAR 与 `reports/docker-linux-amd64/` 配套目录到 NAS，保持相对布局。图形界面和命令行均使用同一份无变量 YAML。镜像标签和架构由交付脚本写入，不需要手工填写。传输摘要只覆盖 TAR 和不可编辑的元数据/脚本，不覆盖需要填写 NAS 地址的 YAML。
+
+## 验收、更新与回滚
+
+启动后验证网站、真实群晖登录、资料/PDF 读取及宽窄布局。`/healthz` 只代表 Nginx 存活，不代表 DSM 或资料可用。查看日志、状态时使用相同项目名：
+
+```sh
+docker compose -p board-game-agent logs --tail=100
+docker compose -p board-game-agent ps
+```
+
+更新时替换同名 TAR，在新配套 YAML 中填回自己的 NAS 路径和地址，以相同项目名导入并启动。本地仅保留最新一份；如需回滚，应自行另存已部署的 TAR 和配置。流程不删除 Docker 引擎内旧镜像、浏览器账号数据或 NAS 资料。网关重建后 Web 用户需要重新登录。更改网站 origin/端口可能改变浏览器存储作用域。
+
+Web 宽屏/窄屏不提供应用更新开关、安装包检查或启动版本检查，程序只支持管理员手动更新 Docker。桌游资料修改不需要重建程序，快速/完整检查及后台内容刷新继续工作。
+
+## 保留的源码构建入口
+
+根目录 `Dockerfile` 保留 Flutter 多阶段构建，账号网关使用独立 Dockerfile。开发电脑显式追加构建覆盖文件：
+
+```sh
+cp packaging/docker/.env.example .env
+# 编辑真实路径、DSM 地址和网站 origin
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+这条开发命令在执行机器上下载工具、安装依赖和编译，不是 NAS 默认交付流程。仍可生成源码 ZIP：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/package-docker.ps1
 ```
 
-生成 `release/board-game-agent-<版本>-docker.zip`。这是源码构建包，不是已编译镜像；打包需要 PowerShell 和 Python 3，不需要 Docker 或 Flutter，也不会执行构建或测试。包含代码、Web 所需字体/界面图片/轻量元数据、递归引用的本地共享包及部署文件。排除桌游 docs、PDF、本机缓存、凭据和旧服务目录；部署副本的 pubspec 仅保留 Web 资产，不修改工作目录中的原生声明。不会覆盖历史压缩包。
+源码 ZIP 保留 `board-game-agent-<版本>-docker.zip` 命名，默认放在 `build/docker-source/` 并只留最新一份，须与 `release/` 中的 `*-images.tar` 区分。它包含 Flutter 源码、实际 path 依赖、Web 资源、构建覆盖文件和脚本，不包含桌游 docs/PDF、凭据或本机缓存；打包不编译。解压后 `board-game-agent/` 和 `shared_packages/` 保持同级。构建上下文仍由 `Dockerfile.dockerignore` 白名单限制。
 
-## 在 NAS 上部署
+## 与 USV 参考方案的关系及验证边界
 
-解压后保留 `board-game-agent/` 与 `shared_packages/` 为同级目录。在群晖 Container Manager 中创建项目，选择解压后的 `board-game-agent` 目录及其 `docker-compose.yml`；或通过 NAS 终端执行：
+USV Compose 含 `build: .`，Dockerfile 编译 C++ 和前端，在 NAS 执行时同样由 NAS 编译。本项目保留其多阶段构建、Compose、配置挂载和自动重启思路，默认交付进一步改为开发端预构建镜像；运行服务为 Nginx 与独立 Python 网关。
 
-```sh
-cd board-game-agent
-cp packaging/docker/.env.example .env
-docker compose up -d --build
-```
-
-启动前需编辑 `.env` 中的 `SYNOLOGY_ORIGIN`、`SYNOLOGY_IDENTITY_ORIGIN`、`WEB_PUBLIC_ORIGIN`，以及 `LIBRARY_PATH`（例如 `/volume1/friend/apps/board_game_agent/board-game-lib`）和对应的 `LIBRARY_NAS_PATH`（例如 `/friend/apps/board_game_agent/board-game-lib`）。该目录必须已有 `assets/catalog.json`；Compose 不自动创建缺失目录，两服务都只读挂载，不复制资料到镜像。账号 Cookie 默认要求 HTTPS，建议由 NAS 反向代理将网站 HTTPS 入口转到 8887；HTTP 本机/内网测试需显式开启示例中的测试选项。账号网关只在 Compose 内网监听 8000，不向宿主机发布。详见 [Web 账号部署](web-account.md)。
-
-首次构建需要下载 Ubuntu、Nginx、Flutter SDK 与 Pub 依赖，并在 NAS 上编译 Web；需要可访问这些下载源、足够的磁盘及内存。支持对应基础镜像与 Flutter SDK 的 NAS 架构，未在实际 NAS 验证。Dockerfile 的忽略规则位于 `Dockerfile.dockerignore`，需要支持该功能的现代 Docker/BuildKit。
-
-打开 `http://NAS地址:8887`。默认端口映射为宿主机 `8887` → 容器内 Nginx `80`。端口占用时修改 `.env` 的 `WEB_PORT`，重新执行启动命令。已有部署若在 `.env` 中设置了 `WEB_PORT=8088`，需要改为 `WEB_PORT=8887`，再执行 `docker compose up -d` 重建容器以应用映射；仅更改端口不需要重新编译镜像。端口映射不自行决定内外网可达性；本方案不修改防火墙或路由器。
+2026-10-16：脚本与故障测试 15 项通过；真实镜像包部署测试 16 项通过，包括包内 `deploy.sh` 导入启动、网页与编译后 JS、匿名访问拦截、只读挂载、HTTPS 模拟 DSM 登录与会话恢复、PDF Range 206 / ETag 304 / HEAD、缺失文件与注销。验证脚本使用临时资料和独立 Compose 项目，完成后清理测试容器，不操作 NAS。
 
 ```sh
-docker compose logs --tail=100
-docker compose ps
-docker compose down
+python3 scripts/verify-docker-release.py --archive /path/to/board-game-agent-linux-amd64-images.tar
 ```
 
-程序更新时替换源码部署包后重新构建。需保留旧包以便回滚；回滚到旧包后重新执行 `docker compose up -d --build`。现有浏览器数据按网站 origin 保存，改地址或端口可能改变其存储作用域。
+需要 Linux Docker、Python 3 和 OpenSSL。脚本先在无 `.env` 的目录解析实际交付 YAML 并核对 TAR 中两个镜像引用，再替换临时资料路径、随机回环端口和模拟 DSM 地址做运行验证；真实 NAS 配置不会被测试值覆盖。结果在配套目录生成 `validation.json`。验证使用既有镜像缓存，真实 NAS 首次导入可能更慢。实测与交付文件见 [本地 Docker 验证记录](docker-validation-2026-10-16.md)。这只证明本地配置解析和模拟环境运行通过，不能等同真实 NAS、真实 DSM 账号或完整浏览器操作验收。
 
-本轮已用临时目录、模拟 DSM 和本机 Nginx 验证资料传输；没有构建镜像、生成新部署包或启动 NAS 容器，尚未完成真实 NAS/完整浏览器验收，不能将配置完成视为部署成功。
+## 本机 WSL 使用说明
 
-通用 `docker-deployer` skill 安装在本机 Codex skills 目录；压缩包中的 `codex-skills/docker-deployer/` 是可复制安装到其他机器的副本。
+PowerShell 中可执行 `wsl -d Ubuntu -- docker ps`；Docker 引擎只提供 WSL Unix socket，未开放 Docker TCP API。Docker 与 `bga-docker-proxy` 已配置为随 Ubuntu systemd 启动，未验证整机重启。
+
+本机 WSL 的 HTTPS 直连不可用，因此安装了本地构建辅助服务：通过 WSL 标准输入输出调用 Windows Python，复用 Windows 已有的 `127.0.0.1:7890` 代理。WSL 辅助服务仅监听 `127.0.0.1:18080` 与私有 Docker 网桥 `172.17.0.1:18080`，没有新增 Windows 防火墙放行规则。Windows 代理须处于运行状态；该辅助服务不进入运行镜像或 NAS 包，也不是 NAS 部署要求。
+
+服务单元为 `/etc/systemd/system/bga-docker-proxy.service`，Linux 辅助脚本在 `/opt/board-game-agent/docker-proxy/`，Windows 脚本在 `%LOCALAPPDATA%/BoardGameAgent/docker-proxy/`；实现源为 `scripts/local-docker-proxy.py`。Docker systemd 代理配置位于 `/etc/systemd/system/docker.service.d/bga-proxy.conf`，构建容器代理位于 Ubuntu 用户的 `~/.docker/config.json`。代理地址、Windows Python 安装位置或 Docker 网桥变动时须相应调整；切换网络后应先验证下载连接。
+
+Docker 官方 APT 更新源已配置于 `/etc/apt/sources.list.d/docker.sources`，签名密钥位于 `/etc/apt/keyrings/docker.gpg`。`/etc/apt/apt.conf.d/90bga-docker-proxy` 仅让该下载域名经上述本地代理；Ubuntu 其他源的网络设置保持原样。官方源 `apt-get update` 与候选版本查询已通过。
+
+2026-10-17 构建时，Dart 经现有代理访问 `pub.flutter-io.cn` 重复出现连接提前关闭；Windows 和 Docker 容器均已验证该站点可直连。仅在 Ubuntu 用户 `~/.docker/config.json` 的 `proxies.default.noProxy` 追加 `pub.flutter-io.cn,storage.flutter-io.cn`，让这两个既有 Flutter 镜像站直连，其他代理、Docker 拉取和 NAS 配置不变。这个本机构建网络设置不会进入交付运行镜像。

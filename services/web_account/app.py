@@ -105,13 +105,33 @@ class Dsm:
         self.paths: tuple[str, str] | None = None
         self.download_path: str | None = None
 
-    async def api(self, path, fields):
+    @staticmethod
+    def headers(session=None):
+        # The client pool is shared by browser accounts. Explicitly override its
+        # cookie jar on EVERY request; never install account credentials globally.
+        headers = {"Accept": "application/json", "Cookie": ""}
+        if session is not None:
+            sid = secret(session.sid)
+            # RFC 6265 cookie-octet, without quoting or cookie/header injection.
+            if not re.fullmatch(r"[\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]+", sid):
+                raise Failure("providerUnavailable")
+            headers["Cookie"] = f"id={sid}"
+            if session.token is not None:
+                token = secret(session.token)
+                if not token.isascii():
+                    raise Failure("providerUnavailable")
+                headers["X-SYNO-TOKEN"] = token
+        return headers
+
+    async def api(self, path, fields, *, session=None):
         if not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.cgi", path):
             raise Failure("providerUnavailable")
         try:
-            # POST keeps SID, OTP and password out of URLs and access logs.
+            # DSM authenticates the request before parsing some POST APIs.
+            # A body-only SID/token can return 119 even after successful login.
+            # Use request-local Cookie + token header, keeping secrets out of URLs.
             async with self.client.stream("POST", f"{self.settings.nas_origin}/webapi/{path}",
-                                          data=fields, headers={"Accept": "application/json", "Cookie": ""},
+                                          data=fields, headers=self.headers(session),
                                           follow_redirects=False) as response:
                 if response.status_code == 429:
                     raise Failure("rateLimited", 429)
@@ -166,8 +186,8 @@ class Dsm:
         return self.paths
 
     async def uid(self, session):
-        data = await self.api(session.info_path, {"api": "SYNO.FileStation.Info", "version": "2", "method": "get",
-                                                 "_sid": session.sid, **({"SynoToken": session.token} if session.token else {})})
+        data = await self.api(session.info_path, {"api": "SYNO.FileStation.Info", "version": "2", "method": "get"},
+                              session=session)
         uid = data.get("uid")
         if type(uid) is not int or uid <= 0:
             raise Failure("sessionRejected", 401)
@@ -176,8 +196,7 @@ class Dsm:
     async def revoke(self, session):
         try:
             await self.api(session.auth_path, {"api": "SYNO.API.Auth", "version": "6", "method": "logout",
-                                                "session": "FileStation", "_sid": session.sid,
-                                                **({"SynoToken": session.token} if session.token else {})})
+                                                "session": "FileStation"}, session=session)
         except Failure as failure:
             if failure.code != "sessionRejected":
                 raise
@@ -213,11 +232,10 @@ class Dsm:
                 raise Failure("providerUnavailable")
             self.download_path = path
         fields = {"api": "SYNO.FileStation.Download", "version": "2", "method": "download", "mode": "download",
-                  "path": json.dumps([self.settings.library_nas_path + "/" + logical]), "_sid": session.sid,
-                  **({"SynoToken": session.token} if session.token else {})}
+                  "path": json.dumps([self.settings.library_nas_path + "/" + logical])}
         try:
             async with self.client.stream("POST", f"{self.settings.nas_origin}/webapi/{self.download_path}", data=fields,
-                                          headers={"Range": "bytes=0-0", "Cookie": ""}, follow_redirects=False) as response:
+                                          headers={**self.headers(session), "Range": "bytes=0-0"}, follow_redirects=False) as response:
                 if response.status_code not in (200, 206):
                     raise Failure("accountDenied", 403)
                 if ("json" in response.headers.get("content-type", "")

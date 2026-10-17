@@ -79,7 +79,9 @@ class _AboutUpdatesCard extends StatelessWidget {
     final AppCopy copy = controller.copy;
     return _SettingsCard(
       icon: Icons.info_outline_rounded,
-      title: copy.localized('关于与更新', 'About & Updates'),
+      title: kIsWeb
+          ? copy.localized('关于', 'About')
+          : copy.localized('关于与更新', 'About & Updates'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -107,7 +109,7 @@ class _AboutUpdatesCard extends StatelessWidget {
           SizedBox(height: _px(context, 11)),
           Row(
             children: <Widget>[
-              if (!kIsWeb)
+              if (!kIsWeb) ...[
                 Expanded(
                   child: OutlinedButton.icon(
                     key: ValueKey<String>('desktop-settings-check-updates'),
@@ -122,7 +124,8 @@ class _AboutUpdatesCard extends StatelessWidget {
                     style: _settingsButtonStyle(context),
                   ),
                 ),
-              SizedBox(width: _px(context, 9)),
+                SizedBox(width: _px(context, 9)),
+              ],
               Expanded(
                 child: FilledButton.icon(
                   key: ValueKey<String>('desktop-settings-open-about'),

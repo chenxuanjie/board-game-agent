@@ -113,15 +113,22 @@ class LibraryGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def dsm(self, request):
         self.assertEqual(request.method, "POST")
         self.assertEqual(request.url.query, b"")
-        self.assertEqual(request.headers.get("cookie", ""), "")
         fields = {k: v[0] for k, v in parse_qs((await request.aread()).decode()).items()}
+        self.assertNotIn('_sid', fields)
+        self.assertNotIn('SynoToken', fields)
+        if fields['api'] == 'SYNO.API.Info' or fields['method'] == 'login':
+            self.assertEqual(request.headers.get('cookie', ''), '')
+            self.assertNotIn('x-syno-token', request.headers)
+        elif (request.headers.get('cookie') != 'id=private-sid'
+              or request.headers.get('x-syno-token') != 'private-token'):
+            return httpx.Response(200, json={'success': False, 'error': {'code': 119}})
         self.fields.append(fields)
         if fields["api"] == "SYNO.API.Info":
             return httpx.Response(200, json={"success": True, "data": {
                 name: {"path": "entry.cgi", "minVersion": 1, "maxVersion": 7}
                 for name in ("SYNO.API.Auth", "SYNO.FileStation.Info", "SYNO.FileStation.Download")}})
         if fields["method"] == "login":
-            data = {"sid": "private-sid"}
+            data = {"sid": "private-sid", "synotoken": "private-token"}
         elif fields["method"] == "get":
             data = {"uid": 1001}
         elif fields["method"] == "download":

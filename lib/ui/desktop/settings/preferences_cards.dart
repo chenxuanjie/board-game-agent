@@ -69,17 +69,19 @@ class _GeneralCard extends StatelessWidget {
             ),
           ),
           SizedBox(height: _px(context, 7)),
-          _SettingSwitchRow(
-            key: ValueKey<String>('desktop-settings-startup-update-check'),
-            title: copy.localized('启动时检查更新', 'Check for updates on startup'),
-            subtitle: copy.localized(
-              '当前更新源仅支持 Android APK',
-              'The current update source supports Android APK only',
+          if (!kIsWeb) ...[
+            _SettingSwitchRow(
+              key: ValueKey<String>('desktop-settings-startup-update-check'),
+              title: copy.localized('启动时检查更新', 'Check for updates on startup'),
+              subtitle: copy.localized(
+                '当前更新源仅支持 Android APK',
+                'The current update source supports Android APK only',
+              ),
+              value: controller.checkForUpdates,
+              onChanged: saving ? null : onStartupUpdates,
             ),
-            value: controller.checkForUpdates,
-            onChanged: saving ? null : onStartupUpdates,
-          ),
-          SizedBox(height: _px(context, 4)),
+            SizedBox(height: _px(context, 4)),
+          ],
           _SettingSwitchRow(
             key: ValueKey<String>('desktop-settings-voice-reply'),
             title: copy.localized('语音朗读', 'Voice output'),

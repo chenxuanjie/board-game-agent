@@ -1,9 +1,8 @@
 services:
   board-game-agent:
-    build:
-      context: ..
-      dockerfile: board-game-agent/Dockerfile
-    image: board-game-agent:${IMAGE_TAG:-local}
+    image: board-game-agent:${IMAGE_TAG:?Set the imported release image tag}
+    platform: ${BGA_IMAGE_PLATFORM:-linux/amd64}
+    pull_policy: never
     restart: unless-stopped
     depends_on:
       - web-account
@@ -22,12 +21,13 @@ services:
         max-size: "10m"
         max-file: "3"
   web-account:
-    build:
-      context: .
-      dockerfile: services/web_account/Dockerfile
+    image: board-game-agent-web-account:${IMAGE_TAG:?Set the imported release image tag}
+    platform: ${BGA_IMAGE_PLATFORM:-linux/amd64}
+    pull_policy: never
     restart: unless-stopped
     environment:
       SYNOLOGY_ORIGIN: ${SYNOLOGY_ORIGIN:?Set the trusted DSM HTTPS origin}
+      # Historical account-ID namespace only; no network request uses this field.
       SYNOLOGY_IDENTITY_ORIGIN: ${SYNOLOGY_IDENTITY_ORIGIN:-${SYNOLOGY_ORIGIN}}
       WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?Set the browser site origin}
       WEB_ALLOW_INSECURE_HTTP: ${WEB_ALLOW_INSECURE_HTTP:-false}
