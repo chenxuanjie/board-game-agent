@@ -744,7 +744,11 @@ class _AccountScreenState extends State<AccountScreen> {
                     key: ValueKey(
                       signedIn ? 'account-sign-out' : 'account-sign-in',
                     ),
-                    onPressed: busy
+                    onPressed: _canceling
+                        ? null
+                        : signingIn
+                        ? _cancel
+                        : busy
                         ? null
                         : signedIn
                         ? () => _run(
@@ -769,35 +773,25 @@ class _AccountScreenState extends State<AccountScreen> {
                       _text(
                         signedIn
                             ? '退出登录'
+                            : _canceling
+                            ? '正在取消…'
                             : signingIn
-                            ? '登录中…'
+                            ? '取消登录'
                             : otp
                             ? '验证并登录'
                             : '登录',
                         signedIn
                             ? 'Sign out'
+                            : _canceling
+                            ? 'Canceling…'
                             : signingIn
-                            ? 'Signing in…'
+                            ? 'Cancel sign-in'
                             : otp
                             ? 'Verify and sign in'
                             : 'Sign in',
                       ),
                     ),
                   ),
-                  if (signingIn)
-                    Align(
-                      alignment: Alignment.center,
-                      child: TextButton(
-                        key: const ValueKey('account-cancel'),
-                        onPressed: _canceling ? null : _cancel,
-                        child: Text(
-                          _text(
-                            _canceling ? '正在取消…' : '取消登录',
-                            _canceling ? 'Canceling…' : 'Cancel sign-in',
-                          ),
-                        ),
-                      ),
-                    ),
                   if (service.isOffline || error != null)
                     TextButton(
                       key: const ValueKey('account-restore'),

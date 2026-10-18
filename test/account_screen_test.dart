@@ -38,9 +38,13 @@ void main() {
   for (final width in [320.0, 1280.0]) {
     for (final browser in [false, true]) {
       testWidgets(
-        'sign-in progress precedes cancel and restores the form at $width web=$browser',
+        'one button signs in, cancels and restores the form at $width web=$browser',
         (tester) async {
           final result = await tester.runAsync(() async {
+            await (FontLoader('Noto Sans SC')..addFont(
+                  rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'),
+                ))
+                .load();
             final app = _MineFixture();
             final gateway = _UiGateway();
             final config = AccountConfiguration.fromFields(
@@ -71,13 +75,14 @@ void main() {
           await tester.binding.setSurfaceSize(Size(width, 1100));
           await _mount(tester, service, textScale: width == 320 ? 1.5 : 1);
           final login = find.byKey(const ValueKey('account-sign-in'));
-          final cancel = find.byKey(const ValueKey('account-cancel'));
+          final buttonElement = tester.element(login);
+          final buttonSize = tester.getSize(login);
           final account = find.byKey(const ValueKey('account-username'));
           final password = find.byKey(const ValueKey('account-password'));
           TextField input(Finder field) => tester.widget(
             find.descendant(of: field, matching: find.byType(TextField)),
           );
-          expect(cancel, findsNothing);
+          expect(find.text('Sign in'), findsOneWidget);
           expect(find.byKey(const ValueKey('account-loading')), findsNothing);
           await tester.enterText(account, 'Shane');
           await tester.enterText(password, 'fixture-password');
@@ -85,7 +90,9 @@ void main() {
           await tester.ensureVisible(login);
           await tester.tap(login);
           await tester.pump();
-          expect(find.text('Signing in…'), findsOneWidget);
+          expect(find.text('Cancel sign-in'), findsOneWidget);
+          expect(tester.element(login), same(buttonElement));
+          expect(tester.getSize(login), buttonSize);
           expect(
             find.descendant(
               of: login,
@@ -93,26 +100,21 @@ void main() {
             ),
             findsOneWidget,
           );
-          expect(tester.widget<FilledButton>(login).onPressed, isNull);
+          expect(tester.widget<FilledButton>(login).onPressed, isNotNull);
           expect(input(account).readOnly, isTrue);
           expect(input(password).readOnly, isTrue);
-          expect(cancel, findsOneWidget);
-          expect(
-            tester.getTopLeft(cancel).dy,
-            greaterThanOrEqualTo(tester.getBottomLeft(login).dy),
-          );
-          await tester.tap(login);
-          await tester.pump();
+          expect(find.byKey(const ValueKey('account-cancel')), findsNothing);
           expect(gateway.signInCalls, 1);
 
           gateway.signOutGate = Completer<void>();
-          await tester.ensureVisible(cancel);
-          await tester.tap(cancel);
+          await tester.tap(login);
           await tester.pump();
           expect(find.text('Canceling…'), findsOneWidget);
-          expect(tester.widget<TextButton>(cancel).onPressed, isNull);
+          expect(tester.element(login), same(buttonElement));
+          expect(tester.getSize(login), buttonSize);
           expect(tester.widget<FilledButton>(login).onPressed, isNull);
-          await tester.tap(cancel);
+          await tester.tap(login);
+          expect(gateway.signInCalls, 1);
           expect(gateway.signOutCalls, 1);
           await tester.runAsync(() async {
             gateway.signOutGate!.complete();
@@ -124,7 +126,10 @@ void main() {
           expect(service.isSignedIn, isFalse);
           expect(service.isBusy, isFalse);
           expect(service.error, isNull);
-          expect(cancel, findsNothing);
+          expect(find.text('Sign in'), findsOneWidget);
+          expect(find.text('Cancel sign-in'), findsNothing);
+          expect(tester.element(login), same(buttonElement));
+          expect(tester.getSize(login), buttonSize);
           expect(find.byKey(const ValueKey('account-loading')), findsNothing);
           expect(find.byKey(const ValueKey('account-error')), findsNothing);
           expect(tester.widget<FilledButton>(login).onPressed, isNotNull);
@@ -144,8 +149,8 @@ void main() {
           await tester.pumpAndSettle();
           expect(gateway.signInCalls, 2);
           expect(find.byKey(const ValueKey('account-otp')), findsOneWidget);
-          expect(cancel, findsNothing);
-          expect(find.text('Signing in…'), findsNothing);
+          expect(find.text('Cancel sign-in'), findsNothing);
+          expect(find.text('Verify and sign in'), findsOneWidget);
           expect(tester.takeException(), isNull);
         },
       );
