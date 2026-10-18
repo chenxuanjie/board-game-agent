@@ -20,6 +20,7 @@ import 'package:board_game_agent/features/identity/models/account_configuration.
 import 'package:board_game_agent/ui/mobile/mine_content.dart';
 import 'package:board_game_agent/ui/shared/account_scope.dart';
 import 'package:board_game_agent/ui/shared/account_screen.dart';
+import 'package:board_game_agent/ui/shared/account_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -29,8 +30,11 @@ import 'package:board_game_agent/features/library/models/asset_source_config.dar
 import 'support/account_sync_fixture.dart';
 import 'support/memory_login_storage.dart';
 
+part 'account/account_menu_test_cases.dart';
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  _registerAccountMenuTests();
   testWidgets(
     'spatial account uses available split view and stacks large text',
     (tester) async {
@@ -792,6 +796,8 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
   int signInCalls = 0;
   int signOutCalls = 0;
   int verifyCalls = 0;
+  Completer<void>? signOutGate;
+  bool failSignOut = false;
 
   @override
   IdentityUser? get cachedUser => current;
@@ -824,6 +830,8 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
   @override
   Future<void> signOut() async {
     signOutCalls++;
+    await signOutGate?.future;
+    if (failSignOut) throw const IdentityFailure(IdentityFailureCode.network);
     await clearLocalSession();
   }
 

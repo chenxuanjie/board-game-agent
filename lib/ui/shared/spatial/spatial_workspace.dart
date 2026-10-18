@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import '../../../app/state/app_controller.dart';
 import '../../../app/state/browse_session.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/models/app_activity.dart';
 import '../../../features/games/models/game_info.dart';
 import '../../../features/settings/services/settings_transfer_service.dart';
 import '../../mobile/game_detail_screen.dart';
@@ -15,6 +16,7 @@ import '../../mobile/national_day_screen.dart';
 import '../../mobile/universal_ai_screen.dart';
 import '../../mobile/rule_materials_screen.dart';
 import '../account_screen.dart';
+import '../account_menu.dart';
 import '../game_ranking_screen.dart';
 import '../library_update_review.dart';
 import '../app_modals.dart';
@@ -50,6 +52,7 @@ class SpatialWorkspace extends StatefulWidget {
 
 class _SpatialWorkspaceState extends State<SpatialWorkspace> {
   final _navigator = GlobalKey<NavigatorState>();
+  final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
   final _search = TextEditingController();
   String _menu = 'home';
   String? _page, _sample;
@@ -179,10 +182,67 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
     }
   }
 
-  void _activities() => showLibraryUpdateReview(
-    _navigator.currentState?.overlay?.context ?? context,
-    c,
-  );
+  Future<void> _activities() async {
+    AppActivity? selected;
+    var displayed = false;
+    await showAppDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        if (!displayed) {
+          displayed = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(c.markActivitiesRead());
+          });
+        }
+        final size = MediaQuery.sizeOf(dialogContext);
+        return Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: math.min(420, size.width - 32),
+            child: SingleChildScrollView(
+              child: DesktopActivityPopup(
+                controller: c,
+                maxHeight: math.min(520, size.height - 64),
+                onClose: () => Navigator.of(dialogContext).pop(),
+                onActivityTap: (activity) {
+                  selected = activity;
+                  Navigator.of(dialogContext).pop();
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || selected == null) return;
+    final activity = c.resolveActivityTarget(selected!);
+    if (activity.kind == AppActivityKind.libraryUpdate) {
+      await showLibraryUpdateReview(
+        _navigator.currentState?.overlay?.context ?? context,
+        c,
+      );
+    } else if (activity.kind == AppActivityKind.libraryLoadFailed) {
+      _select('downloads');
+    } else if (activity.conversationId case final id?) {
+      if (!c.conversations.any((item) => item.id == id)) {
+        showAppFailureNotice(context, c.copy.activityConversationUnavailable);
+        return;
+      }
+      c.selectConversation(id);
+      setState(() {
+        _detail = null;
+        _menu = _page = 'assistant';
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _assistantPane.currentState?.revealMessage(activity.messageId);
+        }
+      });
+    } else if (activity.kind == AppActivityKind.aiCompleted ||
+        activity.kind == AppActivityKind.aiFailed) {
+      showAppFailureNotice(context, c.copy.activityConversationUnavailable);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -442,6 +502,12 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
         },
       );
 
+  Widget _accountMenu() => AccountMenuButton(
+    unreadCount: c.unreadActivityCount,
+    onOpenAccount: () => _select('account'),
+    onOpenNotifications: _activities,
+  );
+
   Widget _home({required bool mobile, required bool tablet}) {
     final query = _search.text.trim().toLowerCase();
     final games = (query.isEmpty ? c.personalizedRecommendedGames : c.games)
@@ -484,42 +550,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
                   ),
                 ),
               ),
-              IconButton(
-                onPressed: _activities,
-                tooltip: '消息',
-                style: mobile
-                    ? null
-                    : IconButton.styleFrom(
-                        minimumSize: const Size(28, 28),
-                        maximumSize: const Size(28, 28),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
-                ),
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.notifications_none, size: 18),
-              ),
-              IconButton(
-                onPressed: () => _select('account'),
-                tooltip: '账户',
-                style: mobile
-                    ? null
-                    : IconButton.styleFrom(
-                        minimumSize: const Size(28, 28),
-                        maximumSize: const Size(28, 28),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
-                ),
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.account_circle, size: 28),
-              ),
+              _accountMenu(),
             ],
           );
           final top = SizedBox(

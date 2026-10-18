@@ -18,6 +18,7 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
                 onOpenGame: _openGame,
                 onActivities: _activities,
                 onProfile: () => _select('account'),
+                accountActions: _accountMenu(),
               ),
       'rankings' => GameRankingScreen(
         controller: c,
@@ -27,6 +28,7 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
       'assistant' =>
         wide
             ? DesktopAssistantPane(
+                key: _assistantPane,
                 controller: c,
                 onConfigureAi: () =>
                     _navigator.currentState?.pushNamed('/settings/ai'),
@@ -94,16 +96,7 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: '消息通知',
-                  onPressed: _activities,
-                  icon: const Icon(Icons.notifications_outlined),
-                ),
-                IconButton(
-                  tooltip: '账户',
-                  onPressed: () => _select('account'),
-                  icon: const Icon(Icons.account_circle_outlined),
-                ),
+                _accountMenu(),
               ],
             ),
           ),
