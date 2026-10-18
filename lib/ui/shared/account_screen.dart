@@ -61,6 +61,7 @@ class _AccountScreenState extends State<AccountScreen> {
   String? _selectedServer;
   static const _customChoice = '__custom__';
   bool _working = false, _showPassword = false, _otpShown = false;
+  bool _signingIn = false, _canceling = false;
   bool _savePassword = false, _credentialsEdited = false;
   String? _formEnvironment, _prefilledUsername;
   AccountService? _historyService;
@@ -108,42 +109,68 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _signIn() async {
     final service = AccountScope.maybeOf(context);
-    if (service == null || !(_form.currentState?.validate() ?? false)) return;
-    await _run(
-      () => service.signIn(
-        account: _account.text,
-        password: _password.text,
-        savePassword: _savePassword,
-        otp: _otpShown || service.needsOtp ? _otp.text : null,
-        serverId: _selectedServer == _customChoice ? null : _selectedServer,
-        customOrigin: _selectedServer == _customChoice
-            ? Uri.parse(_customServer.text.trim())
-            : null,
-      ),
-      _text('登录失败，请重试。', 'Could not sign in. Retry.'),
-    );
-    if (!mounted) return;
-    if (service.isSignedIn) {
-      _password.clear();
-      _prefilledUsername = null;
-      _credentialsEdited = false;
-      _otp.clear();
-      TextInput.finishAutofillContext(shouldSave: false);
+    if (service == null ||
+        _working ||
+        _canceling ||
+        service.isBusy ||
+        !(_form.currentState?.validate() ?? false)) {
+      return;
     }
-    setState(() {
-      _otpShown = service.needsOtp;
-    });
+    FocusScope.of(context).unfocus();
+    setState(() => _signingIn = true);
+    try {
+      await _run(
+        () => service.signIn(
+          account: _account.text,
+          password: _password.text,
+          savePassword: _savePassword,
+          otp: _otpShown || service.needsOtp ? _otp.text : null,
+          serverId: _selectedServer == _customChoice ? null : _selectedServer,
+          customOrigin: _selectedServer == _customChoice
+              ? Uri.parse(_customServer.text.trim())
+              : null,
+        ),
+        _text('登录失败，请重试。', 'Could not sign in. Retry.'),
+      );
+      if (!mounted) return;
+      if (service.isSignedIn) {
+        _password.clear();
+        _prefilledUsername = null;
+        _credentialsEdited = false;
+        _otp.clear();
+        TextInput.finishAutofillContext(shouldSave: false);
+      }
+      setState(() => _otpShown = service.needsOtp);
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
   }
 
   Future<void> _cancel() async {
+    if (_canceling) return;
     final service = AccountScope.maybeOf(context);
+    setState(() {
+      _canceling = true;
+      _failure = null;
+      _credentialsEdited = true;
+    });
     _password.clear();
     _otp.clear();
-    await service?.cancelSignIn();
-    if (mounted) {
-      setState(() {
-        _otpShown = false;
-      });
+    try {
+      await service?.cancelSignIn();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _failure = _text('取消未完成，请重试', 'Could not cancel. Retry.');
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _canceling = false;
+          _otpShown = service?.needsOtp ?? false;
+        });
+      }
     }
   }
 
@@ -195,7 +222,8 @@ class _AccountScreenState extends State<AccountScreen> {
     final theme = Theme.of(context), colors = Theme.of(context).colorScheme;
     final signedIn = service?.isSignedIn ?? false;
     final cloud = service?.cloud;
-    final busy = _working || (service?.isBusy ?? false);
+    final busy = _working || _canceling || (service?.isBusy ?? false);
+    final signingIn = (_signingIn || _canceling) && !signedIn;
     final otp = _otpShown || (service?.needsOtp ?? false);
     final error = _failure ?? service?.error;
     final loginConfig = !signedIn && service?.supportsSignIn == true
@@ -676,19 +704,10 @@ class _AccountScreenState extends State<AccountScreen> {
                   ],
                   const SizedBox(height: UiTokens.sectionGap),
                 ],
-                if (busy) ...[
+                if (busy && !signingIn) ...[
                   const LinearProgressIndicator(
                     key: ValueKey('account-loading'),
                   ),
-                  if (_working && !signedIn)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        key: const ValueKey('account-cancel'),
-                        onPressed: _cancel,
-                        child: Text(_text('取消登录', 'Cancel sign-in')),
-                      ),
-                    ),
                   const SizedBox(height: UiTokens.itemGap),
                 ],
                 if (error != null && error.isNotEmpty) ...[
@@ -733,24 +752,52 @@ class _AccountScreenState extends State<AccountScreen> {
                             _text('退出失败，请重试。', 'Could not sign out. Retry.'),
                           )
                         : _signIn,
-                    icon: Icon(
-                      signedIn ? Icons.logout_rounded : Icons.login_rounded,
-                    ),
+                    icon: signingIn
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              key: ValueKey('account-loading'),
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Icon(
+                            signedIn
+                                ? Icons.logout_rounded
+                                : Icons.login_rounded,
+                          ),
                     label: Text(
                       _text(
                         signedIn
                             ? '退出登录'
+                            : signingIn
+                            ? '登录中…'
                             : otp
                             ? '验证并登录'
                             : '登录',
                         signedIn
                             ? 'Sign out'
+                            : signingIn
+                            ? 'Signing in…'
                             : otp
                             ? 'Verify and sign in'
                             : 'Sign in',
                       ),
                     ),
                   ),
+                  if (signingIn)
+                    Align(
+                      alignment: Alignment.center,
+                      child: TextButton(
+                        key: const ValueKey('account-cancel'),
+                        onPressed: _canceling ? null : _cancel,
+                        child: Text(
+                          _text(
+                            _canceling ? '正在取消…' : '取消登录',
+                            _canceling ? 'Canceling…' : 'Cancel sign-in',
+                          ),
+                        ),
+                      ),
+                    ),
                   if (service.isOffline || error != null)
                     TextButton(
                       key: const ValueKey('account-restore'),

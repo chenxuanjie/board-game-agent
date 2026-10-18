@@ -52,7 +52,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       usesWebAccount ? const Duration(seconds: 40) : authenticationTimeout;
   static const _configurationKey =
       'board_game_agent.identity.synology.direct.configuration.v3';
-  static const authenticationTimeout = Duration(seconds: 3);
+  // A cold DSM sign-in performs discovery, Auth.login and UID verification in
+  // sequence (up to 12 seconds each), then persists the verified session.
+  // The controller deadline must cover that whole operation, not one request.
+  static const authenticationTimeout = Duration(seconds: 45);
+  static const _cloudInitializationTimeout = Duration(seconds: 3);
   final WebDavSettingsController? webDav;
   AppController get controller => _controller;
   final SavedLoginStore _savedLogins;
@@ -569,7 +573,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           ),
         );
       }
-      await cloud.initialize().timeout(authenticationTimeout);
+      await cloud.initialize().timeout(_cloudInitializationTimeout);
       if (!_disposed && generation == _scopeGeneration) {
         await _refreshNickname();
       }
@@ -919,7 +923,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         IdentityFailureCode.invalidOtp => '验证码不正确，请重新输入',
         IdentityFailureCode.accountDenied => '此账号暂不能使用登录服务',
         IdentityFailureCode.passwordChangeRequired => '请先在群晖 DSM 中更新密码，再登录',
-        IdentityFailureCode.cancelled => '登录已取消',
+        IdentityFailureCode.cancelled => null,
         IdentityFailureCode.localCleanupFailed => '退出未完成，请重试后再登录',
         IdentityFailureCode.remoteSignOutUnconfirmed => '已退出本机，请联网确认服务端退出',
         IdentityFailureCode.storage => '无法访问账号安全存储，请重试',

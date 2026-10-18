@@ -540,27 +540,33 @@ void main() {
       await tester.pump();
     });
   }
-  test(
-    'brief revalidation timeout keeps the cached account usable offline',
-    () async {
+  testWidgets(
+    'bounded revalidation timeout keeps the cached account usable offline',
+    (tester) async {
       final f = _Fixture();
-      addTearDown(f.dispose);
-      await f.start();
-      await f.account.signIn(
-        account: 'fixture',
-        password: 'synthetic-secret',
-        serverId: 'outside',
-      );
-      final gateway = f.gateways['outside.example']!;
-      gateway.verification = Completer<IdentityUser?>();
-      await f.account.restore();
-      expect(f.account.isSignedIn, isTrue);
-      expect(f.account.isOffline, isTrue);
-      expect(f.account.isBusy, isFalse);
-      expect(f.account.dataScopeReady, isTrue);
-      gateway.verification!.complete(null);
-      await Future<void>.delayed(Duration.zero);
-      expect(f.account.isSignedIn, isTrue);
+      try {
+        await f.start();
+        await f.account.signIn(
+          account: 'fixture',
+          password: 'synthetic-secret',
+          serverId: 'outside',
+        );
+        final gateway = f.gateways['outside.example']!;
+        gateway.verification = Completer<IdentityUser?>();
+        final restoring = f.account.restore();
+        await tester.pump(AccountService.authenticationTimeout);
+        await restoring;
+        expect(f.account.isSignedIn, isTrue);
+        expect(f.account.isOffline, isTrue);
+        expect(f.account.isBusy, isFalse);
+        expect(f.account.dataScopeReady, isTrue);
+        gateway.verification!.complete(null);
+        await tester.pump();
+        expect(f.account.isSignedIn, isTrue);
+      } finally {
+        f.dispose();
+        await tester.pump();
+      }
     },
   );
   testWidgets(

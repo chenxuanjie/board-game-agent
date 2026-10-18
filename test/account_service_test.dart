@@ -15,6 +15,149 @@ AccountConfiguration configuration([String host = 'app.example.test']) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'cold native login allows three valid DSM requests beyond three seconds',
+    (tester) async {
+      final app = FixtureApp();
+      final config = configuration();
+      final methods = <String>[];
+      final session = MemoryStorage();
+      final service = AccountService(
+        controller: app,
+        savedLoginStorage: MemoryStorage(),
+        switchScope: (scope) async {
+          if (scope != null) {
+            // Keep this authentication regression independent of cloud sync.
+            await (await SharedPreferences.getInstance()).setBool(
+              'account_cloud_enabled.$scope',
+              false,
+            );
+          }
+        },
+        gatewayFactory: (config) async {
+          final gateway = SynologyIdentityGateway(
+            origin: config.nasOrigin,
+            environment: config.environmentId,
+            storage: session,
+            client: MockClient((request) async {
+              final fields = request.method == 'GET'
+                  ? request.url.queryParameters
+                  : Uri.splitQueryString(request.body);
+              final method = fields['method']!;
+              methods.add(method);
+              if (method != 'logout') {
+                await Future<void>.delayed(const Duration(milliseconds: 1100));
+              }
+              return http.Response(
+                jsonEncode({
+                  'success': true,
+                  'data': switch (method) {
+                    'query' => {
+                      'SYNO.API.Auth': {
+                        'path': 'auth.cgi',
+                        'minVersion': 1,
+                        'maxVersion': 6,
+                      },
+                      'SYNO.FileStation.Info': {
+                        'path': 'entry.cgi',
+                        'minVersion': 1,
+                        'maxVersion': 2,
+                      },
+                    },
+                    'login' => {'sid': 'fixture-sid'},
+                    'get' => {'uid': 101},
+                    'logout' => <String, dynamic>{},
+                    _ => throw StateError('Unexpected DSM method'),
+                  },
+                }),
+                200,
+              );
+            }),
+          );
+          await gateway.initialize();
+          return gateway;
+        },
+      );
+      addTearDown(app.dispose);
+      try {
+        await service.saveConfiguration(config);
+        expect(
+          methods,
+          isEmpty,
+          reason: 'Signed-out startup has no DSM session',
+        );
+        final attempt = service.signIn(
+          account: 'reader',
+          password: 'fixture-password',
+          serverId: config.activeServer.id,
+        );
+        await tester.pump();
+        for (var i = 0; i < 2; i++) {
+          await tester.pump(const Duration(milliseconds: 1100));
+          expect(service.isBusy, isTrue);
+          expect(service.isSignedIn, isFalse);
+          expect(session.value, isNull);
+        }
+        await tester.pump(const Duration(milliseconds: 1100));
+        await attempt;
+        expect(service.error, isNull);
+        expect(service.isSignedIn, isTrue);
+        expect(service.isBusy, isFalse);
+        expect(session.value, isNotNull);
+        expect(methods, ['query', 'login', 'get']);
+
+        await service.signOut();
+        final retry = service.signIn(
+          account: 'reader',
+          password: 'fixture-password',
+          serverId: config.activeServer.id,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 1100));
+        await tester.pump(const Duration(milliseconds: 1100));
+        await retry;
+        expect(service.error, isNull);
+        expect(service.isSignedIn, isTrue);
+        expect(methods, ['query', 'login', 'get', 'logout', 'login', 'get']);
+      } finally {
+        service.dispose();
+        await tester.pump();
+      }
+    },
+  );
+  testWidgets('native sign-in deadline rejects a late response', (
+    tester,
+  ) async {
+    final app = FixtureApp();
+    final gateway = FixtureGateway()..pending = Completer<IdentityUser>();
+    final service = AccountService(
+      controller: app,
+      gatewayFactory: (_) async => gateway,
+      switchScope: (_) async {},
+    );
+    addTearDown(app.dispose);
+    final config = configuration();
+    try {
+      await service.saveConfiguration(config);
+      final attempt = service.signIn(
+        account: 'reader',
+        password: 'fixture-password',
+        serverId: config.activeServer.id,
+      );
+      await tester.pump();
+      await tester.pump(AccountService.authenticationTimeout);
+      await attempt;
+      expect(service.isBusy, isFalse);
+      expect(service.isSignedIn, isFalse);
+      expect(service.error, '请求超时，请重试');
+      gateway.pending!.complete(const IdentityUser(id: 'late'));
+      await tester.pump();
+      expect(service.isSignedIn, isFalse);
+    } finally {
+      service.dispose();
+      await tester.pump();
+    }
+  });
   test(
     'Web comments switch between guest read-only and verified UID without reusing old service',
     () async {
@@ -263,6 +406,16 @@ class FixtureApp implements AppController {
   dynamic noSuchMethod(Invocation invocation) => null;
   @override
   void dispose() {}
+}
+
+class MemoryStorage implements IdentitySessionStorage {
+  String? value;
+  @override
+  Future<String?> read() async => value;
+  @override
+  Future<void> write(String next) async => value = next;
+  @override
+  Future<void> delete() async => value = null;
 }
 
 class FixtureGateway implements IdentityGateway, IdentityLocalSessionCleanup {

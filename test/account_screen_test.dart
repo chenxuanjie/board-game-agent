@@ -35,6 +35,122 @@ part 'account/account_menu_test_cases.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   _registerAccountMenuTests();
+  for (final width in [320.0, 1280.0]) {
+    for (final browser in [false, true]) {
+      testWidgets(
+        'sign-in progress precedes cancel and restores the form at $width web=$browser',
+        (tester) async {
+          final result = await tester.runAsync(() async {
+            final app = _MineFixture();
+            final gateway = _UiGateway();
+            final config = AccountConfiguration.fromFields(
+              nasUrl: 'https://nas.example.test:5001',
+            );
+            final service = AccountService(
+              controller: app,
+              browserAccounts: browser,
+              savedLoginStorage: MemoryLoginStorage(),
+              webConfigurationLoader: () async => config,
+              gatewayFactory: (_) async => gateway,
+              switchScope: (_) async {},
+            );
+            if (browser) {
+              await service.initialize();
+            } else {
+              await service.saveConfiguration(config);
+            }
+            return (app, gateway, service);
+          });
+          final (app, gateway, service) = result!;
+          addTearDown(() async {
+            service.dispose();
+            app.dispose();
+            await gateway.events.close();
+          });
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.binding.setSurfaceSize(Size(width, 1100));
+          await _mount(tester, service, textScale: width == 320 ? 1.5 : 1);
+          final login = find.byKey(const ValueKey('account-sign-in'));
+          final cancel = find.byKey(const ValueKey('account-cancel'));
+          final account = find.byKey(const ValueKey('account-username'));
+          final password = find.byKey(const ValueKey('account-password'));
+          TextField input(Finder field) => tester.widget(
+            find.descendant(of: field, matching: find.byType(TextField)),
+          );
+          expect(cancel, findsNothing);
+          expect(find.byKey(const ValueKey('account-loading')), findsNothing);
+          await tester.enterText(account, 'Shane');
+          await tester.enterText(password, 'fixture-password');
+          gateway.signInGate = Completer<IdentityUser>();
+          await tester.ensureVisible(login);
+          await tester.tap(login);
+          await tester.pump();
+          expect(find.text('Signing in…'), findsOneWidget);
+          expect(
+            find.descendant(
+              of: login,
+              matching: find.byType(CircularProgressIndicator),
+            ),
+            findsOneWidget,
+          );
+          expect(tester.widget<FilledButton>(login).onPressed, isNull);
+          expect(input(account).readOnly, isTrue);
+          expect(input(password).readOnly, isTrue);
+          expect(cancel, findsOneWidget);
+          expect(
+            tester.getTopLeft(cancel).dy,
+            greaterThanOrEqualTo(tester.getBottomLeft(login).dy),
+          );
+          await tester.tap(login);
+          await tester.pump();
+          expect(gateway.signInCalls, 1);
+
+          gateway.signOutGate = Completer<void>();
+          await tester.ensureVisible(cancel);
+          await tester.tap(cancel);
+          await tester.pump();
+          expect(find.text('Canceling…'), findsOneWidget);
+          expect(tester.widget<TextButton>(cancel).onPressed, isNull);
+          expect(tester.widget<FilledButton>(login).onPressed, isNull);
+          await tester.tap(cancel);
+          expect(gateway.signOutCalls, 1);
+          await tester.runAsync(() async {
+            gateway.signOutGate!.complete();
+            for (var i = 0; i < 100 && service.isBusy; i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+          });
+          await tester.pumpAndSettle();
+          expect(service.isSignedIn, isFalse);
+          expect(service.isBusy, isFalse);
+          expect(service.error, isNull);
+          expect(cancel, findsNothing);
+          expect(find.byKey(const ValueKey('account-loading')), findsNothing);
+          expect(find.byKey(const ValueKey('account-error')), findsNothing);
+          expect(tester.widget<FilledButton>(login).onPressed, isNotNull);
+          expect(
+            tester.widget<TextFormField>(account).controller!.text,
+            'Shane',
+          );
+          expect(
+            tester.widget<TextFormField>(password).controller!.text,
+            isEmpty,
+          );
+          expect(input(password).readOnly, isFalse);
+
+          gateway.signInGate = null;
+          await tester.enterText(password, 'fixture-password');
+          await _tapAccountAction(tester, 'account-sign-in');
+          await tester.pumpAndSettle();
+          expect(gateway.signInCalls, 2);
+          expect(find.byKey(const ValueKey('account-otp')), findsOneWidget);
+          expect(cancel, findsNothing);
+          expect(find.text('Signing in…'), findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
   testWidgets(
     'spatial account uses available split view and stacks large text',
     (tester) async {
@@ -797,6 +913,7 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
   int signOutCalls = 0;
   int verifyCalls = 0;
   Completer<void>? signOutGate;
+  Completer<IdentityUser>? signInGate;
   bool failSignOut = false;
 
   @override
@@ -811,6 +928,7 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
     String? otp,
   }) async {
     signInCalls++;
+    if (signInGate != null) return signInGate!.future;
     if (otp == null) {
       throw const IdentityFailure(IdentityFailureCode.otpRequired);
     }
@@ -842,7 +960,15 @@ class _UiGateway implements IdentityGateway, IdentityLocalSessionCleanup {
   }
 
   @override
-  void cancelRequests() {}
+  void cancelRequests() {
+    final pending = signInGate;
+    if (pending != null && !pending.isCompleted) {
+      pending.completeError(
+        const IdentityFailure(IdentityFailureCode.cancelled),
+      );
+    }
+  }
+
   @override
   Future<void> dispose() async {}
 }
