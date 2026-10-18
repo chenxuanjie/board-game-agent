@@ -100,22 +100,75 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
       for (final (page, type) in <(String, Type)>[
         ('games', DesktopGamesPane),
         ('favorites', DesktopGamesPane),
-        ('recent', DesktopGamesPane),
         ('assistant', DesktopAssistantPane),
-        ('downloads', DesktopLibraryPane),
-        ('topic', DesktopNationalDayPage),
-        ('account', AccountScreen),
+        ('rankings', GameRankingScreen),
         ('settings', DesktopSettingsPane),
       ]) {
         final menu = find.byKey(ValueKey('spatial-menu-$page'));
         await tester.ensureVisible(menu);
         await tester.tap(menu);
-        await tester.pumpAndSettle();
+        if (page == 'rankings') {
+          // Navigation remains usable while the real ranking refresh is pending.
+          await tester.pump();
+          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+          await tester.pump(const Duration(milliseconds: 300));
+        } else {
+          await tester.pumpAndSettle();
+        }
         expect(find.byType(type), findsOneWidget, reason: page);
         expect(find.byType(MobileLibraryContent), findsNothing);
         expect(find.byType(MobileSettingsScreen), findsNothing);
         expect(tester.takeException(), isNull, reason: page);
       }
+    });
+  }
+
+  for (final size in [const Size(1440, 1000), const Size(390, 844)]) {
+    testWidgets('Spatial sidebar matches shared destinations at $size', (
+      tester,
+    ) async {
+      final c = context.controller;
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await c.setColorScheme(ColorSchemeOption.spatialCinema);
+      await _mountSpatial(tester, c, size);
+      if (size.width < 760) {
+        await tester.tap(find.byKey(const ValueKey('spatial-open-navigation')));
+        await tester.pumpAndSettle();
+      }
+      final sidebar = find.byKey(const ValueKey('spatial-sidebar'));
+      final buttons = tester
+          .widgetList<SpatialSidebarButton>(
+            find.descendant(
+              of: sidebar,
+              matching: find.byType(SpatialSidebarButton),
+            ),
+          )
+          .toList();
+      expect(buttons.map((button) => button.title).toList(), [
+        '首页',
+        '游戏库',
+        'AI助手',
+        '我的喜欢',
+        '排行榜',
+        '设置',
+      ]);
+      expect(buttons.map((button) => button.key).toList(), [
+        for (final id in [
+          'home',
+          'games',
+          'assistant',
+          'favorites',
+          'rankings',
+          'settings',
+        ])
+          ValueKey('spatial-menu-$id'),
+      ]);
+      for (final id in ['topic', 'recent', 'downloads', 'account']) {
+        expect(find.byKey(ValueKey('spatial-menu-$id')), findsNothing);
+      }
+      expect(find.text('HOME'), findsNothing);
+      expect(find.text('MY COLLECTION'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   }
   testWidgets(

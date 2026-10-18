@@ -25,6 +25,7 @@ import 'sidebar.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
 import '../shared/app_page_transition.dart';
+import '../shared/workspace_navigation.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/game_cover_motion.dart';
 import 'desktop_resolved_image.dart';
@@ -89,13 +90,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   String _gameDetailReturnPage = 'games';
   String? _libraryGameSlug;
   DesktopLibraryResourceType? _libraryFilter;
-  static const _routes = [
-    'home',
-    'games',
-    'assistant',
-    'favorites',
-    'rankings',
-    'settings',
+  static final _routes = [
+    for (final item in workspaceNavigation) item.destination,
   ];
   bool get _featurePage => ['assistant', 'library', 'rankings'].contains(_page);
 

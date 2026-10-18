@@ -7,6 +7,7 @@ import 'theme.dart';
 import '../../core/theme/cinema_theme.dart';
 import '../../core/theme/app_palette.dart';
 import '../shared/cinema/cinema_surface.dart';
+import '../shared/workspace_navigation.dart';
 
 class DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
@@ -24,14 +25,7 @@ class DesktopSidebar extends StatelessWidget {
     this.width,
   });
 
-  static const _items = <({String asset, String zh, String en})>[
-    (asset: 'sidebar_home.png', zh: '首页', en: 'Home'),
-    (asset: 'sidebar_library.png', zh: '游戏库', en: 'Game Library'),
-    (asset: 'sidebar_ai.png', zh: 'AI助手', en: 'AI Assistant'),
-    (asset: 'sidebar_likes.png', zh: '我的喜欢', en: 'My Likes'),
-    (asset: 'sidebar_ranking.png', zh: '排行榜', en: 'Rankings'),
-    (asset: 'sidebar_settings.png', zh: '设置', en: 'Settings'),
-  ];
+  static const _items = workspaceNavigation;
   static const double _headerHeight = 152;
 
   @override
