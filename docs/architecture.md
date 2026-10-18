@@ -69,8 +69,6 @@ ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppC
 
 `ui/shared/account_menu.dart` 提供共用头像下拉菜单，空间影院首页、宽屏列表和紧凑桌游库复用。登录状态和退出动作直接读取 AccountScope / AccountService，不复制认证、同步或个人数据切换；通知入口复用 DesktopActivityPopup 与现有活动记录，按真实目标进入资料或会话。
 
-`ui/shared/workspace_navigation.dart` 统一各桌面主题的六个侧栏业务目标、顺序及中英文标签。DesktopSidebar 和空间影院各自绘制材质与控件，复用同一清单；账户由头像或设置进入，专题和资料仍保留原业务页面及上下文入口，不再额外占用空间影院侧栏。
-
 登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。
 
 Web 账号通过 `features/identity/services/web_account_gateway.dart` 接入同一个 IdentityController 与本机账号作用域；不调用原生安全存储，不保存密码或 NAS SID。`features/library/services/same_origin_library_service.dart` 复用 RemoteAssetService 接口，供游客与登录用户使用同源公开资料 URI、有限内存缓存和检查；原生端仍使用原服务。Nginx 将 `/api/account/`、`/api/library/`、`/library/`、`/api/comments/` 和 `/api/sync/` 转到独立 Starlette/HTTPX 网关。`services/web_account/library.py` 限制已发布资源，再内部转给 Nginx 返回只读挂载文件；`comments.py` 校验公开快照及当前账号的 DSM 写入，Flutter `WebPublicCommentsFiles` 复用原评论服务。`web_sync_files.dart` 与服务端 `account_files.py` 为 Web 提供同协议的私人日志和公共收藏/投票传输，复用 AccountCloudSync 和 webdav_sync，详见 [Web 账号](web-account.md)、[Web 同源资料](web-library.md) 和 [桌游评论](game-comments.md)。

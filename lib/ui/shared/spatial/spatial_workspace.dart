@@ -17,7 +17,6 @@ import '../../mobile/universal_ai_screen.dart';
 import '../../mobile/rule_materials_screen.dart';
 import '../account_screen.dart';
 import '../account_menu.dart';
-import '../workspace_navigation.dart';
 import '../game_ranking_screen.dart';
 import '../library_update_review.dart';
 import '../app_modals.dart';
@@ -449,12 +448,44 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
           ),
         ),
         const SizedBox(height: 18),
-        for (final item in workspaceNavigation)
-          _menuItem((
-            item.destination,
-            c.copy.localized(item.zh, item.en),
-            item.icon,
-          ), dismiss: dismiss),
+        const Padding(
+          padding: EdgeInsets.only(left: 10, bottom: 4),
+          child: Text(
+            'HOME',
+            style: TextStyle(
+              fontSize: 8.5,
+              letterSpacing: 1.2,
+              color: Colors.white38,
+            ),
+          ),
+        ),
+        for (final item in const [
+          ('home', '首页', Icons.home_rounded),
+          ('games', '桌游库', Icons.grid_view_rounded),
+          ('rankings', '排行榜', Icons.local_fire_department_rounded),
+          ('favorites', '我的喜欢', Icons.add_rounded),
+          ('assistant', 'AI 助手', Icons.auto_awesome_rounded),
+        ])
+          _menuItem(item, dismiss: dismiss),
+        const SizedBox(height: 24),
+        const Padding(
+          padding: EdgeInsets.only(left: 10, bottom: 12),
+          child: Text(
+            'MY COLLECTION',
+            style: TextStyle(
+              fontSize: 8.5,
+              letterSpacing: 1.2,
+              color: Colors.white38,
+            ),
+          ),
+        ),
+        for (final item in const [
+          ('recent', '最近浏览', Icons.history_rounded),
+          ('downloads', '资料下载', Icons.download_rounded),
+          ('account', '账户', Icons.person_outline_rounded),
+          ('settings', '设置', Icons.tune_rounded),
+        ])
+          _menuItem(item, dismiss: dismiss),
       ],
     ),
   );
