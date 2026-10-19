@@ -89,11 +89,15 @@ void main() {
           await tester.enterText(password, 'fixture-password');
           gateway.signInGate = Completer<IdentityUser>();
           await tester.ensureVisible(login);
+          final buttonPosition = tester.getTopLeft(login);
           await tester.tap(login);
           await tester.pump();
           expect(find.text('Cancel sign-in'), findsOneWidget);
           expect(tester.element(login), same(buttonElement));
           expect(tester.getSize(login), buttonSize);
+          expect(tester.getTopLeft(login), buttonPosition);
+          final loading = find.byKey(const ValueKey('account-loading'));
+          expect(tester.widget<LinearProgressIndicator>(loading).value, isNull);
           expect(
             find.descendant(
               of: login,
@@ -111,6 +115,7 @@ void main() {
           await tester.tap(login);
           await tester.pump();
           expect(find.text('Canceling…'), findsOneWidget);
+          expect(tester.widget<LinearProgressIndicator>(loading).value, isNull);
           expect(tester.element(login), same(buttonElement));
           expect(tester.getSize(login), buttonSize);
           expect(tester.widget<FilledButton>(login).onPressed, isNull);

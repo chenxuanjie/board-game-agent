@@ -742,14 +742,23 @@ class _AccountScreenState extends State<AccountScreen> {
                       },
                     ),
                   ],
-                  const SizedBox(height: UiTokens.sectionGap),
                 ],
-                if (busy && !signingIn) ...[
-                  const LinearProgressIndicator(
-                    key: ValueKey('account-loading'),
+                if ((!signedIn && service?.supportsSignIn == true) || busy)
+                  SizedBox(
+                    height: UiTokens.sectionGap,
+                    child: busy
+                        ? Align(
+                            child: LinearProgressIndicator(
+                              key: const ValueKey('account-loading'),
+                              semanticsLabel: _canceling
+                                  ? _text('正在取消登录', 'Canceling sign-in')
+                                  : signingIn
+                                  ? _text('正在登录', 'Signing in')
+                                  : _text('正在处理', 'Working'),
+                            ),
+                          )
+                        : null,
                   ),
-                  const SizedBox(height: UiTokens.itemGap),
-                ],
                 if (error != null && error.isNotEmpty) ...[
                   Semantics(
                     liveRegion: true,
@@ -797,11 +806,14 @@ class _AccountScreenState extends State<AccountScreen> {
                           )
                         : _signIn,
                     icon: signingIn
-                        ? const SizedBox.square(
+                        ? SizedBox.square(
                             dimension: 18,
                             child: CircularProgressIndicator(
-                              key: ValueKey('account-loading'),
+                              key: const ValueKey('account-login-spinner'),
                               strokeWidth: 2,
+                              color: _canceling
+                                  ? colors.onSurfaceVariant
+                                  : colors.onPrimary,
                             ),
                           )
                         : Icon(
