@@ -115,7 +115,8 @@ final class WebPrivateSyncFiles implements AccountPrivateFiles {
   }
 }
 
-final class WebPublicSyncFiles implements AccountPublicFiles {
+// The same-origin gateway returns only after its FileStation readback matches.
+final class WebPublicSyncFiles implements VerifiedAccountPublicFiles {
   WebPublicSyncFiles(this.transport, {required this.uid});
   final WebSyncTransport transport;
   @override
@@ -130,6 +131,7 @@ final class WebPublicSyncFiles implements AccountPublicFiles {
         name: raw['name'] as String,
         directory: raw['directory'] as bool,
         ownerUid: raw['ownerUid'] as int,
+        revision: raw['revision'] as String?,
       ),
   ];
   @override

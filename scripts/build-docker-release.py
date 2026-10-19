@@ -143,6 +143,7 @@ def synology_compose(root, manifest, settings=None):
         '${SYNOLOGY_ORIGIN:?Set the trusted DSM HTTPS origin}': defaults['SYNOLOGY_ORIGIN'],
         '${WEB_PUBLIC_ORIGIN:?Set the browser site origin}': defaults['WEB_PUBLIC_ORIGIN'],
         '${WEB_ALLOW_INSECURE_HTTP:-false}': defaults['WEB_ALLOW_INSECURE_HTTP'],
+        '${AI_ALLOWED_ORIGINS:-https://api.openai.com,https://api.deepseek.com,https://www.loomex.lol,https://loomex.lol}': defaults['AI_ALLOWED_ORIGINS'],
         '${LIBRARY_NAS_PATH:?Set the matching FileStation library path}': defaults['LIBRARY_NAS_PATH'],
     }
     compose = (root / 'docker-compose.yml').read_text(encoding='utf-8-sig')
@@ -167,6 +168,7 @@ def synology_compose(root, manifest, settings=None):
             '# Synology Container Manager: import the matching TAR, then upload this file.\n'
             '# No .env or build tools required. Edit NAS paths and site/DSM URLs here.\n'
             '# Browser URL must match WEB_PUBLIC_ORIGIN; update it if the site address changes.\n'
+            f'# Browser entry: {defaults["WEB_PUBLIC_ORIGIN"]}; TLS may terminate at the NAS reverse proxy.\n'
             + compose)
 
 

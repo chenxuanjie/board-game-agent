@@ -74,7 +74,7 @@ class AccountFiles:
         path = self.path(lane, relative, listing=True)
         result = []
         for offset in range(0, 10000 if lane == "private" else 2000, 100):
-            fields = {"folder_path": path, "offset": str(offset), "limit": "100", "sort_by": "name", "additional": '["owner"]'}
+            fields = {"folder_path": path, "offset": str(offset), "limit": "100", "sort_by": "name", "additional": '["owner","size","time"]' if lane == "public" else '["owner"]'}
             try:
                 data = await call("SYNO.FileStation.List", "list", fields)
             except self.failure as error:
@@ -102,6 +102,11 @@ class AccountFiles:
                     if type(uid) is not int or uid <= 0 or (not directory and uid != int(relative[1:])):
                         raise self.failure("accountDenied", 403)
                     entry["ownerUid"] = uid
+                    additional = file.get("additional", {})
+                    size, times = additional.get("size"), additional.get("time", {})
+                    if (type(size) is int and isinstance(times, dict)
+                            and type(times.get("mtime")) is int and type(times.get("ctime")) is int):
+                        entry["revision"] = json.dumps([uid, size, times["mtime"], times["ctime"]], separators=(",", ":"))
                 result.append(entry)
             if offset + len(files) >= total:
                 return result

@@ -58,6 +58,7 @@ extension AppIdentityScopeController on AppController {
   Future<void> _switchIdentityScopeNow(String? userId) async {
     _switchingIdentityScope = true;
     _identityScopeEpoch++;
+    reactionDiagnostics.reset();
     _pendingLibraryUpdate = null;
     _libraryUpdateError = null;
     _libraryUpdatePromptSeen = false;

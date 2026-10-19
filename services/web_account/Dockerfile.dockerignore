@@ -6,6 +6,7 @@
 !services/web_account/library.py
 !services/web_account/comments.py
 !services/web_account/account_files.py
+!services/web_account/ai_proxy.py
 !services/web_account/requirements.txt
 !services/web_account/Dockerfile
 !services/web_account/Dockerfile.dockerignore

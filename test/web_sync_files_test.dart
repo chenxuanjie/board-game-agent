@@ -14,6 +14,39 @@ import 'support/account_sync_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
+    'Web public entries carry optional revision without changing snapshot protocol',
+    () async {
+      var versioned = true;
+      final files = WebPublicSyncFiles(
+        WebSyncTransport(
+          uid: 101,
+          client: MockClient(
+            (request) async => http.Response(
+              jsonEncode({
+                'entries': [
+                  {
+                    'name': 'd${'a' * 32}.json',
+                    'directory': false,
+                    'ownerUid': 101,
+                    if (versioned) 'revision': '[101,1,2,3]',
+                  },
+                ],
+              }),
+              200,
+            ),
+          ),
+          site: Uri.parse('https://games.example'),
+          lane: 'public',
+          isActive: () => true,
+        ),
+        uid: 101,
+      );
+      expect((await files.entries('u101')).single.revision, '[101,1,2,3]');
+      versioned = false;
+      expect((await files.entries('u101')).single.revision, isNull);
+    },
+  );
+  test(
     'native and Web private logs converge, including cancellation and offline recovery',
     () async {
       final nativeFiles = MemoryPrivateFiles();

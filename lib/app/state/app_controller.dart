@@ -12,6 +12,7 @@ import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_sync/webdav_sync.dart' show canonicalJson, sha256Json;
 import '../../features/identity/services/account_sync_store.dart';
+import '../../features/identity/services/reaction_sync_diagnostics.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -101,6 +102,7 @@ class _RemoteLibraryIndexResult {
 
 class AppController extends ChangeNotifier {
   final browseSession = BrowseSession();
+  final reactionDiagnostics = ReactionSyncDiagnostics();
   AppController({
     required PreferencesService preferencesService,
     required AiService aiService,
@@ -171,6 +173,12 @@ class AppController extends ChangeNotifier {
       !(_nationalDayList?.saving ?? false) &&
       !_generationStates.values.any((state) => state.isSending) &&
       !_isListening;
+  bool get canStartPrivateCloudSync =>
+      !_controllerDisposed &&
+      _identityScopeRequests == 0 &&
+      (!_switchingIdentityScope || _accountCloudWork != null) &&
+      !_generationStates.values.any((state) => state.isSending) &&
+      !_isListening;
   Future<void>? _initializationFuture;
   final List<Future<void>> _voiceOperations = [];
   final Set<Future<void>> _providerCleanups = {};
@@ -186,20 +194,25 @@ class AppController extends ChangeNotifier {
   RemoteGameVoteStore Function(String)? _accountReactionProvider;
   String? _accountReactionScope;
   String? Function()? _accountReactionError;
+  String? Function()? _accountPublicationError;
   void configureAccountReactions({
     RemoteGameVoteStore Function(String)? provider,
     String? scope,
     String? Function()? error,
+    String? Function()? publicationError,
   }) {
     _accountReactionProvider = provider;
     _accountReactionScope = scope;
     _accountReactionError = error;
+    _accountPublicationError = publicationError;
     _gameVotes.configureRemote(
       provider == null ? null : () => provider(GameVoteBallot.campaign),
       () => _accountReactionScope,
     );
     _gameVotes.accountSyncError = error;
+    _gameVotes.accountPublicationError = publicationError;
     _favoriteStatistics?.accountSyncError = error;
+    _favoriteStatistics?.accountPublicationError = publicationError;
   }
 
   GameVoteService get favoriteStatistics => _favoriteStatistics ??=
@@ -227,6 +240,7 @@ class AppController extends ChangeNotifier {
           cacheSaver: _preferencesService.saveFavoriteRankingCache,
         )
         ..accountSyncError = _accountReactionError
+        ..accountPublicationError = _accountPublicationError
         ..cachedCountVisibility = (() =>
             identityUserId != null || _favoriteRemoteProvider != null);
   NationalDayListController? _nationalDayList;
@@ -1036,6 +1050,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _controllerDisposed = true;
+    reactionDiagnostics.dispose();
     _assetStatusTimer?.cancel();
     _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();

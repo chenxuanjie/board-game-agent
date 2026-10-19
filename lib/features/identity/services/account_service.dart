@@ -540,14 +540,22 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         scope: target,
         files: files,
         publicReactions: _publicFilesFactory != null
-            ? AccountPublicReactions(_publicFilesFactory(_gateway!))
+            ? AccountPublicReactions(
+                _publicFilesFactory(_gateway!),
+                rankingFiles: _publicFilesFactory(_gateway!),
+              )
             : _gateway is WebAccountGateway
             ? AccountPublicReactions(
                 (_gateway as WebAccountGateway).publicFiles(),
+                rankingFiles: (_gateway as WebAccountGateway).publicFiles(),
               )
             : _gateway is SynologyIdentityGateway
             ? AccountPublicReactions(
                 (_gateway as SynologyIdentityGateway).publicFiles(
+                  appId: 'board_game_agent',
+                  sharedFolder: _configuration!.storageFolder,
+                ),
+                rankingFiles: (_gateway as SynologyIdentityGateway).publicFiles(
                   appId: 'board_game_agent',
                   sharedFolder: _configuration!.storageFolder,
                 ),
@@ -563,12 +571,14 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       if (cloud.publicReactions case final reactions?) {
         _controller.configureAccountReactions(
           scope: 'account-public-v1.$target',
-          error: () => cloud.publicError,
+          error: () => cloud.rankingError,
+          publicationError: () => cloud.publicationError,
           provider: (namespace) => AccountReactionRemote(
             scope: 'account-public-v1.$target',
             namespace: namespace,
             reactions: reactions,
             refresh: cloud.refreshPublic,
+            publish: cloud.publishReactions,
             isEnabled: () => cloud.enabled,
           ),
         );

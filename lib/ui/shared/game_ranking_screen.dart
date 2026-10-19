@@ -40,8 +40,20 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
     });
   }
 
-  Future<void> _refresh() async {
-    if (_refreshRunning) return;
+  Future<void> _refresh({bool showDiagnostics = false}) async {
+    if (showDiagnostics) widget.controller.reactionDiagnostics.show();
+    if (_refreshRunning) {
+      // A press during an older read must reach the coordinator, which queues
+      // one fresh scan after that read rather than swallowing the request here.
+      if (showDiagnostics) {
+        try {
+          await widget.controller.refreshFavoriteRankings();
+        } catch (_) {
+          if (mounted) setState(() => _failed = true);
+        }
+      }
+      return;
+    }
     _refreshRunning = true;
     setState(() {
       _loading = true;
@@ -117,9 +129,14 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
             ),
             actions: [
               IconButton(
+                tooltip: copy.localized('同步过程', 'Sync details'),
+                onPressed: () => controller.reactionDiagnostics.show(),
+                icon: const Icon(Icons.manage_search_rounded),
+              ),
+              IconButton(
                 key: const ValueKey('ranking-refresh'),
                 tooltip: copy.localized('刷新', 'Refresh'),
-                onPressed: syncing ? null : _refresh,
+                onPressed: () => _refresh(showDiagnostics: true),
                 icon: const Icon(Icons.refresh_rounded),
               ),
             ],
@@ -159,10 +176,38 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                           statistics.status == GameVoteSyncStatus.pending)
                         _notice(
                           copy.localized(
-                            statistics.syncError ?? '已保存在本机，待同步',
+                            statistics.publicationStatus ==
+                                    GameVotePublicationStatus.published
+                                ? '喜欢已发布，排行榜刷新失败，显示上次统计'
+                                : statistics.syncError ?? '排行刷新失败，显示上次统计',
                             'Sync incomplete. Showing saved data',
                           ),
                           action: copy.localized('重试', 'Retry'),
+                        ),
+                      if (statistics.publicationStatus ==
+                          GameVotePublicationStatus.failed)
+                        _notice(
+                          copy.localized(
+                            statistics.publicationError ?? '喜欢保存在本机，发布失败',
+                            'Likes saved locally; publication failed',
+                          ),
+                          action: copy.localized('重试发布', 'Retry publication'),
+                          onRetry: () => unawaited(statistics.publish()),
+                        )
+                      else if (!syncing &&
+                          statistics.publicationStatus ==
+                              GameVotePublicationStatus.publishing)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Text(
+                            copy.localized(
+                              '喜欢已保存在本机，正在发布…',
+                              'Likes saved locally; publishing…',
+                            ),
+                          ),
                         ),
                       if (statistics.status == GameVoteSyncStatus.paused)
                         Padding(
@@ -176,7 +221,7 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                         ),
                       Expanded(
                         child: RefreshIndicator(
-                          onRefresh: _refresh,
+                          onRefresh: () => _refresh(showDiagnostics: true),
                           child: ListView.separated(
                             key: const ValueKey('game-ranking-list'),
                             physics: const AlwaysScrollableScrollPhysics(),
@@ -235,14 +280,21 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
     );
   }
 
-  Widget _notice(String text, {required String action}) => Padding(
+  Widget _notice(
+    String text, {
+    required String action,
+    VoidCallback? onRetry,
+  }) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
     child: Row(
       children: [
         Expanded(
           child: Text(text, style: Theme.of(context).textTheme.bodySmall),
         ),
-        TextButton(onPressed: _loading ? null : _refresh, child: Text(action)),
+        TextButton(
+          onPressed: onRetry ?? (_loading ? null : _refresh),
+          child: Text(action),
+        ),
       ],
     ),
   );

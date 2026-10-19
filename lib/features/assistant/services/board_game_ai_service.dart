@@ -39,6 +39,7 @@ class BoardGameAiService implements AiService, AiConversationContextReset {
     ResponsesRulesWorkflow? responsesWorkflow,
     BoardGameQuestionRouter? questionRouter,
     BoardGameQuestionClassifier? questionClassifier,
+    this.onDispose,
   }) : _aiClient = aiClient,
        _knowledgeRetriever =
            knowledgeRetriever ?? const RuleKnowledgeRetriever(),
@@ -50,6 +51,7 @@ class BoardGameAiService implements AiService, AiConversationContextReset {
            questionClassifier ?? BoardGameQuestionClassifier();
 
   final AiClient _aiClient;
+  final VoidCallback? onDispose;
   final RuleKnowledgeRetriever _knowledgeRetriever;
   final BoardGamePromptBuilder _promptBuilder;
   final KnowledgeAnswerParser _answerParser;
@@ -384,6 +386,7 @@ class BoardGameAiService implements AiService, AiConversationContextReset {
   void dispose() {
     _responsesWorkflow?.close();
     _aiClient.close();
+    onDispose?.call();
   }
 
   bool _responsesEnabled(AiApiConfig config) {

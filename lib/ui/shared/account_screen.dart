@@ -401,39 +401,73 @@ class _AccountScreenState extends State<AccountScreen> {
                               ),
                         ),
                       ),
-                      if (cloud.publicReactions != null)
+                      if (cloud.publicReactions != null) ...[
                         ListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            _text('公共收藏与投票统计', 'Public likes and votes'),
-                          ),
+                          title: Text(_text('自己的收藏与投票', 'My likes and votes')),
                           subtitle: Text(
-                            cloud.publicError ??
+                            cloud.publicationError ??
                                 _text(
                                   !cloud.enabled
                                       ? '已暂停'
-                                      : cloud.publicSyncing
-                                      ? '正在同步…'
-                                      : cloud.publicSynced
-                                      ? '已同步'
-                                      : '待同步',
+                                      : cloud.publishing
+                                      ? '正在发布…'
+                                      : cloud.publicPublished
+                                      ? '已发布'
+                                      : '保存在本机，待发布',
                                   !cloud.enabled
                                       ? 'Paused'
-                                      : cloud.publicSyncing
-                                      ? 'Syncing…'
-                                      : cloud.publicSynced
-                                      ? 'Synced'
-                                      : 'Pending',
+                                      : cloud.publishing
+                                      ? 'Publishing…'
+                                      : cloud.publicPublished
+                                      ? 'Published'
+                                      : 'Saved locally; pending publication',
                                 ),
                           ),
                         ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(_text('公共排行榜', 'Public rankings')),
+                          subtitle: Text(
+                            cloud.rankingError ??
+                                _text(
+                                  !cloud.enabled
+                                      ? '已暂停'
+                                      : cloud.refreshingRankings
+                                      ? '正在刷新…'
+                                      : cloud.rankingsAvailable
+                                      ? '已刷新'
+                                      : '待刷新',
+                                  !cloud.enabled
+                                      ? 'Paused'
+                                      : cloud.refreshingRankings
+                                      ? 'Refreshing…'
+                                      : cloud.rankingsAvailable
+                                      ? 'Refreshed'
+                                      : 'Pending refresh',
+                                ),
+                          ),
+                        ),
+                        if (cloud.rankingError != null &&
+                            cloud.publicReactions!.diagnostic != null)
+                          Text(
+                            _text('问题记录：', 'Record to check: ') +
+                                cloud.publicReactions!.diagnostic!.path,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ],
                     ],
                   ),
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       key: const ValueKey('account-cloud-sync'),
-                      onPressed: busy || !cloud.enabled || cloud.syncing
+                      onPressed:
+                          busy ||
+                              !cloud.enabled ||
+                              (cloud.syncing &&
+                                  cloud.publicError == null &&
+                                  cloud.error == null)
                           ? null
                           : cloud.retry,
                       child: Text(
@@ -447,6 +481,12 @@ class _AccountScreenState extends State<AccountScreen> {
                         ),
                       ),
                     ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        cloud.controller.reactionDiagnostics.show(),
+                    icon: const Icon(Icons.manage_search_rounded, size: 18),
+                    label: Text(_text('查看同步过程', 'Sync details')),
                   ),
                   TextButton.icon(
                     key: const ValueKey('account-edit-nickname'),

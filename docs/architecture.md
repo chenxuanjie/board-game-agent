@@ -76,3 +76,9 @@ Web 账号通过 `features/identity/services/web_account_gateway.dart` 接入同
 Docker 根目录 `docker-compose.yml` 是参数化开发模板，构建通过 `docker-compose.build.yml` 显式启用；`scripts/build-docker-release.py` 在构建电脑构建并导出唯一固定名称 TAR，成功后同名覆盖，不生成部署 ZIP。交付目录 `release/reports/docker-linux-amd64/docker-compose.yml` 直接固定匹配 TAR 的两个镜像引用、架构和 NAS 设置，群晖 GUI 上传不需要 `.env`。PowerShell 提供 Windows 入口；`packaging/docker/deploy.sh` 在 NAS 校验、导入并启动，不执行编译。见 [Docker 部署](docker-deployment.md)。
 
 Nginx 的全局启动配置位于 `packaging/docker/nginx-main.conf`，业务路由仍在 `nginx.conf`。2026-10-18 源码改为两个容器统一使用现有 NAS 读取 UID/GID，Nginx 内部 8080、临时文件只写 `/tmp`，配合只读挂载和只读根文件系统；不创建/修改 NAS 账号或权限。`verify-docker-release.py --source-overlay` 仅用于既有镜像挂载当前源码的开发测试，报告独立放入 build/diagnostics，不当作新 TAR 的交付验收。
+
+账号公共业务由 AccountCloudSync 分别调度自己的发布、排行读取和私人传输。AccountPublicReactions.publish 只读取当前 UID 并确认自己的写入；refresh 独立汇总完整排行，版本缓存和固定诊断位于同一协议适配中。GameVoteService 的 publicationStatus/publishedRevision 与排行 SyncStatus 分离，收藏业务成功不冒充远端确认。AccountService 为两个公共任务各建传输实例，app_identity 0.4.2 与 WebSyncTransport 提供各自取消边界，暂停/退出仍统一停止。接口和验收见公共账号数据与同步规范。
+
+`features/identity/services/reaction_sync_diagnostics.dart` 管理有界、按任务分组的临时过程记录，AppController 持有，收藏/发布/排行及私人引擎在真实边界发出事件。`ui/shared/reaction_sync_diagnostics_panel.dart` 由 main 的 MaterialApp builder 接入全局 Overlay；Windows/Android 共用，不依附某一页面或重复发起请求。详情、时间和远端实际/本机叠加计数均来自共享业务层。
+
+Web AI 的 `features/assistant/services/web_ai_http_client.dart` 由 main 注入现有 Chat/Responses SDK，流式和取消仍归 SDK。`services/web_account/ai_proxy.py` 只负责有限目标的 HTTPS 转发及资源释放；Nginx `/api/ai/request` 关闭缓冲。它与 DSM 使用独立客户端，API Key 不进入 URL、会话持久化或日志；边界与验收见 [Web AI](web-ai.md)。

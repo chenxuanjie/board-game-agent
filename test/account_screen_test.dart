@@ -14,6 +14,7 @@ import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
+import 'package:board_game_agent/features/identity/services/reaction_sync_diagnostics.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/identity/models/account_configuration.dart';
@@ -387,10 +388,9 @@ void main() {
       final cloud = service.cloud!;
       cloud.status = AccountCloudStatus.pending;
       cloud.error = 'Personal sync needs retry';
-      cloud.publicSynced = true;
       await tester.pumpWidget(const SizedBox.shrink());
       await _mount(tester, service, textScale: 1.5);
-      expect(find.text('Some data needs retry'), findsOneWidget);
+      expect(find.text('Retry needed'), findsOneWidget);
       expect(find.text('Personal sync needs retry'), findsNothing);
       await _tapAccountAction(tester, 'account-sync-details');
       await tester.pumpAndSettle();
@@ -821,6 +821,8 @@ MobileMineContent _mine(AppController controller) => MobileMineContent(
 );
 
 class _MineFixture extends ChangeNotifier implements AppController {
+  @override
+  final reactionDiagnostics = ReactionSyncDiagnostics();
   final _votes = GameVoteService(preferences: PreferencesService());
   final _likes = GameVoteService(preferences: PreferencesService());
   @override
@@ -829,6 +831,7 @@ class _MineFixture extends ChangeNotifier implements AppController {
   GameVoteService get favoriteStatistics => _likes;
   @override
   void dispose() {
+    reactionDiagnostics.dispose();
     _votes.dispose();
     _likes.dispose();
     super.dispose();
@@ -843,6 +846,8 @@ class _MineFixture extends ChangeNotifier implements AppController {
   List<AssetSourceConfig> get assetSourceConfigs => AssetSourceConfig.defaults;
   @override
   bool get accountCloudIdle => false;
+  @override
+  bool get canStartPrivateCloudSync => false;
   @override
   AppCopy get copy => AppCopy(AppLanguage.zhHans);
   @override

@@ -9,6 +9,15 @@ import 'remote_game_vote_store.dart';
 
 enum GameVoteSyncStatus { localOnly, syncing, synced, pending, paused }
 
+enum GameVotePublicationStatus {
+  localOnly,
+  pending,
+  publishing,
+  published,
+  failed,
+  paused,
+}
+
 /// Durable local votes are independent from favorites and remote availability.
 class GameVoteService extends ChangeNotifier {
   GameVoteService({
@@ -37,6 +46,7 @@ class GameVoteService extends ChangeNotifier {
   GameVoteCache? _cache;
   Future<void>? _loadFuture;
   Future<void>? _syncFuture;
+  Future<void>? _publicationFuture;
   Future<void> _writes = Future.value();
   RemoteGameVoteStore? _activeRemote;
   Timer? _retry;
@@ -46,6 +56,15 @@ class GameVoteService extends ChangeNotifier {
   VoidCallback? onSaved;
   String? loadError;
   String? Function()? accountSyncError;
+  String? Function()? accountPublicationError;
+  GameVotePublicationStatus publicationStatus =
+      GameVotePublicationStatus.localOnly;
+  int _publishedRevision = -1;
+  int get publishedRevision => _publishedRevision;
+  String? get publicationError =>
+      publicationStatus == GameVotePublicationStatus.failed
+      ? accountPublicationError?.call() ?? '已保存在本机，发布失败，请重试'
+      : null;
   bool Function()? cachedCountVisibility;
   String? get syncError => accountSyncError?.call();
   String? _scope;
@@ -80,12 +99,11 @@ class GameVoteService extends ChangeNotifier {
     if (_disposed || externalGames == null) return;
     _revision++;
     _retryCount = 0;
-    if ((accountRemoteProvider != null || accountSyncError != null) &&
-        status != GameVoteSyncStatus.paused) {
-      status = GameVoteSyncStatus.syncing;
+    if (status != GameVoteSyncStatus.paused) {
+      publicationStatus = GameVotePublicationStatus.pending;
     }
     _notify();
-    unawaited(sync());
+    unawaited(publish());
   }
 
   Future<void> load() => _loadFuture ??= _load();
@@ -217,25 +235,122 @@ class GameVoteService extends ChangeNotifier {
     if (saved) {
       onSaved?.call();
       _retryCount = 0;
-      if ((accountRemoteProvider != null || accountSyncError != null) &&
-          status != GameVoteSyncStatus.paused) {
-        status = GameVoteSyncStatus.syncing;
+      if (status != GameVoteSyncStatus.paused) {
+        publicationStatus = GameVotePublicationStatus.pending;
       }
-      unawaited(sync());
+      unawaited(publish());
     }
     return saved;
   }
 
   /// Coalesce refreshes; a newer local vote gets another upload after this run.
-  Future<void> sync() {
+  Future<void> sync({bool fresh = false}) {
     if (_disposed) return Future.value();
     _retry?.cancel();
-    if (_syncFuture != null) return _syncFuture!;
+    if (_syncFuture != null) {
+      // Forward a new user refresh to the coordinator. Merely returning the old
+      // future would swallow its cache-bypass/follow-up request.
+      final remote = fresh
+          ? accountRemoteProvider?.call() ?? remoteProvider?.call()
+          : null;
+      if (remote is CoordinatedGameVoteStore && remote.enabled) {
+        return remote.synchronize().whenComplete(remote.close);
+      }
+      remote?.close();
+      return _syncFuture!;
+    }
     final future = _sync();
     _syncFuture = future;
     return future.whenComplete(() {
       _syncFuture = null;
     });
+  }
+
+  /// Publication has its own future: a slow/failed ranking read cannot hold a
+  /// newly saved cancellation behind it. The coordinator owns bounded retries.
+  Future<void> publish() {
+    if (_disposed) return Future.value();
+    if (_publicationFuture != null) return _publicationFuture!;
+    final revision = _revision;
+    final future = (() async {
+      RemoteGameVoteStore? remote;
+      try {
+        await load();
+        if (_disposed || !ready) return;
+        final selection = externalGames?.call();
+        if (externalGames != null && selection == null) return;
+        remote = accountRemoteProvider?.call() ?? remoteProvider?.call();
+        if (remote is! CoordinatedGameVoteStore) {
+          await sync();
+          if (!_disposed) {
+            publicationStatus = remote == null
+                ? GameVotePublicationStatus.localOnly
+                : status == GameVoteSyncStatus.synced
+                ? GameVotePublicationStatus.published
+                : GameVotePublicationStatus.failed;
+          }
+          return;
+        }
+        if (!remote.enabled) {
+          publicationStatus = GameVotePublicationStatus.paused;
+          return;
+        }
+        beginPublication();
+        final ballot = externalGames == null
+            ? _cache!.ballot
+            : GameVoteBallot(
+                deviceId: _cache!.ballot.deviceId,
+                games: selection!,
+                namespace: namespace,
+              );
+        await remote.upload(ballot);
+        if (!_disposed &&
+            remote.enabled &&
+            publicationStatus != GameVotePublicationStatus.paused &&
+            revision == _revision) {
+          confirmPublication();
+        }
+      } catch (_) {
+        if (!_disposed) {
+          if (remote is CoordinatedGameVoteStore && !remote.enabled) {
+            publicationStatus = GameVotePublicationStatus.paused;
+          } else {
+            failPublication();
+          }
+        }
+      } finally {
+        remote?.close();
+        _notify();
+      }
+    })();
+    _publicationFuture = future;
+    return future.whenComplete(() {
+      _publicationFuture = null;
+      if (!_disposed &&
+          revision != _revision &&
+          publicationStatus != GameVotePublicationStatus.paused) {
+        unawaited(publish());
+      }
+    });
+  }
+
+  void beginPublication() {
+    if (_disposed) return;
+    publicationStatus = GameVotePublicationStatus.publishing;
+    _notify();
+  }
+
+  void confirmPublication() {
+    if (_disposed) return;
+    _publishedRevision = _revision;
+    publicationStatus = GameVotePublicationStatus.published;
+    _notify();
+  }
+
+  void failPublication() {
+    if (_disposed) return;
+    publicationStatus = GameVotePublicationStatus.failed;
+    _notify();
   }
 
   void markPublicFailure() {
@@ -254,6 +369,7 @@ class GameVoteService extends ChangeNotifier {
     if (_disposed) return;
     _retry?.cancel();
     status = GameVoteSyncStatus.paused;
+    publicationStatus = GameVotePublicationStatus.paused;
     _notify();
   }
 

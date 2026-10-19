@@ -17,24 +17,85 @@ extension AppCollectionController on AppController {
       '${copy.localized('国庆聚会 · 桌游清单', 'National Day · Games to play')}\n'
       '${nationalDayGames.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}';
 
-  Future<bool> toggleFavorite(GameInfo game) {
-    if (_switchingIdentityScope || _accountReactionCommit) {
-      return Future<bool>.value(false);
+  Future<bool> toggleFavorite(GameInfo game) async {
+    reactionDiagnostics.watch(game.slug);
+    final trace = reactionDiagnostics.start(
+      isFavorite(game) ? '取消喜欢' : '喜欢',
+      show: true,
+      detail: game.slug,
+    );
+    try {
+      final saved = await _saveFavoriteIntent(game, trace);
+      trace.finish(
+        failed: !saved,
+        detail: saved
+            ? identityUserId == null
+                  ? '本机已保存；未登录，不上传账号记录'
+                  : '本机已保存；后台发布任务已触发，尚不代表远端已确认'
+            : '本机保存未完成，未发布此次操作',
+      );
+      return saved;
+    } catch (failure) {
+      trace.finish(
+        failed: true,
+        detail: ReactionSyncDiagnostics.failureLabel(failure),
+      );
+      rethrow;
+    }
+  }
+
+  Future<bool> _saveFavoriteIntent(GameInfo game, ReactionTrace trace) async {
+    if (_identityScopeRequests > 0 ||
+        (_switchingIdentityScope && _accountCloudWork == null)) {
+      trace.event('账号正在切换，此次操作未保存');
+      return false;
+    }
+    final epoch = _identityScopeEpoch;
+    bool? desired;
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    // Wait before joining the mutation queue. Joining first would deadlock a
+    // projection that is draining that queue. Keep the user's intended state.
+    while (_accountCloudWork != null) {
+      desired ??= !isFavorite(game);
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) return false;
+      try {
+        await trace.measure(
+          '等待本机同步提交释放',
+          () => _accountCloudWork!.timeout(remaining),
+        );
+      } catch (_) {
+        return false;
+      }
+      if (_controllerDisposed ||
+          epoch != _identityScopeEpoch ||
+          _identityScopeRequests > 0) {
+        return false;
+      }
     }
     final Future<bool> operation = _favoriteMutationQueue
         .catchError((Object _) {})
-        .then<bool>((_) => _toggleFavoriteNow(game));
+        .then<bool>(
+          (_) => epoch == _identityScopeEpoch && !_controllerDisposed
+              ? trace.measure(
+                  '写入本机收藏',
+                  () => _toggleFavoriteNow(game, desired: desired),
+                )
+              : false,
+        );
     _favoriteMutationQueue = operation.then<void>((_) {});
+    trace.event('等待本机收藏写入队列', status: ReactionTraceStatus.running);
     return operation;
   }
 
-  Future<bool> _toggleFavoriteNow(GameInfo game) async {
+  Future<bool> _toggleFavoriteNow(GameInfo game, {bool? desired}) async {
     final slug = game.slug.trim();
     if (slug.isEmpty) return false;
     if (!await _ensureFavoriteRecords()) return false;
 
     final previous = Map<String, DateTime>.of(_favoriteCreatedAtBySlug);
-    if (_favoriteCreatedAtBySlug.containsKey(slug)) {
+    final selected = desired ?? !_favoriteCreatedAtBySlug.containsKey(slug);
+    if (!selected) {
       _favoriteCreatedAtBySlug.remove(slug);
     } else {
       _favoriteCreatedAtBySlug[slug] = DateTime.now().toUtc();

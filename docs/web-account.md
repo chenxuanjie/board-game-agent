@@ -29,6 +29,8 @@ Cookie 是 256 位随机站点标识，HttpOnly、Secure、SameSite=Strict、Pat
 
 ## 部署
 
+2026-10-18 HTTPS 入口诊断：当前网站已通过群晖反代在 `https://cznas.pp.ua:18887` 返回页面。只读接口实测该 Origin 返回 403、旧 HTTP 8887 Origin 返回 200，确认是配置不匹配。交付 YAML 和未来默认值已改为 `WEB_PUBLIC_ORIGIN=https://cznas.pp.ua:18887`、`WEB_ALLOW_INSECURE_HTTP=false`；容器端口仍是 8887:8080，更新配置须重新创建账号网关容器并刷新网页。容器不需要监听 TLS，也不依赖不可信的转发头猜测浏览器 origin。Web AI 的独立跨域问题和同源转发见 [Web AI](web-ai.md)。
+
 群晖部署直接编辑交付目录 `release/reports/docker-linux-amd64/docker-compose.yml` 中的配置，无需 `.env`。以下为对应配置名称；仅开发源码构建时复制 `packaging/docker/.env.example` 为 `.env`：
 
 ```dotenv

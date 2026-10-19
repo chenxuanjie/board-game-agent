@@ -8,6 +8,7 @@ import '../../../app/state/app_controller.dart';
 import 'account_sync_remote.dart';
 import 'account_sync_store.dart';
 import 'account_public_reactions.dart';
+import 'reaction_sync_diagnostics.dart';
 import '../../games/models/game_vote_record.dart';
 
 enum AccountCloudStatus { idle, syncing, synced, pending, paused }
@@ -27,21 +28,47 @@ final class AccountCloudSync extends ChangeNotifier {
   final bool Function() isActive;
   final AccountPublicReactions? publicReactions;
   Future<AccountSyncLocalStore>? _localReady;
-  Timer? _debounce, _poll, _publicRetry;
-  Future<void>? _privateOperation, _publicOperation;
-  bool _privateAgain = false, _publicAgain = false;
-  int _localBusy = 0, _publicAttempts = 0;
-  bool publicSyncing = false;
-  bool publicSynced = false;
+  AccountSyncLocalStore? _journal;
+  Timer? _debounce, _poll, _publicationRetry, _rankingRetry;
+  Future<void>? _privateOperation, _publicationOperation, _rankingOperation;
+  ReactionTrace? _publicationTrace, _rankingTrace;
+  bool _privateAgain = false, _rankingAgain = false, _forceRankingAgain = false;
+  int _localBusy = 0, _publicationAttempts = 0, _rankingAttempts = 0;
+  bool _rankingsConfirmed = false;
+  int _rankingVersion = 0;
+  bool get publishing => _publicationOperation != null;
+  bool get refreshingRankings => _rankingOperation != null;
+  bool get publicSyncing => publishing || refreshingRankings;
+  bool get publicPublished =>
+      publicReactions?.confirmedFingerprint != null &&
+      _journal?.publicFingerprint == publicReactions!.confirmedFingerprint &&
+      publicReactions!.confirmsSelection(
+        GameVoteBallot.campaign,
+        controller.gameVotes.selectedGames,
+      ) &&
+      publicReactions!.confirmsSelection(
+        GameVoteBallot.favoritesNamespace,
+        controller.favoriteStatistics.selectedGames,
+      );
+  bool get publicSynced => _rankingsConfirmed && publicPublished;
+  bool get rankingsAvailable => _rankingsConfirmed;
+  String? publicationError, rankingError;
+  String? get publicError =>
+      publicationError ??
+      (rankingError == null
+          ? null
+          : publicPublished
+          ? '收藏与投票已提交，排行刷新失败，请重试。$rankingError'
+          : rankingError);
   bool _disposed = false;
   int _generation = 0;
   bool enabled = true;
   AccountCloudStatus status = AccountCloudStatus.idle;
-  String? error, publicError;
+  String? error;
   DateTime? lastSuccess;
   String get _enabledKey => 'account_cloud_enabled.$scope';
   bool get _active => !_disposed && enabled && isActive();
-  bool get syncing => _privateOperation != null || _publicOperation != null;
+  bool get syncing => _privateOperation != null || publicSyncing;
   AccountCloudStatus get overallStatus {
     if (!enabled) return AccountCloudStatus.paused;
     if (syncing) return AccountCloudStatus.syncing;
@@ -72,7 +99,7 @@ final class AccountCloudSync extends ChangeNotifier {
 
   void _changed() {
     if (!_active || _localBusy > 0 || !controller.accountCloudIdle) return;
-    // Reactions bypass this debounce through refreshPublic after durable save.
+    // Reactions bypass this debounce through publishReactions after durable save.
     // Other personal edits share a short debounce, including edits in flight.
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 4), () {
@@ -93,12 +120,13 @@ final class AccountCloudSync extends ChangeNotifier {
     }
     if (_disposed) return;
     enabled = value;
-    error = publicError = null;
+    error = publicationError = rankingError = null;
     if (!value) {
       _generation++;
       _debounce?.cancel();
-      _publicRetry?.cancel();
-      _privateAgain = _publicAgain = false;
+      _publicationRetry?.cancel();
+      _rankingRetry?.cancel();
+      _privateAgain = _rankingAgain = _forceRankingAgain = false;
       files.cancelRequests();
       publicReactions?.cancel();
       status = AccountCloudStatus.paused;
@@ -107,7 +135,11 @@ final class AccountCloudSync extends ChangeNotifier {
     }
     _notify();
     if (value) {
-      await Future.wait([?_privateOperation, ?_publicOperation]);
+      await Future.wait([
+        ?_privateOperation,
+        ?_publicationOperation,
+        ?_rankingOperation,
+      ]);
       if (_active) unawaited(synchronize());
     }
   }
@@ -127,6 +159,7 @@ final class AccountCloudSync extends ChangeNotifier {
               _transaction<T>(work, reactionsOnly: true),
         );
         await local.initialize();
+        _journal = local;
         return local;
       })().catchError((Object failure, StackTrace stack) {
         _localReady = null;
@@ -161,14 +194,24 @@ final class AccountCloudSync extends ChangeNotifier {
     }
   }
 
-  /// Manual sync and polling join both lanes; a private failure never fails a
-  /// ranking request. Completed uploads remain acknowledged in the journal.
+  /// One user entry, three independent lanes. A ranking refresh never starts
+  /// publication or waits for private network work.
   Future<void> synchronize() async {
     if (!_active) return;
-    await Future.wait([_refreshPublic(), _syncPrivate()]);
-    // A private import may have queued a new public projection after the first
-    // public read finished. Include that projection in the same user task.
-    await _publicOperation;
+    final observed = _rankingVersion;
+    final publication = _publishReactions();
+    final private = _syncPrivate();
+    await publication;
+    // Publication already requests a read when its version changes. Join that
+    // read without queuing another, and never postpone it behind private uploads.
+    if (_rankingOperation != null) {
+      await _rankingOperation;
+    } else if (_rankingVersion == observed) {
+      await _readRankings();
+    }
+    await private;
+    await _publicationOperation;
+    await _rankingOperation;
   }
 
   Future<void> retry() async {
@@ -176,115 +219,238 @@ final class AccountCloudSync extends ChangeNotifier {
     if (error == null && publicError == null) return synchronize();
     await Future.wait([
       if (error != null) _syncPrivate(),
-      if (publicError != null) _refreshPublic(),
+      if (publicationError != null) _publishReactions(),
+      if (rankingError != null) _readRankings(force: true),
     ]);
   }
 
-  /// Called immediately after saving a reaction, and on ranking entry/refresh.
-  /// In-flight public requests coalesce; a changed selection gets a follow-up.
-  Future<void> refreshPublic() async {
-    if (!_active) return;
-    _publicAttempts = 0;
-    await _refreshPublic();
-    if (!_active) return;
-    if (publicError != null) throw StateError(publicError!);
+  /// Called after a durable favorite/vote mutation. Acknowledges only our UID;
+  /// a foreign record failure cannot turn this into a publication failure.
+  Future<void> publishReactions() async {
+    if (!_active) {
+      if (!_disposed && enabled) {
+        publicationError = '账号暂不可用，收藏已保存在本机，待发布。';
+        _notify();
+      }
+      throw const PrivateFileException(PrivateFileFailure.cancelled);
+    }
+    _publicationAttempts = 0;
+    await _publishReactions();
+    if (!_active) {
+      throw const PrivateFileException(PrivateFileFailure.cancelled);
+    }
+    if (publicationError != null) {
+      throw StateError(publicationError!);
+    }
   }
 
-  Future<void> _refreshPublic() {
-    if (!_active || publicReactions == null) return Future.value();
-    if (_publicOperation != null) {
-      _publicAgain = true;
-      return _publicOperation!;
+  /// User ranking refresh bypasses metadata cache, but does not rewrite a ballot.
+  Future<void> refreshPublic() async {
+    if (!_active) {
+      if (!_disposed && enabled) {
+        rankingError = '账号暂不可用，已保留上次统计。';
+        _notify();
+      }
+      throw const PrivateFileException(PrivateFileFailure.cancelled);
     }
-    _publicRetry?.cancel();
+    _rankingAttempts = 0;
+    await _readRankings(force: true);
+    if (!_active) {
+      throw const PrivateFileException(PrivateFileFailure.cancelled);
+    }
+    if (rankingError != null) throw StateError(rankingError!);
+  }
+
+  Future<void> _publishReactions() {
+    if (!_active || publicReactions == null) return Future.value();
+    if (_publicationOperation != null) {
+      _publicationTrace?.event('合并新发布请求，当前轮后核对最新本机版本');
+      return _publicationOperation!;
+    }
+    _publicationRetry?.cancel();
     final done = Completer<void>();
-    _publicOperation = done.future;
-    publicSyncing = true;
-    publicError = null;
+    _publicationOperation = done.future;
+    publicationError = null;
+    controller.gameVotes.beginPublication();
+    controller.favoriteStatistics.beginPublication();
+    _notify();
+    final generation = _generation;
+    final trace = _publicationTrace = controller.reactionDiagnostics.start(
+      '发布自己的喜欢与投票',
+    );
+    unawaited(() async {
+      try {
+        final local = await trace.measure('准备本机同步日志', _local);
+        for (var round = 0; round < 3; round++) {
+          _check(generation);
+          await trace.measure(
+            '记录本机选择与取消版本',
+            () => local.captureReactions(check: () => _check(generation)),
+          );
+          _check(generation);
+          if (local.hasPendingOperations) unawaited(_syncPrivate());
+          final before = publicReactions!.confirmedFingerprint;
+          await publicReactions!
+              .publish(local, trace: trace)
+              .timeout(
+                const Duration(seconds: 20),
+                onTimeout: () {
+                  publicReactions!.cancelPublication();
+                  throw TimeoutException('公共发布超时');
+                },
+              );
+          _check(generation);
+          if (publicReactions!.confirmsSelection(
+            GameVoteBallot.campaign,
+            controller.gameVotes.selectedGames,
+          )) {
+            controller.gameVotes.confirmPublication();
+          }
+          if (publicReactions!.confirmsSelection(
+            GameVoteBallot.favoritesNamespace,
+            controller.favoriteStatistics.selectedGames,
+          )) {
+            controller.favoriteStatistics.confirmPublication();
+          }
+          // Counts refresh is a different task. Never await it here.
+          if (before != publicReactions!.confirmedFingerprint ||
+              !_rankingsConfirmed) {
+            unawaited(_readRankings());
+          }
+          await local.captureReactions(check: () => _check(generation));
+          _check(generation);
+          if (local.publicFingerprint ==
+              publicReactions!.confirmedFingerprint) {
+            break;
+          }
+          if (round == 2) throw StateError('仍有新变更待发布');
+        }
+        _publicationAttempts = 0;
+        trace.finish(detail: '自己的公共版本已读回核对；排行榜另行读取');
+      } catch (failure) {
+        trace.finish(
+          failed: true,
+          detail: ReactionSyncDiagnostics.failureLabel(failure),
+        );
+        if (_active && generation == _generation) {
+          publicationError = AccountPublicReactions.describe(failure);
+          controller.gameVotes.failPublication();
+          controller.favoriteStatistics.failPublication();
+          if (_publicationAttempts < 2) {
+            _publicationRetry = Timer(
+              Duration(seconds: _publicationAttempts++ == 0 ? 3 : 10),
+              () => unawaited(_publishReactions()),
+            );
+          }
+        }
+      } finally {
+        _publicationTrace = null;
+        _publicationOperation = null;
+        done.complete();
+        _notify();
+      }
+    }());
+    return done.future;
+  }
+
+  Future<void> _readRankings({bool force = false}) {
+    if (!_active || publicReactions == null) return Future.value();
+    if (_rankingOperation != null) {
+      _rankingAgain = true;
+      _forceRankingAgain |= force;
+      _rankingTrace?.event(force ? '收到新刷新请求，本轮结束后强制重读' : '发布完成，本轮结束后再读统计');
+      return _rankingOperation!;
+    }
+    _rankingRetry?.cancel();
+    final done = Completer<void>();
+    _rankingOperation = done.future;
+    rankingError = null;
     publicReactions!.error = null;
     controller.gameVotes.beginPublicSync();
     controller.favoriteStatistics.beginPublicSync();
     _notify();
     final generation = _generation;
+    final trace = _rankingTrace = controller.reactionDiagnostics.start(
+      '读取公共排行榜',
+    );
     unawaited(() async {
       try {
-        final local = await _local();
-        var rounds = 0;
-        do {
-          _publicAgain = false;
+        final local = await trace.measure('准备本机同步日志', _local);
+        var forceRead = force;
+        for (var round = 0; round < 3; round++) {
+          forceRead |= _forceRankingAgain;
+          _rankingAgain = false;
+          _forceRankingAgain = false;
           _check(generation);
-          await local.captureReactions(check: () => _check(generation));
-          _check(generation);
-          if (local.hasPendingOperations) unawaited(_syncPrivate());
           await publicReactions!
-              .synchronize(local)
+              .refresh(local, force: forceRead, trace: trace)
               .timeout(
                 const Duration(seconds: 20),
                 onTimeout: () {
-                  publicReactions!.cancel();
-                  throw TimeoutException('公共同步超时');
+                  publicReactions!.cancelRankings();
+                  throw TimeoutException('排行刷新超时');
                 },
               );
           _check(generation);
-          final voteRevision = controller.gameVotes.selectionRevision;
-          final favoriteRevision =
-              controller.favoriteStatistics.selectionRevision;
           await controller.gameVotes.acceptPublicCounts(
             'account-public-v1.$scope',
             publicReactions!.counts(GameVoteBallot.campaign),
             check: () => _check(generation),
-            revision: voteRevision,
+            revision: controller.gameVotes.selectionRevision,
           );
-          _check(generation);
           await controller.favoriteStatistics.acceptPublicCounts(
             'account-public-v1.$scope',
             publicReactions!.counts(GameVoteBallot.favoritesNamespace),
             check: () => _check(generation),
-            revision: favoriteRevision,
+            revision: controller.favoriteStatistics.selectionRevision,
           );
           _check(generation);
-          publicSynced = true;
-          // Check again after caching, because a click can arrive in either lane.
-          await local.captureReactions(check: () => _check(generation));
-          _check(generation);
-          _publicAgain =
-              local.publicFingerprint != publicReactions!.confirmedFingerprint;
-          if (++rounds >= 3 && _publicAgain) {
-            throw StateError('仍有新变更待同步');
+          _rankingsConfirmed = true;
+          _rankingVersion++;
+          final observedSlugs = {
+            ...controller.reactionDiagnostics.watchedSlugs,
+            ...controller.favoriteRankings
+                .take(5)
+                .map((entry) => entry.game.slug),
+          };
+          for (final slug in observedSlugs) {
+            trace.event(
+              '本轮排行榜结果',
+              detail:
+                  '$slug：NAS 本轮 ${publicReactions!.observedRemoteCount(GameVoteBallot.favoritesNamespace, slug)} 人；界面 ${controller.favoriteStatistics.count(slug)} 人（含本机已保存选择）',
+            );
           }
-        } while (_publicAgain);
-        _publicAttempts = 0;
+          // A query may merge our other device's confirmed records locally,
+          // but never starts a server write. Publication/polling handles echoes.
+          if (!_rankingAgain) break;
+          forceRead = _forceRankingAgain;
+          if (round == 2) throw StateError('排行仍有更新待读取');
+        }
+        _rankingAttempts = 0;
+        trace.finish(detail: '本轮完整远端统计已保存；此任务未上传文件');
       } catch (failure) {
+        trace.finish(
+          failed: true,
+          detail: '${ReactionSyncDiagnostics.failureLabel(failure)}；保留上次完整统计',
+        );
         if (_active && generation == _generation) {
-          final submitted =
-              publicReactions!.confirmedFingerprint != null &&
-              publicReactions!.confirmsSelection(
-                GameVoteBallot.campaign,
-                controller.gameVotes.selectedGames,
-              ) &&
-              publicReactions!.confirmsSelection(
-                GameVoteBallot.favoritesNamespace,
-                controller.favoriteStatistics.selectedGames,
-              );
-          publicError = submitted
-              ? '收藏与投票已提交，排行刷新失败，请重试。'
-              : publicReactions!.error ??
-                    (failure is FormatException ||
-                            failure is SyncProtocolException
-                        ? '本机或云端统计数据需要检查，本机数据已保留。请重试。'
-                        : '已保存在本机，待同步。请重试。');
+          rankingError = AccountPublicReactions.describe(failure);
+          if (failure is PublicRecordFailure) {
+            publicReactions!.diagnostic = failure;
+          }
+          publicReactions!.error = rankingError;
           controller.gameVotes.markPublicFailure();
           controller.favoriteStatistics.markPublicFailure();
-          if (_publicAttempts < 2) {
-            _publicRetry = Timer(
-              Duration(seconds: _publicAttempts++ == 0 ? 3 : 10),
-              () => unawaited(_refreshPublic()),
+          if (_rankingAttempts < 2) {
+            _rankingRetry = Timer(
+              Duration(seconds: _rankingAttempts++ == 0 ? 3 : 10),
+              () => unawaited(_readRankings(force: true)),
             );
           }
         }
       } finally {
-        publicSyncing = false;
-        _publicOperation = null;
+        _rankingTrace = null;
+        _rankingOperation = null;
         done.complete();
         _notify();
       }
@@ -294,8 +460,12 @@ final class AccountCloudSync extends ChangeNotifier {
 
   Future<void> _syncPrivate() {
     if (!_active) return Future.value();
-    if (!controller.accountCloudIdle && _privateOperation == null) {
-      status = AccountCloudStatus.idle;
+    if (!controller.canStartPrivateCloudSync && _privateOperation == null) {
+      if (controller.reactionDiagnostics.visible) {
+        controller.reactionDiagnostics
+            .start('私人备份暂缓')
+            .finish(detail: '本机正忙，待后续同步；自己的公共喜欢发布独立执行');
+      }
       _notify();
       return Future.value();
     }
@@ -307,6 +477,7 @@ final class AccountCloudSync extends ChangeNotifier {
     error = null;
     _notify();
     final generation = _generation;
+    final trace = controller.reactionDiagnostics.start('私人账号备份');
     unawaited(() async {
       try {
         final local = await _local();
@@ -314,9 +485,15 @@ final class AccountCloudSync extends ChangeNotifier {
         do {
           _privateAgain = false;
           _check(generation);
-          await controller.waitForAccountCloudData(scope);
+          await trace.measure(
+            '等待本机私人数据稳定',
+            () => controller.waitForAccountCloudData(scope),
+          );
           _check(generation);
-          await local.capture(check: () => _check(generation));
+          await trace.measure(
+            '记录私人增量日志',
+            () => local.capture(check: () => _check(generation)),
+          );
           _check(generation);
           final before = local.publicFingerprint;
           var expired = false;
@@ -325,40 +502,59 @@ final class AccountCloudSync extends ChangeNotifier {
             if (expired) throw const SyncProtocolException('私人同步已超时');
           }
 
-          final result =
-              await IncrementalSyncEngine(
-                local: _CheckedLocalStore(
-                  local,
-                  check,
-                  () => controller.waitForAccountCloudData(scope),
-                ),
-                remote: AccountSyncRemoteStore(
-                  files: _CheckedPrivateFiles(files, check),
-                  datasetId: scope,
-                ),
-                batchSize: 100,
-                maxRounds: 8,
-                retryPolicy: const SyncRetryPolicy(maxAttempts: 2),
-                sleep: (delay) async {
-                  await Future<void>.delayed(delay);
-                  check();
-                },
-              ).synchronize().timeout(
-                const Duration(minutes: 2),
-                onTimeout: () {
-                  expired = true;
-                  files.cancelRequests();
-                  throw TimeoutException('账号云同步超时');
-                },
-              );
+          await trace.measure('私人增量上传与拉取', () async {
+            final result =
+                await IncrementalSyncEngine(
+                  local: _CheckedLocalStore(
+                    local,
+                    check,
+                    () => controller.waitForAccountCloudData(scope),
+                  ),
+                  remote: AccountSyncRemoteStore(
+                    files: _CheckedPrivateFiles(files, check),
+                    datasetId: scope,
+                  ),
+                  batchSize: 100,
+                  maxRounds: 8,
+                  retryPolicy: const SyncRetryPolicy(maxAttempts: 2),
+                  onProgress: (progress) => trace.event(
+                    switch (progress.phase) {
+                      SyncPhase.preparing => '准备私人增量传输',
+                      SyncPhase.checking => '查询私人远端增量',
+                      SyncPhase.downloading => '私人增量已返回',
+                      SyncPhase.merging => '提交私人增量到本机',
+                      SyncPhase.uploading => '上传私人待办记录',
+                      SyncPhase.completed => '私人引擎返回，待核对完成状态',
+                      SyncPhase.conflict => '私人合并存在冲突',
+                      SyncPhase.failed => '私人增量传输未完成',
+                    },
+                    status: progress.isActive
+                        ? ReactionTraceStatus.running
+                        : ReactionTraceStatus.info,
+                    detail: '第 ${progress.round} 轮 · ${progress.itemCount} 项',
+                  ),
+                  sleep: (delay) async {
+                    await Future<void>.delayed(delay);
+                    check();
+                  },
+                ).synchronize().timeout(
+                  const Duration(minutes: 2),
+                  onTimeout: () {
+                    expired = true;
+                    files.cancelRequests();
+                    throw TimeoutException('账号云同步超时');
+                  },
+                );
+            check();
+            if (result.failure != null) throw result.failure!;
+            if (!result.completed) throw StateError('还有私人数据待同步');
+          });
           check();
-          if (result.failure != null) throw result.failure!;
-          if (!result.completed) throw StateError('还有私人数据待同步');
           // Only reaction changes imported by private sync need a public run.
           if (local.publicFingerprint != before &&
               local.publicFingerprint !=
                   publicReactions?.confirmedFingerprint) {
-            unawaited(_refreshPublic());
+            unawaited(_publishReactions());
           }
           await controller.waitForAccountCloudData(scope);
           _check(generation);
@@ -378,7 +574,12 @@ final class AccountCloudSync extends ChangeNotifier {
         }
         _check(generation);
         status = AccountCloudStatus.synced;
+        trace.finish(detail: '私人增量日志已确认，包含本轮捕获的收藏变更');
       } catch (failure) {
+        trace.finish(
+          failed: true,
+          detail: ReactionSyncDiagnostics.failureLabel(failure),
+        );
         if (_active && generation == _generation) {
           status = AccountCloudStatus.pending;
           final cause = failure is WebDavException ? failure.cause : failure;
@@ -416,7 +617,8 @@ final class AccountCloudSync extends ChangeNotifier {
     _generation++;
     _debounce?.cancel();
     _poll?.cancel();
-    _publicRetry?.cancel();
+    _publicationRetry?.cancel();
+    _rankingRetry?.cancel();
     controller.removeListener(_changed);
     files.cancelRequests();
     publicReactions?.cancel();

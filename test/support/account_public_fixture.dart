@@ -8,6 +8,9 @@ class PublicFixtureHub {
   Completer<void>? readGate;
   int writes = 0;
   int calls = 0;
+  bool versioned = false;
+  final revisions = <String, int>{};
+  final reads = <String, int>{};
 }
 
 class MemoryPublicFiles implements AccountPublicFiles {
@@ -37,6 +40,9 @@ class MemoryPublicFiles implements AccountPublicFiles {
         ownerUid: pieces.length > 1
             ? hub.directoryOwners[pieces.first] ?? entry.value.owner
             : entry.value.owner,
+        revision: hub.versioned && pieces.length == 1
+            ? '${hub.revisions[entry.key] ?? 0}'
+            : null,
       );
     }
     return result.values.toList();
@@ -45,6 +51,7 @@ class MemoryPublicFiles implements AccountPublicFiles {
   @override
   Future<String> read(String relativePath) async {
     check();
+    hub.reads[relativePath] = (hub.reads[relativePath] ?? 0) + 1;
     await hub.readGate?.future;
     return hub.objects[relativePath]!.text;
   }
@@ -55,5 +62,6 @@ class MemoryPublicFiles implements AccountPublicFiles {
     if (!relativePath.startsWith('u$uid/')) throw StateError('wrong owner');
     hub.writes++;
     hub.objects[relativePath] = (owner: uid, text: content);
+    hub.revisions[relativePath] = (hub.revisions[relativePath] ?? 0) + 1;
   }
 }

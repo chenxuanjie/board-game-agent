@@ -21,6 +21,7 @@ import 'package:webdav_sync/webdav_sync.dart' show sha256Json;
 import 'account_service_test.dart' show FixtureGateway;
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
+import 'package:board_game_agent/features/identity/services/account_public_reactions.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -48,6 +49,205 @@ import 'package:board_game_agent/features/library/services/remote_asset_service.
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 
 void main() {
+  test(
+    'routine synchronization reads rankings before private backup ends without a second scan',
+    () async {
+      final app = await _app(), hub = PublicFixtureHub();
+      final files = _ManualRefreshFiles(hub, 101),
+          private = _HeldPrivateFiles();
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => private,
+        publicFilesFactory: (_) => files,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      await private.started.future;
+      await service.cloud!.publishReactions();
+      await service.cloud!.refreshPublic();
+      final before = files.rootReads;
+      files.hold = true;
+      final sync = service.cloud!.synchronize();
+      await files.entered.future.timeout(const Duration(seconds: 2));
+      expect(private.release.isCompleted, isFalse);
+      files.hold = false;
+      files.release.complete();
+      private.release.complete();
+      await sync;
+      expect(files.rootReads, before + 1);
+    },
+  );
+  test(
+    'a second ranking refresh during an old scan forces a following scan',
+    () async {
+      final app = await _app(), hub = PublicFixtureHub();
+      final files = _ManualRefreshFiles(hub, 101);
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => MemoryPrivateFiles(),
+        publicFilesFactory: (_) => files,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      await service.cloud!.synchronize();
+      final before = files.rootReads;
+      files.hold = true;
+      final first = app.refreshFavoriteRankings();
+      await files.entered.future;
+      final second = app.refreshFavoriteRankings();
+      // Allow the second request through model and local-commit async boundaries.
+      await Future<void>.delayed(Duration.zero);
+      files.hold = false;
+      files.release.complete();
+      await Future.wait([first, second]);
+      expect(files.rootReads, before + 2);
+      expect(service.cloud!.rankingError, isNull);
+    },
+  );
+  test(
+    'inactive account cannot acknowledge an unexecuted publication or ranking request',
+    () async {
+      final app = await _app(), hub = PublicFixtureHub();
+      final cloud = AccountCloudSync(
+        controller: app,
+        scope: 'inactive',
+        files: MemoryPrivateFiles(),
+        publicReactions: AccountPublicReactions(MemoryPublicFiles(hub, 101)),
+        isActive: () => false,
+      );
+      addTearDown(cloud.dispose);
+      await expectLater(
+        cloud.publishReactions(),
+        throwsA(isA<PrivateFileException>()),
+      );
+      await expectLater(
+        cloud.refreshPublic(),
+        throwsA(isA<PrivateFileException>()),
+      );
+      expect(cloud.publicPublished, isFalse);
+      expect(cloud.publicationError, isNotNull);
+      expect(cloud.rankingError, isNotNull);
+      expect(hub.writes, 0);
+    },
+  );
+  test(
+    'manual ranking refresh never retries a failed own publication',
+    () async {
+      final app = await _app(),
+          private = MemoryPrivateFiles(),
+          hub = PublicFixtureHub();
+      final files = _RejectPublicationFiles(hub, 101);
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => private,
+        publicFilesFactory: (_) => files,
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      final cloud = service.cloud!;
+      await cloud.synchronize();
+      files.reject = true;
+      expect(await app.toggleFavorite(app.games.first), isTrue);
+      await expectLater(cloud.publishReactions(), throwsStateError);
+      final attempts = files.attempts;
+      await app.refreshFavoriteRankings();
+      expect(files.attempts, attempts);
+      expect(cloud.publicationError, isNotNull);
+      expect(cloud.rankingError, isNull);
+      expect(
+        app.favoriteStatistics.publicationStatus,
+        GameVotePublicationStatus.failed,
+      );
+      expect(app.favoriteStatistics.count(app.games.first.slug), 1);
+    },
+  );
+
+  test(
+    'own cancellation publishes despite broken foreign rankings and refresh retry never uploads',
+    () async {
+      final app = await _app(),
+          private = MemoryPrivateFiles(),
+          hub = PublicFixtureHub();
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => private,
+        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      final cloud = service.cloud!;
+      await cloud.synchronize();
+      expect(await app.toggleFavorite(app.games.first), isTrue);
+      await cloud.publishReactions();
+      await cloud.synchronize();
+      hub.objects['u102/d${'b' * 32}.json'] = (owner: 102, text: '{broken');
+      expect(await app.toggleFavorite(app.games.first), isTrue);
+      expect(app.favoriteStatistics.count(app.games.first.slug), 0);
+      await cloud.publishReactions();
+      await app.refreshFavoriteRankings();
+      expect(cloud.publicationError, isNull);
+      expect(cloud.publicPublished, isTrue);
+      expect(cloud.rankingError, isNotNull);
+      expect(
+        app.favoriteStatistics.publicationStatus,
+        GameVotePublicationStatus.published,
+      );
+      final writes = hub.writes;
+      await app.refreshFavoriteRankings();
+      expect(hub.writes, writes);
+      expect(cloud.publicationError, isNull);
+      hub.objects.removeWhere((path, _) => path.startsWith('u102/'));
+      await app.refreshFavoriteRankings();
+      expect(cloud.rankingError, isNull);
+      expect(hub.writes, writes);
+    },
+  );
+
+  test(
+    'favorite command waits outside a reaction projection instead of failing or deadlocking',
+    () async {
+      final app = await _app(),
+          private = MemoryPrivateFiles(),
+          hub = PublicFixtureHub();
+      final service = AccountService(
+        controller: app,
+        gatewayFactory: (_) async => FixtureGateway(),
+        privateFilesFactory: (_) => private,
+        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      await service.signIn(account: 'fixture-user', password: 'fixture');
+      await service.cloud!.synchronize();
+      expect(await app.toggleFavorite(app.games.first), isTrue);
+      await service.cloud!.synchronize();
+      final entered = Completer<void>(), release = Completer<void>();
+      final projection = app.accountCloudReactionTransaction<void>(
+        app.identityUserId!,
+        (current, project) async {
+          entered.complete();
+          await release.future;
+        },
+      );
+      await entered.future;
+      final cancellation = app.toggleFavorite(app.games.first);
+      await Future<void>.delayed(Duration.zero);
+      release.complete();
+      await projection;
+      expect(await cancellation.timeout(const Duration(seconds: 2)), isTrue);
+      expect(app.isFavorite(app.games.first), isFalse);
+      await service.cloud!.publishReactions();
+      expect(service.cloud!.publicPublished, isTrue);
+    },
+  );
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
@@ -824,12 +1024,22 @@ void main() {
       await cloud.synchronize();
       hub.readGate = Completer<void>();
       final pending = cloud.refreshPublic();
+      final cancelled = expectLater(
+        pending,
+        throwsA(
+          isA<PrivateFileException>().having(
+            (e) => e.failure,
+            'failure',
+            PrivateFileFailure.cancelled,
+          ),
+        ),
+      );
       await Future<void>.delayed(Duration.zero);
       await cloud.setEnabled(false);
       final writes = hub.writes;
       expect(await app.gameVotes.toggle(app.games.first.slug), isTrue);
       hub.readGate!.complete();
-      await pending;
+      await cancelled;
       await app.gameVotes.sync();
       expect(hub.writes, writes);
       expect(app.gameVotes.status, GameVoteSyncStatus.paused);
@@ -918,8 +1128,9 @@ void main() {
       final calls = hub.calls;
       await Future<void>.delayed(Duration.zero);
       expect(hub.calls, calls);
-      // Unchanged public snapshots need one list + own directory + own read.
-      expect(calls, 3);
+      // Own publication validation is separate from the single global scan.
+      // Own directory/read (2), then root + directory/read (3); no second scan.
+      expect(calls, 5);
       expect(service.displayName, 'remote nickname');
     },
   );
@@ -1079,7 +1290,8 @@ void main() {
         );
         await tester.tap(find.byKey(const ValueKey('account-sync-details')));
         await tester.pumpAndSettle();
-        expect(find.text('Public likes and votes'), findsOneWidget);
+        expect(find.text('My likes and votes'), findsOneWidget);
+        expect(find.text('Public rankings'), findsOneWidget);
         expect(find.text(service.cloud!.error!), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(
@@ -1289,6 +1501,18 @@ Future<AppController> _app({
   });
   await app.reloadGames();
   return app;
+}
+
+class _RejectPublicationFiles extends MemoryPublicFiles {
+  _RejectPublicationFiles(super.hub, super.uid);
+  bool reject = false;
+  int attempts = 0;
+  @override
+  Future<void> replaceOwn(String path, String content) async {
+    attempts++;
+    if (reject) throw const PrivateFileException(PrivateFileFailure.network);
+    await super.replaceOwn(path, content);
+  }
 }
 
 class _HeldPreferences extends PreferencesService {
@@ -1526,5 +1750,23 @@ class _FailingRefreshFiles extends MemoryPublicFiles {
   Future<void> replaceOwn(String path, String content) async {
     await super.replaceOwn(path, content);
     if (failAfterWrite) failRoot = true;
+  }
+}
+
+class _ManualRefreshFiles extends MemoryPublicFiles {
+  _ManualRefreshFiles(super.hub, super.uid);
+  final entered = Completer<void>(), release = Completer<void>();
+  bool hold = false;
+  int rootReads = 0;
+  @override
+  Future<List<AccountPublicEntry>> entries(String path) async {
+    if (path.isEmpty) {
+      rootReads++;
+      if (hold) {
+        if (!entered.isCompleted) entered.complete();
+        await release.future;
+      }
+    }
+    return super.entries(path);
   }
 }

@@ -12,6 +12,7 @@ import 'package:webdav_settings/webdav_settings.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'features/assistant/services/board_game_ai_service.dart';
+import 'features/assistant/services/web_ai_http_client.dart';
 import 'features/games/services/game_manifest_service.dart';
 import 'features/games/services/game_vote_service.dart';
 import 'features/settings/services/preferences_service.dart';
@@ -38,6 +39,7 @@ import 'ui/mobile/game_detail_screen.dart';
 import 'ui/shared/game_ranking_screen.dart';
 import 'ui/shared/account_scope.dart';
 import 'ui/shared/account_screen.dart';
+import 'ui/shared/reaction_sync_diagnostics_panel.dart';
 import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_window_frame.dart';
 import 'ui/desktop/desktop_responsive.dart';
@@ -58,15 +60,23 @@ Future<void> main() async {
   );
 
   late final AccountService accountService;
+  final webAiHttpClient = kIsWeb ? WebAiHttpClient() : null;
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
     backgroundTransfers: createBackgroundTransferNotifications(),
     gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
-      aiClient: OpenAiDartAiClient(),
+      aiClient: OpenAiDartAiClient(
+        httpClient: webAiHttpClient,
+        streamClientFactory: kIsWeb ? WebAiHttpClient.new : null,
+      ),
+      onDispose: webAiHttpClient?.close,
       responsesWorkflow: ResponsesRulesWorkflow(
-        responsesClient: OpenAiDartResponsesAiClient(),
+        responsesClient: OpenAiDartResponsesAiClient(
+          httpClient: webAiHttpClient,
+          streamClientFactory: kIsWeb ? WebAiHttpClient.new : null,
+        ),
         compactionStore: SecureResponsesCompactionStore(),
         telemetrySink: SharedPreferencesAiRunTelemetrySink(),
       ),
@@ -243,7 +253,10 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
                 return ValueListenableBuilder<bool>(
                   valueListenable: _windowChrome.sidebarVisible,
-                  child: child ?? const SizedBox.shrink(),
+                  child: ReactionSyncDiagnosticsHost(
+                    diagnostics: widget.controller.reactionDiagnostics,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                   builder: (context, hasSidebar, child) => DesktopWindowFrame(
                     spatial:
                         widget.controller.colorScheme ==
@@ -403,7 +416,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       await _transferService.recover();
       await widget.controller.initialize();
       await widget.accountService?.initialize();
-      // Publish existing favorites too, even while the ranking entry is hidden.
+      // Prime statistics even while the ranking entry is hidden. The account
+      // coordinator publishes signed-in favorites independently.
       unawaited(widget.controller.refreshFavoriteRankings());
       _initializationComplete = true;
     } catch (error, stackTrace) {

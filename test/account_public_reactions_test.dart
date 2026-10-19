@@ -31,6 +31,120 @@ Future<void> _publish(
 
 void main() {
   test(
+    'foreign malformed records never gate own cancellation publication',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture(), b = SyncDeviceFixture(scope: 'b');
+      await a.start();
+      await b.start();
+      _favorite(a, 'cabo');
+      _favorite(b, 'cabo');
+      final remote = AccountPublicReactions(MemoryPublicFiles(hub, 101));
+      await _publish(remote, a);
+      await _publish(AccountPublicReactions(MemoryPublicFiles(hub, 102)), b);
+      await remote.refresh(a.local);
+      final foreignPath = hub.objects.keys.singleWhere(
+        (path) => path.startsWith('u102/'),
+      );
+      hub.objects[foreignPath] = (owner: 102, text: '{broken');
+      a.entities.clear();
+      await a.local.captureReactions();
+      await remote.publish(a.local);
+      expect(remote.submissionConfirmed, isTrue);
+      expect(
+        remote.confirmsSelection(GameVoteBallot.favoritesNamespace, []),
+        isTrue,
+      );
+      expect(
+        hub.objects.entries
+            .singleWhere((e) => e.key.startsWith('u101/'))
+            .value
+            .text,
+        contains('"operation":"delete"'),
+      );
+      await expectLater(
+        remote.refresh(a.local),
+        throwsA(
+          isA<PublicRecordFailure>().having((e) => e.path, 'path', foreignPath),
+        ),
+      );
+      expect(remote.counts(GameVoteBallot.favoritesNamespace), {'cabo': 1});
+      expect(remote.submissionConfirmed, isTrue);
+    },
+  );
+
+  test(
+    'blocked ranking transport cannot block publication acknowledgement',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = SyncDeviceFixture();
+      await a.start();
+      _favorite(a, 'cabo');
+      final reader = _HeldRankingFiles(hub, 101);
+      final remote = AccountPublicReactions(
+        MemoryPublicFiles(hub, 101),
+        rankingFiles: reader,
+      );
+      await a.local.captureReactions();
+      await remote.publish(a.local);
+      final refresh = remote.refresh(a.local);
+      await reader.entered.future;
+      a.entities.clear();
+      await a.local.captureReactions();
+      await remote.publish(a.local).timeout(const Duration(seconds: 2));
+      expect(remote.submissionConfirmed, isTrue);
+      expect(
+        remote.confirmsSelection(GameVoteBallot.favoritesNamespace, []),
+        isTrue,
+      );
+      reader.release.complete();
+      await refresh;
+    },
+  );
+
+  test(
+    'version cache is bounded in time, owner checked, force bypassed, and counts atomic',
+    () async {
+      final hub = PublicFixtureHub()..versioned = true;
+      final a = SyncDeviceFixture(), b = SyncDeviceFixture(scope: 'b');
+      await a.start();
+      await b.start();
+      _favorite(b, 'cabo');
+      await _publish(AccountPublicReactions(MemoryPublicFiles(hub, 102)), b);
+      var clock = DateTime.utc(2026, 10, 18);
+      final remote = AccountPublicReactions(
+        MemoryPublicFiles(hub, 101),
+        now: () => clock,
+      );
+      final path = hub.objects.keys.single;
+      await remote.refresh(a.local);
+      final reads = hub.reads[path]!;
+      await remote.refresh(a.local);
+      expect(hub.reads[path], reads);
+      clock = clock.add(const Duration(seconds: 61));
+      await remote.refresh(a.local);
+      expect(hub.reads[path], reads + 1);
+      final valid = hub.objects[path]!;
+      hub.objects[path] = (owner: 102, text: '{broken');
+      await expectLater(
+        remote.refresh(a.local, force: true),
+        throwsA(isA<PublicRecordFailure>()),
+      );
+      expect(remote.counts(GameVoteBallot.favoritesNamespace), {'cabo': 1});
+      hub.objects[path] = (owner: 999, text: valid.text);
+      await expectLater(
+        remote.refresh(a.local),
+        throwsA(isA<PublicRecordFailure>()),
+      );
+      hub.objects[path] = valid;
+      hub.revisions[path] = 42;
+      await remote.refresh(a.local);
+      expect(hub.reads[path], reads + 3);
+      expect(remote.counts(GameVoteBallot.favoritesNamespace), {'cabo': 1});
+    },
+  );
+
+  test(
     'simultaneous accounts read after their writes and each sees two likes',
     () async {
       final hub = PublicFixtureHub();
@@ -384,10 +498,16 @@ void main() {
       final path = hub.objects.keys.first;
       final valid = hub.objects[path]!;
       hub.objects[path] = (owner: 999, text: valid.text);
-      await expectLater(remote.synchronize(b.local), throwsFormatException);
+      await expectLater(
+        remote.synchronize(b.local),
+        throwsA(isA<PublicRecordFailure>()),
+      );
       expect(remote.counts(GameVoteBallot.campaign), {'cabo': 1});
       hub.objects[path] = (owner: 101, text: '{');
-      await expectLater(remote.synchronize(b.local), throwsFormatException);
+      await expectLater(
+        remote.synchronize(b.local),
+        throwsA(isA<PublicRecordFailure>()),
+      );
       expect(remote.counts(GameVoteBallot.campaign), {'cabo': 1});
     },
   );
@@ -432,5 +552,18 @@ class _HookPublicFiles extends MemoryPublicFiles {
   Future<void> replaceOwn(String relativePath, String content) async {
     await super.replaceOwn(relativePath, content);
     await afterWrite?.call();
+  }
+}
+
+class _HeldRankingFiles extends MemoryPublicFiles {
+  _HeldRankingFiles(super.hub, super.uid);
+  final entered = Completer<void>(), release = Completer<void>();
+  @override
+  Future<List<AccountPublicEntry>> entries(String path) async {
+    if (path.isEmpty && !release.isCompleted) {
+      entered.complete();
+      await release.future;
+    }
+    return super.entries(path);
   }
 }

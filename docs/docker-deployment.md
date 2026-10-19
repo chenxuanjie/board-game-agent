@@ -52,7 +52,9 @@ python3 /path/to/flutter-release-publisher/scripts/flutter_docker_release.py --p
 | `WEB_PUBLIC_ORIGIN` | 浏览器实际网站 origin；HTTPS 反向代理转到 8887 |
 | `WEB_ALLOW_INSECURE_HTTP` | 仅局域网 HTTP 测试填字符串 `"true"`；HTTPS 网站填 `"false"` |
 
-当前交付已预填 FileStation `getinfo` 真实确认的 `/volume2/friend/apps/board_game_agent/board-game-lib`、用户确认并通过证书校验的 DSM 地址 `https://cznas.pp.ua:5001`，网站入口按直接 HTTP 访问 `http://cznas.pp.ua:8887` 配置，HTTP 会话选项为 `"true"`。旧域名只保留在 `SYNOLOGY_IDENTITY_ORIGIN` 中作为原生端历史账号 ID 命名空间，不作为请求地址。8887 从开发电脑目前连接被拒绝，外网转发和容器监听状态尚未确认。更换网站入口时同步修改 origin 和 HTTP 选项。YAML 不填写用户账号密码。根目录 `docker-compose.yml` 的 `.env` 仅用于后面的开发构建入口。
+当前交付已预填 FileStation `getinfo` 真实确认的 `/volume2/friend/apps/board_game_agent/board-game-lib`、用户确认并通过证书校验的 DSM 地址 `https://cznas.pp.ua:5001`。2026-10-18 按当前截图与只读请求确认的反代入口修正为 `WEB_PUBLIC_ORIGIN=https://cznas.pp.ua:18887`、HTTP 会话选项 `"false"`；容器映射继续 8887:8080。HTTPS 请求带旧 HTTP origin 时返回 200、带新 HTTPS origin 时返回 403，说明部署仍认旧地址；更换 YAML 环境后须重新创建账号网关容器，不能仅重启。旧域名只保留在 `SYNOLOGY_IDENTITY_ORIGIN` 中作为原生端历史账号 ID 命名空间，不作为请求地址。YAML 不填写用户账号密码。根目录 `docker-compose.yml` 的 `.env` 仅用于后面的开发构建入口。
+
+Web AI 同源转发及允许的提供商通过 `AI_ALLOWED_ORIGINS` 配置；模型 Key 不进入 YAML。新路由需要重新构建 Web、Nginx 和账号网关两个镜像，旧 TAR 不包含本次 AI 修改；仅登录 origin 修正可使用旧镜像更新环境。见 [Web AI](web-ai.md)。
 
 资料根内须有 `assets/catalog.json`。两个服务均只读挂载，缺失目录不会自动创建，不调整 NAS 权限。账号网关 8000 端口不向宿主机发布。证书与 HTTP 测试选项见账号文档。
 
