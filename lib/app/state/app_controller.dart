@@ -73,6 +73,7 @@ part 'app_controller/assistant_run.dart';
 part 'app_controller/conversations.dart';
 part 'app_controller/service_status.dart';
 part 'app_controller/library.dart';
+part 'app_controller/catalog.dart';
 part 'app_controller/library_updates.dart';
 part 'app_controller/documents.dart';
 part 'app_controller/identity_scope.dart';
@@ -180,6 +181,13 @@ class AppController extends ChangeNotifier {
       !_generationStates.values.any((state) => state.isSending) &&
       !_isListening;
   Future<void>? _initializationFuture;
+  Future<bool>? _gameCatalogFuture;
+  Completer<void>? _gameCatalogAbort;
+  Timer? _gameCatalogDeadline;
+  String? _gameCatalogRequestKey;
+  int _gameCatalogGeneration = 0;
+  LibraryLoadState _gameCatalogLoadState = LibraryLoadState.idle;
+  bool _gameCatalogFailed = false, _gameCatalogNoticeDismissed = false;
   final List<Future<void>> _voiceOperations = [];
   final Set<Future<void>> _providerCleanups = {};
   bool get anonymousReactionPublishingEnabled =>
@@ -413,7 +421,8 @@ class AppController extends ChangeNotifier {
       AiModelPolicy.resolve(_aiApiConfig);
   AiAnswerMode get gameAnswerMode => _gameAnswerMode;
   AiAnswerMode get globalAnswerMode => _globalAnswerMode;
-  bool get globalUseCurrentGameKnowledge => _globalUseCurrentGameKnowledge;
+  bool get globalUseCurrentGameKnowledge =>
+      _globalUseCurrentGameKnowledge && assistantKnowledgeAvailable;
   AiApiConfig get aiApiConfig => _aiApiConfig;
   List<AiApiConfig> get customAiPresets =>
       List<AiApiConfig>.unmodifiable(_customAiPresets);
@@ -487,7 +496,9 @@ class AppController extends ChangeNotifier {
   }
 
   List<GameInfo> get dailyRecommendedGames {
-    if (_switchingIdentityScope) return const <GameInfo>[];
+    // Missing catalog data must not rewrite an existing daily recommendation
+    // history as an empty selection during a recoverable startup failure.
+    if (_switchingIdentityScope || _games.isEmpty) return const <GameInfo>[];
     final today = DailyGameRecommender.localDateKey(DateTime.now());
     final before = _dailyRecommendationHistory
         .where((record) => record.date == today)
@@ -589,8 +600,14 @@ class AppController extends ChangeNotifier {
     return _conversations[_conversationKeyForGameId(gameId)]?.messageCount ?? 0;
   }
 
+  bool get assistantKnowledgeAvailable => hasGames && !_gameCatalogFailed;
+
   AiAnswerMode chatAnswerMode({required bool useGlobalMode}) =>
-      useGlobalMode ? _globalAnswerMode : _gameAnswerMode;
+      useGlobalMode && !assistantKnowledgeAvailable
+      ? AiAnswerMode.knowledgeThenDirect
+      : useGlobalMode
+      ? _globalAnswerMode
+      : _gameAnswerMode;
 
   bool allowSmartSupplement({required bool useGlobalMode}) =>
       chatAnswerMode(useGlobalMode: useGlobalMode) ==
@@ -903,7 +920,15 @@ class AppController extends ChangeNotifier {
     }
     _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
     await _restoreGameGallerySelections();
-    _games = await _loadGamesForLanguage(_language);
+    // Native startup reads local/bundled metadata. Web's authoritative catalog
+    // is a network dependency and must not gate accounts, settings or chat.
+    if (!_remoteAssetService.usesSameOriginLibrary) {
+      try {
+        await _loadGameCatalog();
+      } catch (_) {
+        // The catalog lane retains the failure and owns its retry action.
+      }
+    }
     await _ensureLibraryCacheLoaded();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     await _restoreConversations();
@@ -936,7 +961,10 @@ class AppController extends ChangeNotifier {
       _voiceReplyEnabled = false;
     }
     _queueConversationSave();
-    unawaited(_initializeRemoteLibrary());
+    unawaited(() async {
+      if (_remoteAssetService.usesSameOriginLibrary) await retryGameCatalog();
+      if (!_controllerDisposed) await _initializeRemoteLibrary();
+    }());
     if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
         _aiApiConfig.apiKey.trim().isNotEmpty) {
       unawaited(_refreshAiModelsOnInitialize());
@@ -951,8 +979,7 @@ class AppController extends ChangeNotifier {
 
     _language = next;
     final epoch = _identityScopeEpoch;
-    _games = await _loadGamesForLanguage(_language);
-    _refreshLibraryGameTitles();
+    await retryGameCatalog();
     if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
@@ -967,11 +994,8 @@ class AppController extends ChangeNotifier {
 
   Future<void> reloadGames() async {
     final epoch = _identityScopeEpoch;
-    final games = await _loadGamesForLanguage(_language);
+    if (!await _loadGameCatalog()) return;
     if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
-    _games = games;
-    _refreshLibraryGameTitles();
-    _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
@@ -1021,6 +1045,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> disposeServices() async {
+    _controllerDisposed = true;
+    _cancelGameCatalogRequest();
     gameVotes.dispose();
     _favoriteStatistics?.dispose();
     _nationalDayList?.dispose();
@@ -1050,6 +1076,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _controllerDisposed = true;
+    _cancelGameCatalogRequest();
     reactionDiagnostics.dispose();
     _assetStatusTimer?.cancel();
     _invalidateAssetAccessStatus();

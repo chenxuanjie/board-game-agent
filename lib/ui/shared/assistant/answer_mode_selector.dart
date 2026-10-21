@@ -28,6 +28,7 @@ class _AssistantAnswerModeSelectorState
   bool _open = false;
 
   Future<void> _select(bool value) async {
+    if (!value && !widget.controller.assistantKnowledgeAvailable) return;
     if (_saving ||
         value ==
             widget.controller.allowSmartSupplement(
@@ -68,6 +69,7 @@ class _AssistantAnswerModeSelectorState
     final smart = widget.controller.allowSmartSupplement(
       useGlobalMode: widget.useGlobalMode,
     );
+    final knowledgeAvailable = widget.controller.assistantKnowledgeAvailable;
     String label(bool value) => value
         ? copy.smartSupplementLabel
         : copy.localized('知识库', 'Knowledge base');
@@ -116,35 +118,49 @@ class _AssistantAnswerModeSelectorState
               value ? 'assistant-mode-smart' : 'assistant-mode-knowledge',
             ),
             value: value,
+            enabled: value || knowledgeAvailable,
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Semantics(
-              selected: value == smart,
-              child: Row(
-                children: [
-                  Icon(
-                    icon(value),
-                    size: 22,
-                    color: value == smart
-                        ? palette.primary
-                        : palette.textSecondary,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      label(value),
-                      style: textStyle?.copyWith(
-                        fontSize: 16,
-                        color: palette.textPrimary,
+            child: Tooltip(
+              message: !value && !knowledgeAvailable
+                  ? copy.assistantKnowledgeUnavailable
+                  : '',
+              child: Semantics(
+                selected: value == smart,
+                child: Row(
+                  children: [
+                    Icon(
+                      icon(value),
+                      size: 22,
+                      color: !value && !knowledgeAvailable
+                          ? Theme.of(context).disabledColor
+                          : value == smart
+                          ? palette.primary
+                          : palette.textSecondary,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        label(value),
+                        style: textStyle?.copyWith(
+                          fontSize: 16,
+                          color: !value && !knowledgeAvailable
+                              ? Theme.of(context).disabledColor
+                              : palette.textPrimary,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  if (value == smart)
-                    Icon(Icons.check_rounded, size: 20, color: palette.primary)
-                  else
-                    const SizedBox(width: 20),
-                ],
+                    const SizedBox(width: 16),
+                    if (value == smart)
+                      Icon(
+                        Icons.check_rounded,
+                        size: 20,
+                        color: palette.primary,
+                      )
+                    else
+                      const SizedBox(width: 20),
+                  ],
+                ),
               ),
             ),
           ),
@@ -214,6 +230,7 @@ class _RoundedModeEntry extends PopupMenuItem<bool> {
     required super.child,
     super.height,
     super.padding,
+    super.enabled,
   });
   @override
   PopupMenuItemState<bool, _RoundedModeEntry> createState() =>

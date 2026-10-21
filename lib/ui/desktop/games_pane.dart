@@ -1,6 +1,7 @@
 // Body layout adapted directly from the read-only Desktop reference.
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
+import '../shared/library_catalog_status.dart';
 import '../shared/library_viewport.dart';
 import '../shared/app_modals.dart';
 import '../../core/theme/cinema_theme.dart';
@@ -95,6 +96,7 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          LibraryCatalogStatus(controller: widget.controller),
           DesktopContentStatus(controller: widget.controller),
           LibraryViewport(
             state: _browse,

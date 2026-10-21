@@ -15,6 +15,7 @@ import '../shared/content_cards.dart';
 import 'game_content_card.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_entrance.dart';
+import '../shared/library_catalog_status.dart';
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -100,6 +101,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           children: [
             _header(copy),
             const SizedBox(height: 18),
+            LibraryCatalogStatus(controller: widget.controller, home: true),
             _carousel(copy),
             const SizedBox(height: 22),
             _shortcuts(copy),

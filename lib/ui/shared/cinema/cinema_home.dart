@@ -10,6 +10,7 @@ import '../account_screen.dart';
 import '../hover_horizontal_scrollbar.dart';
 import '../hover_carousel_controls.dart';
 import '../content_entrance.dart';
+import '../library_catalog_status.dart';
 import 'cinema_surface.dart';
 
 /// A real game catalogue presented with the Cinema composition on both shells.
@@ -51,6 +52,7 @@ class _CinemaHomeContentState extends State<CinemaHomeContent> {
       key: const ValueKey('cinema-home'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        LibraryCatalogStatus(controller: c, home: true),
         if (compact)
           Padding(
             padding: const EdgeInsets.only(bottom: 20),

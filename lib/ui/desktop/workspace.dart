@@ -142,7 +142,9 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _coverGeneration++;
     _coverFlight = null;
     _dismissSearch(clearQuery: true);
-    if (page == 'assistant' && widget.controller.selectedConversation == null) {
+    if (page == 'assistant' &&
+        (widget.controller.selectedConversation == null ||
+            !widget.controller.hasGames)) {
       widget.controller.openGlobalAssistant();
     }
     setState(() {

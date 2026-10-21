@@ -613,28 +613,29 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 12),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: Icon(
-                        Icons.menu_book_rounded,
-                        color: palette.primary,
-                      ),
-                      title: Text(copy.knowledgeOnlyLabel),
-                      subtitle: Text(
-                        copy.localized(
-                          '仅依据当前桌游资料回答',
-                          'Answer only from current game sources',
+                    Tooltip(
+                      message: controller.assistantKnowledgeAvailable
+                          ? ''
+                          : copy.assistantKnowledgeUnavailable,
+                      child: SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        secondary: Icon(
+                          Icons.menu_book_rounded,
+                          color: palette.primary,
                         ),
+                        title: Text(copy.knowledgeOnlyLabel),
+                        value: !smartSupplement,
+                        onChanged: !controller.assistantKnowledgeAvailable
+                            ? null
+                            : (value) {
+                                if (value) {
+                                  controller.setAllowSmartSupplement(
+                                    false,
+                                    useGlobalMode: _useGlobalMode,
+                                  );
+                                }
+                              },
                       ),
-                      value: !smartSupplement,
-                      onChanged: (value) {
-                        if (value) {
-                          controller.setAllowSmartSupplement(
-                            false,
-                            useGlobalMode: _useGlobalMode,
-                          );
-                        }
-                      },
                     ),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
@@ -648,39 +649,36 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                         ),
                       ),
                       title: Text(copy.smartSupplementLabel),
-                      subtitle: Text(
-                        copy.localized(
-                          '资料不足时补充回答',
-                          'Supplement answers when sources are insufficient',
-                        ),
-                      ),
                       value: smartSupplement,
-                      onChanged: (value) {
-                        controller.setAllowSmartSupplement(
-                          value,
-                          useGlobalMode: _useGlobalMode,
-                        );
-                      },
+                      onChanged: !controller.assistantKnowledgeAvailable
+                          ? null
+                          : (value) {
+                              controller.setAllowSmartSupplement(
+                                value,
+                                useGlobalMode: _useGlobalMode,
+                              );
+                            },
                     ),
                     if (_useGlobalMode)
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        secondary: Tooltip(
-                          message: copy.useCurrentGameKnowledgeHint,
-                          child: Icon(
-                            Icons.menu_book_rounded,
-                            color: palette.primary,
+                      Tooltip(
+                        message: controller.assistantKnowledgeAvailable
+                            ? ''
+                            : copy.assistantKnowledgeUnavailable,
+                        child: SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          secondary: Tooltip(
+                            message: copy.useCurrentGameKnowledgeHint,
+                            child: Icon(
+                              Icons.menu_book_rounded,
+                              color: palette.primary,
+                            ),
                           ),
+                          title: Text(copy.useCurrentGameKnowledgeLabel),
+                          value: controller.globalUseCurrentGameKnowledge,
+                          onChanged: controller.assistantKnowledgeAvailable
+                              ? controller.setGlobalUseCurrentGameKnowledge
+                              : null,
                         ),
-                        title: Text(copy.useCurrentGameKnowledgeLabel),
-                        subtitle: Text(
-                          copy.localized(
-                            '允许查阅当前选中的桌游',
-                            'Allow access to the selected game',
-                          ),
-                        ),
-                        value: controller.globalUseCurrentGameKnowledge,
-                        onChanged: controller.setGlobalUseCurrentGameKnowledge,
                       ),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,

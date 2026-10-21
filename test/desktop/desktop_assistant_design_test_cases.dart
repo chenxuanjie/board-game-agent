@@ -370,6 +370,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         ttsService: _UnavailableTtsService(),
       );
       addTearDown(controller.dispose);
+      await tester.runAsync(controller.reloadGames);
       await tester.pumpWidget(
         MaterialApp(
           theme: buildDesktopTheme(),

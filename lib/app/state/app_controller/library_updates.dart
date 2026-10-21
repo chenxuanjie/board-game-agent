@@ -2,6 +2,7 @@ part of '../app_controller.dart';
 
 extension AppLibraryUpdateController on AppController {
   Future<void> _initializeRemoteLibrary() async {
+    if (_controllerDisposed) return;
     _initialLibraryFullPending = true;
     // The first successful catalog read both reports availability and starts
     // the deferred startup full check with that same response body. Neither
@@ -9,7 +10,9 @@ extension AppLibraryUpdateController on AppController {
     _startAssetStatusPolling();
     try {
       await refreshAssetAccessStatus();
+      if (_controllerDisposed) return;
       await refreshLibraryResources();
+      if (_controllerDisposed) return;
       await prefetchHomeImages();
     } catch (error) {
       debugPrint('[updates] initial library check failed: $error');
@@ -123,7 +126,9 @@ extension AppLibraryUpdateController on AppController {
           checkedCatalog: catalogSource,
         );
         if (!current()) return;
-        if (changed) {
+        if (changed ||
+            _gameCatalogFailed ||
+            _gameCatalogLoadState == LibraryLoadState.idle) {
           await reloadGames();
           if (!current()) return;
           _resolvedAssetPaths.clear();

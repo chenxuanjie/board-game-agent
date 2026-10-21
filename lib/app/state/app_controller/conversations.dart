@@ -412,7 +412,10 @@ extension AppConversationController on AppController {
       final AiConversation conversation = _conversations[preferred]!;
       if (conversation.isGlobal ||
           (conversation.gameId != null &&
-              _games.any((GameInfo game) => game.id == conversation.gameId))) {
+              ((!hasGames && _gameCatalogLoadState != LibraryLoadState.empty) ||
+                  _games.any(
+                    (GameInfo game) => game.id == conversation.gameId,
+                  )))) {
         if (conversation.scope == AiConversationScope.game &&
             conversation.gameId != null) {
           _selectedGameId = conversation.gameId!;

@@ -248,6 +248,9 @@ extension AppAssistantController on AppController {
     required bool useGlobalMode,
   }) async {
     if (_switchingIdentityScope) return;
+    if (!enabled && !assistantKnowledgeAvailable) {
+      throw StateError('Knowledge sources unavailable');
+    }
     final epoch = _identityScopeEpoch;
     final AiAnswerMode next = enabled
         ? AiAnswerMode.knowledgeThenDirect
@@ -283,6 +286,7 @@ extension AppAssistantController on AppController {
 
   Future<void> setGlobalUseCurrentGameKnowledge(bool enabled) async {
     if (_switchingIdentityScope) return;
+    if (enabled && !assistantKnowledgeAvailable) return;
     if (_globalUseCurrentGameKnowledge == enabled) return;
     _globalUseCurrentGameKnowledge = enabled;
     await _preferencesService.saveGlobalUseCurrentGameKnowledge(enabled);
@@ -545,8 +549,8 @@ extension AppAssistantController on AppController {
             messages.where((ChatMessage item) => item.id != draftId),
           ),
           useCurrentGameKnowledge: useGlobalMode
-              ? _globalUseCurrentGameKnowledge
-              : true,
+              ? globalUseCurrentGameKnowledge
+              : assistantKnowledgeAvailable,
           abortTrigger: generationAbort.future,
         ),
         generationAbort.future,

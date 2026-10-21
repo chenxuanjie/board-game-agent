@@ -86,13 +86,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
 
   @override
   Widget build(BuildContext context) {
-    if (!controller.hasGames) {
-      return _DesktopNoGamesPane(
-        controller: controller,
-        title: controller.copy.desktopAssistantUnavailable,
-        message: controller.copy.desktopAssistantUnavailableMessage,
-      );
-    }
     final AppPalette palette = AppPalette.of(context);
     final AiConversation? selectedConversation =
         controller.selectedConversation;

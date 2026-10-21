@@ -13,6 +13,9 @@ class _CompactComposerController extends AppController {
 
   bool listening = false;
   bool sending = false;
+  // This fixture exercises controls for an available knowledge context.
+  @override
+  bool get assistantKnowledgeAvailable => true;
   AppLanguage testLanguage = AppLanguage.zhHans;
   @override
   AppCopy get copy => AppCopy(testLanguage);

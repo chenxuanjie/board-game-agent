@@ -1,5 +1,10 @@
 # 工程目录
 
+桌游目录加载与应用就绪分离：`app/state/app_controller/catalog.dart` 管理加载、
+失败、重试合并与迟到结果边界；`ui/shared/library_catalog_status.dart` 是全部主题
+首页与桌游库的共用提示。Web 网络目录失败不再阻断账号、设置和通用 AI。
+状态、关闭语义及验证边界见 [目录可用性与启动恢复](catalog-availability.md)。
+
 桌游评论模型与独立 NAS 数据链路位于 `features/community/`，账号作用域服务由 `AccountService.comments` 管理；两端复用 `ui/shared/game_comments.dart`，评论区均位于相关游戏之后，桌面直接展示完整列表，App 使用预览、完整列表和回复页。评分规则、目录、重试与验证见 [桌游评论](game-comments.md)。
 
 `core/platform/background_transfer_notifications.dart` 是 Android 下载执行优先级及通知的适配入口；`android/` 的 DownloadProgressService 不承担网络协议或文件校验。APK 包装服务位于 `features/settings/services/android_background_update_service.dart`，复用共享更新器，见 [Android 后台更新](android-background-updates.md)。

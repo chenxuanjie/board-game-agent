@@ -58,6 +58,12 @@ extension AppIdentityScopeController on AppController {
   Future<void> _switchIdentityScopeNow(String? userId) async {
     _switchingIdentityScope = true;
     _identityScopeEpoch++;
+    _cancelGameCatalogRequest();
+    _gameCatalogGeneration++;
+    _gameCatalogFuture = null;
+    _gameCatalogRequestKey = null;
+    _gameCatalogLoadState = LibraryLoadState.idle;
+    _gameCatalogFailed = _gameCatalogNoticeDismissed = false;
     reactionDiagnostics.reset();
     _pendingLibraryUpdate = null;
     _libraryUpdateError = null;

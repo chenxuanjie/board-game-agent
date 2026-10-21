@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../shared/library_catalog_status.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_check_progress.dart';
 import '../shared/library_viewport.dart';
@@ -215,6 +216,10 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
               ),
             ),
             LibraryCheckProgress(controller: widget.controller),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: LibraryCatalogStatus(controller: widget.controller),
+            ),
             SizedBox(
               height: 44,
               child: ListView.separated(
@@ -268,9 +273,15 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
               ),
             Expanded(
               child: games.isEmpty
-                  ? Center(
-                      child: Text(copy.localized('没有找到桌游', 'No games found')),
-                    )
+                  ? widget.controller.gameCatalogFailed ||
+                            widget.controller.gameCatalogLoadState ==
+                                LibraryLoadState.loading
+                        ? const SizedBox.shrink()
+                        : Center(
+                            child: Text(
+                              copy.localized('没有找到桌游', 'No games found'),
+                            ),
+                          )
                   : LayoutBuilder(
                       builder: (context, constraints) {
                         final columns = isCinema(context)

@@ -166,7 +166,6 @@ class GameManifestService {
   Future<GameCatalogManifest> loadMergedCatalogManifest({
     required RemoteAssetService remoteAssetService,
   }) async {
-    final GameCatalogManifest local = await loadBundledCatalogManifest();
     if (remoteAssetService.usesSameOriginLibrary &&
         remoteAssetService.accessAllowed) {
       final source = await remoteAssetService.loadText(
@@ -176,6 +175,7 @@ class GameManifestService {
       if (source == null) throw StateError('Library catalog unavailable');
       return GameCatalogManifest.fromJson(jsonDecode(source));
     }
+    final GameCatalogManifest local = await loadBundledCatalogManifest();
     if (kIsWeb) {
       final source = await remoteAssetService.loadCachedOrBundledText(
         remotePath: 'assets/catalog.json',
