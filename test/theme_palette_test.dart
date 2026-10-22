@@ -1,0 +1,271 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:board_game_agent/core/theme/color_scheme_option.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
+import 'package:board_game_agent/core/localization/app_language.dart';
+import 'package:board_game_agent/features/settings/services/preferences_service.dart';
+import 'package:board_game_agent/core/theme/app_palette.dart';
+import 'package:board_game_agent/core/theme/app_theme.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
+
+void main() {
+  test(
+    'Cinema is independent of removed theme codes and glass saves locally',
+    () async {
+      for (final code in [
+        'sunset_coast',
+        'classic',
+        '夜幕棋局',
+        'Midnight Table',
+      ]) {
+        expect(ColorSchemeOptionX.fromCode(code), defaultColorScheme);
+      }
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      expect(await prefs.loadCinemaGlassEnabled(), isTrue);
+      await prefs.saveCinemaGlassEnabled(false);
+      expect(await PreferencesService().loadCinemaGlassEnabled(), isFalse);
+      await prefs.saveCinemaGlassEnabled(true);
+      expect(await PreferencesService().loadCinemaGlassEnabled(), isTrue);
+    },
+  );
+
+  test(
+    'secondary containers remain distinct and secondary text stays readable',
+    () {
+      for (final option in ColorSchemeOption.values) {
+        final palette = PaletteRegistry.of(option);
+        expect(
+          _contrast(palette.surfaceContainer, palette.pageBackground),
+          greaterThanOrEqualTo(1.12),
+        );
+        expect(
+          _contrast(palette.outline, palette.surface),
+          greaterThanOrEqualTo(1.5),
+        );
+        for (final background in [
+          palette.surface,
+          palette.surfaceContainer,
+          palette.surfaceVariant,
+        ]) {
+          expect(
+            _contrast(palette.textSecondary, background),
+            greaterThanOrEqualTo(4.5),
+          );
+        }
+      }
+    },
+  );
+  test('all skins expose the same semantic palette contract', () {
+    for (final ColorSchemeOption option in ColorSchemeOption.values) {
+      final AppPalette palette = PaletteRegistry.of(option);
+      expect(palette.scheme, option);
+      expect(palette.pageBackground.a, greaterThan(0));
+      expect(palette.surface.a, greaterThan(0));
+      expect(palette.surfaceContainer.a, greaterThan(0));
+      expect(palette.surfaceVariant.a, greaterThan(0));
+      expect(palette.inputSurface.a, greaterThan(0));
+      expect(palette.textPrimary.a, greaterThan(0));
+      expect(palette.textSecondary.a, greaterThan(0));
+      expect(palette.outline.a, greaterThan(0));
+      expect(palette.primary.a, greaterThan(0));
+      expect(palette.primaryContainer.a, greaterThan(0));
+      expect(palette.secondary.a, greaterThan(0));
+      expect(palette.secondaryContainer.a, greaterThan(0));
+      expect(palette.success.a, greaterThan(0));
+      expect(palette.warning.a, greaterThan(0));
+      expect(palette.error.a, greaterThan(0));
+      expect(
+        _contrast(palette.primary, palette.onPrimary),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.primaryContainer, palette.onPrimaryContainer),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.secondary, palette.onSecondary),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.secondaryContainer, palette.onSecondaryContainer),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.surface, palette.textPrimary),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.surfaceContainer, palette.textPrimary),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.success, palette.onSuccess),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.warning, palette.onWarning),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(palette.error, palette.onError),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
+  });
+
+  test('color scheme codes expose the supported themes', () {
+    expect(defaultColorScheme, ColorSchemeOption.warmwoodStudy);
+    expect(ColorSchemeOption.values, [
+      ColorSchemeOption.cinema,
+      ColorSchemeOption.warmwoodStudy,
+      ColorSchemeOption.spatialCinema,
+    ]);
+    expect(ColorSchemeOption.cinema.code, 'cinema');
+    expect(ColorSchemeOption.warmwoodStudy.code, 'warmwood_study');
+    expect(ColorSchemeOptionX.fromCode('cinema'), ColorSchemeOption.cinema);
+    expect(
+      ColorSchemeOptionX.fromCode('warmwood_study'),
+      ColorSchemeOption.warmwoodStudy,
+    );
+    expect(
+      ColorSchemeOptionX.fromCode('removed_theme'),
+      ColorSchemeOption.warmwoodStudy,
+    );
+    expect(PaletteRegistry.cinema.nameZh, '影院');
+    expect(PaletteRegistry.cinema.nameEn, 'Cinema');
+    for (final code in ['cinema', '影院']) {
+      expect(ColorSchemeOptionX.fromCode(code), ColorSchemeOption.cinema);
+    }
+    expect(
+      AppCopy(AppLanguage.zhHans).colorSchemeName(ColorSchemeOption.cinema),
+      '影院',
+    );
+    expect(
+      AppCopy(AppLanguage.en).colorSchemeName(ColorSchemeOption.cinema),
+      'Cinema',
+    );
+  });
+
+  test(
+    'missing theme defaults to warmwood without replacing saved choices',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      expect(
+        await PreferencesService().loadColorScheme(),
+        ColorSchemeOption.warmwoodStudy,
+      );
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'app_language': 'zh',
+      });
+      expect(
+        await PreferencesService().loadColorScheme(),
+        ColorSchemeOption.warmwoodStudy,
+      );
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'color_scheme': 'classic',
+      });
+      expect(await PreferencesService().loadColorScheme(), defaultColorScheme);
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'color_scheme': 'cinema',
+      });
+      expect(
+        await PreferencesService().loadColorScheme(),
+        ColorSchemeOption.cinema,
+      );
+      await PreferencesService().saveColorScheme(ColorSchemeOption.cinema);
+      expect(
+        (await SharedPreferences.getInstance()).getString('color_scheme'),
+        'cinema',
+      );
+    },
+  );
+
+  testWidgets('existing routes receive the active palette through ThemeData', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<AppPalette> activePalette = ValueNotifier(
+      PaletteRegistry.spatialCinema,
+    );
+
+    await tester.pumpWidget(
+      ValueListenableBuilder<AppPalette>(
+        valueListenable: activePalette,
+        builder: (context, palette, _) {
+          return MaterialApp(
+            theme: AppTheme.buildTheme(palette),
+            home: Builder(
+              builder: (context) {
+                final AppPalette inherited = AppPalette.of(context);
+                return Scaffold(
+                  body: ColoredBox(
+                    key: const ValueKey<String>('theme-background'),
+                    color: inherited.pageBackground,
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const ValueKey<String>('theme-background')),
+          )
+          .color,
+      PaletteRegistry.spatialCinema.pageBackground,
+    );
+    expect(
+      AppTheme.buildTheme(
+        PaletteRegistry.spatialCinema,
+      ).bottomSheetTheme.backgroundColor,
+      PaletteRegistry.spatialCinema.surface,
+    );
+
+    activePalette.value = PaletteRegistry.cinema;
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const ValueKey<String>('theme-background')),
+          )
+          .color,
+      PaletteRegistry.cinema.pageBackground,
+    );
+    expect(
+      AppTheme.buildTheme(
+        PaletteRegistry.cinema,
+      ).bottomSheetTheme.backgroundColor,
+      PaletteRegistry.cinema.surface,
+    );
+
+    activePalette.value = PaletteRegistry.warmwoodStudy;
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const ValueKey<String>('theme-background')),
+          )
+          .color,
+      PaletteRegistry.warmwoodStudy.pageBackground,
+    );
+
+    activePalette.dispose();
+  });
+}
+
+double _contrast(Color first, Color second) {
+  final double a = first.computeLuminance();
+  final double b = second.computeLuminance();
+  return (a > b ? a + 0.05 : b + 0.05) / (a > b ? b + 0.05 : a + 0.05);
+}

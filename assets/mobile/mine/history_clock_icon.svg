@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="ringGrad" x1="24" y1="19" x2="102" y2="109" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF8D5A"/>
+      <stop offset="0.5" stop-color="#FF6A38"/>
+      <stop offset="1" stop-color="#FF5B2E"/>
+    </linearGradient>
+    <radialGradient id="bottomShade" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(65 102) rotate(90) scale(9 20)">
+      <stop offset="0" stop-color="#E8512B" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#E8512B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="64" cy="64" r="45" fill="url(#ringGrad)"/>
+  <circle cx="64" cy="64" r="33" fill="#FFF9F5"/>
+  <path d="M64 43V65.5L78 74" stroke="url(#ringGrad)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="64" cy="94.5" rx="16" ry="6.5" fill="url(#bottomShade)"/>
+</svg>

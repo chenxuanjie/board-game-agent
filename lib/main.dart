@@ -1,90 +1,564 @@
+import 'dart:async';
+import 'core/platform/background_transfer_notifications.dart';
+import 'core/platform/native_window_surface.dart';
+import 'ui/shared/spatial/spatial_workspace.dart';
+
+import 'package:app_about/app_about.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/foundation.dart';
+import 'package:app_ai_client/app_ai_client.dart';
+import 'package:webdav_settings/webdav_settings.dart';
+import 'package:window_manager/window_manager.dart';
 
-import 'services/mimo_ai_service.dart';
-import 'services/preferences_service.dart';
-import 'services/speech_service.dart';
-import 'services/tts_service.dart';
-import 'state/app_controller.dart';
-import 'theme/app_theme.dart';
-import 'ui/screens/home_screen.dart';
+import 'features/assistant/services/board_game_ai_service.dart';
+import 'features/games/services/game_manifest_service.dart';
+import 'features/games/services/game_vote_service.dart';
+import 'features/settings/services/preferences_service.dart';
+import 'features/settings/services/settings_transfer_service.dart';
+import 'features/library/services/remote_asset_service.dart';
+import 'features/library/services/same_origin_library_service.dart';
+import 'features/settings/services/board_game_update_settings.dart';
+import 'features/settings/services/board_game_app_update_service.dart';
+import 'features/library/services/board_game_remote_layout.dart';
+import 'features/assistant/services/speech_service.dart';
+import 'features/assistant/services/tts_service.dart';
+import 'features/assistant/services/realtime_voice_service.dart';
+import 'features/assistant/services/responses_compaction_store.dart';
+import 'features/assistant/services/ai_run_telemetry.dart';
+import 'features/assistant/services/responses_rules_workflow.dart';
+import 'features/identity/services/account_service.dart';
+import 'app/state/app_controller.dart';
+import 'core/localization/app_language.dart';
+import 'core/theme/color_scheme_option.dart';
+import 'core/theme/app_theme.dart';
+import 'ui/mobile/home_screen.dart';
+import 'ui/mobile/settings_screen.dart';
+import 'ui/mobile/game_detail_screen.dart';
+import 'ui/shared/game_ranking_screen.dart';
+import 'ui/shared/account_scope.dart';
+import 'ui/shared/account_screen.dart';
+import 'ui/desktop/workspace.dart';
+import 'ui/desktop/desktop_window_frame.dart';
+import 'ui/desktop/desktop_responsive.dart';
+import 'ui/desktop/theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _configureWindowsWindow();
 
-  final AppController controller = AppController(
-    preferencesService: PreferencesService(),
-    aiService: MimoAiService(),
-    speechService: SpeechService(),
-    ttsService: TtsService(),
+  final preferencesService = PreferencesService();
+  final initialColorScheme = await _loadInitialColorScheme(preferencesService);
+
+  final updateStore = SecureWebDavSettingsStore(appId: 'board_game_agent');
+  await _prepareUpdateSettings(updateStore);
+  final updateSettingsController = WebDavSettingsController(
+    store: updateStore,
+    connectionTester: DefaultWebDavConnectionTester(appId: 'board_game_agent'),
   );
 
-  runApp(BoardGameAgentApp(controller: controller));
+  late final AccountService accountService;
+  final AppController controller = AppController(
+    preferencesService: preferencesService,
+    initialColorScheme: initialColorScheme,
+    backgroundTransfers: createBackgroundTransferNotifications(),
+    gameVotes: GameVoteService(preferences: preferencesService),
+    aiService: BoardGameAiService(
+      aiClient: OpenAiDartAiClient(),
+      responsesWorkflow: ResponsesRulesWorkflow(
+        responsesClient: OpenAiDartResponsesAiClient(),
+        compactionStore: SecureResponsesCompactionStore(),
+        telemetrySink: SharedPreferencesAiRunTelemetrySink(),
+      ),
+    ),
+    gameManifestService: GameManifestService(),
+    remoteAssetService: kIsWeb
+        ? SameOriginLibraryService(
+            accessAllowed: () => true,
+            accountScope: () =>
+                accountService.dataScopeReady && accountService.user != null
+                ? accountService.configuration!.accountScope(
+                    accountService.user!.id,
+                  )
+                : 'web_guest',
+          )
+        : RemoteAssetService(
+            settingsProvider: () => updateSettingsController.saved,
+            accessAllowed: () => accountService.resourceCredentialsReady,
+            resourceSettingsProvider: (target) =>
+                accountService.settingsForResource(target),
+          ),
+    speechService: SpeechService(),
+    ttsService: TtsService(),
+    realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
+  );
+
+  accountService = AccountService(
+    controller: controller,
+    webDav: updateSettingsController,
+  );
+  runApp(
+    BoardGameAgentApp(
+      controller: controller,
+      updateSettingsController: updateSettingsController,
+      accountService: accountService,
+    ),
+  );
+}
+
+Future<void> _configureWindowsWindow() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+  await windowManager.ensureInitialized();
+  const WindowOptions options = WindowOptions(
+    size: DesktopResponsive.desktopWindowDefaultSize,
+    minimumSize: DesktopResponsive.desktopWindowMinimumSize,
+    center: true,
+    backgroundColor: Colors.transparent,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
+  );
+  await windowManager.waitUntilReadyToShow(options, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
+}
+
+Future<ColorSchemeOption> _loadInitialColorScheme(
+  PreferencesService preferencesService,
+) async {
+  try {
+    return await preferencesService.loadColorScheme();
+  } catch (_) {
+    // Keep the native launch path usable even if the preference store is
+    // temporarily unavailable. The controller will retry during initialize.
+    return defaultColorScheme;
+  }
+}
+
+Future<void> _prepareUpdateSettings(
+  SecureWebDavSettingsStore updateStore,
+) async {
+  final stored = await updateStore.load();
+  if (stored != null) {
+    final normalized = BoardGameRemoteLayout.migrateLegacySettings(stored);
+    if (normalized.baseUrl != stored.baseUrl) {
+      await updateStore.save(normalized);
+    }
+    return;
+  }
+
+  final legacy = await BoardGameUpdateSettingsLoader.load(
+    sources: await PreferencesService().loadAssetSourceConfigs(),
+  );
+  if (!legacy.isComplete) return;
+  await updateStore.save(
+    BoardGameRemoteLayout.normalizeSettings(
+      legacy.copyWith(mode: ExternalStorageMode.webDav),
+    ),
+  );
 }
 
 class BoardGameAgentApp extends StatefulWidget {
   const BoardGameAgentApp({
     super.key,
     required this.controller,
+    required this.updateSettingsController,
+    this.accountService,
   });
 
   final AppController controller;
+  final WebDavSettingsController updateSettingsController;
+  final AccountService? accountService;
 
   @override
   State<BoardGameAgentApp> createState() => _BoardGameAgentAppState();
 }
 
 class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
+  late final SettingsTransferService _transferService = SettingsTransferService(
+    controller: widget.controller,
+    webDav: widget.updateSettingsController,
+    account: widget.accountService,
+  );
   late Future<void> _initialization;
+  GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final _windowChrome = DesktopWindowChromeObserver(
+    workspaceRouteNames: {GameRankingScreen.routeName},
+  );
+  bool _initializationComplete = false;
+  bool _showAccountLoginAtRoot = false;
+  bool _startupUpdateCheckScheduled = false;
+  String? _lastAccountKey;
+  String? _lastResourceConnection;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_handleControllerChange);
-    _initialization = widget.controller.initialize();
+    widget.accountService?.addListener(_handleAccountChange);
+    _initialization = _initialize();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleControllerChange);
+    widget.accountService?.removeListener(_handleAccountChange);
+    widget.accountService?.dispose();
     widget.controller.disposeServices();
+    widget.updateSettingsController.dispose();
+    _windowChrome.sidebarVisible.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: widget.controller.copy.appTitle,
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.buildTheme(widget.controller.palette),
-      home: FutureBuilder<void>(
-        future: _initialization,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const _StartupScreen();
-          }
+    final app = _buildApplication(context);
+    final accounts = widget.accountService;
+    return accounts == null ? app : AccountScope(service: accounts, child: app);
+  }
 
-          if (snapshot.hasError) {
-            return _StartupErrorScreen(
-              onRetry: () {
-                setState(() {
-                  _initialization = widget.controller.initialize();
-                });
+  Widget _buildApplication(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Theme and workspace must use the same decision, including after a
+        // browser resize. Otherwise desktop menus inherit the mobile theme.
+        final bool desktopLayout =
+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) ||
+            (kIsWeb &&
+                (widget.controller.colorScheme == ColorSchemeOption.cinema
+                    ? constraints.maxWidth >=
+                          DesktopResponsive.desktopWindowMinimumWidth
+                    : DesktopResponsive.supportsDesktopViewport(
+                        constraints.biggest,
+                      )));
+        return NativeWindowSurface(
+          enabled:
+              widget.controller.colorScheme == ColorSchemeOption.spatialCinema,
+          child: MaterialApp(
+            builder: (context, child) {
+              final accounts = widget.accountService;
+              if (accounts == null ||
+                  accounts.dataScopeReady ||
+                  (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
+                return ValueListenableBuilder<bool>(
+                  valueListenable: _windowChrome.sidebarVisible,
+                  child: child ?? const SizedBox.shrink(),
+                  builder: (context, hasSidebar, child) => DesktopWindowFrame(
+                    spatial:
+                        widget.controller.colorScheme ==
+                        ColorSchemeOption.spatialCinema,
+                    sidebarVisible:
+                        desktopLayout &&
+                        _initializationComplete &&
+                        !_showAccountLoginAtRoot &&
+                        hasSidebar &&
+                        widget.controller.colorScheme !=
+                            ColorSchemeOption.spatialCinema,
+                    child: child!,
+                  ),
+                );
+              }
+              // Remove the prior account's UI from the tree while its writes drain.
+              return DesktopWindowFrame(
+                spatial:
+                    widget.controller.colorScheme ==
+                    ColorSchemeOption.spatialCinema,
+                child: Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (accounts.error == null)
+                          const CircularProgressIndicator()
+                        else ...[
+                          const Text('账号数据切换未完成'),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: () => unawaited(accounts.restore()),
+                            child: const Text('重试'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+            routes: {
+              GameRankingScreen.routeName: (context) => desktopLayout
+                  ? DesktopWorkspace(
+                      controller: widget.controller,
+                      webDavSettingsController: widget.updateSettingsController,
+                      transferService: _transferService,
+                      initialPage: 'rankings',
+                      onOpenAbout: _openAbout,
+                      onCheckUpdates: () => _openAbout(checkOnOpen: true),
+                    )
+                  : GameRankingScreen(
+                      controller: widget.controller,
+                      onOpenGame: (game) {
+                        unawaited(widget.controller.recordRecentlyViewed(game));
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => GameDetailScreen(
+                              controller: widget.controller,
+                              game: game,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+              '/settings/ai': (_) => MobileSettingsScreen(
+                controller: widget.controller,
+                transferService: _transferService,
+                focusAiSettings: true,
+                onOpenAbout: _openAbout,
+              ),
+            },
+            navigatorKey: _navigatorKey,
+            navigatorObservers: [_windowChrome],
+            title: widget.controller.copy.appTitle,
+            debugShowCheckedModeBanner: false,
+            locale: widget.controller.language == AppLanguage.en
+                ? const Locale('en')
+                : const Locale.fromSubtags(
+                    languageCode: 'zh',
+                    scriptCode: 'Hans',
+                  ),
+            supportedLocales: const <Locale>[
+              Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+              Locale('en'),
+            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            theme: desktopLayout
+                ? buildDesktopTheme(
+                    activePalette: widget.controller.palette,
+                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
+                  )
+                : AppTheme.buildTheme(
+                    widget.controller.palette,
+                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
+                  ),
+            home: FutureBuilder<void>(
+              future: _initialization,
+              builder: (context, snapshot) {
+                if (!_initializationComplete &&
+                    snapshot.connectionState != ConnectionState.done) {
+                  return const _StartupScreen();
+                }
+
+                if (snapshot.hasError) {
+                  return _StartupErrorScreen(
+                    onRetry: () {
+                      setState(() {
+                        _initialization = _initialize();
+                      });
+                    },
+                    message: widget.controller.copy.startupDataUnavailable,
+                  );
+                }
+
+                _scheduleStartupUpdateCheck(context);
+                if (_showAccountLoginAtRoot) {
+                  return AccountScreen(onBack: _returnFromAccountLogin);
+                }
+                if (widget.controller.colorScheme ==
+                    ColorSchemeOption.spatialCinema) {
+                  return SpatialWorkspace(
+                    key: ValueKey(widget.accountService?.nicknameKey),
+                    controller: widget.controller,
+                    transferService: _transferService,
+                    onOpenAbout: _openAbout,
+                  );
+                }
+                if (desktopLayout) {
+                  return DesktopWorkspace(
+                    key: ValueKey(widget.accountService?.nicknameKey),
+                    controller: widget.controller,
+                    webDavSettingsController: widget.updateSettingsController,
+                    transferService: _transferService,
+                    onOpenAbout: _openAbout,
+                    onCheckUpdates: () => _openAbout(checkOnOpen: true),
+                  );
+                }
+                return HomeScreen(
+                  key: ValueKey(widget.accountService?.nicknameKey),
+                  controller: widget.controller,
+                  transferService: _transferService,
+                  onOpenAbout: _openAbout,
+                );
               },
-              error: snapshot.error,
-            );
-          }
-
-          return HomeScreen(controller: widget.controller);
-        },
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
+  Future<void> _initialize() async {
+    _initializationComplete = false;
+    try {
+      await widget.updateSettingsController.load();
+      await _transferService.recover();
+      await widget.controller.initialize();
+      await widget.accountService?.initialize();
+      // Publish existing favorites too, even while the ranking entry is hidden.
+      unawaited(widget.controller.refreshFavoriteRankings());
+      _initializationComplete = true;
+    } catch (error, stackTrace) {
+      debugPrint('[startup] initialization failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  void _scheduleStartupUpdateCheck(BuildContext context) {
+    // Web is upgraded by replacing/rebuilding the Docker deployment. Persisted
+    // native update preferences must never trigger an installer check here.
+    if (kIsWeb ||
+        _startupUpdateCheckScheduled ||
+        !widget.controller.checkForUpdates) {
+      return;
+    }
+    _startupUpdateCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !context.mounted) return;
+      unawaited(_checkStartupUpdate(context));
+    });
+  }
+
+  Future<void> _checkStartupUpdate(BuildContext context) async {
+    if (kIsWeb) return;
+    final release = widget.controller.suspendLibraryUpdatePrompts();
+    try {
+      await checkForUpdateOnStartup(
+        context: context,
+        appId: 'board_game_agent',
+        updateService: _createUpdateService(),
+      );
+    } finally {
+      release();
+    }
+  }
+
+  Future<void> _openAbout({bool checkOnOpen = false}) async {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    final release = widget.controller.suspendLibraryUpdatePrompts();
+    try {
+      await navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AppAboutPage(
+            checkOnOpen: !kIsWeb && checkOnOpen,
+            config: AppAboutConfig(
+              appName: '桌游导师',
+              subtitle: '桌游入口与统一 AI 助手',
+              appIcon: const _BoardGameAppMark(),
+              fallbackVersion: '版本不可用',
+              fallbackBuild: '—',
+              showUpdate: !kIsWeb && boardGameUpdateTarget != null,
+              updateCheckSubtitle:
+                  boardGameUpdateTarget == AppUpdateTarget.windows
+                  ? '检查 Windows 安装包更新'
+                  : '检查 Android 安装包更新',
+            ),
+            updateService: _createUpdateService(),
+          ),
+        ),
+      );
+    } finally {
+      release();
+    }
+  }
+
+  List<WebDavSettings> _updateConnections() {
+    final accounts = widget.accountService;
+    final config = accounts?.configuration;
+    if (config != null && accounts!.resourceCredentialsReady) {
+      return [
+        for (final server in config.servers)
+          accounts.settingsForResource(server.webDavRoot(config.storageFolder)),
+      ];
+    }
+    return [widget.updateSettingsController.saved];
+  }
+
+  AppUpdateService _createUpdateService() => createBoardGameUpdateService(
+    settingsProvider: () => widget.updateSettingsController.saved,
+    settingsCandidates: _updateConnections,
+    beforeInstall: () async {
+      if (_transferService.isBusy) {
+        throw AppUpdateFailure('设置正在保存，请完成后重试');
+      }
+      try {
+        await widget.controller.prepareForAppUpdate();
+      } catch (_) {
+        throw AppUpdateFailure('请结束正在进行的操作，再重试更新');
+      }
+    },
+    onWindowsInstallerLaunched: () => windowManager.destroy(),
+  );
   void _handleControllerChange() {
     if (mounted) {
       setState(() {});
     }
   }
+
+  void _returnFromAccountLogin() {
+    if (widget.accountService?.dataScopeReady != true) return;
+    setState(() => _showAccountLoginAtRoot = false);
+  }
+
+  void _handleAccountChange() {
+    if (!mounted) return;
+    final account = widget.accountService;
+    final key = widget.accountService?.nicknameKey;
+    if (_lastAccountKey != null && key != _lastAccountKey) {
+      // Replace the navigation tree and its root destination together. Popping
+      // home and then pushing login reveals the home during the route animation.
+      _showAccountLoginAtRoot =
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.windows &&
+          account?.isSignedIn == false;
+      _navigatorKey = GlobalKey<NavigatorState>();
+      _windowChrome.reset();
+    }
+    _lastAccountKey = key;
+    if (account != null &&
+        !account.isBusy &&
+        account.resourceCredentialsReady) {
+      final connection =
+          '${account.nicknameKey}|${account.configuration!.resourceSources.map((s) => s.testUrl).join('|')}';
+      if (_lastResourceConnection != connection) {
+        _lastResourceConnection = connection;
+        // Credentials and the account scope are ready now. Probe immediately
+        // rather than leaving the resource status unknown until the next tick.
+        unawaited(widget.controller.refreshAssetAccessStatus());
+        unawaited(widget.controller.refreshLibraryResources(force: true));
+      }
+    } else if (account?.isSignedIn == false) {
+      _lastResourceConnection = null;
+    }
+    setState(() {});
+  }
+}
+
+class _BoardGameAppMark extends StatelessWidget {
+  const _BoardGameAppMark();
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(22),
+    child: Image.asset(
+      'branding/app_icon.png',
+      width: 88,
+      height: 88,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
+      semanticLabel: '桌游导师应用图标',
+    ),
+  );
 }
 
 class _StartupScreen extends StatelessWidget {
@@ -93,60 +567,41 @@ class _StartupScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      backgroundColor: Color(0xFF0F172A),
-      body: Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF23D2D8),
-        ),
-      ),
+      key: ValueKey('app-startup-loading'),
+      body: Center(child: CircularProgressIndicator()),
     );
   }
 }
 
 class _StartupErrorScreen extends StatelessWidget {
-  const _StartupErrorScreen({
-    required this.onRetry,
-    required this.error,
-  });
+  const _StartupErrorScreen({required this.onRetry, required this.message});
 
   final VoidCallback onRetry;
-  final Object? error;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Icon(
-                Icons.error_outline_rounded,
-                color: Colors.white,
-                size: 44,
-              ),
+              const Icon(Icons.error_outline_rounded, size: 44),
               const SizedBox(height: 14),
-              Text(
-                '启动失败',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                    ),
-              ),
+              Text('启动失败', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 10),
               Text(
-                '$error',
+                message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white70,
-                    ),
+                  color: colors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 18),
-              FilledButton(
-                onPressed: onRetry,
-                child: const Text('重试'),
-              ),
+              FilledButton(onPressed: onRetry, child: const Text('重试')),
             ],
           ),
         ),

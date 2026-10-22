@@ -1,0 +1,1332 @@
+import 'package:app_ai_client/app_ai_client.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import '../../core/theme/ui_tokens.dart';
+import '../shared/cinema/cinema_surface.dart';
+
+import '../../features/assistant/models/ai_api_config.dart';
+import '../../features/assistant/models/ai_model_policy.dart';
+import '../../features/library/models/asset_source_config.dart';
+import '../../core/localization/app_language.dart';
+import '../../core/models/connectivity_status.dart';
+import '../../core/theme/color_scheme_option.dart';
+import '../../core/theme/palette_registry.dart';
+import '../../app/state/app_controller.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/localization/app_copy.dart';
+import '../shared/resource_access_summary.dart';
+import '../shared/account_scope.dart';
+import '../shared/account_screen.dart';
+import '../shared/resource_connection_screen.dart';
+import '../shared/settings_section_focus.dart';
+import '../shared/settings_transfer_screen.dart';
+import '../shared/library_check_actions.dart';
+import '../../features/settings/models/configuration_transfer.dart';
+import '../../features/settings/services/settings_transfer_service.dart';
+
+class MobileSettingsScreen extends StatefulWidget {
+  const MobileSettingsScreen({
+    super.key,
+    required this.controller,
+    required this.onOpenAbout,
+    this.focusAiSettings = false,
+    this.transferService,
+  });
+
+  final AppController controller;
+  final bool focusAiSettings;
+  final VoidCallback onOpenAbout;
+  final SettingsTransferService? transferService;
+
+  @override
+  State<MobileSettingsScreen> createState() => _MobileSettingsScreenState();
+}
+
+class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
+  late final SettingsTransferService _transfer =
+      widget.transferService ??
+      SettingsTransferService(controller: widget.controller);
+  void _importApplied() {
+    if (!mounted) return;
+    final config = widget.controller.aiApiConfig;
+    setState(() {
+      _nameController.text = config.name;
+      _urlController.text = config.baseUrl;
+      _keyController.text = config.apiKey;
+      _selectedPreset = _presetForConfig(
+        _presetOptions(widget.controller),
+        config,
+      );
+      _selectedModel = config.model.isEmpty ? null : config.model;
+      _selectedReasoningEffort = config.reasoningEffort;
+      _selectedResponseSpeed = config.responseSpeed;
+      _lastTestMessage = null;
+    });
+  }
+
+  Widget _transferMenu(ConfigurationScope scope) => SettingsTransferMenu(
+    service: _transfer,
+    scope: scope,
+    onApplied: _importApplied,
+    enabled: !_isTesting && !_isTestingAssets,
+  );
+  Future<void> _editResourceConnection([AssetSourceConfig? source]) async {
+    if (_transfer.webDav == null || _isTestingAssets || _transfer.isBusy) {
+      return;
+    }
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ResourceConnectionScreen(service: _transfer, source: source),
+      ),
+    );
+    if (mounted) {
+      _importApplied();
+    }
+  }
+
+  late final TextEditingController _nameController;
+  late final TextEditingController _urlController;
+  late final TextEditingController _keyController;
+  late _AiPresetOption _selectedPreset;
+  String? _selectedModel;
+  AiReasoningEffort _selectedReasoningEffort = AiReasoningEffort.automatic;
+  AiResponseSpeed _selectedResponseSpeed = AiResponseSpeed.standard;
+  bool _isTesting = false;
+  bool _isTestingAssets = false;
+  String? _lastTestMessage;
+  bool? _lastTestSucceeded;
+
+  @override
+  void initState() {
+    super.initState();
+    final config = widget.controller.aiApiConfig;
+    final List<_AiPresetOption> options = _presetOptions(widget.controller);
+    _selectedPreset = _presetForConfig(options, config);
+    _nameController = TextEditingController(
+      text:
+          config.providerPreset == AiProviderPreset.custom &&
+              !AiApiConfig.isBuiltInProviderName(config.name)
+          ? config.name
+          : '',
+    );
+    _urlController = TextEditingController(text: config.baseUrl);
+    _keyController = TextEditingController(text: config.apiKey);
+    _selectedModel = config.model.trim().isEmpty ? null : config.model.trim();
+    _selectedReasoningEffort = config.reasoningEffort;
+    _selectedResponseSpeed = config.responseSpeed;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _urlController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final controller = widget.controller;
+        final copy = controller.copy;
+        final palette = AppPalette.of(context);
+        final List<AiReasoningEffort> supportedReasoning =
+            AiModelPolicy.reasoningEfforts(_selectedModel ?? '') ??
+            const <AiReasoningEffort>[AiReasoningEffort.automatic];
+        final List<AiReasoningEffort> visibleReasoning =
+            AiModelPolicy.selectableReasoningEfforts(_selectedModel ?? '') ??
+            const [];
+        final List<_AiPresetOption> presetOptions = _presetOptions(controller);
+        final _AiPresetOption selectedPreset = _presetForId(
+          presetOptions,
+          _selectedPreset.id,
+        );
+        return Scaffold(
+          key: const ValueKey('mobile-settings-screen'),
+          backgroundColor: palette.pageBackground,
+          appBar: AppBar(
+            actions: [_transferMenu(ConfigurationScope.all)],
+            title: Text(copy.localized('设置', 'Settings')),
+            backgroundColor: palette.pageBackground,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+          ),
+          body: SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: SingleChildScrollView(
+                  key: const ValueKey('mobile-settings-scroll'),
+                  padding: EdgeInsets.fromLTRB(
+                    18,
+                    12,
+                    18,
+                    MediaQuery.viewInsetsOf(context).bottom + 32,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      if (AccountScope.maybeOf(context) != null) ...[
+                        _SectionCard(
+                          palette: palette,
+                          child: AccountEntry(
+                            title: copy.localized('账户', 'Account'),
+                          ),
+                        ),
+                        const SizedBox(height: UiTokens.sectionGap),
+                      ],
+                      _SectionTitle(
+                        title: copy.languageTitle,
+                        icon: Icons.translate_rounded,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: SegmentedButton<AppLanguage>(
+                            key: const ValueKey('mobile-settings-language'),
+                            showSelectedIcon: false,
+                            segments: const [
+                              ButtonSegment(
+                                value: AppLanguage.zhHans,
+                                label: Text('简体中文'),
+                              ),
+                              ButtonSegment(
+                                value: AppLanguage.en,
+                                label: Text('English'),
+                              ),
+                            ],
+                            selected: {controller.language},
+                            onSelectionChanged: (selection) =>
+                                controller.setLanguage(selection.first),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _SectionTitle(
+                        title: copy.colorSchemeTitle,
+                        icon: Icons.palette_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        child: LayoutBuilder(
+                          builder: (context, box) {
+                            final columns = box.maxWidth < 500 ? 2 : 3;
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final scheme in const [
+                                  ColorSchemeOption.warmwoodStudy,
+                                  ColorSchemeOption.cinema,
+                                  ColorSchemeOption.spatialCinema,
+                                ])
+                                  SizedBox(
+                                    width:
+                                        (box.maxWidth - (columns - 1) * 8) /
+                                        columns,
+                                    child: _ThemeChoice(
+                                      key: ValueKey(
+                                        'mobile-settings-theme-${scheme.code}',
+                                      ),
+                                      palette: palette,
+                                      title: copy.colorSchemeName(scheme),
+                                      swatch: PaletteRegistry.of(
+                                        scheme,
+                                      ).primary,
+                                      selected:
+                                          controller.colorScheme == scheme,
+                                      onTap: () =>
+                                          controller.setColorScheme(scheme),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      if (controller.colorScheme == ColorSchemeOption.cinema)
+                        CinemaGlassSetting(controller: controller),
+                      if (AccountScope.maybeOf(context) == null)
+                        _SectionCard(
+                          palette: palette,
+                          padding: EdgeInsets.zero,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  16,
+                                  16,
+                                  10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.storage_rounded,
+                                      color: palette.primary,
+                                      size: 22,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        copy.assetPriorityTitle,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                    ),
+                                    if (_transfer.webDav != null)
+                                      _transferMenu(ConfigurationScope.webDav),
+                                  ],
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: ResourceAccessSummary(
+                                  controller: controller,
+                                  onReorder: _reorderSources,
+                                  onEdit: _transfer.webDav == null
+                                      ? null
+                                      : _editResourceConnection,
+                                ),
+                              ),
+                              if (_transfer.webDav != null)
+                                ListTile(
+                                  key: const ValueKey(
+                                    'mobile-settings-webdav-connection',
+                                  ),
+                                  leading: Icon(
+                                    Icons.cloud_outlined,
+                                    color: palette.primary,
+                                  ),
+                                  title: Text(
+                                    copy.localized(
+                                      '账号与连接',
+                                      'Account & connections',
+                                    ),
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.chevron_right_rounded,
+                                  ),
+                                  onTap: _editResourceConnection,
+                                ),
+                              TextButton.icon(
+                                onPressed: _isTestingAssets
+                                    ? null
+                                    : _testAssets,
+                                icon: const Icon(Icons.network_check_rounded),
+                                label: Text(copy.assetTest),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      SettingsSectionFocus(
+                        reveal: widget.focusAiSettings,
+                        child: _SectionCard(
+                          palette: palette,
+                          padding: EdgeInsets.zero,
+                          child: ExpansionTile(
+                            key: const ValueKey('mobile-settings-ai'),
+                            initiallyExpanded: widget.focusAiSettings,
+                            maintainState: true,
+                            shape: const Border(),
+                            collapsedShape: const Border(),
+                            leading: Icon(
+                              Icons.auto_awesome_rounded,
+                              color: palette.primary,
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(copy.aiApiTitle)),
+                                _transferMenu(ConfigurationScope.ai),
+                              ],
+                            ),
+                            subtitle: Text(selectedPreset.label),
+                            childrenPadding: const EdgeInsets.fromLTRB(
+                              16,
+                              0,
+                              16,
+                              16,
+                            ),
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  _ApiDropdownField<_AiPresetOption>(
+                                    label: copy.aiApiPresetLabel,
+                                    value: selectedPreset,
+                                    values: presetOptions,
+                                    itemLabel: (_AiPresetOption option) =>
+                                        option.label,
+                                    onChanged: _applyPreset,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  if (selectedPreset.isCustom) ...<Widget>[
+                                    _ApiField(
+                                      label: copy.aiApiProviderNameLabel,
+                                      controller: _nameController,
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  _ApiField(
+                                    label: copy.aiApiUrlLabel,
+                                    controller: _urlController,
+                                    keyboardType: TextInputType.url,
+                                    readOnly: !selectedPreset.isCustom,
+                                    onChanged: _handleAiFieldChanged,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _ApiField(
+                                    label: copy.aiApiKeyLabel,
+                                    controller: _keyController,
+                                    obscureText: true,
+                                    onChanged: _handleAiFieldChanged,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _ModelDiscoveryPanel(
+                                    controller: controller,
+                                    selectedModel: _selectedModel,
+                                    onChanged: (String? model) {
+                                      setState(() {
+                                        _selectedModel = model;
+                                        final supported =
+                                            AiModelPolicy.reasoningEfforts(
+                                              model ?? '',
+                                            );
+                                        if (supported != null &&
+                                            !supported.contains(
+                                              _selectedReasoningEffort,
+                                            )) {
+                                          _selectedReasoningEffort =
+                                              AiReasoningEffort.automatic;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _ApiDropdownField<AiReasoningEffort>(
+                                    label: copy.aiApiReasoningEffortLabel,
+                                    placeholder: copy.aiApiReasoningSelectHint,
+                                    value: _selectedReasoningEffort,
+                                    values: visibleReasoning,
+                                    itemLabel: copy.aiApiReasoningEffortName,
+                                    onChanged: (AiReasoningEffort? value) {
+                                      if (value != null) {
+                                        setState(
+                                          () =>
+                                              _selectedReasoningEffort = value,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  if (!supportedReasoning.contains(
+                                    _selectedReasoningEffort,
+                                  )) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      copy.aiApiReasoningUnsupported,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: palette.textPrimary
+                                                .withValues(alpha: 0.68),
+                                            height: 1.35,
+                                          ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 14),
+                                  _ApiDropdownField<AiResponseSpeed>(
+                                    label: copy.aiApiResponseSpeedLabel,
+                                    value: _selectedResponseSpeed,
+                                    values: AiResponseSpeed.selectableValues,
+                                    itemLabel: copy.aiApiResponseSpeedName,
+                                    onChanged: (AiResponseSpeed? value) {
+                                      if (value != null) {
+                                        setState(
+                                          () => _selectedResponseSpeed = value,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  if (_selectedResponseSpeed ==
+                                      AiResponseSpeed.fast) ...[
+                                    const SizedBox(height: 6),
+                                    Tooltip(
+                                      message:
+                                          copy.aiApiGenerationCompatibilityHint,
+                                      child: Text(
+                                        copy.aiApiResponseSpeedHint,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: palette.textPrimary
+                                                  .withValues(alpha: 0.68),
+                                              height: 1.35,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: <Widget>[
+                                      Expanded(
+                                        child: FilledButton(
+                                          onPressed: _isTesting
+                                              ? null
+                                              : _testAndSaveConfig,
+                                          child: Text(copy.aiApiSave),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: OutlinedButton(
+                                          onPressed: _resetDefault,
+                                          child: Text(copy.aiApiReset),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  if (_lastTestMessage != null) ...<Widget>[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: (_lastTestSucceeded ?? false)
+                                            ? palette.success.withValues(
+                                                alpha: 0.14,
+                                              )
+                                            : palette.error.withValues(
+                                                alpha: 0.14,
+                                              ),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: (_lastTestSucceeded ?? false)
+                                              ? palette.success.withValues(
+                                                  alpha: 0.32,
+                                                )
+                                              : palette.error.withValues(
+                                                  alpha: 0.32,
+                                                ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _lastTestMessage!,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: palette.textPrimary,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                    if (_lastTestSucceeded == false &&
+                                        RegExp(
+                                          r'cors|cross.origin|跨域|failed to fetch|xmlhttprequest',
+                                          caseSensitive: false,
+                                        ).hasMatch(_lastTestMessage!) &&
+                                        _isCrossOriginWebUrl(
+                                          _urlController.text,
+                                        )) ...[
+                                      const SizedBox(height: 8),
+                                      Tooltip(
+                                        message: copy.localized(
+                                          '请确认服务商允许浏览器跨域访问，或使用同源代理。',
+                                          'Check that your provider allows browser cross-origin requests, or use a same-origin proxy.',
+                                        ),
+                                        child: Text(
+                                          copy.localized(
+                                            '跨域访问可能受限 ⓘ',
+                                            'Cross-origin access may be restricted ⓘ',
+                                          ),
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _SectionTitle(
+                        title: copy.localized('桌游检查', 'Game library checks'),
+                        icon: Icons.fact_check_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        child: LibraryCheckActions(controller: controller),
+                      ),
+                      const SizedBox(height: 24),
+                      if (!kIsWeb) ...[
+                        _SectionTitle(
+                          title: copy.appUpdateTitle,
+                          icon: Icons.system_update_outlined,
+                        ),
+                        const SizedBox(height: 10),
+                        _SectionCard(
+                          palette: palette,
+                          child: SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: controller.checkForUpdates,
+                            onChanged: controller.setCheckForUpdates,
+                            title: Text(copy.checkForUpdatesTitle),
+                            subtitle: Text(copy.checkForUpdatesHint),
+                            secondary: const Icon(Icons.system_update_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _SectionCard(
+                        palette: palette,
+                        padding: EdgeInsets.zero,
+                        child: ListTile(
+                          key: const ValueKey('mobile-settings-about'),
+                          leading: Icon(
+                            Icons.info_outline_rounded,
+                            color: palette.primary,
+                          ),
+                          title: Text(copy.localized('关于应用', 'About the app')),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: widget.onOpenAbout,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _testAndSaveConfig() async {
+    final controller = widget.controller;
+    final copy = controller.copy;
+    if (_selectedPreset.isCustom) {
+      final String providerName = _nameController.text.trim();
+      if (providerName.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(copy.aiApiProviderNameRequired)));
+        return;
+      }
+      if (AiApiConfig.isBuiltInProviderName(providerName)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(copy.aiApiProviderNameReserved)));
+        return;
+      }
+    }
+    if (_isTesting) {
+      return;
+    }
+
+    final AiApiConfig draft = _draftConfig();
+    setState(() {
+      _isTesting = true;
+      _lastTestMessage = null;
+      _lastTestSucceeded = null;
+    });
+
+    List<AiModel>? models;
+    Object? modelError;
+    try {
+      if (draft.baseUrl.trim().isNotEmpty && draft.apiKey.trim().isNotEmpty) {
+        models = await _refreshModels(draft);
+      } else {
+        controller.invalidateAiModels();
+      }
+    } catch (error) {
+      modelError = error;
+    }
+
+    // Saving is intentionally independent from model discovery. A provider
+    // configuration remains useful even when /models is temporarily blocked,
+    // unavailable, or returns an incompatible response.
+    final AiApiConfig next = _draftConfig();
+    try {
+      await controller.saveAiApiConfig(next);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lastTestMessage = '$error';
+        _lastTestSucceeded = false;
+        _isTesting = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    final List<_AiPresetOption> options = _presetOptions(controller);
+    final _AiPresetOption savedPreset = _presetForConfig(options, next);
+    final String resultMessage;
+    final bool succeeded;
+    if (models != null && models.isNotEmpty) {
+      resultMessage = copy.aiApiModelsSaved(models.length);
+      succeeded = true;
+    } else if (models != null) {
+      resultMessage = copy.aiApiModelsEmpty;
+      succeeded = false;
+    } else if (modelError != null) {
+      final String detail =
+          controller.aiModelLoadState == AiModelLoadState.empty
+          ? copy.aiApiModelsEmpty
+          : controller.aiModelLoadError ?? '$modelError';
+      resultMessage = copy.aiApiSavedWithModelFailure(detail);
+      succeeded = false;
+    } else {
+      resultMessage = copy.aiApiSavedWithoutModelDiscovery;
+      succeeded = false;
+    }
+    setState(() {
+      _selectedPreset = savedPreset;
+      _lastTestMessage = resultMessage;
+      _lastTestSucceeded = succeeded;
+      _isTesting = false;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(resultMessage)));
+  }
+
+  Future<void> _resetDefault() async {
+    final _AiPresetOption openAi = _presetOptions(
+      widget.controller,
+    ).firstWhere((_AiPresetOption option) => option.id == 'builtin:openai');
+    _applyPreset(openAi);
+    final AiApiConfig next = _draftConfig();
+    await widget.controller.saveAiApiConfig(next);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lastTestMessage = null;
+      _lastTestSucceeded = null;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(widget.controller.copy.aiApiSaved)));
+  }
+
+  AiApiConfig _draftConfig() {
+    final current = widget.controller.aiApiConfig;
+    return current.copyWith(
+      name: _selectedPreset.isCustom
+          ? _nameController.text.trim()
+          : _selectedPreset.config.name,
+      baseUrl: _urlController.text.trim(),
+      apiKey: _keyController.text.trim(),
+      model: _selectedModel ?? '',
+      reasoningEffort: _selectedReasoningEffort,
+      responseSpeed: _selectedResponseSpeed,
+    );
+  }
+
+  void _applyPreset(_AiPresetOption? preset) {
+    if (preset == null) {
+      return;
+    }
+    final AiApiConfig config = preset.config;
+    setState(() {
+      _selectedPreset = preset;
+      // A new custom preset must start with an empty user-editable name. The
+      // internal template label is reserved for display only and would be
+      // rejected by the save validation as a built-in provider name.
+      _nameController.text = preset.isNewCustom
+          ? ''
+          : (preset.isCustom ? config.name : '');
+      _urlController.text = preset.isNewCustom ? '' : config.baseUrl;
+      _keyController.text = preset.isNewCustom ? '' : config.apiKey;
+      _selectedModel = preset.isNewCustom || config.model.trim().isEmpty
+          ? null
+          : config.model.trim();
+      _selectedReasoningEffort = config.reasoningEffort;
+      _selectedResponseSpeed = config.responseSpeed;
+    });
+    widget.controller.invalidateAiModels();
+  }
+
+  List<_AiPresetOption> _presetOptions(AppController controller) {
+    final AppCopy copy = controller.copy;
+    return <_AiPresetOption>[
+      _AiPresetOption(
+        id: 'builtin:openai',
+        label: copy.aiProviderPresetName(AiProviderPreset.openAi),
+        config: AiApiConfig.defaultOpenAi,
+      ),
+      _AiPresetOption(
+        id: 'builtin:deepseek',
+        label: copy.aiProviderPresetName(AiProviderPreset.deepSeek),
+        config: AiApiConfig.defaultDeepSeek,
+      ),
+      ...controller.customAiPresets
+          .where(
+            (AiApiConfig config) =>
+                !AiApiConfig.isBuiltInProviderName(config.name),
+          )
+          .map(
+            (AiApiConfig config) => _AiPresetOption(
+              id: 'custom:${config.normalizedName}',
+              label: config.name,
+              config: config,
+            ),
+          ),
+      _AiPresetOption(
+        id: 'custom:new',
+        label: copy.aiProviderPresetName(AiProviderPreset.custom),
+        config: AiApiConfig.defaultCustom,
+        isNewCustom: true,
+      ),
+    ];
+  }
+
+  _AiPresetOption _presetForConfig(
+    List<_AiPresetOption> options,
+    AiApiConfig config,
+  ) {
+    final String id = switch (config.providerPreset) {
+      AiProviderPreset.openAi => 'builtin:openai',
+      AiProviderPreset.deepSeek => 'builtin:deepseek',
+      AiProviderPreset.custom =>
+        config.normalizedName.isEmpty ||
+                AiApiConfig.isBuiltInProviderName(config.name)
+            ? 'custom:new'
+            : 'custom:${config.normalizedName}',
+    };
+    return _presetForId(options, id);
+  }
+
+  _AiPresetOption _presetForId(List<_AiPresetOption> options, String id) {
+    return options.firstWhere(
+      (_AiPresetOption option) => option.id == id,
+      orElse: () => options.last,
+    );
+  }
+
+  void _invalidateModels() {
+    if (_selectedModel != null) {
+      setState(() => _selectedModel = null);
+    }
+    widget.controller.invalidateAiModels();
+  }
+
+  void _handleAiFieldChanged(String _) {
+    _invalidateModels();
+  }
+
+  bool _isCrossOriginWebUrl(String value) {
+    if (!kIsWeb) {
+      return false;
+    }
+    final Uri? endpoint = Uri.tryParse(value.trim());
+    if (endpoint == null || !endpoint.hasScheme || endpoint.host.isEmpty) {
+      return false;
+    }
+    final Uri page = Uri.base;
+    return endpoint.scheme != page.scheme ||
+        endpoint.host != page.host ||
+        endpoint.port != page.port;
+  }
+
+  Future<List<AiModel>> _refreshModels(AiApiConfig config) async {
+    final List<AiModel> models = await widget.controller.refreshAiModels(
+      config: config.copyWith(model: ''),
+    );
+    if (!mounted) {
+      return models;
+    }
+    setState(() {
+      // Discovery never deletes an existing selection. The request policy
+      // blocks it if it is outside the allowed catalog.
+    });
+    return models;
+  }
+
+  Future<void> _reorderSources(int oldIndex, int newIndex) async {
+    if (_isTestingAssets) return;
+    if (newIndex > oldIndex) newIndex--;
+    final next = List<AssetSourceConfig>.from(
+      widget.controller.assetSourceConfigs,
+    );
+    next.insert(newIndex, next.removeAt(oldIndex));
+    setState(() => _isTestingAssets = true);
+    try {
+      final account = AccountScope.maybeOf(context);
+      if (account?.configuration != null) {
+        final config = account!.configuration!;
+        await account.saveConfiguration(
+          config.edited(
+            servers: next
+                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
+                .toList(),
+            folder: config.storageFolder,
+          ),
+        );
+        if (account.error != null) throw StateError('Connection pending');
+      } else {
+        await widget.controller.saveAssetSourceConfigs(next);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.localized(
+                '顺序保存失败，请重试',
+                'Could not save order. Retry',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingAssets = false);
+    }
+  }
+
+  Future<void> _testAssets() async {
+    if (_isTestingAssets) return;
+    setState(() => _isTestingAssets = true);
+    try {
+      await widget.controller.refreshAssetAccessStatus();
+      if (!mounted) return;
+      final available =
+          widget.controller.assetConnectivityStatus.state ==
+          ConnectivityState.success;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(widget.controller.assetConnectivityStatus.message),
+          backgroundColor: available
+              ? AppPalette.of(context).success
+              : AppPalette.of(context).error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isTestingAssets = false);
+    }
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.title, required this.icon});
+
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: palette.primaryContainer,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 18, color: palette.primary),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.palette,
+    required this.child,
+    this.padding = const EdgeInsets.all(14),
+  });
+
+  final AppPalette palette;
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(UiTokens.groupRadius),
+        border: Border.all(color: palette.outline),
+        boxShadow: [
+          BoxShadow(
+            color: palette.shadow.withValues(alpha: 0.035),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ThemeChoice extends StatelessWidget {
+  const _ThemeChoice({
+    super.key,
+    required this.palette,
+    required this.title,
+    required this.swatch,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppPalette palette;
+  final String title;
+  final Color swatch;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: title,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 90,
+          decoration: BoxDecoration(
+            color: selected
+                ? palette.primaryContainer.withValues(alpha: 0.45)
+                : palette.surfaceVariant,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? palette.primary : palette.outline,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: swatch,
+                  shape: BoxShape.circle,
+                ),
+                child: selected
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: 17,
+                        color: palette.onPrimary,
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiPresetOption {
+  const _AiPresetOption({
+    required this.id,
+    required this.label,
+    required this.config,
+    this.isNewCustom = false,
+  });
+
+  final String id;
+  final String label;
+  final AiApiConfig config;
+  final bool isNewCustom;
+
+  bool get isCustom =>
+      isNewCustom || config.providerPreset == AiProviderPreset.custom;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _AiPresetOption && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+class _ModelDiscoveryPanel extends StatelessWidget {
+  const _ModelDiscoveryPanel({
+    required this.controller,
+    required this.selectedModel,
+    required this.onChanged,
+  });
+
+  final AppController controller;
+  final String? selectedModel;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppCopy copy = controller.copy;
+    final AppPalette palette = AppPalette.of(context);
+    final List<AiModel> models = controller.availableAiModels;
+    final String? validSelection =
+        models.any((AiModel model) => model.id == selectedModel)
+        ? selectedModel
+        : null;
+
+    Widget status = const SizedBox.shrink();
+    switch (controller.aiModelLoadState) {
+      case AiModelLoadState.idle:
+        status = Text(
+          copy.aiApiModelsNotLoaded,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: palette.textPrimary.withValues(alpha: 0.68),
+          ),
+        );
+      case AiModelLoadState.loading:
+        status = Row(
+          children: <Widget>[
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text(copy.aiApiModelsLoading),
+          ],
+        );
+      case AiModelLoadState.success:
+        break;
+      case AiModelLoadState.empty:
+        status = Text(
+          copy.aiApiModelsEmpty,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: palette.warning),
+        );
+      case AiModelLoadState.failure:
+        status = Text(
+          '${copy.aiApiModelsFailed}: ${controller.aiModelLoadError ?? ''}',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: palette.error),
+        );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          copy.aiApiModelLabel,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: palette.textSecondary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (models.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            key: ValueKey<String?>(validSelection),
+            initialValue: validSelection,
+            isExpanded: true,
+            onChanged: onChanged,
+            items: models
+                .map(
+                  (AiModel model) => DropdownMenuItem<String>(
+                    value: model.id,
+                    child: Text(model.label, overflow: TextOverflow.ellipsis),
+                  ),
+                )
+                .toList(growable: false),
+            decoration: _settingsInputDecoration(
+              context,
+              hintText: copy.aiApiModelSelectHint,
+            ),
+          ),
+        ],
+        const SizedBox(height: 6),
+        if (selectedModel != null && !AiModelPolicy.allowsModel(selectedModel!))
+          Text(
+            copy.aiApiModelNotAllowed,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: palette.warning),
+          ),
+        status,
+      ],
+    );
+  }
+}
+
+class _ApiField extends StatelessWidget {
+  const _ApiField({
+    required this.label,
+    required this.controller,
+    this.keyboardType,
+    this.obscureText = false,
+    this.readOnly = false,
+    this.onChanged,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final TextInputType? keyboardType;
+  final bool obscureText;
+  final bool readOnly;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          obscureText: obscureText,
+          readOnly: readOnly,
+          onChanged: onChanged,
+          decoration: _settingsInputDecoration(context),
+        ),
+      ],
+    );
+  }
+}
+
+class _ApiDropdownField<T> extends StatelessWidget {
+  const _ApiDropdownField({
+    required this.label,
+    this.placeholder,
+    required this.value,
+    required this.values,
+    required this.itemLabel,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String? placeholder;
+  final T value;
+  final List<T> values;
+  final String Function(T value) itemLabel;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        InputDecorator(
+          decoration: _settingsInputDecoration(context),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              value: values.contains(value) ? value : null,
+              hint: Text(placeholder ?? label),
+              isExpanded: true,
+              onChanged: onChanged,
+              items: values
+                  .map(
+                    (item) => DropdownMenuItem<T>(
+                      value: item,
+                      child: Text(
+                        itemLabel(item),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+InputDecoration _settingsInputDecoration(
+  BuildContext context, {
+  String? hintText,
+}) {
+  final palette = AppPalette.of(context);
+  return InputDecoration(
+    hintText: hintText,
+    filled: true,
+    fillColor: palette.inputSurface,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: palette.outline),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: palette.outline),
+    ),
+  );
+}

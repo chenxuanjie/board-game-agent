@@ -1,0 +1,323 @@
+import 'package:flutter/material.dart';
+
+import '../../core/localization/app_copy.dart';
+import '../../core/theme/app_motion.dart';
+import 'desktop_responsive.dart';
+import 'theme.dart';
+import '../../core/theme/cinema_theme.dart';
+import '../../core/theme/app_palette.dart';
+import '../shared/cinema/cinema_surface.dart';
+
+class DesktopSidebar extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+  final bool compact;
+  final double? width;
+  final AppCopy copy;
+
+  const DesktopSidebar({
+    super.key,
+    required this.selectedIndex,
+    required this.onSelect,
+    required this.copy,
+    this.compact = false,
+    this.width,
+  });
+
+  static const _items = <({String asset, String zh, String en})>[
+    (asset: 'sidebar_home.png', zh: '首页', en: 'Home'),
+    (asset: 'sidebar_library.png', zh: '游戏库', en: 'Game Library'),
+    (asset: 'sidebar_ai.png', zh: 'AI助手', en: 'AI Assistant'),
+    (asset: 'sidebar_likes.png', zh: '我的喜欢', en: 'My Likes'),
+    (asset: 'sidebar_ranking.png', zh: '排行榜', en: 'Rankings'),
+    (asset: 'sidebar_settings.png', zh: '设置', en: 'Settings'),
+  ];
+  static const double _headerHeight = 152;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    final body = Container(
+      key: ValueKey<String>(
+        compact ? 'desktop-sidebar-rail' : 'desktop-sidebar-full',
+      ),
+      width:
+          width ??
+          (compact
+              ? metrics.px(DesktopResponsive.compactSidebarWidth)
+              : metrics.px(DesktopResponsive.fullSidebarWidth)),
+      height: double.infinity,
+      decoration: BoxDecoration(
+        color: isCinema(context)
+            ? Colors.transparent
+            : desktopColors(context).sidebar,
+        border: Border(right: BorderSide(color: desktopColors(context).line)),
+      ),
+      child: Stack(
+        children: [
+          if (!compact && !isCinema(context))
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AspectRatio(
+                aspectRatio: 940 / 1672,
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    // Blend the blank paper margin into the sidebar background.
+                    colors: [Colors.transparent, Colors.black, Colors.black],
+                    stops: [0, .12, 1],
+                  ).createShader(bounds),
+                  child: Image.asset(
+                    'assets/desktop/home/sidebar_castle.png',
+                    key: ValueKey<String>('desktop-sidebar-art'),
+                    width: double.infinity,
+                    fit: BoxFit.fitWidth,
+                    alignment: Alignment.bottomCenter,
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              metrics.px(compact ? 8 : 10),
+              metrics.px(24),
+              metrics.px(compact ? 8 : 10),
+              metrics.px(18),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: metrics.px(
+                      compact || copy.isChinese ? _headerHeight : 216,
+                    ),
+                  ),
+                  child: compact
+                      ? Align(
+                          alignment: Alignment.topCenter,
+                          child: Image.asset(
+                            'assets/desktop/home/logo.png',
+                            key: ValueKey<String>('desktop-sidebar-logo'),
+                            width: metrics.px(48),
+                            height: metrics.px(48),
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: EdgeInsets.only(left: metrics.px(21)),
+                              child: Image.asset(
+                                'assets/desktop/home/logo.png',
+                                key: ValueKey<String>('desktop-sidebar-logo'),
+                                width: metrics.px(77),
+                                height: metrics.px(72),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                left: metrics.px(22),
+                                top: metrics.px(5),
+                              ),
+                              child: Text(
+                                copy.localized('桌游助手', 'Board Game Agent'),
+                                style: TextStyle(
+                                  fontSize: metrics.font(
+                                    copy.isChinese ? 25 : 19,
+                                  ),
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: metrics.px(-0.5),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: metrics.px(16)),
+                          ],
+                        ),
+                ),
+                Stack(
+                  children: [
+                    AnimatedPositioned(
+                      key: ValueKey('desktop-navigation-indicator'),
+                      duration: AppMotion.duration(context, AppMotion.content),
+                      curve: AppMotion.curve,
+                      top: metrics.px(47.0 * selectedIndex),
+                      left: 0,
+                      right: 0,
+                      height: metrics.px(44),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(
+                            metrics.radius(11),
+                          ),
+                          color: isCinema(context)
+                              ? AppPalette.of(context).primary
+                              : null,
+                          gradient: isCinema(context)
+                              ? null
+                              : const LinearGradient(
+                                  colors: [
+                                    Color(0xFFFF5D45),
+                                    Color(0xFFFF9D58),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ),
+                    Column(
+                      children: [
+                        for (var i = 0; i < _items.length; i++)
+                          _NavTile(
+                            key: ValueKey<String>(
+                              'desktop-sidebar-item-${_items[i].asset}',
+                            ),
+                            asset: _items[i].asset,
+                            label: copy.localized(_items[i].zh, _items[i].en),
+                            selected: i == selectedIndex,
+                            compact: compact,
+                            onTap: () {
+                              // Reselecting the game library refreshes it too.
+                              if (i != selectedIndex || i == 1) onSelect(i);
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    return isCinema(context) ? CinemaSurface(radius: 0, child: body) : body;
+  }
+}
+
+class _NavTile extends StatefulWidget {
+  final String asset;
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  final bool compact;
+
+  const _NavTile({
+    super.key,
+    required this.asset,
+    required this.label,
+    required this.selected,
+    this.compact = false,
+    this.onTap,
+  });
+
+  @override
+  State<_NavTile> createState() => _NavTileState();
+}
+
+class _NavTileState extends State<_NavTile> {
+  bool hovering = false;
+  bool focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = DesktopMetricsScope.of(context);
+    final active = widget.selected;
+    final tile = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => hovering = true),
+      onExit: (_) => setState(() => hovering = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(metrics.radius(11)),
+        onFocusChange: (value) => setState(() => focused = value),
+        child: AnimatedContainer(
+          duration: AppMotion.duration(context),
+          curve: AppMotion.curve,
+          height: metrics.px(44),
+          margin: EdgeInsets.only(bottom: metrics.px(3)),
+          padding: EdgeInsets.symmetric(
+            horizontal: metrics.px(widget.compact ? 0 : 14),
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(metrics.radius(11)),
+            color: !active && hovering ? Color(0x0B9A5B38) : null,
+          ),
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(metrics.radius(11)),
+            border: Border.all(
+              color: focused
+                  ? (isCinema(context)
+                        ? AppPalette.of(context).focusRing
+                        : desktopColors(context).brown)
+                  : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: widget.compact
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
+            children: [
+              ColorFiltered(
+                colorFilter: isCinema(context)
+                    ? ColorFilter.mode(
+                        active
+                            ? AppPalette.of(context).onPrimary
+                            : AppPalette.of(context).textSecondary,
+                        BlendMode.srcIn,
+                      )
+                    : active
+                    ? ColorFilter.mode(Colors.white, BlendMode.srcIn)
+                    : ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                child: Image.asset(
+                  'assets/desktop/home/sidebar_icons/${widget.asset}',
+                  key: ValueKey<String>('desktop-sidebar-icon-${widget.asset}'),
+                  width: metrics.px(28),
+                  height: metrics.px(28),
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+              if (!widget.compact) ...[
+                SizedBox(width: metrics.px(10)),
+                Expanded(
+                  child: AnimatedDefaultTextStyle(
+                    duration: AppMotion.duration(context),
+                    curve: AppMotion.curve,
+                    style: DefaultTextStyle.of(context).style.copyWith(
+                      fontSize: metrics.font(17),
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: isCinema(context)
+                          ? (active
+                                ? AppPalette.of(context).onPrimary
+                                : AppPalette.of(context).textPrimary)
+                          : active
+                          ? Colors.white
+                          : Color(0xFF4B4038),
+                    ),
+                    child: Text(widget.label, maxLines: 2),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    final accessible = Semantics(
+      selected: active,
+      button: true,
+      label: widget.compact ? widget.label : null,
+      child: tile,
+    );
+    return widget.compact
+        ? Tooltip(message: widget.label, child: accessible)
+        : accessible;
+  }
+}

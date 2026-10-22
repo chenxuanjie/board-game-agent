@@ -42,17 +42,46 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.gradle/
+
+# Local Android release signing materials
+/android/key.properties
+/android/keystore/
 
 # Local environment / IDE metadata
 .metadata
+/android/local.properties
+
+# Local release and publishing artifacts
+/.env
+/release/
+/webdav.local.json
+/preview/
 
 # Device validation artifacts
 /emulator_*.png
+/emulator-*.png
 /samsung_*.png
 /samsung_*.apk
 
 # Temporary extracted rulebook text
 assets/games/**/docs/*.txt
 
+# Local game library payloads
+/assets/games/
+
+# Local scratch/cache files
+/tmp/
+
+# Local remnants of the archived service-based authentication branch.
+# Active native authentication has no server process or session database.
+/server/identity_web/
+
 # Optional local notes / logs
 /last-build.log
+# Codex conversation attachments are local input, not application source.
+/.codex-remote-attachments/
+# Local Flutter release materials
+/android/key.properties
+/android/keystore/
+/android/.kotlin/

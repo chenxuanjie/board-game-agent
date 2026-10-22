@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="padGrad" x1="22" y1="20" x2="104" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF8B58"/>
+      <stop offset="0.48" stop-color="#FF6C35"/>
+      <stop offset="1" stop-color="#FF5B2E"/>
+    </linearGradient>
+    <radialGradient id="padShineL" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(42 84) rotate(-30) scale(19 12)">
+      <stop offset="0" stop-color="#FFB498" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FFB498" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="padShineR" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(86 84) rotate(30) scale(19 12)">
+      <stop offset="0" stop-color="#FFB498" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFB498" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M64 14
+           C58 14 54 18 54 23V28.5
+           C40.5 31.5 28.8 42.4 24.8 57.5
+           L19.8 76.2
+           C15.8 91 24.2 104 36.8 104
+           C44.7 104 50.3 100.7 55 94.5
+           L57.4 91.4
+           C59.1 89.1 61.4 88 64 88
+           C66.6 88 68.9 89.1 70.6 91.4
+           L73 94.5
+           C77.7 100.7 83.3 104 91.2 104
+           C103.8 104 112.2 91 108.2 76.2
+           L103.2 57.5
+           C99.2 42.4 87.5 31.5 74 28.5V23
+           C74 18 70 14 64 14Z"
+        fill="url(#padGrad)"/>
+  <circle cx="64" cy="17.5" r="8.5" fill="url(#padGrad)"/>
+  <path d="M46 50.5
+           C49.7 50.5 52.1 52.8 53.2 57
+           C54.3 52.8 56.7 50.5 60.4 50.5
+           C56.7 50.5 54.3 48.2 53.2 44
+           C52.1 48.2 49.7 50.5 46 50.5Z"
+        fill="#FFF8F4"/>
+  <path d="M67.6 50.5
+           C71.3 50.5 73.7 52.8 74.8 57
+           C75.9 52.8 78.3 50.5 82 50.5
+           C78.3 50.5 75.9 48.2 74.8 44
+           C73.7 48.2 71.3 50.5 67.6 50.5Z"
+        fill="#FFF8F4"/>
+  <ellipse cx="43" cy="83" rx="15" ry="10" fill="url(#padShineL)"/>
+  <ellipse cx="85" cy="83" rx="15" ry="10" fill="url(#padShineR)"/>
+</svg>
