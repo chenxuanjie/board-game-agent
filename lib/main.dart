@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'core/platform/background_transfer_notifications.dart';
+import 'core/platform/native_window_surface.dart';
+import 'ui/shared/spatial/spatial_workspace.dart';
 
 import 'package:app_about/app_about.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +17,7 @@ import 'features/games/services/game_vote_service.dart';
 import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
+import 'features/library/services/same_origin_library_service.dart';
 import 'features/settings/services/board_game_update_settings.dart';
 import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
@@ -57,6 +61,7 @@ Future<void> main() async {
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
+    backgroundTransfers: createBackgroundTransferNotifications(),
     gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(),
@@ -67,12 +72,22 @@ Future<void> main() async {
       ),
     ),
     gameManifestService: GameManifestService(),
-    remoteAssetService: RemoteAssetService(
-      settingsProvider: () => updateSettingsController.saved,
-      accessAllowed: () => accountService.resourceCredentialsReady,
-      resourceSettingsProvider: (target) =>
-          accountService.settingsForResource(target),
-    ),
+    remoteAssetService: kIsWeb
+        ? SameOriginLibraryService(
+            accessAllowed: () => true,
+            accountScope: () =>
+                accountService.dataScopeReady && accountService.user != null
+                ? accountService.configuration!.accountScope(
+                    accountService.user!.id,
+                  )
+                : 'web_guest',
+          )
+        : RemoteAssetService(
+            settingsProvider: () => updateSettingsController.saved,
+            accessAllowed: () => accountService.resourceCredentialsReady,
+            resourceSettingsProvider: (target) =>
+                accountService.settingsForResource(target),
+          ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
@@ -103,7 +118,7 @@ Future<void> _configureWindowsWindow() async {
     titleBarStyle: TitleBarStyle.hidden,
     windowButtonVisibility: false,
   );
-  windowManager.waitUntilReadyToShow(options, () async {
+  await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();
     await windowManager.focus();
   });
@@ -211,138 +226,170 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
         final bool desktopLayout =
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) ||
             (kIsWeb &&
-                DesktopResponsive.supportsDesktopViewport(constraints.biggest));
-        return MaterialApp(
-          builder: (context, child) {
-            final accounts = widget.accountService;
-            if (accounts == null ||
-                accounts.dataScopeReady ||
-                (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
-              return ValueListenableBuilder<bool>(
-                valueListenable: _windowChrome.sidebarVisible,
-                child: child ?? const SizedBox.shrink(),
-                builder: (context, hasSidebar, child) => DesktopWindowFrame(
-                  sidebarVisible:
-                      desktopLayout &&
-                      _initializationComplete &&
-                      !_showAccountLoginAtRoot &&
-                      hasSidebar,
-                  child: child!,
-                ),
-              );
-            }
-            // Remove the prior account's UI from the tree while its writes drain.
-            return DesktopWindowFrame(
-              child: Scaffold(
-                body: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (accounts.error == null)
-                        const CircularProgressIndicator()
-                      else ...[
-                        const Text('账号数据切换未完成'),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: () => unawaited(accounts.restore()),
-                          child: const Text('重试'),
-                        ),
+                (widget.controller.colorScheme == ColorSchemeOption.cinema
+                    ? constraints.maxWidth >=
+                          DesktopResponsive.desktopWindowMinimumWidth
+                    : DesktopResponsive.supportsDesktopViewport(
+                        constraints.biggest,
+                      )));
+        return NativeWindowSurface(
+          enabled:
+              widget.controller.colorScheme == ColorSchemeOption.spatialCinema,
+          child: MaterialApp(
+            builder: (context, child) {
+              final accounts = widget.accountService;
+              if (accounts == null ||
+                  accounts.dataScopeReady ||
+                  (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
+                return ValueListenableBuilder<bool>(
+                  valueListenable: _windowChrome.sidebarVisible,
+                  child: child ?? const SizedBox.shrink(),
+                  builder: (context, hasSidebar, child) => DesktopWindowFrame(
+                    spatial:
+                        widget.controller.colorScheme ==
+                        ColorSchemeOption.spatialCinema,
+                    sidebarVisible:
+                        desktopLayout &&
+                        _initializationComplete &&
+                        !_showAccountLoginAtRoot &&
+                        hasSidebar &&
+                        widget.controller.colorScheme !=
+                            ColorSchemeOption.spatialCinema,
+                    child: child!,
+                  ),
+                );
+              }
+              // Remove the prior account's UI from the tree while its writes drain.
+              return DesktopWindowFrame(
+                spatial:
+                    widget.controller.colorScheme ==
+                    ColorSchemeOption.spatialCinema,
+                child: Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (accounts.error == null)
+                          const CircularProgressIndicator()
+                        else ...[
+                          const Text('账号数据切换未完成'),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: () => unawaited(accounts.restore()),
+                            child: const Text('重试'),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
+              );
+            },
+            routes: {
+              GameRankingScreen.routeName: (context) => desktopLayout
+                  ? DesktopWorkspace(
+                      controller: widget.controller,
+                      webDavSettingsController: widget.updateSettingsController,
+                      transferService: _transferService,
+                      initialPage: 'rankings',
+                      onOpenAbout: _openAbout,
+                      onCheckUpdates: () => _openAbout(checkOnOpen: true),
+                    )
+                  : GameRankingScreen(
+                      controller: widget.controller,
+                      onOpenGame: (game) {
+                        unawaited(widget.controller.recordRecentlyViewed(game));
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => GameDetailScreen(
+                              controller: widget.controller,
+                              game: game,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+              '/settings/ai': (_) => MobileSettingsScreen(
+                controller: widget.controller,
+                transferService: _transferService,
+                focusAiSettings: true,
+                onOpenAbout: _openAbout,
               ),
-            );
-          },
-          routes: {
-            GameRankingScreen.routeName: (context) => desktopLayout
-                ? DesktopWorkspace(
+            },
+            navigatorKey: _navigatorKey,
+            navigatorObservers: [_windowChrome],
+            title: widget.controller.copy.appTitle,
+            debugShowCheckedModeBanner: false,
+            locale: widget.controller.language == AppLanguage.en
+                ? const Locale('en')
+                : const Locale.fromSubtags(
+                    languageCode: 'zh',
+                    scriptCode: 'Hans',
+                  ),
+            supportedLocales: const <Locale>[
+              Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+              Locale('en'),
+            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            theme: desktopLayout
+                ? buildDesktopTheme(
+                    activePalette: widget.controller.palette,
+                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
+                  )
+                : AppTheme.buildTheme(
+                    widget.controller.palette,
+                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
+                  ),
+            home: FutureBuilder<void>(
+              future: _initialization,
+              builder: (context, snapshot) {
+                if (!_initializationComplete &&
+                    snapshot.connectionState != ConnectionState.done) {
+                  return const _StartupScreen();
+                }
+
+                if (snapshot.hasError) {
+                  return _StartupErrorScreen(
+                    onRetry: () {
+                      setState(() {
+                        _initialization = _initialize();
+                      });
+                    },
+                    message: widget.controller.copy.startupDataUnavailable,
+                  );
+                }
+
+                _scheduleStartupUpdateCheck(context);
+                if (_showAccountLoginAtRoot) {
+                  return AccountScreen(onBack: _returnFromAccountLogin);
+                }
+                if (widget.controller.colorScheme ==
+                    ColorSchemeOption.spatialCinema) {
+                  return SpatialWorkspace(
+                    key: ValueKey(widget.accountService?.nicknameKey),
+                    controller: widget.controller,
+                    transferService: _transferService,
+                    onOpenAbout: _openAbout,
+                  );
+                }
+                if (desktopLayout) {
+                  return DesktopWorkspace(
+                    key: ValueKey(widget.accountService?.nicknameKey),
                     controller: widget.controller,
                     webDavSettingsController: widget.updateSettingsController,
                     transferService: _transferService,
-                    initialPage: 'rankings',
                     onOpenAbout: _openAbout,
                     onCheckUpdates: () => _openAbout(checkOnOpen: true),
-                  )
-                : GameRankingScreen(
-                    controller: widget.controller,
-                    onOpenGame: (game) {
-                      unawaited(widget.controller.recordRecentlyViewed(game));
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => GameDetailScreen(
-                            controller: widget.controller,
-                            game: game,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-            '/settings/ai': (_) => MobileSettingsScreen(
-              controller: widget.controller,
-              transferService: _transferService,
-              focusAiSettings: true,
-              onOpenAbout: _openAbout,
-            ),
-          },
-          navigatorKey: _navigatorKey,
-          navigatorObservers: [_windowChrome],
-          title: widget.controller.copy.appTitle,
-          debugShowCheckedModeBanner: false,
-          locale: widget.controller.language == AppLanguage.en
-              ? const Locale('en')
-              : const Locale.fromSubtags(
-                  languageCode: 'zh',
-                  scriptCode: 'Hans',
-                ),
-          supportedLocales: const <Locale>[
-            Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
-            Locale('en'),
-          ],
-          localizationsDelegates: GlobalMaterialLocalizations.delegates,
-          theme: desktopLayout
-              ? buildDesktopTheme()
-              : AppTheme.buildTheme(widget.controller.palette),
-          home: FutureBuilder<void>(
-            future: _initialization,
-            builder: (context, snapshot) {
-              if (!_initializationComplete &&
-                  snapshot.connectionState != ConnectionState.done) {
-                return const _StartupScreen();
-              }
-
-              if (snapshot.hasError) {
-                return _StartupErrorScreen(
-                  onRetry: () {
-                    setState(() {
-                      _initialization = _initialize();
-                    });
-                  },
-                  message: widget.controller.copy.startupDataUnavailable,
-                );
-              }
-
-              _scheduleStartupUpdateCheck(context);
-              if (_showAccountLoginAtRoot) {
-                return AccountScreen(onBack: _returnFromAccountLogin);
-              }
-              if (desktopLayout) {
-                return DesktopWorkspace(
+                  );
+                }
+                return HomeScreen(
                   key: ValueKey(widget.accountService?.nicknameKey),
                   controller: widget.controller,
-                  webDavSettingsController: widget.updateSettingsController,
                   transferService: _transferService,
                   onOpenAbout: _openAbout,
-                  onCheckUpdates: () => _openAbout(checkOnOpen: true),
                 );
-              }
-              return HomeScreen(
-                key: ValueKey(widget.accountService?.nicknameKey),
-                controller: widget.controller,
-                transferService: _transferService,
-                onOpenAbout: _openAbout,
-              );
-            },
+              },
+            ),
           ),
         );
       },
@@ -367,7 +414,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   void _scheduleStartupUpdateCheck(BuildContext context) {
-    if (_startupUpdateCheckScheduled || !widget.controller.checkForUpdates) {
+    // Web is upgraded by replacing/rebuilding the Docker deployment. Persisted
+    // native update preferences must never trigger an installer check here.
+    if (kIsWeb ||
+        _startupUpdateCheckScheduled ||
+        !widget.controller.checkForUpdates) {
       return;
     }
     _startupUpdateCheckScheduled = true;
@@ -378,6 +429,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   Future<void> _checkStartupUpdate(BuildContext context) async {
+    if (kIsWeb) return;
     final release = widget.controller.suspendLibraryUpdatePrompts();
     try {
       await checkForUpdateOnStartup(
@@ -398,14 +450,14 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       await navigator.push<void>(
         MaterialPageRoute<void>(
           builder: (_) => AppAboutPage(
-            checkOnOpen: checkOnOpen,
+            checkOnOpen: !kIsWeb && checkOnOpen,
             config: AppAboutConfig(
               appName: '桌游导师',
               subtitle: '桌游入口与统一 AI 助手',
               appIcon: const _BoardGameAppMark(),
               fallbackVersion: '版本不可用',
               fallbackBuild: '—',
-              showUpdate: boardGameUpdateTarget != null,
+              showUpdate: !kIsWeb && boardGameUpdateTarget != null,
               updateCheckSubtitle:
                   boardGameUpdateTarget == AppUpdateTarget.windows
                   ? '检查 Windows 安装包更新'

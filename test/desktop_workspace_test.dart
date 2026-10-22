@@ -13,6 +13,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
+import 'package:board_game_agent/ui/mobile/settings_screen.dart';
+import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
+import 'package:board_game_agent/core/theme/cinema_theme.dart';
+import 'package:board_game_agent/core/theme/palette_registry.dart';
+import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_workspace.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_material.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_primitives.dart';
+import 'package:board_game_agent/ui/shared/spatial/spatial_recommendations.dart';
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
@@ -54,8 +63,10 @@ import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
 import 'package:board_game_agent/ui/desktop/settings_pane.dart';
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
+import 'package:board_game_agent/ui/desktop/desktop_window_frame.dart';
 import 'package:board_game_agent/ui/shared/game_cover_motion.dart';
 import 'package:board_game_agent/ui/shared/favorite_feedback.dart';
+import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
 
 part 'desktop/desktop_settings_test_cases.dart';
@@ -65,6 +76,8 @@ part 'desktop/desktop_home_test_cases.dart';
 part 'desktop/desktop_typography_test_cases.dart';
 part 'desktop/desktop_assistant_design_test_cases.dart';
 part 'desktop/desktop_national_day_test_cases.dart';
+part 'desktop/desktop_cinema_test_cases.dart';
+part 'desktop/desktop_spatial_test_cases.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -123,6 +136,8 @@ void main() {
   _registerDesktopTypographyTests(workspaceContext);
   _registerAssistantDesignTests(workspaceContext);
   _registerDesktopNationalDayTests(workspaceContext);
+  _registerCinemaTests(workspaceContext);
+  _registerSpatialTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {
     controller.openGlobalAssistant();
@@ -361,6 +376,7 @@ Future<AppController> _createController({
   PreferencesService? preferencesService,
   TtsService? ttsService,
   AiService? aiService,
+  RemoteAssetService? remoteAssetService,
 }) async {
   if (preferencesService == null) {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -370,7 +386,7 @@ Future<AppController> _createController({
     aiService: aiService ?? _FakeAiService(),
     conversationStore: _WorkspaceConversationStore(),
     gameManifestService: GameManifestService(),
-    remoteAssetService: _NoNetworkAssetService(),
+    remoteAssetService: remoteAssetService ?? _NoNetworkAssetService(),
     speechService: SpeechService(),
     ttsService: ttsService ?? TtsService(),
   );
@@ -419,6 +435,9 @@ class _InMemoryPreferencesService extends PreferencesService {
   ColorSchemeOption? _colorScheme;
   bool? _checkForUpdates;
   Map<String, DateTime> _favoriteGames = <String, DateTime>{};
+  Completer<void>? favoriteWriteGate;
+  bool failFavoriteWrite = false;
+  int favoriteWrites = 0;
   List<DesktopLibraryResource> _desktopLibraryResources =
       <DesktopLibraryResource>[];
   List<SearchHistoryRecord> _searchHistory = <SearchHistoryRecord>[];
@@ -465,6 +484,9 @@ class _InMemoryPreferencesService extends PreferencesService {
 
   @override
   Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
+    ++favoriteWrites;
+    await favoriteWriteGate?.future;
+    if (failFavoriteWrite) throw StateError('本机存储不可用');
     _favoriteGames = <String, DateTime>{
       for (final record in records) record.gameSlug: record.createdAt,
     };

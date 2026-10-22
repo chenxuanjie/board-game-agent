@@ -2,6 +2,7 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
+import '../shared/cinema/cinema_surface.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -214,59 +215,44 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       const SizedBox(height: 10),
                       _SectionCard(
                         palette: palette,
-                        child: Row(
-                          children: <Widget>[
-                            Expanded(
-                              child: _ThemeChoice(
-                                palette: palette,
-                                title: copy.colorSchemeName(
+                        child: LayoutBuilder(
+                          builder: (context, box) {
+                            final columns = box.maxWidth < 500 ? 2 : 3;
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final scheme in const [
                                   ColorSchemeOption.warmwoodStudy,
-                                ),
-                                swatch: PaletteRegistry.warmwoodStudy.primary,
-                                selected:
-                                    controller.colorScheme ==
-                                    ColorSchemeOption.warmwoodStudy,
-                                onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.warmwoodStudy,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _ThemeChoice(
-                                palette: palette,
-                                title: copy.colorSchemeName(
-                                  ColorSchemeOption.classic,
-                                ),
-                                swatch: PaletteRegistry.classic.primary,
-                                selected:
-                                    controller.colorScheme ==
-                                    ColorSchemeOption.classic,
-                                onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.classic,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _ThemeChoice(
-                                palette: palette,
-                                title: copy.colorSchemeName(
-                                  ColorSchemeOption.sunsetCoast,
-                                ),
-                                swatch: PaletteRegistry.sunsetCoast.primary,
-                                selected:
-                                    controller.colorScheme ==
-                                    ColorSchemeOption.sunsetCoast,
-                                onTap: () => controller.setColorScheme(
-                                  ColorSchemeOption.sunsetCoast,
-                                ),
-                              ),
-                            ),
-                          ],
+                                  ColorSchemeOption.cinema,
+                                  ColorSchemeOption.spatialCinema,
+                                ])
+                                  SizedBox(
+                                    width:
+                                        (box.maxWidth - (columns - 1) * 8) /
+                                        columns,
+                                    child: _ThemeChoice(
+                                      key: ValueKey(
+                                        'mobile-settings-theme-${scheme.code}',
+                                      ),
+                                      palette: palette,
+                                      title: copy.colorSchemeName(scheme),
+                                      swatch: PaletteRegistry.of(
+                                        scheme,
+                                      ).primary,
+                                      selected:
+                                          controller.colorScheme == scheme,
+                                      onTap: () =>
+                                          controller.setColorScheme(scheme),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      if (controller.colorScheme == ColorSchemeOption.cinema)
+                        CinemaGlassSetting(controller: controller),
                       if (AccountScope.maybeOf(context) == null)
                         _SectionCard(
                           palette: palette,
@@ -592,23 +578,25 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         child: LibraryCheckActions(controller: controller),
                       ),
                       const SizedBox(height: 24),
-                      _SectionTitle(
-                        title: copy.appUpdateTitle,
-                        icon: Icons.system_update_outlined,
-                      ),
-                      const SizedBox(height: 10),
-                      _SectionCard(
-                        palette: palette,
-                        child: SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: controller.checkForUpdates,
-                          onChanged: controller.setCheckForUpdates,
-                          title: Text(copy.checkForUpdatesTitle),
-                          subtitle: Text(copy.checkForUpdatesHint),
-                          secondary: const Icon(Icons.system_update_outlined),
+                      if (!kIsWeb) ...[
+                        _SectionTitle(
+                          title: copy.appUpdateTitle,
+                          icon: Icons.system_update_outlined,
                         ),
-                      ),
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 10),
+                        _SectionCard(
+                          palette: palette,
+                          child: SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: controller.checkForUpdates,
+                            onChanged: controller.setCheckForUpdates,
+                            title: Text(copy.checkForUpdatesTitle),
+                            subtitle: Text(copy.checkForUpdatesHint),
+                            secondary: const Icon(Icons.system_update_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _SectionCard(
                         palette: palette,
                         padding: EdgeInsets.zero,
@@ -1017,6 +1005,7 @@ class _SectionCard extends StatelessWidget {
 
 class _ThemeChoice extends StatelessWidget {
   const _ThemeChoice({
+    super.key,
     required this.palette,
     required this.title,
     required this.swatch,

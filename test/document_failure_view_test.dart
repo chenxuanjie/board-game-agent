@@ -16,7 +16,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.buildTheme(PaletteRegistry.classic),
+        theme: AppTheme.buildTheme(PaletteRegistry.cinema),
         home: Scaffold(
           body: DocumentFailureView(
             copy: AppCopy(AppLanguage.zhHans),

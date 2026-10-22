@@ -5,6 +5,7 @@ import 'package:window_manager/window_manager.dart';
 import 'desktop_responsive.dart';
 import 'window_controls.dart';
 import 'theme.dart';
+import '../shared/spatial/spatial_material.dart';
 
 /// Page routes control the chrome background; popup routes keep their backdrop.
 class DesktopWindowChromeObserver extends NavigatorObserver {
@@ -63,14 +64,78 @@ class DesktopWindowFrame extends StatelessWidget {
     super.key,
     required this.child,
     this.sidebarVisible = false,
+    this.spatial = false,
   });
 
   final Widget child;
   final bool sidebarVisible;
+  final bool spatial;
 
   @override
   Widget build(BuildContext context) {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return child;
+    if (spatial) {
+      return Overlay.wrap(
+        child: LayoutBuilder(
+          builder: (context, constraints) => DragToResizeArea(
+            resizeEdgeSize: 6,
+            child: DecoratedBox(
+              key: const ValueKey('spatial-desktop-surface'),
+              decoration: spatialDesktopSurface,
+              child: Column(
+                children: [
+                  SizedBox(
+                    key: const ValueKey('spatial-window-titlebar'),
+                    height: 48,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                key: const ValueKey('desktop-window-drag-area'),
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: (_) =>
+                                    windowManager.startDragging(),
+                                onDoubleTap: () async {
+                                  if (await windowManager.isMaximized()) {
+                                    await windowManager.unmaximize();
+                                  } else {
+                                    await windowManager.maximize();
+                                  }
+                                },
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                            const WindowControls(spatial: true),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        size: Size(
+                          constraints.maxWidth,
+                          constraints.maxHeight - 48,
+                        ),
+                      ),
+                      child: child,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Overlay.wrap(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -97,16 +162,16 @@ class DesktopWindowFrame extends StatelessWidget {
                   metrics: metrics,
                   child: Material(
                     color: sidebarVisible
-                        ? DesktopColors.background
+                        ? desktopColors(context).background
                         : Theme.of(context).scaffoldBackgroundColor,
                     child: SizedBox(
-                      key: const ValueKey('desktop-window-titlebar'),
+                      key: ValueKey('desktop-window-titlebar'),
                       height: height,
                       child: Row(
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              key: const ValueKey('desktop-window-drag-area'),
+                              key: ValueKey('desktop-window-drag-area'),
                               behavior: HitTestBehavior.opaque,
                               onPanStart: (_) => windowManager.startDragging(),
                               onDoubleTap: () async {
@@ -125,15 +190,17 @@ class DesktopWindowFrame extends StatelessWidget {
                                       top: 0,
                                       bottom: 0,
                                       width: sidebarWidth,
-                                      child: const DecoratedBox(
+                                      child: DecoratedBox(
                                         key: ValueKey(
                                           'desktop-window-sidebar-background',
                                         ),
                                         decoration: BoxDecoration(
-                                          color: DesktopColors.sidebar,
+                                          color: desktopColors(context).sidebar,
                                           border: Border(
                                             right: BorderSide(
-                                              color: DesktopColors.line,
+                                              color: desktopColors(
+                                                context,
+                                              ).line,
                                             ),
                                           ),
                                         ),
@@ -143,7 +210,7 @@ class DesktopWindowFrame extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const WindowControls(),
+                          WindowControls(),
                         ],
                       ),
                     ),

@@ -74,10 +74,10 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
           return Container(
             constraints: BoxConstraints(maxHeight: maxHeight),
             decoration: BoxDecoration(
-              color: DesktopColors.card,
+              color: desktopColors(context).card,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: DesktopColors.line),
-              boxShadow: const <BoxShadow>[
+              border: Border.all(color: desktopColors(context).line),
+              boxShadow: <BoxShadow>[
                 BoxShadow(
                   color: Color(0x16000000),
                   blurRadius: 18,
@@ -88,7 +88,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                padding: EdgeInsets.fromLTRB(16, 14, 16, 12),
                 child: query.trim().isEmpty
                     ? _buildDiscoveryPanel(context)
                     : _buildResultsPanel(_results),
@@ -108,18 +108,18 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
         title: '最近搜索',
         trailing: TextButton.icon(
           onPressed: onClearHistory,
-          icon: const Icon(Icons.delete_outline_rounded, size: 16),
-          label: const Text('清空记录'),
+          icon: Icon(Icons.delete_outline_rounded, size: 16),
+          label: Text('清空记录'),
           style: _linkStyle(context),
         ),
       ),
-      const SizedBox(height: 8),
+      SizedBox(height: 8),
       if (recentQueries.isEmpty)
-        const Align(
+        Align(
           alignment: Alignment.centerLeft,
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('暂无最近搜索', style: _metaStyle),
+            child: Text('暂无最近搜索', style: _metaStyle(context)),
           ),
         )
       else
@@ -136,13 +136,13 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
               ),
           ],
         ),
-      const SizedBox(height: 15),
-      const _SectionHeader(
+      SizedBox(height: 15),
+      _SectionHeader(
         icon: Icons.tune_rounded,
         title: '快速筛选',
-        iconColor: DesktopColors.orange,
+        iconColor: desktopColors(context).orange,
       ),
-      const SizedBox(height: 8),
+      SizedBox(height: 8),
       Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -151,22 +151,22 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
             _QueryChip(label: value, onPressed: () => onSelectQuery(value)),
         ],
       ),
-      const SizedBox(height: 15),
+      SizedBox(height: 15),
       _SectionHeader(
         icon: Icons.auto_awesome_rounded,
         title: '桌游推荐',
         trailing: TextButton.icon(
           onPressed: onViewAll,
-          icon: const Icon(Icons.chevron_right_rounded, size: 18),
-          label: const Text('查看游戏库'),
+          icon: Icon(Icons.chevron_right_rounded, size: 18),
+          label: Text('查看游戏库'),
           style: _linkStyle(context),
         ),
       ),
-      const SizedBox(height: 8),
+      SizedBox(height: 8),
       if (games.isEmpty)
-        const Align(
+        Align(
           alignment: Alignment.centerLeft,
-          child: Text('游戏资料尚未加载', style: _metaStyle),
+          child: Text('游戏资料尚未加载', style: _metaStyle(context)),
         )
       else
         LayoutBuilder(
@@ -194,8 +194,8 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
             );
           },
         ),
-      const SizedBox(height: 10),
-      const Divider(height: 1),
+      SizedBox(height: 10),
+      Divider(height: 1),
       for (final String suggestion in _suggestions)
         _SuggestionRow(
           label: suggestion,
@@ -211,7 +211,7 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
         icon: Icons.search_rounded,
         title: '搜索结果（${results.length}）',
       ),
-      const SizedBox(height: 8),
+      SizedBox(height: 8),
       if (results.isEmpty)
         _EmptyResult(query: query)
       else ...<Widget>[
@@ -312,22 +312,22 @@ class DesktopHomeSearchOverlay extends StatelessWidget {
   }
 }
 
-const TextStyle _metaStyle = TextStyle(
+TextStyle _metaStyle(BuildContext context) => TextStyle(
   fontSize: 12,
-  color: DesktopColors.secondaryText,
+  color: desktopColors(context).secondaryText,
   height: 1.45,
 );
 
 ButtonStyle _linkStyle(BuildContext context) => ButtonStyle(
   visualDensity: VisualDensity.compact,
-  padding: const WidgetStatePropertyAll<EdgeInsets>(
+  padding: WidgetStatePropertyAll<EdgeInsets>(
     EdgeInsets.symmetric(horizontal: 6),
   ),
   textStyle: WidgetStatePropertyAll<TextStyle>(
     Theme.of(context).textTheme.labelLarge!.copyWith(fontSize: 12),
   ),
-  foregroundColor: const WidgetStatePropertyAll<Color>(
-    DesktopColors.secondaryText,
+  foregroundColor: WidgetStatePropertyAll<Color>(
+    desktopColors(context).secondaryText,
   ),
 );
 
@@ -335,29 +335,33 @@ class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.icon,
     required this.title,
-    this.iconColor = DesktopColors.secondaryText,
+    this.iconColor,
     this.trailing,
   });
 
   final IconData icon;
   final String title;
-  final Color iconColor;
+  final Color? iconColor;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) => Row(
     children: <Widget>[
-      Icon(icon, size: 19, color: iconColor),
-      const SizedBox(width: 7),
+      Icon(
+        icon,
+        size: 19,
+        color: iconColor ?? desktopColors(context).secondaryText,
+      ),
+      SizedBox(width: 7),
       Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w700,
-          color: DesktopColors.text,
+          color: desktopColors(context).text,
         ),
       ),
-      const Spacer(),
+      Spacer(),
       ?trailing,
     ],
   );
@@ -378,18 +382,18 @@ class _RecentQueryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InputChip(
-    avatar: Icon(icon, size: 14, color: DesktopColors.secondaryText),
+    avatar: Icon(icon, size: 14, color: desktopColors(context).secondaryText),
     label: Text(label),
     onPressed: onPressed,
     onDeleted: onDeleted,
-    deleteIcon: const Icon(Icons.close_rounded, size: 14),
+    deleteIcon: Icon(Icons.close_rounded, size: 14),
     deleteButtonTooltipMessage: '删除最近搜索',
     labelStyle: Theme.of(
       context,
-    ).textTheme.bodySmall?.copyWith(color: DesktopColors.text),
+    ).textTheme.bodySmall?.copyWith(color: desktopColors(context).text),
     visualDensity: VisualDensity.compact,
     side: BorderSide.none,
-    backgroundColor: DesktopColors.soft,
+    backgroundColor: desktopColors(context).soft,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
   );
 }
@@ -406,10 +410,10 @@ class _QueryChip extends StatelessWidget {
     onPressed: onPressed,
     labelStyle: Theme.of(
       context,
-    ).textTheme.bodySmall?.copyWith(color: DesktopColors.text),
+    ).textTheme.bodySmall?.copyWith(color: desktopColors(context).text),
     visualDensity: VisualDensity.compact,
     side: BorderSide.none,
-    backgroundColor: DesktopColors.soft,
+    backgroundColor: desktopColors(context).soft,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
   );
 }
@@ -430,7 +434,7 @@ class _RecommendationCard extends StatelessWidget {
     onTap: onTap,
     borderRadius: BorderRadius.circular(8),
     child: Padding(
-      padding: const EdgeInsets.only(bottom: 2),
+      padding: EdgeInsets.only(bottom: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -441,24 +445,24 @@ class _RecommendationCard extends StatelessWidget {
               child: DesktopContentGame(game, controller).cover(),
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             game.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: DesktopColors.text,
+              color: desktopColors(context).text,
             ),
           ),
           Text(
             game.subtitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
-              color: DesktopColors.secondaryText,
+              color: desktopColors(context).secondaryText,
             ),
           ),
         ],
@@ -476,18 +480,18 @@ class _SuggestionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListTile(
     dense: true,
-    visualDensity: const VisualDensity(vertical: -3),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 2),
-    leading: const Icon(
+    visualDensity: VisualDensity(vertical: -3),
+    contentPadding: EdgeInsets.symmetric(horizontal: 2),
+    leading: Icon(
       Icons.search_rounded,
       size: 17,
-      color: DesktopColors.secondaryText,
+      color: desktopColors(context).secondaryText,
     ),
-    title: Text(label, style: const TextStyle(fontSize: 13)),
-    trailing: const Icon(
+    title: Text(label, style: TextStyle(fontSize: 13)),
+    trailing: Icon(
       Icons.chevron_right_rounded,
       size: 18,
-      color: DesktopColors.secondaryText,
+      color: desktopColors(context).secondaryText,
     ),
     onTap: onTap,
   );
@@ -510,7 +514,7 @@ class _SearchResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
+    padding: EdgeInsets.symmetric(vertical: 3),
     child: Material(
       color: Colors.transparent,
       child: InkWell(
@@ -518,7 +522,7 @@ class _SearchResultRow extends StatelessWidget {
         onTap: onOpen,
         borderRadius: BorderRadius.circular(9),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: Row(
             children: <Widget>[
               ClipRRect(
@@ -529,7 +533,7 @@ class _SearchResultRow extends StatelessWidget {
                   child: DesktopContentGame(game, controller).cover(),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,20 +542,20 @@ class _SearchResultRow extends StatelessWidget {
                       game.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: DesktopColors.text,
+                        color: desktopColors(context).text,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     if (game.subtitle.trim().isNotEmpty &&
                         game.subtitle.trim() != game.title.trim())
                       Text(
                         game.subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _metaStyle,
+                        style: _metaStyle(context),
                       ),
                     Wrap(
                       spacing: 10,
@@ -560,12 +564,12 @@ class _SearchResultRow extends StatelessWidget {
                         if (game.playerCount.trim().isNotEmpty)
                           Text(
                             GameMetadataText.players(game.playerCount),
-                            style: _metaStyle,
+                            style: _metaStyle(context),
                           ),
                         if (game.playTime.trim().isNotEmpty)
                           Text(
                             GameMetadataText.playTime(game.playTime),
-                            style: _metaStyle,
+                            style: _metaStyle(context),
                           ),
                       ],
                     ),
@@ -574,24 +578,20 @@ class _SearchResultRow extends StatelessWidget {
               ),
               if (game.score.trim().isNotEmpty &&
                   game.score != '—') ...<Widget>[
-                const Icon(
-                  Icons.star_rounded,
-                  size: 16,
-                  color: Color(0xFFFFA400),
-                ),
-                const SizedBox(width: 2),
-                Text(game.score, style: const TextStyle(fontSize: 12)),
+                Icon(Icons.star_rounded, size: 16, color: Color(0xFFFFA400)),
+                SizedBox(width: 2),
+                Text(game.score, style: TextStyle(fontSize: 12)),
               ],
               IconButton(
                 tooltip: '查看规则资料',
                 onPressed: onOpenRules,
-                icon: const Icon(Icons.menu_book_outlined, size: 18),
+                icon: Icon(Icons.menu_book_outlined, size: 18),
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
                 tooltip: '询问 AI',
                 onPressed: onAskAi,
-                icon: const Icon(Icons.smart_toy_outlined, size: 18),
+                icon: Icon(Icons.smart_toy_outlined, size: 18),
                 visualDensity: VisualDensity.compact,
               ),
             ],
@@ -609,21 +609,18 @@ class _EmptyResult extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 22),
+    padding: EdgeInsets.symmetric(vertical: 22),
     child: Column(
       children: <Widget>[
-        const Icon(
+        Icon(
           Icons.search_off_rounded,
           size: 30,
-          color: DesktopColors.secondaryText,
+          color: desktopColors(context).secondaryText,
         ),
-        const SizedBox(height: 7),
-        Text(
-          '没有找到“$query”',
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 3),
-        const Text('试试桌游名称、机制、作者或玩法关键词。', style: _metaStyle),
+        SizedBox(height: 7),
+        Text('没有找到“$query”', style: TextStyle(fontWeight: FontWeight.w700)),
+        SizedBox(height: 3),
+        Text('试试桌游名称、机制、作者或玩法关键词。', style: _metaStyle(context)),
       ],
     ),
   );

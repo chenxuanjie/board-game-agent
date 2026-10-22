@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:board_game_agent/core/platform/background_transfer_notifications.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -31,6 +32,24 @@ import 'package:board_game_agent/core/theme/palette_registry.dart';
 class _NoAi extends Fake implements AiService {}
 
 class _Remote extends RemoteAssetService {
+  bool sameOrigin = false;
+  bool failReload = false;
+  int accountCacheClears = 0;
+  final publishedChecks = <bool>[];
+  @override
+  bool get usesSameOriginLibrary => sameOrigin;
+  @override
+  void clearAccountCache() => accountCacheClears++;
+  @override
+  Future<bool> refreshPublishedLibrary({
+    bool complete = false,
+    String? checkedCatalog,
+  }) async {
+    publishedChecks.add(complete);
+    cached.addAll(texts);
+    return true;
+  }
+
   bool available = true;
   int accessReads = 0;
   bool allowed = true, deliverCatalog = false;
@@ -157,14 +176,21 @@ class _Manifests extends GameManifestService {
     required RemoteAssetService remoteAssetService,
     List<AssetSourceConfig> sources = const [],
     bool preferRemote = false,
-  }) async => [
-    GameManifest.fromJson(
-      jsonDecode(remote.cached['assets/games/cabo/game.json'] ?? game),
-    ),
-  ];
+  }) async {
+    if (remote.failReload) throw StateError('Fixture reload failed');
+    return [
+      GameManifest.fromJson(
+        jsonDecode(remote.cached['assets/games/cabo/game.json'] ?? game),
+      ),
+    ];
+  }
 }
 
-Future<(AppController, _Remote)> _fixture({bool initialCheck = true}) async {
+Future<(AppController, _Remote)> _fixture({
+  bool initialCheck = true,
+  BackgroundTransferNotifications notices =
+      const NoBackgroundTransferNotifications(),
+}) async {
   SharedPreferences.setMockInitialValues({});
   final remote = _Remote();
   final game = await rootBundle.loadString(
@@ -178,6 +204,7 @@ Future<(AppController, _Remote)> _fixture({bool initialCheck = true}) async {
   remote.texts['assets/games/cabo/game.json'] = jsonEncode(next);
   remote.changed.add('assets/games/cabo/game.json');
   final c = AppController(
+    backgroundTransfers: notices,
     preferencesService: PreferencesService(),
     aiService: _NoAi(),
     gameManifestService: _Manifests(remote, game),
@@ -190,8 +217,122 @@ Future<(AppController, _Remote)> _fixture({bool initialCheck = true}) async {
   return (c, remote);
 }
 
+class _LibraryNotices extends NoBackgroundTransferNotifications {
+  final progressValues = <(int, int)>[];
+  final finishes = <bool>[];
+  bool deny = false;
+  @override
+  Future<void> start({
+    required String id,
+    required String title,
+    required String message,
+    int total = 0,
+  }) async {
+    if (deny) throw BackgroundTransferFailure('请允许通知并重试');
+  }
+
+  @override
+  void progress({
+    required String id,
+    required String message,
+    required int completed,
+    required int total,
+  }) {
+    progressValues.add((completed, total));
+  }
+
+  @override
+  Future<void> finish({
+    required String id,
+    required String message,
+    bool failed = false,
+  }) async {
+    finishes.add(failed);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'same-origin changes refresh silently without native download or update prompt',
+    () async {
+      final (c, remote) = await _fixture(initialCheck: false);
+      addTearDown(c.dispose);
+      remote.sameOrigin = true;
+      await c.checkForLibraryUpdatesQuick();
+      expect(c.games.first.score, '8.2');
+      expect(c.pendingLibraryUpdate, isNull);
+      expect(c.libraryUpdateError, isNull);
+      expect(remote.writes, isEmpty);
+      expect(remote.probes, isEmpty);
+      expect(remote.publishedChecks, [false]);
+      await c.checkForLibraryUpdates();
+      expect(remote.publishedChecks, [false, true]);
+      expect(c.pendingLibraryUpdate, isNull);
+    },
+  );
+  test(
+    'failed same-origin reload preserves visible games and resets baseline for retry',
+    () async {
+      final (c, remote) = await _fixture(initialCheck: false);
+      addTearDown(c.dispose);
+      final score = c.games.first.score;
+      remote.sameOrigin = true;
+      remote.failReload = true;
+      await c.checkForLibraryUpdatesQuick();
+      expect(c.games.first.score, score);
+      expect(c.libraryUpdateError, isNotNull);
+      expect(remote.accountCacheClears, 1);
+      remote.failReload = false;
+      await c.checkForLibraryUpdatesQuick();
+      expect(c.games.first.score, '8.2');
+      expect(c.libraryUpdateError, isNull);
+    },
+  );
+  test(
+    'library notification success follows committed resources and reload',
+    () async {
+      final notices = _LibraryNotices();
+      final (c, remote) = await _fixture(notices: notices);
+      addTearDown(c.dispose);
+      final count = c.pendingLibraryUpdate!.changedCount;
+      await c.applyPendingLibraryUpdate();
+      expect(remote.writes.length, count);
+      expect(notices.progressValues.last, (count, count));
+      expect(c.games.first.score, '8.2');
+      expect(c.pendingLibraryUpdate, isNull);
+      expect(notices.finishes, [false]);
+    },
+  );
+  test(
+    'partial library failure retains retry and finishes notification as failed',
+    () async {
+      final notices = _LibraryNotices();
+      final (c, remote) = await _fixture(notices: notices);
+      addTearDown(c.dispose);
+      remote.failPath = 'assets/catalog.json';
+      await c.applyPendingLibraryUpdate();
+      expect(c.pendingLibraryUpdate, isNotNull);
+      expect(
+        notices.progressValues.last.$1,
+        lessThan(notices.progressValues.last.$2),
+      );
+      expect(notices.finishes, [true]);
+      expect(c.applyingLibraryUpdate, isFalse);
+    },
+  );
+  test(
+    'denied notifications preserve library data and show the retry reason',
+    () async {
+      final notices = _LibraryNotices()..deny = true;
+      final (c, remote) = await _fixture(notices: notices);
+      addTearDown(c.dispose);
+      await c.applyPendingLibraryUpdate();
+      expect(remote.writes, isEmpty);
+      expect(c.pendingLibraryUpdate, isNotNull);
+      expect(c.libraryUpdateError, contains('允许通知'));
+    },
+  );
   testWidgets(
     'unavailable check actions are disabled and show a hover explanation',
     (tester) async {
@@ -265,7 +406,7 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(
           MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,
@@ -326,7 +467,7 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(
           MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,

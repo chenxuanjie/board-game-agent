@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'browse_session.dart';
+import '../../core/platform/background_transfer_notifications.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
@@ -46,6 +47,7 @@ import '../../features/assistant/services/ai_service.dart';
 import '../../features/assistant/services/conversation_store.dart';
 import '../../features/settings/services/preferences_service.dart';
 import '../../features/games/services/daily_game_recommender.dart';
+import '../../features/games/services/personal_game_recommender.dart';
 import '../../features/games/services/game_manifest_service.dart';
 import '../../features/games/services/game_vote_service.dart';
 import '../../features/games/services/game_favorite_ranker.dart';
@@ -112,6 +114,8 @@ class AppController extends ChangeNotifier {
     RemoteGameVoteStore? Function()? favoriteRemoteProvider,
     String? Function()? favoriteScopeProvider,
     ConversationStore? conversationStore,
+    BackgroundTransferNotifications backgroundTransfers =
+        const NoBackgroundTransferNotifications(),
   }) : _preferencesService = preferencesService,
        _favoriteRemoteProvider = favoriteRemoteProvider,
        _favoriteScopeProvider = favoriteScopeProvider,
@@ -125,6 +129,7 @@ class AppController extends ChangeNotifier {
        _conversationStore = conversationStore ?? const ConversationStore(),
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
+       _backgroundTransfers = backgroundTransfers,
        _speechService = speechService,
        _ttsService = ttsService,
        _realtimeVoiceService =
@@ -237,12 +242,21 @@ class AppController extends ChangeNotifier {
   ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
+  final BackgroundTransferNotifications _backgroundTransfers;
   final SpeechService _speechService;
   final TtsService _ttsService;
   final RealtimeVoiceService _realtimeVoiceService;
 
   AppLanguage _language = AppLanguage.zhHans;
   ColorSchemeOption _colorScheme;
+  bool _cinemaGlassEnabled = true;
+  bool get cinemaGlassEnabled => _cinemaGlassEnabled;
+  Future<void> setCinemaGlassEnabled(bool enabled) async {
+    await _preferencesService.saveCinemaGlassEnabled(enabled);
+    _cinemaGlassEnabled = enabled;
+    _notifyListeners();
+  }
+
   bool _voiceReplyEnabled = true;
   AssistantMode _assistantMode = AssistantMode.textAndDictation;
   bool _checkForUpdates = true;
@@ -264,6 +278,9 @@ class AppController extends ChangeNotifier {
   int _aiModelRefreshGeneration = 0;
   List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
   List<GameInfo> _games = <GameInfo>[];
+  List<GameInfo>? _personalizedCatalog;
+  Set<String> _personalizedFavoriteSlugs = {};
+  List<GameInfo> _personalizedSlate = const [];
   List<DesktopLibraryResource> _libraryResources = <DesktopLibraryResource>[];
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
@@ -440,6 +457,21 @@ class AppController extends ChangeNotifier {
       _resolvedAssetPaths[remotePath];
   AppCopy get copy => AppCopy(_language);
   List<GameInfo> get games => List<GameInfo>.unmodifiable(_games);
+  List<GameInfo> get personalizedRecommendedGames {
+    if (_switchingIdentityScope) return const [];
+    final favorites = _favoriteCreatedAtBySlug.keys.toSet();
+    if (!identical(_personalizedCatalog, _games) ||
+        !setEquals(favorites, _personalizedFavoriteSlugs)) {
+      _personalizedSlate = const PersonalGameRecommender().recommend(
+        catalog: _games,
+        favoriteSlugs: favorites,
+      );
+      _personalizedCatalog = _games;
+      _personalizedFavoriteSlugs = favorites;
+    }
+    return _personalizedSlate;
+  }
+
   List<GameInfo> get dailyRecommendedGames {
     if (_switchingIdentityScope) return const <GameInfo>[];
     final today = DailyGameRecommender.localDateKey(DateTime.now());
@@ -786,6 +818,7 @@ class AppController extends ChangeNotifier {
   Future<void> _initialize() async {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
+    _cinemaGlassEnabled = await _preferencesService.loadCinemaGlassEnabled();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
     final AssistantMode savedAssistantMode = await _preferencesService
         .loadAssistantMode();
@@ -920,9 +953,10 @@ class AppController extends ChangeNotifier {
 
   Future<void> reloadGames() async {
     final epoch = _identityScopeEpoch;
-    _games = await _loadGamesForLanguage(_language);
-    _refreshLibraryGameTitles();
+    final games = await _loadGamesForLanguage(_language);
     if (epoch != _identityScopeEpoch || _switchingIdentityScope) return;
+    _games = games;
+    _refreshLibraryGameTitles();
     _selectedGameId = _resolveSelectedGameId(_selectedGameId);
     _refreshConversationMetadata();
     _selectedConversationId = _resolveSelectedConversationId(

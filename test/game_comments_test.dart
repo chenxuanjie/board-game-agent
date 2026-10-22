@@ -6,6 +6,7 @@ import 'package:board_game_agent/features/community/services/game_comments_servi
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/ui/shared/game_comments.dart';
+import 'package:board_game_agent/ui/shared/favorite_feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,6 +37,63 @@ GameComment comment(GameCommentsService service, String id) => service
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'Web guest reads real comments at both widths with login-only writing',
+    (tester) async {
+      final hub = PublicFixtureHub();
+      final author = service(hub, 101);
+      final id = await author.publish(game: game, text: '游客可以读到这条评论');
+      await author.synchronize();
+      final guest = GameCommentsService(
+        files: MemoryPublicFiles(hub, 0),
+        scope: 'web-guest',
+        isActive: () => true,
+        displayName: () => '',
+        readOnly: true,
+      );
+      addTearDown(guest.dispose);
+      await guest.synchronize();
+      expect(guest.canWrite, isFalse);
+      expect(guest.projection.forGame(game, guest.pendingIds).single.id, id);
+      final writes = hub.writes;
+      await expectLater(
+        guest.publish(game: game, text: '禁止游客发布'),
+        throwsStateError,
+      );
+      expect(hub.writes, writes);
+      for (final width in [390.0, 1200.0]) {
+        tester.view.physicalSize = Size(width, 1400);
+        tester.view.devicePixelRatio = 1;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: GameCommentsPanel(
+                  gameSlug: game,
+                  gameTitle: '卡卡颂',
+                  service: guest,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('游客可以读到这条评论'), findsOneWidget);
+        expect(find.text('登录后评论'), findsOneWidget);
+        expect(find.byKey(const ValueKey('comment-input')), findsNothing);
+        expect(
+          tester
+              .widget<TextButton>(find.byKey(ValueKey('comment-like-$id')))
+              .onPressed,
+          isNull,
+        );
+        expect(tester.takeException(), isNull);
+      }
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    },
+  );
   test(
     'optional score, per-account latest score and deletion never revive old score',
     () async {
@@ -287,7 +345,7 @@ void main() {
         await tester.binding.setSurfaceSize(Size(width, 1000));
         for (final palette in [
           PaletteRegistry.warmwoodStudy,
-          PaletteRegistry.classic,
+          PaletteRegistry.cinema,
         ]) {
           await tester.pumpWidget(
             MaterialApp(
@@ -364,59 +422,91 @@ void main() {
     expect(find.text('登录'), findsOneWidget);
   });
 
-  testWidgets('rapid likes submit once with feedback only on that comment', (
-    tester,
-  ) async {
-    final hub = PublicFixtureHub();
-    final a = service(hub, 101);
-    final id = await a.publish(game: game, text: '点赞测试');
-    await a.synchronize();
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: GameCommentsPanel(
-              gameSlug: game,
-              gameTitle: '卡卡颂',
-              service: a,
+  testWidgets(
+    'rapid likes light immediately and submit once without a visible spinner',
+    (tester) async {
+      final hub = PublicFixtureHub();
+      final a = service(hub, 101);
+      final id = await a.publish(game: game, text: '点赞测试');
+      await a.synchronize();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: GameCommentsPanel(
+                gameSlug: game,
+                gameTitle: '卡卡颂',
+                service: a,
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    hub.readGate = Completer<void>();
-    final button = tester.widget<TextButton>(
-      find.byKey(ValueKey('comment-like-$id')),
-    );
-    button.onPressed!();
-    button.onPressed!();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(
-      tester
-          .widget<TextButton>(find.byKey(ValueKey('comment-like-$id')))
-          .onPressed,
-      isNull,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(ValueKey('comment-like-$id')),
-        matching: find.byType(CircularProgressIndicator),
-      ),
-      findsOneWidget,
-    );
-    expect(find.byType(LinearProgressIndicator), findsNothing);
-    hub.readGate!.complete();
-    await tester.pumpAndSettle();
-    expect(comment(a, id).likes, 1);
-    expect(comment(a, id).likedByMe, isTrue);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      await tester.pumpAndSettle();
+      hub.readGate = Completer<void>();
+      final button = tester.widget<TextButton>(
+        find.byKey(ValueKey('comment-like-$id')),
+      );
+      button.onPressed!();
+      button.onPressed!();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(ValueKey('comment-like-$id')))
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('comment-like-$id')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      final feedback = tester.widget<FavoriteFeedbackIcon>(
+        find.descendant(
+          of: find.byKey(ValueKey('comment-like-$id')),
+          matching: find.byType(FavoriteFeedbackIcon),
+        ),
+      );
+      expect(feedback.selected, isTrue);
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('comment-like-$id')),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
+      hub.readGate!.complete();
+      await tester.pumpAndSettle();
+      expect(comment(a, id).likes, 1);
+      expect(comment(a, id).likedByMe, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  test(
+    'repairing a missing acknowledged snapshot never unlights a confirmed vote',
+    () async {
+      final hub = PublicFixtureHub();
+      final a = service(hub, 101);
+      final id = await a.publish(game: game, text: '已确认的点赞');
+      await a.synchronize();
+      await a.toggleLike(comment(a, id));
+      final seen = <bool>[];
+      a.addListener(() => seen.add(comment(a, id).likedByMe));
+      hub.objects.clear();
+      await a.synchronize();
+      expect(seen, isNotEmpty);
+      expect(seen.every((liked) => liked), isTrue);
+      expect(a.pending, isFalse);
+    },
+  );
 
   testWidgets(
-    'like failure keeps selection and retry does not toggle it again',
+    'like failure rolls back with a top notice and next click retries the same intention',
     (tester) async {
       final hub = PublicFixtureHub();
       final a = service(hub, 101);
@@ -440,19 +530,148 @@ void main() {
       hub.failure = PrivateFileFailure.unavailable;
       await tester.tap(find.byKey(ValueKey('comment-like-$id')));
       await tester.pumpAndSettle();
-      expect(comment(a, id).likedByMe, isTrue);
+      expect(comment(a, id).likedByMe, isFalse);
       expect(a.likePending(id), isTrue);
-      expect(find.text('重试点赞同步'), findsOneWidget);
+      expect(find.byKey(const ValueKey('app-failure-notice')), findsOneWidget);
+      expect(find.text('点赞未完成，请检查网络后重试'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('app-failure-notice'))).dy,
+        lessThan(100),
+      );
+      expect(find.text('重试点赞同步'), findsNothing);
+      final pendingId = a.pendingIds.single;
       hub.failure = null;
-      await tester.tap(find.text('重试点赞同步'));
+      await tester.tap(find.byKey(ValueKey('comment-like-$id')));
       await tester.pumpAndSettle();
       expect(a.likePending(id), isFalse);
       expect(comment(a, id).likes, 1);
       expect(comment(a, id).likedByMe, isTrue);
       expect(find.text('重试点赞同步'), findsNothing);
+      final events = hub.objects.values.expand(
+        (file) => (jsonDecode(file.text) as Map)['operations'] as List,
+      );
+      expect(
+        events
+            .where((raw) => (raw as Map)['action'] == 'like')
+            .map((raw) => (raw as Map)['id']),
+        [pendingId],
+      );
     },
   );
 
+  testWidgets(
+    'unlike lights off immediately and failure restores the confirmed like',
+    (tester) async {
+      final hub = PublicFixtureHub();
+      final source = service(hub, 102);
+      final id = await source.publish(game: game, text: '取消点赞测试');
+      await source.synchronize();
+      // The writer's already-confirmed vote supplies the rollback baseline.
+      await source.toggleLike(comment(source, id));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: GameCommentsPanel(
+                gameSlug: game,
+                gameTitle: '卡卡颂',
+                service: source,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      hub.readGate = Completer<void>();
+      await tester.tap(find.byKey(ValueKey('comment-like-$id')));
+      await tester.pump(const Duration(milliseconds: 180));
+      FavoriteFeedbackIcon feedback() => tester.widget<FavoriteFeedbackIcon>(
+        find.descendant(
+          of: find.byKey(ValueKey('comment-like-$id')),
+          matching: find.byType(FavoriteFeedbackIcon),
+        ),
+      );
+      expect(feedback().selected, isFalse);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      hub.failure = PrivateFileFailure.unavailable;
+      hub.readGate!.complete();
+      await tester.pumpAndSettle();
+      expect(feedback().selected, isTrue);
+      expect(comment(source, id).likes, 1);
+      expect(find.text('取消点赞未完成，请检查网络后重试'), findsOneWidget);
+      source.dispose();
+    },
+  );
+  testWidgets(
+    'acknowledged like is not reported as failed when the later refresh fails',
+    (tester) async {
+      final hub = PublicFixtureHub();
+      final files = _RefreshFailureFiles(hub, 101);
+      final a = service(hub, 101, files: files);
+      final id = await a.publish(game: game, text: '确认成功后的刷新失败');
+      await a.synchronize();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: GameCommentsPanel(
+                gameSlug: game,
+                gameTitle: '卡卡颂',
+                service: a,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      files.failAfterNextWrite = true;
+      await tester.tap(find.byKey(ValueKey('comment-like-$id')));
+      await tester.pumpAndSettle();
+      expect(comment(a, id).likedByMe, isTrue);
+      expect(a.likePending(id), isFalse);
+      expect(a.error, isNotNull);
+      expect(find.byKey(const ValueKey('app-failure-notice')), findsNothing);
+    },
+  );
+  testWidgets(
+    'old account like completion cannot show a failure on the new account panel',
+    (tester) async {
+      final oldHub = PublicFixtureHub(), newHub = PublicFixtureHub();
+      final old = service(oldHub, 101), next = service(newHub, 102);
+      final id = await old.publish(game: game, text: '旧账号评论');
+      await old.synchronize();
+      await next.publish(game: game, text: '新账号评论');
+      await next.synchronize();
+      Widget panel(GameCommentsService service) => MaterialApp(
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GameCommentsPanel(
+              gameSlug: game,
+              gameTitle: '卡卡颂',
+              service: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(panel(old));
+      await tester.pumpAndSettle();
+      oldHub.readGate = Completer<void>();
+      await tester.tap(find.byKey(ValueKey('comment-like-$id')));
+      await tester.pump();
+      await tester.pumpWidget(panel(next));
+      await tester.pumpAndSettle();
+      old.dispose();
+      oldHub.failure = PrivateFileFailure.unavailable;
+      oldHub.readGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('新账号评论'), findsOneWidget);
+      expect(find.byKey(const ValueKey('app-failure-notice')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'five stars support ten points, clearing, and send feedback stays in button',
     (tester) async {
@@ -586,5 +805,27 @@ class _AckLostFiles extends MemoryPublicFiles {
     if (loseAck) {
       throw const PrivateFileException(PrivateFileFailure.unavailable);
     }
+  }
+}
+
+class _RefreshFailureFiles extends MemoryPublicFiles {
+  _RefreshFailureFiles(super.hub, super.uid);
+  bool failAfterNextWrite = false;
+  int? _readsAfterWrite;
+  @override
+  Future<void> replaceOwn(String relativePath, String content) async {
+    await super.replaceOwn(relativePath, content);
+    if (failAfterNextWrite) _readsAfterWrite = 0;
+  }
+
+  @override
+  Future<String> read(String relativePath) async {
+    if (_readsAfterWrite != null) {
+      _readsAfterWrite = _readsAfterWrite! + 1;
+      if (_readsAfterWrite! > 1) {
+        throw const PrivateFileException(PrivateFileFailure.unavailable);
+      }
+    }
+    return super.read(relativePath);
   }
 }

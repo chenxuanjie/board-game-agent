@@ -57,7 +57,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -99,7 +99,7 @@ void main() {
               ),
             ],
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -165,7 +165,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: false,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -241,7 +241,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: false,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -278,7 +278,7 @@ void main() {
               ),
             ],
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -338,7 +338,7 @@ void main() {
             body: AiRunActivity(
               events: events,
               isRunning: true,
-              palette: PaletteRegistry.classic,
+              palette: PaletteRegistry.cinema,
               copy: copy,
             ),
           ),
@@ -390,7 +390,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -471,7 +471,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: isRunning,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -543,7 +543,7 @@ void main() {
           body: AiRunActivity(
             events: outOfOrderEvents,
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -574,7 +574,7 @@ void main() {
               ),
             ],
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -651,7 +651,7 @@ void main() {
           body: AiRunActivity(
             events: reconnectingEvents,
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -672,7 +672,7 @@ void main() {
           body: AiRunActivity(
             events: recoveredEvents,
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -722,7 +722,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: isRunning,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -770,7 +770,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: true,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -785,7 +785,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: false,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),
@@ -875,7 +875,7 @@ void main() {
             body: AiRunActivity(
               events: events,
               isRunning: isRunning,
-              palette: PaletteRegistry.classic,
+              palette: PaletteRegistry.cinema,
               copy: copy,
             ),
           ),
@@ -943,7 +943,7 @@ void main() {
           body: AiRunActivity(
             events: events,
             isRunning: false,
-            palette: PaletteRegistry.classic,
+            palette: PaletteRegistry.cinema,
             copy: copy,
           ),
         ),

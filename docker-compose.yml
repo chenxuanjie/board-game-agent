@@ -1,12 +1,71 @@
 services:
   board-game-agent:
-    build:
-      context: ..
-      dockerfile: board-game-agent/Dockerfile
-    image: board-game-agent:${IMAGE_TAG:-local}
+    image: board-game-agent:${IMAGE_TAG:?Set the imported release image tag}
+    platform: ${BGA_IMAGE_PLATFORM:-linux/amd64}
+    pull_policy: never
     restart: unless-stopped
+    user: "${NAS_READER_UID:-1028}:${NAS_READER_GID:-100}"
+    depends_on:
+      - web-account
     ports:
-      - "${WEB_PORT:-8088}:80"
+      - "${WEB_PORT:-8887}:8080"
+    volumes:
+      - type: bind
+        source: ${LIBRARY_PATH:?Set the existing NAS library folder}
+        target: /data/library
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  web-account:
+    image: board-game-agent-web-account:${IMAGE_TAG:?Set the imported release image tag}
+    platform: ${BGA_IMAGE_PLATFORM:-linux/amd64}
+    pull_policy: never
+    restart: unless-stopped
+    user: "${NAS_READER_UID:-1028}:${NAS_READER_GID:-100}"
+    # Resolve DSM locally while preserving its HTTPS hostname/SNI and certificate.
+    extra_hosts:
+      - "${SYNOLOGY_HOST:-cznas.pp.ua}:${SYNOLOGY_LAN_IP:-192.168.1.55}"
+    environment:
+      SYNOLOGY_ORIGIN: ${SYNOLOGY_ORIGIN:?Set the trusted DSM HTTPS origin}
+      # Historical account-ID namespace only; no network request uses this field.
+      SYNOLOGY_IDENTITY_ORIGIN: ${SYNOLOGY_IDENTITY_ORIGIN:-${SYNOLOGY_ORIGIN}}
+      WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?Set the browser site origin}
+      WEB_ALLOW_INSECURE_HTTP: ${WEB_ALLOW_INSECURE_HTTP:-false}
+      ACCOUNT_SHARED_FOLDER: ${ACCOUNT_SHARED_FOLDER:-friend}
+      LIBRARY_ROOT: /data/library
+      LIBRARY_NAS_PATH: ${LIBRARY_NAS_PATH:?Set the matching FileStation library path}
+      COMMENTS_ROOT: /data/comments
+      COMMENTS_NAS_PATH: /friend/apps/board_game_agent_comments/public/v1
+    volumes:
+      - type: bind
+        source: ${COMMENTS_PATH:?Set the existing NAS comments folder}
+        target: /data/comments
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LIBRARY_PATH:?Set the existing NAS library folder}
+        target: /data/library
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:

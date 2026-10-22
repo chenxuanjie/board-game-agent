@@ -48,7 +48,7 @@ void _registerContentDesignTests() {
       ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
     await font.load();
   });
-  testWidgets('unified content cards fit widths, themes and large text', (
+  testWidgets('Warmwood content cards fit widths and large text', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -62,10 +62,8 @@ void _registerContentDesignTests() {
     for (final width in [320.0, 390.0, 430.0, 720.0]) {
       await tester.binding.setSurfaceSize(Size(width, 1000));
 
-      for (final palette in [
-        PaletteRegistry.warmwoodStudy,
-        PaletteRegistry.classic,
-      ]) {
+      // Cinema has its own home composition and navigation tests.
+      for (final palette in [PaletteRegistry.warmwoodStudy]) {
         for (final scale in [1.0, 1.25, 2.0]) {
           // Each size/theme case represents an independent fresh session.
           controller.browseSession.reset();

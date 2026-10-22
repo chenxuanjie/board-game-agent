@@ -5,6 +5,7 @@ import '../shared/library_viewport.dart';
 import '../../app/state/browse_session.dart';
 
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/cinema_theme.dart';
 import '../../core/theme/ui_tokens.dart';
 
 import '../../app/state/app_controller.dart';
@@ -20,12 +21,16 @@ class MobileLibraryContent extends StatefulWidget {
     required this.onOpenGame,
     required this.onActivities,
     required this.onProfile,
+    this.accountActions,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
   final VoidCallback onActivities;
   final VoidCallback onProfile;
+
+  /// Optional shared account entry supplied by an alternate presentation shell.
+  final Widget? accountActions;
 
   @override
   State<MobileLibraryContent> createState() => _MobileLibraryContentState();
@@ -121,45 +126,53 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       ],
                     ),
                   ),
-                  Stack(
-                    children: [
-                      IconButton(
-                        tooltip: copy.localized('消息', 'Notifications'),
-                        onPressed: widget.onActivities,
-                        icon: Icon(
-                          Icons.notifications_none_rounded,
-                          color: AppPalette.of(context).textPrimary,
-                        ),
-                      ),
-                      if (widget.controller.unreadActivityCount > 0)
-                        Positioned(
-                          right: 10,
-                          top: 9,
-                          child: CircleAvatar(
-                            radius: 4,
-                            backgroundColor: AppPalette.of(context).primary,
+                  if (widget.accountActions case final actions?)
+                    actions
+                  else ...[
+                    Stack(
+                      children: [
+                        IconButton(
+                          tooltip: copy.localized('消息', 'Notifications'),
+                          onPressed: widget.onActivities,
+                          icon: Icon(
+                            Icons.notifications_none_rounded,
+                            color: AppPalette.of(context).textPrimary,
                           ),
                         ),
-                    ],
-                  ),
-                  IconButton(
-                    key: const ValueKey('mobile-library-profile'),
-                    tooltip: copy.localized('账户', 'Account'),
-                    onPressed: widget.onProfile,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 48,
-                      height: 48,
+                        if (widget.controller.unreadActivityCount > 0)
+                          Positioned(
+                            right: 10,
+                            top: 9,
+                            child: CircleAvatar(
+                              radius: 4,
+                              backgroundColor: AppPalette.of(context).primary,
+                            ),
+                          ),
+                      ],
                     ),
-                    icon: const CircleAvatar(
-                      radius: 19,
-                      backgroundColor: Color(0xFFFFE6CE),
-                      child: Icon(
-                        Icons.person_rounded,
-                        color: Color(0xFF955B3B),
+                    IconButton(
+                      key: const ValueKey('mobile-library-profile'),
+                      tooltip: copy.localized('账户', 'Account'),
+                      onPressed: widget.onProfile,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 48,
+                        height: 48,
+                      ),
+                      icon: CircleAvatar(
+                        radius: 19,
+                        backgroundColor: isCinema(context)
+                            ? AppPalette.of(context).surfaceContainer
+                            : const Color(0xFFFFE6CE),
+                        child: Icon(
+                          Icons.person_rounded,
+                          color: isCinema(context)
+                              ? AppPalette.of(context).textPrimary
+                              : const Color(0xFF955B3B),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -192,7 +205,9 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                   filled: true,
                   fillColor: AppPalette.of(context).inputSurface,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(
+                      isCinema(context) ? 12 : 28,
+                    ),
                     borderSide: BorderSide.none,
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -258,9 +273,14 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = ((constraints.maxWidth - 20) / 172)
-                            .floor()
-                            .clamp(2, 4);
+                        final columns = isCinema(context)
+                            ? ((constraints.maxWidth - 32 + 12) / (136 + 12))
+                                  .floor()
+                                  .clamp(1, 4)
+                            : ((constraints.maxWidth - 20) / 172).floor().clamp(
+                                2,
+                                4,
+                              );
                         final width =
                             (constraints.maxWidth - 32 - (columns - 1) * 12) /
                             columns;

@@ -16,6 +16,7 @@ import '../../core/models/connectivity_status.dart';
 import '../../features/settings/services/desktop_ai_settings_service.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/cinema_theme.dart';
 import '../shared/resource_access_summary.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
@@ -30,6 +31,7 @@ import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
+import '../shared/cinema/cinema_surface.dart';
 
 part 'settings/preferences_cards.dart';
 part 'settings/ai_service_card.dart';
@@ -478,7 +480,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       ];
 
       return Padding(
-        padding: metrics.insets(const EdgeInsets.only(top: 12, bottom: 16)),
+        padding: metrics.insets(EdgeInsets.only(top: 12, bottom: 16)),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final int columns = DesktopResponsive.settingsColumnsFor(
@@ -518,7 +520,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                               fontSize: metrics.font(28),
                               height: 1.1,
                               fontWeight: FontWeight.w700,
-                              color: DesktopColors.text,
+                              color: desktopColors(context).text,
                             ),
                           ),
                         ],
@@ -530,7 +532,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                         height: metrics.px(20),
                         child: CircularProgressIndicator(
                           strokeWidth: metrics.px(2),
-                          color: DesktopColors.orange,
+                          color: desktopColors(context).orange,
                         ),
                       ),
                     _transferMenu(ConfigurationScope.all),
@@ -544,7 +546,11 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
                     _failure!,
                     style: TextStyle(
                       fontSize: metrics.font(12),
-                      color: const Color(0xFF9F4D5D),
+                      color: desktopTone(
+                        context,
+                        Color(0xFF9F4D5D),
+                        DesktopToneRole.error,
+                      ),
                     ),
                   ),
                 ],
@@ -577,12 +583,18 @@ class _SettingsCard extends StatelessWidget {
       key: ValueKey<String>('desktop-settings-card-$title'),
       padding: EdgeInsets.all(metrics.px(17)),
       decoration: BoxDecoration(
-        color: DesktopColors.card,
+        color: desktopColors(context).card,
         borderRadius: BorderRadius.circular(metrics.radius(13)),
-        border: Border.all(color: const Color(0x1AA76D48)),
+        border: Border.all(
+          color: desktopTone(context, Color(0x1AA76D48), DesktopToneRole.line),
+        ),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: const Color(0x0A704728),
+            color: desktopTone(
+              context,
+              Color(0x0A704728),
+              DesktopToneRole.shadow,
+            ),
             blurRadius: metrics.px(12),
             offset: Offset(0, metrics.px(3)),
           ),
@@ -594,7 +606,11 @@ class _SettingsCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(icon, color: DesktopColors.orange, size: metrics.px(23)),
+              Icon(
+                icon,
+                color: desktopColors(context).orange,
+                size: metrics.px(23),
+              ),
               SizedBox(width: metrics.px(9)),
               Expanded(
                 child: Text(
@@ -603,7 +619,7 @@ class _SettingsCard extends StatelessWidget {
                     fontSize: metrics.font(16),
                     height: 1.15,
                     fontWeight: FontWeight.w700,
-                    color: DesktopColors.text,
+                    color: desktopColors(context).text,
                   ),
                 ),
               ),
@@ -644,7 +660,7 @@ class _SettingSwitchRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: _font(context, 13),
                 fontWeight: FontWeight.w600,
-                color: DesktopColors.text,
+                color: desktopColors(context).text,
               ),
             ),
             if (subtitle.isNotEmpty) ...[
@@ -655,7 +671,7 @@ class _SettingSwitchRow extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: _font(context, 11),
-                  color: DesktopColors.secondaryText,
+                  color: desktopColors(context).secondaryText,
                 ),
               ),
             ],
@@ -669,7 +685,7 @@ class _SettingSwitchRow extends StatelessWidget {
         child: Switch.adaptive(
           value: value,
           onChanged: onChanged,
-          activeThumbColor: DesktopColors.orange,
+          activeThumbColor: desktopColors(context).orange,
         ),
       ),
     ],
@@ -735,9 +751,13 @@ class _DesktopDropdownOptionState extends State<_DesktopDropdownOption> {
         padding: EdgeInsets.symmetric(horizontal: metrics.px(9)),
         decoration: BoxDecoration(
           color: widget.selected
-              ? const Color(0xFFFFE8DF)
+              ? desktopTone(
+                  context,
+                  Color(0xFFFFE8DF),
+                  DesktopToneRole.selected,
+                )
               : focused || _hovered
-              ? DesktopColors.soft
+              ? desktopColors(context).soft
               : Colors.transparent,
           borderRadius: BorderRadius.circular(metrics.px(8)),
         ),
@@ -750,8 +770,10 @@ class _DesktopDropdownOptionState extends State<_DesktopDropdownOption> {
 ButtonStyle _settingsButtonStyle(BuildContext context) =>
     OutlinedButton.styleFrom(
       minimumSize: Size(0, _px(context, 39)),
-      foregroundColor: DesktopColors.brown,
-      side: const BorderSide(color: Color(0x1FA76D48)),
+      foregroundColor: desktopColors(context).brown,
+      side: BorderSide(
+        color: desktopTone(context, Color(0x1FA76D48), DesktopToneRole.line),
+      ),
       padding: EdgeInsets.symmetric(horizontal: _px(context, 8)),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(_px(context, 9)),

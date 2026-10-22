@@ -31,15 +31,15 @@ class _GeneralCard extends StatelessWidget {
             child: Theme(
               data: _dropdownTheme(context),
               child: DropdownButtonFormField<AppLanguage>(
-                key: const ValueKey<String>('desktop-settings-language'),
+                key: ValueKey<String>('desktop-settings-language'),
                 initialValue: controller.language,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(_px(context, 12)),
-                dropdownColor: DesktopColors.card,
+                dropdownColor: desktopColors(context).card,
                 decoration: _fieldDecoration(context),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontSize: _font(context, 13),
-                  color: DesktopColors.text,
+                  color: desktopColors(context).text,
                 ),
                 items: AppLanguage.values
                     .map(
@@ -69,21 +69,21 @@ class _GeneralCard extends StatelessWidget {
             ),
           ),
           SizedBox(height: _px(context, 7)),
-          _SettingSwitchRow(
-            key: const ValueKey<String>(
-              'desktop-settings-startup-update-check',
+          if (!kIsWeb) ...[
+            _SettingSwitchRow(
+              key: ValueKey<String>('desktop-settings-startup-update-check'),
+              title: copy.localized('启动时检查更新', 'Check for updates on startup'),
+              subtitle: copy.localized(
+                '当前更新源仅支持 Android APK',
+                'The current update source supports Android APK only',
+              ),
+              value: controller.checkForUpdates,
+              onChanged: saving ? null : onStartupUpdates,
             ),
-            title: copy.localized('启动时检查更新', 'Check for updates on startup'),
-            subtitle: copy.localized(
-              '当前更新源仅支持 Android APK',
-              'The current update source supports Android APK only',
-            ),
-            value: controller.checkForUpdates,
-            onChanged: saving ? null : onStartupUpdates,
-          ),
-          SizedBox(height: _px(context, 4)),
+            SizedBox(height: _px(context, 4)),
+          ],
           _SettingSwitchRow(
-            key: const ValueKey<String>('desktop-settings-voice-reply'),
+            key: ValueKey<String>('desktop-settings-voice-reply'),
             title: copy.localized('语音朗读', 'Voice output'),
             subtitle: controller.voiceReplyAvailable
                 ? ''
@@ -114,8 +114,8 @@ class _AppearanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const List<ColorSchemeOption> schemes = [
       ColorSchemeOption.warmwoodStudy,
-      ColorSchemeOption.classic,
-      ColorSchemeOption.sunsetCoast,
+      ColorSchemeOption.cinema,
+      ColorSchemeOption.spatialCinema,
     ];
     final AppCopy copy = controller.copy;
     return _SettingsCard(
@@ -140,6 +140,8 @@ class _AppearanceCard extends StatelessWidget {
               ],
             ],
           ),
+          if (controller.colorScheme == ColorSchemeOption.cinema)
+            CinemaGlassSetting(controller: controller),
         ],
       ),
     );
@@ -182,12 +184,22 @@ class _ThemePreview extends StatelessWidget {
               duration: AppMotion.duration(context),
               padding: EdgeInsets.all(metrics.px(5)),
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFFFFF2E9) : DesktopColors.card,
+                color: selected
+                    ? desktopTone(
+                        context,
+                        Color(0xFFFFF2E9),
+                        DesktopToneRole.selected,
+                      )
+                    : desktopColors(context).card,
                 borderRadius: BorderRadius.circular(metrics.radius(9)),
                 border: Border.all(
                   color: selected
-                      ? DesktopColors.orange
-                      : const Color(0x1AA76D48),
+                      ? desktopColors(context).orange
+                      : desktopTone(
+                          context,
+                          Color(0x1AA76D48),
+                          DesktopToneRole.line,
+                        ),
                   width: selected ? metrics.px(1.5) : 1,
                 ),
               ),
@@ -211,7 +223,7 @@ class _ThemePreview extends StatelessWidget {
                       fontSize: metrics.font(11),
                       height: 1.1,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: DesktopColors.text,
+                      color: desktopColors(context).text,
                     ),
                   ),
                 ],
@@ -230,63 +242,133 @@ class _ThemeMiniature extends StatelessWidget {
   final AppPalette palette;
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: palette.pageBackground,
-    child: Padding(
-      padding: const EdgeInsets.all(5),
-      child: Column(
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Container(
-                width: 12,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: palette.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const Spacer(),
-              Container(width: 7, height: 4, color: palette.textSecondary),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Expanded(
+  Widget build(BuildContext context) =>
+      palette.scheme == ColorSchemeOption.spatialCinema
+      ? Container(
+          color: const Color(0xFF93836D),
+          padding: const EdgeInsets.all(5),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: palette.surfaceContainer.withValues(alpha: .85),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: Colors.white.withValues(alpha: .22)),
+            ),
             child: Row(
-              children: <Widget>[
-                Container(
-                  width: 16,
-                  decoration: BoxDecoration(
-                    color: palette.surfaceContainer,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 4),
+              children: [
+                Container(width: 9, color: palette.surface),
+                const SizedBox(width: 3),
                 Expanded(
                   child: Column(
-                    children: <Widget>[
+                    children: [
                       Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: palette.surface,
-                            borderRadius: BorderRadius.circular(2),
-                            border: Border.all(color: palette.outline),
-                          ),
+                        flex: 2,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: ColoredBox(color: palette.secondary),
+                            ),
+                            const SizedBox(width: 2),
+                            Expanded(
+                              flex: 2,
+                              child: ColoredBox(color: palette.surfaceVariant),
+                            ),
+                            const SizedBox(width: 2),
+                            Expanded(
+                              flex: 2,
+                              child: ColoredBox(color: palette.surfaceVariant),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Expanded(
                         child: Row(
+                          children: [
+                            for (var i = 0; i < 4; i++)
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 2),
+                                  child: ColoredBox(
+                                    color: palette.primaryContainer,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )
+      : ColoredBox(
+          color: palette.pageBackground,
+          child: Padding(
+            padding: EdgeInsets.all(5),
+            child: Column(
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 12,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: palette.primary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Spacer(),
+                    Container(
+                      width: 7,
+                      height: 4,
+                      color: palette.textSecondary,
+                    ),
+                  ],
+                ),
+                SizedBox(height: 4),
+                Expanded(
+                  child: Row(
+                    children: <Widget>[
+                      Container(
+                        width: 16,
+                        decoration: BoxDecoration(
+                          color: palette.surfaceContainer,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Expanded(
+                        child: Column(
                           children: <Widget>[
                             Expanded(
-                              child: ColoredBox(
-                                color: palette.primaryContainer,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: palette.surface,
+                                  borderRadius: BorderRadius.circular(2),
+                                  border: Border.all(color: palette.outline),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 3),
+                            SizedBox(height: 3),
                             Expanded(
-                              child: ColoredBox(
-                                color: palette.secondaryContainer,
+                              child: Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: ColoredBox(
+                                      color: palette.primaryContainer,
+                                    ),
+                                  ),
+                                  SizedBox(width: 3),
+                                  Expanded(
+                                    child: ColoredBox(
+                                      color: palette.secondaryContainer,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -298,8 +380,5 @@ class _ThemeMiniature extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
-    ),
-  );
+        );
 }

@@ -32,25 +32,25 @@ class _SyncBackupCard extends StatelessWidget {
             onEdit: onEditSource,
             onReorder: onReorder,
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Wrap(
             spacing: 8,
             children: [
               TextButton.icon(
-                key: const ValueKey('desktop-settings-test-sources'),
+                key: ValueKey('desktop-settings-test-sources'),
                 onPressed: checking ? null : onCheckSources,
-                icon: const Icon(Icons.refresh_rounded, size: 16),
+                icon: Icon(Icons.refresh_rounded, size: 16),
                 label: Text(copy.localized('检测资源访问', 'Check resource access')),
               ),
               if (onEditSource != null &&
                   controller.assetSourceConfigs.isNotEmpty)
                 TextButton.icon(
-                  key: const ValueKey('desktop-settings-webdav-config'),
+                  key: ValueKey('desktop-settings-webdav-config'),
                   onPressed: checking
                       ? null
                       : () =>
                             onEditSource!(controller.assetSourceConfigs.first),
-                  icon: const Icon(Icons.account_circle_outlined, size: 16),
+                  icon: Icon(Icons.account_circle_outlined, size: 16),
                   label: Text(copy.localized('账号与连接', 'Account & connections')),
                 ),
             ],
@@ -79,7 +79,9 @@ class _AboutUpdatesCard extends StatelessWidget {
     final AppCopy copy = controller.copy;
     return _SettingsCard(
       icon: Icons.info_outline_rounded,
-      title: copy.localized('关于与更新', 'About & Updates'),
+      title: kIsWeb
+          ? copy.localized('关于', 'About')
+          : copy.localized('关于与更新', 'About & Updates'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -94,11 +96,11 @@ class _AboutUpdatesCard extends StatelessWidget {
                 future: version,
                 builder: (context, snapshot) => Text(
                   snapshot.data ?? copy.localized('读取中…', 'Loading…'),
-                  key: const ValueKey<String>('desktop-settings-app-version'),
+                  key: ValueKey<String>('desktop-settings-app-version'),
                   style: TextStyle(
                     fontSize: _font(context, 13),
                     fontWeight: FontWeight.w600,
-                    color: DesktopColors.text,
+                    color: desktopColors(context).text,
                   ),
                 ),
               ),
@@ -107,12 +109,10 @@ class _AboutUpdatesCard extends StatelessWidget {
           SizedBox(height: _px(context, 11)),
           Row(
             children: <Widget>[
-              if (!kIsWeb)
+              if (!kIsWeb) ...[
                 Expanded(
                   child: OutlinedButton.icon(
-                    key: const ValueKey<String>(
-                      'desktop-settings-check-updates',
-                    ),
+                    key: ValueKey<String>('desktop-settings-check-updates'),
                     onPressed: onCheckUpdates,
                     icon: Icon(
                       Icons.system_update_alt_rounded,
@@ -124,17 +124,20 @@ class _AboutUpdatesCard extends StatelessWidget {
                     style: _settingsButtonStyle(context),
                   ),
                 ),
-              SizedBox(width: _px(context, 9)),
+                SizedBox(width: _px(context, 9)),
+              ],
               Expanded(
                 child: FilledButton.icon(
-                  key: const ValueKey<String>('desktop-settings-open-about'),
+                  key: ValueKey<String>('desktop-settings-open-about'),
                   onPressed: onOpenAbout,
                   icon: Icon(Icons.open_in_new_rounded, size: _px(context, 17)),
                   label: Text(copy.localized('关于应用', 'About app')),
                   style: FilledButton.styleFrom(
                     minimumSize: Size(0, _px(context, 39)),
-                    backgroundColor: DesktopColors.orange,
-                    foregroundColor: Colors.white,
+                    backgroundColor: desktopColors(context).orange,
+                    foregroundColor: isCinema(context)
+                        ? AppPalette.of(context).onPrimary
+                        : Colors.white,
                     padding: EdgeInsets.symmetric(horizontal: _px(context, 8)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(_px(context, 9)),

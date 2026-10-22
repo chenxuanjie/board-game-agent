@@ -141,6 +141,7 @@ void _registerMobileNationalDayTests() {
       await tester.binding.setSurfaceSize(const Size(1448, 1086));
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.buildTheme(value.palette),
           home: DesktopNationalDayPage(controller: value, onOpenGame: (_) {}),
         ),
       );

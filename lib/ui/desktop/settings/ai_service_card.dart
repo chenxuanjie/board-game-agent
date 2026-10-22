@@ -54,8 +54,7 @@ class _AiServiceCard extends StatelessWidget {
     final AppCopy copy = controller.copy;
     final bool hasKey = apiKeyController.text.trim().isNotEmpty;
     final List<AiReasoningEffort> visibleEfforts =
-        AiModelPolicy.selectableReasoningEfforts(modelController.text) ??
-        const [];
+        AiModelPolicy.selectableReasoningEfforts(modelController.text) ?? [];
     final AiApiConfig savedConfig = controller.aiApiConfig;
     final bool draftChanged =
         providerController.text.trim() != savedConfig.name.trim() ||
@@ -76,9 +75,7 @@ class _AiServiceCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: _AiProviderDropdownField(
-                  fieldKey: const ValueKey<String>(
-                    'desktop-settings-ai-provider',
-                  ),
+                  fieldKey: ValueKey<String>('desktop-settings-ai-provider'),
                   label: copy.localized('供应商', 'Provider'),
                   options: providerOptions,
                   selectedId: selectedProviderId,
@@ -89,7 +86,7 @@ class _AiServiceCard extends StatelessWidget {
               SizedBox(width: _px(context, 9)),
               Expanded(
                 child: _AiModelDropdownField(
-                  fieldKey: const ValueKey<String>('desktop-settings-ai-model'),
+                  fieldKey: ValueKey<String>('desktop-settings-ai-model'),
                   label: copy.localized('模型', 'Model'),
                   models: controller.availableAiModels,
                   selectedModel: modelController.text,
@@ -104,9 +101,7 @@ class _AiServiceCard extends StatelessWidget {
           if (selectedProviderId == 'custom:new') ...<Widget>[
             SizedBox(height: _px(context, 8)),
             _EditableValueField(
-              fieldKey: const ValueKey<String>(
-                'desktop-settings-ai-custom-provider',
-              ),
+              fieldKey: ValueKey<String>('desktop-settings-ai-custom-provider'),
               label: copy.aiApiProviderNameLabel,
               controller: providerController,
               enabled: !saving,
@@ -115,7 +110,7 @@ class _AiServiceCard extends StatelessWidget {
           ],
           SizedBox(height: _px(context, 8)),
           _EditableValueField(
-            fieldKey: const ValueKey<String>('desktop-settings-ai-api-key'),
+            fieldKey: ValueKey<String>('desktop-settings-ai-api-key'),
             label: 'API Key',
             controller: apiKeyController,
             enabled: !saving,
@@ -137,7 +132,7 @@ class _AiServiceCard extends StatelessWidget {
           ),
           SizedBox(height: _px(context, 8)),
           _EditableValueField(
-            fieldKey: const ValueKey<String>('desktop-settings-ai-base-url'),
+            fieldKey: ValueKey<String>('desktop-settings-ai-base-url'),
             label: copy.localized('接口地址', 'Base URL'),
             controller: baseUrlController,
             enabled: !saving,
@@ -148,9 +143,7 @@ class _AiServiceCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: _AiOptionDropdownField<AiReasoningEffort>(
-                  fieldKey: const ValueKey<String>(
-                    'desktop-settings-ai-reasoning',
-                  ),
+                  fieldKey: ValueKey<String>('desktop-settings-ai-reasoning'),
                   label: copy.aiApiReasoningEffortLabel,
                   placeholder: copy.aiApiReasoningSelectHint,
                   value: reasoningEffort,
@@ -165,7 +158,7 @@ class _AiServiceCard extends StatelessWidget {
               SizedBox(width: _px(context, 9)),
               Expanded(
                 child: _AiOptionDropdownField<AiResponseSpeed>(
-                  fieldKey: const ValueKey<String>('desktop-settings-ai-speed'),
+                  fieldKey: ValueKey<String>('desktop-settings-ai-speed'),
                   label: copy.aiApiResponseSpeedLabel,
                   value: responseSpeed,
                   values: AiResponseSpeed.selectableValues,
@@ -194,14 +187,16 @@ class _AiServiceCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
-              key: const ValueKey<String>('desktop-settings-ai-save-check'),
+              key: ValueKey<String>('desktop-settings-ai-save-check'),
               onPressed: saving ? null : onSaveAndCheck,
               icon: saving
                   ? SizedBox.square(
                       dimension: _px(context, 15),
                       child: CircularProgressIndicator(
                         strokeWidth: _px(context, 1.8),
-                        color: Colors.white,
+                        color: isCinema(context)
+                            ? AppPalette.of(context).onPrimary
+                            : Colors.white,
                       ),
                     )
                   : Icon(Icons.sync_rounded, size: _px(context, 17)),
@@ -213,8 +208,10 @@ class _AiServiceCard extends StatelessWidget {
               style: FilledButton.styleFrom(
                 minimumSize: Size(0, _px(context, 38)),
                 padding: EdgeInsets.symmetric(horizontal: _px(context, 11)),
-                backgroundColor: DesktopColors.orange,
-                foregroundColor: Colors.white,
+                backgroundColor: desktopColors(context).orange,
+                foregroundColor: isCinema(context)
+                    ? AppPalette.of(context).onPrimary
+                    : Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(_px(context, 9)),
                 ),
@@ -266,11 +263,11 @@ class _AiOptionDropdownField<T> extends StatelessWidget {
               hint: Text(placeholder ?? label),
               isExpanded: true,
               borderRadius: BorderRadius.circular(_px(context, 12)),
-              dropdownColor: DesktopColors.card,
+              dropdownColor: desktopColors(context).card,
               icon: Icon(Icons.expand_more_rounded, size: _px(context, 18)),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontSize: _font(context, 12),
-                color: DesktopColors.text,
+                color: desktopColors(context).text,
                 fontWeight: FontWeight.w500,
               ),
               decoration: _fieldDecoration(context).copyWith(
@@ -353,7 +350,7 @@ class _AiStatusLabel extends StatelessWidget {
         ),
         null => copy.localized('正在检测…', 'Checking…'),
       };
-      color = DesktopColors.brown;
+      color = desktopColors(context).brown;
     } else if (feedback != null) {
       final bool success = feedbackSucceeded == true;
       final String label = success
@@ -364,36 +361,56 @@ class _AiStatusLabel extends StatelessWidget {
       message = '$label：$feedback';
       color = success
           ? status.state == ConnectivityState.warning
-                ? const Color(0xFF945D31)
-                : const Color(0xFF497461)
-          : const Color(0xFF9F4D5D);
+                ? desktopTone(
+                    context,
+                    Color(0xFF945D31),
+                    DesktopToneRole.warning,
+                  )
+                : desktopTone(
+                    context,
+                    Color(0xFF497461),
+                    DesktopToneRole.success,
+                  )
+          : desktopTone(context, Color(0xFF9F4D5D), DesktopToneRole.error);
     } else if (draftChanged) {
       message = copy.localized(
         '配置已修改，请保存并检测',
         'Changes pending; save and check',
       );
-      color = DesktopColors.brown;
+      color = desktopColors(context).brown;
     } else if (!hasKey) {
       message = copy.localized('未配置', 'Not configured');
-      color = DesktopColors.secondaryText;
+      color = desktopColors(context).secondaryText;
     } else {
       switch (status.state) {
         case ConnectivityState.success:
           message =
               '${copy.localized('连接正常', 'Connection ready')}：${status.message}';
-          color = const Color(0xFF497461);
+          color = desktopTone(
+            context,
+            Color(0xFF497461),
+            DesktopToneRole.success,
+          );
         case ConnectivityState.loading:
           message = status.message;
-          color = DesktopColors.brown;
+          color = desktopColors(context).brown;
         case ConnectivityState.warning:
           message = status.message;
-          color = const Color(0xFF945D31);
+          color = desktopTone(
+            context,
+            Color(0xFF945D31),
+            DesktopToneRole.warning,
+          );
         case ConnectivityState.failure:
           message = status.message;
-          color = const Color(0xFF9F4D5D);
+          color = desktopTone(
+            context,
+            Color(0xFF9F4D5D),
+            DesktopToneRole.error,
+          );
         case ConnectivityState.unknown:
           message = copy.localized('尚未检测', 'Not checked');
-          color = DesktopColors.secondaryText;
+          color = desktopColors(context).secondaryText;
       }
     }
     final String fastNote = copy.localized(
@@ -429,7 +446,7 @@ class _AiStatusLabel extends StatelessWidget {
               liveRegion: true,
               child: Text(
                 fullMessage,
-                key: const ValueKey<String>('desktop-settings-ai-status'),
+                key: ValueKey<String>('desktop-settings-ai-status'),
               ),
             ),
           ),
@@ -487,11 +504,11 @@ class _AiProviderDropdownField extends StatelessWidget {
               initialValue: selectedId,
               isExpanded: true,
               borderRadius: BorderRadius.circular(_px(context, 12)),
-              dropdownColor: DesktopColors.card,
+              dropdownColor: desktopColors(context).card,
               icon: Icon(Icons.expand_more_rounded, size: _px(context, 18)),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontSize: _font(context, 12),
-                color: DesktopColors.text,
+                color: desktopColors(context).text,
                 fontWeight: FontWeight.w500,
               ),
               decoration: _fieldDecoration(context).copyWith(
@@ -580,7 +597,7 @@ class _AiModelDropdownField extends StatelessWidget {
                 initialValue: selectionAvailable ? normalizedSelection : null,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(_px(context, 12)),
-                dropdownColor: DesktopColors.card,
+                dropdownColor: desktopColors(context).card,
                 hint: Text(hint, overflow: TextOverflow.ellipsis),
                 icon: loadState == AiModelLoadState.loading
                     ? SizedBox.square(
@@ -592,7 +609,7 @@ class _AiModelDropdownField extends StatelessWidget {
                     : Icon(Icons.expand_more_rounded, size: _px(context, 18)),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontSize: _font(context, 12),
-                  color: DesktopColors.text,
+                  color: desktopColors(context).text,
                   fontWeight: FontWeight.w500,
                 ),
                 decoration: _fieldDecoration(context).copyWith(
@@ -667,7 +684,7 @@ class _EditableValueField extends StatelessWidget {
           onChanged: onChanged,
           style: TextStyle(
             fontSize: _font(context, 12),
-            color: DesktopColors.text,
+            color: desktopColors(context).text,
             fontWeight: FontWeight.w500,
           ),
           decoration: _fieldDecoration(context).copyWith(
@@ -699,7 +716,7 @@ class _FieldLabel extends StatelessWidget {
       fontSize: _font(context, 12),
       height: 1.15,
       fontWeight: FontWeight.w500,
-      color: DesktopColors.secondaryText,
+      color: desktopColors(context).secondaryText,
     ),
   );
 }

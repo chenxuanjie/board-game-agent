@@ -2,7 +2,7 @@
 
 术语、实际触发频率、公共/私人链路和共享包边界统一见 [同步与更新检查规范](sync-and-update.md)。资料库版本检查与这里的账号增量同步是不同业务。
 
-Android / Windows 登录群晖后，默认开启个人云同步。入口：设置 → 账号，或手机“我的” → 账号。可暂停、立即同步、重试、修改昵称。Web 保持访客模式，没有账号同步。
+Android / Windows 登录群晖后，默认开启个人云同步。入口：设置 → 账号，或手机“我的” → 账号。可暂停、立即同步、重试、修改昵称。Web 源码已通过同源网关接入同一同步协议（2026-10-18），登录不代表已同步，当前旧部署须更新镜像后才具有此能力；见 [Web 账号](web-account.md)。
 
 ## 原有使用与本次复用
 
@@ -10,7 +10,7 @@ Android / Windows 登录群晖后，默认开启个人云同步。入口：设�
 
 本次引入内部公共包 `webdav_sync` 0.1.0，直接复用 `IncrementalSyncEngine`、`SyncLocalStore`、`SyncRemoteStore`、`SyncOperation`、`SyncCheckpoint` 和有界重试。公共包源码位于 `../shared_packages/webdav_sync/lib/src/`；原包测试覆盖增量同步、游标、重试、去重和冲突停止。本项目只实现业务映射和账号存储适配，没有另建同步引擎。
 
-已有 `WebDavSyncStore` 使用 Basic 凭据及 ETag，群晖登录产生的 SID 不能直接代替 WebDAV 密码。因此复用通用同步协议，通过公共认证包 `app_identity` 的 FileStation 私有文件适配器传输；私人同步不另存密码，凭据不进入同步日志，也不借用公共资源账号存放私有对话。无需部署新服务。
+已有 `WebDavSyncStore` 使用 Basic 凭据及 ETag，群晖登录产生的 SID 不能直接代替 WebDAV 密码。因此复用通用同步协议，通过公共认证包 `app_identity` 的 FileStation 私有文件适配器传输；私人同步不另存密码，凭据不进入同步日志，也不借用公共资源账号存放私有对话。原生端无需部署新服务；Web 复用已有 Docker 账号网关。
 
 ## 范围与存储位置
 

@@ -24,6 +24,13 @@ import 'board_game_remote_layout.dart';
 import '../../../core/models/connectivity_status.dart';
 
 class RemoteAssetService {
+  bool get usesSameOriginLibrary => false;
+  Uri? resourceUri(String path) => null;
+  Future<bool> refreshPublishedLibrary({
+    bool complete = false,
+    String? checkedCatalog,
+  }) async => false;
+  void clearAccountCache() {}
   RemoteAssetService({
     http.Client? client,
     WebDavSettings Function()? settingsProvider,

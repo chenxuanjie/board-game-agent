@@ -272,6 +272,9 @@ extension AppLibraryController on AppController {
   Future<_RemoteLibraryIndexResult> _loadRemoteLibraryIndex() async {
     final List<String> slugs = await _remoteLibraryGameSlugs();
     if (slugs.isEmpty) {
+      if (_remoteAssetService.usesSameOriginLibrary) {
+        return const _RemoteLibraryIndexResult(resources: []);
+      }
       throw StateError('远端资料库没有可检查的游戏资料');
     }
 
@@ -303,6 +306,9 @@ extension AppLibraryController on AppController {
     );
 
     if (loadedManifestCount == 0) {
+      if (_remoteAssetService.usesSameOriginLibrary) {
+        throw StateError('远端资料清单暂不可用');
+      }
       // If a legacy remote library has no manifests, retain the existing
       // bounded directory walk as a compatibility fallback.
       final List<RemoteAssetFile> files = await _remoteAssetService
@@ -340,13 +346,17 @@ extension AppLibraryController on AppController {
 
   Future<List<String>> _remoteLibraryGameSlugs() async {
     final Set<String> slugs = <String>{
-      for (final GameInfo game in _games) game.slug,
+      if (!_remoteAssetService.usesSameOriginLibrary)
+        for (final GameInfo game in _games) game.slug,
     };
     try {
       final String? source = await _remoteAssetService.fetchRemoteText(
         sources: _assetSourceConfigs,
         remotePath: 'assets/catalog.json',
       );
+      if (_remoteAssetService.usesSameOriginLibrary && source == null) {
+        throw StateError('远端目录暂不可用');
+      }
       if (source != null && source.trim().isNotEmpty) {
         final Map<String, dynamic> catalog =
             jsonDecode(source) as Map<String, dynamic>;
@@ -356,6 +366,10 @@ extension AppLibraryController on AppController {
           if (entry is! Map<String, dynamic> || entry['enabled'] == false) {
             continue;
           }
+          if (_remoteAssetService.usesSameOriginLibrary &&
+              entry['enabled'] != true) {
+            continue;
+          }
           final String? slug = entry['slug'] as String?;
           if (slug != null && _isSafeGameSlug(slug)) {
             slugs.add(slug);
@@ -363,6 +377,7 @@ extension AppLibraryController on AppController {
         }
       }
     } catch (error) {
+      if (_remoteAssetService.usesSameOriginLibrary) rethrow;
       debugPrint(
         '[assets] remote catalog unavailable for library index: $error',
       );

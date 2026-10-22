@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_motion.dart';
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
+import 'app_failure_notice.dart';
 
 class FavoriteFeedbackIcon extends StatefulWidget {
   const FavoriteFeedbackIcon({
@@ -9,10 +10,13 @@ class FavoriteFeedbackIcon extends StatefulWidget {
     required this.selected,
     this.color,
     this.size = 20,
+    this.selectedIcon = Icons.favorite_rounded,
+    this.unselectedIcon = Icons.favorite_border_rounded,
   });
   final bool selected;
   final Color? color;
   final double size;
+  final IconData selectedIcon, unselectedIcon;
   @override
   State<FavoriteFeedbackIcon> createState() => _FavoriteFeedbackIconState();
 }
@@ -68,15 +72,15 @@ class _FavoriteFeedbackIconState extends State<FavoriteFeedbackIcon>
   Widget build(BuildContext context) => ScaleTransition(
     scale: _scale,
     child: Icon(
-      widget.selected ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+      widget.selected ? widget.selectedIcon : widget.unselectedIcon,
       color: widget.color,
       size: widget.size,
     ),
   );
 }
 
-/// Uses the existing mutation queue and rollback. A pulse follows persistence,
-/// while repeated presses are disabled until the current write settles.
+/// Immediate intent feedback over the existing mutation queue and rollback.
+/// Repeated presses are guarded without dimming or replacing the reaction icon.
 class FavoriteToggleButton extends StatefulWidget {
   const FavoriteToggleButton({
     super.key,
@@ -98,32 +102,43 @@ class FavoriteToggleButton extends StatefulWidget {
 class _FavoriteToggleButtonState extends State<FavoriteToggleButton> {
   bool _busy = false;
   late bool _confirmed = widget.controller.isFavorite(widget.game);
+  int _generation = 0;
   @override
   void didUpdateWidget(covariant FavoriteToggleButton oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller ||
+        oldWidget.game.id != widget.game.id) {
+      ++_generation;
+      _busy = false;
+    }
     if (!_busy) _confirmed = widget.controller.isFavorite(widget.game);
   }
 
   Future<void> _toggle() async {
     if (_busy) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final generation = ++_generation;
+    final controller = widget.controller;
+    final game = widget.game;
     final copy = widget.controller.copy;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _confirmed = !_confirmed;
+    });
     var saved = false;
     try {
-      saved = await widget.controller.toggleFavorite(widget.game);
+      saved = await controller.toggleFavorite(game);
     } catch (_) {
       saved = false;
     } finally {
-      if (mounted) {
+      if (mounted && generation == _generation) {
         setState(() {
           _busy = false;
           _confirmed = widget.controller.isFavorite(widget.game);
         });
       }
     }
-    if (!saved && messenger?.mounted == true) {
-      messenger!.showSnackBar(SnackBar(content: Text(copy.favoriteSaveFailed)));
+    if (!saved && mounted && generation == _generation) {
+      showAppFailureNotice(context, copy.favoriteSaveFailed);
     }
   }
 
@@ -135,28 +150,8 @@ class _FavoriteToggleButtonState extends State<FavoriteToggleButton> {
       tooltip: _confirmed
           ? widget.controller.copy.localized('取消喜欢', 'Unlike')
           : widget.controller.copy.localized('喜欢', 'Like'),
-      onPressed: _busy ? null : _toggle,
-      icon: Stack(
-        alignment: Alignment.center,
-        children: [
-          Opacity(
-            opacity: _busy ? 0 : 1,
-            child: FavoriteFeedbackIcon(
-              selected: _confirmed,
-              color: widget.color,
-            ),
-          ),
-          if (_busy)
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: widget.color,
-              ),
-            ),
-        ],
-      ),
+      onPressed: _toggle,
+      icon: FavoriteFeedbackIcon(selected: _confirmed, color: widget.color),
     );
   }
 }

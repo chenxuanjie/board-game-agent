@@ -53,6 +53,7 @@ app.*.map.json
 /android/local.properties
 
 # Local release and publishing artifacts
+/.env
 /release/
 /webdav.local.json
 /preview/

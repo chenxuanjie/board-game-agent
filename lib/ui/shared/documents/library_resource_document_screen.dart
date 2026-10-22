@@ -97,6 +97,12 @@ class _LibraryResourceDocumentScreenState
                               StackTrace? stack,
                             ) => Text('图片加载失败：$error'),
                       )
+                    : path.startsWith('https://') || path.startsWith('http://')
+                    ? Image.network(
+                        path,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const Text('图片加载失败'),
+                      )
                     : path.startsWith('data:')
                     ? Image.memory(
                         Uri.parse(path).data!.contentAsBytes(),

@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_motion.dart';
 import '../app_modals.dart';
+import '../../../core/theme/cinema_theme.dart';
+import '../cinema/cinema_surface.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../../core/theme/app_palette.dart';
@@ -50,11 +52,20 @@ Future<void> showConversationDrawer(
                     height: double.infinity,
                     child: _DrawerMotion(
                       animation: animation,
-                      child: ConversationHistoryPanel(
-                        controller: controller,
-                        onClose: () => Navigator.of(context).pop(),
-                        onOpenConversation: onOpenConversation,
-                      ),
+                      child: isCinema(context)
+                          ? CinemaSurface(
+                              role: CinemaSurfaceRole.overlay,
+                              child: ConversationHistoryPanel(
+                                controller: controller,
+                                onClose: () => Navigator.of(context).pop(),
+                                onOpenConversation: onOpenConversation,
+                              ),
+                            )
+                          : ConversationHistoryPanel(
+                              controller: controller,
+                              onClose: () => Navigator.of(context).pop(),
+                              onOpenConversation: onOpenConversation,
+                            ),
                     ),
                   ),
                 ),
@@ -330,7 +341,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
         label: copy.conversationDrawerTitle,
         child: Material(
           key: const ValueKey('assistant-conversation-drawer'),
-          color: palette.surface,
+          color: isCinema(context) ? Colors.transparent : palette.surface,
           elevation: 12,
           shadowColor: palette.shadow.withValues(alpha: .22),
           shape: RoundedRectangleBorder(

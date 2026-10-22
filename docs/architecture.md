@@ -2,9 +2,17 @@
 
 桌游评论模型与独立 NAS 数据链路位于 `features/community/`，账号作用域服务由 `AccountService.comments` 管理；两端复用 `ui/shared/game_comments.dart`，评论区均位于相关游戏之后，桌面直接展示完整列表，App 使用预览、完整列表和回复页。评分规则、目录、重试与验证见 [桌游评论](game-comments.md)。
 
+`core/platform/background_transfer_notifications.dart` 是 Android 下载执行优先级及通知的适配入口；`android/` 的 DownloadProgressService 不承担网络协议或文件校验。APK 包装服务位于 `features/settings/services/android_background_update_service.dart`，复用共享更新器，见 [Android 后台更新](android-background-updates.md)。
+
 `main.dart` 创建依赖，并按平台与 Web 宽度选择桌面或紧凑界面。两个界面使用同一个 `AppController` 和同一套业务模型、服务；目录划分不代表复制后端。
 
+新增影院主题的设计标准见 [影院主题 v1](cinema-theme-v1.md)。V5 开发位于 `codex/v5`；影院以独立编码替换晚霞海岸，`core/theme/cinema_theme.dart` 定义控件主题，`ui/shared/cinema/` 提供首页、海报、氛围和局部玻璃。桌面旧组件通过语义颜色入口接入影院，继续复用现有业务状态；玻璃开关只保存在本机。
+
 `app/state/browse_session.dart` 管理本次运行的账号浏览状态，桌面和紧凑外壳共同使用；`ui/shared/library_viewport.dart` 按稳定游戏 ID 恢复网格位置。`app_modals.dart` 统一浮层节奏和关闭过程中的入口保护，`smooth_progress.dart` 仅平滑真实进度。范围及验收见 [浏览位置与交互反馈](interaction-continuity.md)。
+
+“空间影院”有独立的 `ui/shared/spatial/` 展示外壳、首页、材质与参考原语，不通过 `DesktopWorkspace` 换色实现。Windows 透明实体窗口由 `core/platform/native_window_surface.dart` 复用 `window_manager` 实现，移除原 runner 裁切通道；`DesktopWindowFrame` 统一绘制顶部与内容的连续底色。宽屏业务组合位于 `spatial_business_pages.dart`，复用桌面内容组件及账号浏览状态；紧凑端继续使用触控页面。具体适配及未完成边界见 [空间影院](spatial-cinema-theme.md)。
+
+空间影院的十款个性推荐由 `features/games/services/personal_game_recommender.dart` 根据收藏类型计算，状态缓存与账号边界位于 `AppController.personalizedRecommendedGames`。首页只展示完整预览卡片，独立推荐页与共用海报位于 `ui/shared/spatial/spatial_recommendations.dart`，见 [收藏偏好推荐](personal-game-recommendations.md)。
 
 | 目录 | 职责 | 修改时从哪里开始 |
 | --- | --- | --- |
@@ -16,7 +24,8 @@
 | `lib/features/library/` | 资料、资源源、WebDAV 与缓存 | 资料获取及打开前的数据处理 |
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 | AI 请求及状态模型 |
 | `lib/features/settings/` | 偏好、桌面 AI 设置与更新配置 | 设置的保存与读取 |
-| `lib/features/identity/` | 原生群晖直连认证、恢复、个人数据切换与账号云同步；Web 访客模式 | 公共认证包与应用业务的接线 |
+| `lib/features/identity/` | 原生群晖直连、Web 同源账号适配、恢复、个人数据切换与原生账号云同步 | 公共认证包与应用业务的接线 |
+| `services/web_account/` | Web 登录、账号同步及只读资料网关，固定 DSM 上游、站点会话、文件读取资格与发布清单 | 部署环境、只读挂载、服务端路由与模拟 DSM/Nginx 测试 |
 | `integration_test/` | 实际 Windows 登录、安全存储、恢复与退出验证 | 仅在私有测试环境提供凭据时运行 |
 | `lib/ui/desktop/` | 桌面及宽屏 Web 的外壳、页面 | 桌面布局与交互 |
 | `lib/ui/mobile/` | Android 及窄屏 Web 的外壳、页面 | 手机布局与交互 |
@@ -58,4 +67,12 @@ ResourceAccessSummary 共用单设备整体可用性及按需入口详情。AppC
 
 手机“我的”资料卡由 `MobileMineContent` 合并头像与名称为账户详情入口，统计分别进入收藏和共用会话历史；登录状态及昵称沿用 AccountScope，详见 [手机资料卡片](mobile-profile-card.md)。
 
+`ui/shared/account_menu.dart` 提供共用头像下拉菜单，空间影院首页、宽屏列表和紧凑桌游库复用。登录状态和退出动作直接读取 AccountScope / AccountService，不复制认证、同步或个人数据切换；通知入口复用 DesktopActivityPopup 与现有活动记录，按真实目标进入资料或会话。
+
 登录账号历史与可选密码位于 `features/identity/services/saved_login_store.dart`，统一通过 `AccountService` 在验证成功后记录，账户页负责选择、回填和移除。其安全存储独立于当前会话和 WebDAV 凭据，容量为最近 10 条；行为与限制见 [保存登录账号](saved-logins.md)。
+
+Web 账号通过 `features/identity/services/web_account_gateway.dart` 接入同一个 IdentityController 与本机账号作用域；不调用原生安全存储，不保存密码或 NAS SID。`features/library/services/same_origin_library_service.dart` 复用 RemoteAssetService 接口，供游客与登录用户使用同源公开资料 URI、有限内存缓存和检查；原生端仍使用原服务。Nginx 将 `/api/account/`、`/api/library/`、`/library/`、`/api/comments/` 和 `/api/sync/` 转到独立 Starlette/HTTPX 网关。`services/web_account/library.py` 限制已发布资源，再内部转给 Nginx 返回只读挂载文件；`comments.py` 校验公开快照及当前账号的 DSM 写入，Flutter `WebPublicCommentsFiles` 复用原评论服务。`web_sync_files.dart` 与服务端 `account_files.py` 为 Web 提供同协议的私人日志和公共收藏/投票传输，复用 AccountCloudSync 和 webdav_sync，详见 [Web 账号](web-account.md)、[Web 同源资料](web-library.md) 和 [桌游评论](game-comments.md)。
+
+Docker 根目录 `docker-compose.yml` 是参数化开发模板，构建通过 `docker-compose.build.yml` 显式启用；`scripts/build-docker-release.py` 在构建电脑构建并导出唯一固定名称 TAR，成功后同名覆盖，不生成部署 ZIP。交付目录 `release/reports/docker-linux-amd64/docker-compose.yml` 直接固定匹配 TAR 的两个镜像引用、架构和 NAS 设置，群晖 GUI 上传不需要 `.env`。PowerShell 提供 Windows 入口；`packaging/docker/deploy.sh` 在 NAS 校验、导入并启动，不执行编译。见 [Docker 部署](docker-deployment.md)。
+
+Nginx 的全局启动配置位于 `packaging/docker/nginx-main.conf`，业务路由仍在 `nginx.conf`。2026-10-18 源码改为两个容器统一使用现有 NAS 读取 UID/GID，Nginx 内部 8080、临时文件只写 `/tmp`，配合只读挂载和只读根文件系统；不创建/修改 NAS 账号或权限。`verify-docker-release.py --source-overlay` 仅用于既有镜像挂载当前源码的开发测试，报告独立放入 build/diagnostics，不当作新 TAR 的交付验收。

@@ -40,6 +40,7 @@ extension AppIdentityScopeController on AppController {
     }
     _identityScopeRequests++;
     _switchingIdentityScope = true;
+    _remoteAssetService.clearAccountCache();
     _invalidateActiveRuns();
     _gameVotes.dispose();
     _favoriteStatistics?.dispose();
@@ -142,6 +143,9 @@ extension AppIdentityScopeController on AppController {
     _searchHistory = [];
     _recentGameRecords = [];
     _dailyRecommendationHistory = [];
+    _personalizedCatalog = null;
+    _personalizedFavoriteSlugs = {};
+    _personalizedSlate = const [];
     _searchHistoryStateVersion++;
     _recentGamesStateVersion++;
     _selectedConversationId = null;

@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'app_palette.dart';
 import 'ui_tokens.dart';
+import 'cinema_theme.dart';
+import 'color_scheme_option.dart';
 
 class AppTheme {
-  static ThemeData buildTheme(AppPalette palette) {
+  static ThemeData buildTheme(
+    AppPalette palette, {
+    bool cinemaGlassEnabled = true,
+  }) {
     final Brightness brightness = ThemeData.estimateBrightnessForColor(
       palette.pageBackground,
     );
@@ -60,9 +65,11 @@ class AppTheme {
       splashColor: palette.primary.withValues(alpha: 0.12),
       highlightColor: palette.primary.withValues(alpha: 0.08),
     );
-    final TextTheme bodyTextTheme = base.textTheme;
+    final TextTheme bodyTextTheme = base.typography.englishLike.merge(
+      base.textTheme,
+    );
 
-    return base.copyWith(
+    final theme = base.copyWith(
       textTheme: bodyTextTheme.copyWith(
         displayLarge: TextStyle(
           fontFamily: 'Noto Sans SC',
@@ -125,8 +132,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: TextStyle(
-          fontFamily: 'Noto Sans SC',
+        titleTextStyle: bodyTextTheme.titleLarge!.copyWith(
           fontSize: 18,
           fontWeight: FontWeight.w700,
           color: palette.textPrimary,
@@ -151,8 +157,7 @@ class AppTheme {
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
-        labelStyle: TextStyle(
-          fontFamily: 'Noto Sans SC',
+        labelStyle: bodyTextTheme.labelLarge!.copyWith(
           color: palette.onSecondaryContainer,
           fontWeight: FontWeight.w700,
         ),
@@ -164,12 +169,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: palette.inputSurface,
-        hintStyle: TextStyle(
-          fontFamily: 'Noto Sans SC',
+        hintStyle: bodyTextTheme.bodyMedium!.copyWith(
           color: palette.textSecondary,
         ),
-        labelStyle: TextStyle(
-          fontFamily: 'Noto Sans SC',
+        labelStyle: bodyTextTheme.bodyMedium!.copyWith(
           color: palette.textSecondary,
         ),
         prefixIconColor: palette.textSecondary,
@@ -209,8 +212,7 @@ class AppTheme {
             BorderSide(color: palette.outline),
           ),
         ),
-        textStyle: TextStyle(
-          fontFamily: 'Noto Sans SC',
+        textStyle: bodyTextTheme.bodyLarge!.copyWith(
           color: palette.textPrimary,
         ),
       ),
@@ -221,8 +223,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(UiTokens.groupRadius),
           side: BorderSide(color: palette.outline),
         ),
-        titleTextStyle: TextStyle(
-          fontFamily: 'Noto Sans SC',
+        titleTextStyle: bodyTextTheme.titleLarge!.copyWith(
           fontSize: 18,
           fontWeight: FontWeight.w700,
           color: palette.textPrimary,
@@ -248,8 +249,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: palette.primary,
-          textStyle: TextStyle(
-            fontFamily: 'Noto Sans SC',
+          textStyle: bodyTextTheme.labelLarge!.copyWith(
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -259,8 +259,7 @@ class AppTheme {
           foregroundColor: palette.primary,
           minimumSize: const Size(48, 48),
           side: BorderSide(color: palette.primary),
-          textStyle: TextStyle(
-            fontFamily: 'Noto Sans SC',
+          textStyle: bodyTextTheme.labelLarge!.copyWith(
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
@@ -273,8 +272,7 @@ class AppTheme {
           backgroundColor: palette.primary,
           foregroundColor: palette.onPrimary,
           minimumSize: const Size(48, 48),
-          textStyle: TextStyle(
-            fontFamily: 'Noto Sans SC',
+          textStyle: bodyTextTheme.labelLarge!.copyWith(
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
@@ -302,5 +300,9 @@ class AppTheme {
       ),
       iconTheme: IconThemeData(color: palette.textPrimary),
     );
+    final normalized = ThemeData.localize(theme, theme.typography.englishLike);
+    return palette.scheme == ColorSchemeOption.cinema
+        ? cinemaTheme(normalized, glassEnabled: cinemaGlassEnabled)
+        : normalized;
   }
 }

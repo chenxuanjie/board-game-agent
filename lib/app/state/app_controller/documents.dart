@@ -2,6 +2,7 @@ part of '../app_controller.dart';
 
 extension AppDocumentController on AppController {
   bool get libraryAccessAllowed => _remoteAssetService.accessAllowed;
+  Uri? documentUri(String path) => _remoteAssetService.resourceUri(path);
 
   bool _requireLibraryAccess() {
     if (libraryAccessAllowed) return true;
@@ -18,6 +19,12 @@ extension AppDocumentController on AppController {
   }
 
   Future<List<int>?> _loadWebDocument(String path) async {
+    if (_remoteAssetService.usesSameOriginLibrary) {
+      return _remoteAssetService.loadBytes(
+        sources: _assetSourceConfigs,
+        remotePath: path,
+      );
+    }
     final updated = await _remoteAssetService.cachedBytesFor(path);
     if (updated != null) return updated;
     // Shipped documents remain readable when WebDAV is offline. A remote-only
@@ -115,6 +122,12 @@ extension AppDocumentController on AppController {
 
   Future<String?> loadLibraryResourceText(String remotePath) async {
     if (!_requireLibraryAccess()) return null;
+    if (_remoteAssetService.usesSameOriginLibrary) {
+      return _remoteAssetService.loadText(
+        sources: _assetSourceConfigs,
+        remotePath: remotePath,
+      );
+    }
     final String? localPath = await cacheDocument(remotePath);
     if (localPath == null) {
       if (remotePath.startsWith('assets/')) {
@@ -166,6 +179,9 @@ extension AppDocumentController on AppController {
     if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
+    if (_remoteAssetService.usesSameOriginLibrary) {
+      return _remoteAssetService.resourceUri(remotePath)?.toString();
+    }
     if (_resolvedAssetPaths.containsKey(remotePath)) {
       return _resolvedAssetPaths[remotePath];
     }
@@ -212,6 +228,18 @@ extension AppDocumentController on AppController {
     if (kIsWeb) {
       for (final candidate in candidates) {
         try {
+          if (_remoteAssetService.usesSameOriginLibrary) {
+            final file = await _remoteAssetService.ensureCached(
+              sources: _assetSourceConfigs,
+              remotePath: candidate,
+            );
+            if (file == null) continue;
+            return ResolvedDocument(
+              remotePath: candidate,
+              renderType: _documentRenderTypeForPath(candidate),
+              label: fallbackLabel,
+            );
+          }
           final bytes = await _loadWebDocument(candidate);
           if (bytes != null && bytes.isNotEmpty) {
             return ResolvedDocument(

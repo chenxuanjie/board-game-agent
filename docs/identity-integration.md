@@ -2,7 +2,7 @@
 
 Android / Windows → HTTPS `SYNO.API.Auth` v6 → NAS 验证账号密码。
 无需 Supabase、SSO 应用注册或新增会话服务。群晖要求双重验证时才显示验证码。
-Web 不尝试直连认证，继续使用访客功能。
+Web 不尝试直连认证，改由同源网关完成账号登录与 Cookie 会话，范围见 [Web 账号](web-account.md)；知识库已通过 [同源只读资料源](web-library.md) 接入，私人云同步尚未接入。
 
 公共包 `app_identity` 0.3.0 与主项目均使用 `codex/synology-direct-auth` 分支。
 运行路径依赖时必须同步切换公共包；只切主项目会造成接口不兼容。
@@ -18,7 +18,7 @@ Web 不尝试直连认证，继续使用访客功能。
 
 - 公共包 `../shared_packages/app_identity`：直连接口、状态机、取消请求、安全存储、恢复与退出。
 - `lib/features/identity/`：默认 NAS 配置、平台能力、生命周期验证与个人数据作用域。
-- `lib/ui/shared/account_screen.dart`：共用账号页；Web 显示不支持登录并保留访客访问。
+- `lib/ui/shared/account_screen.dart`：共用账号页；Web 使用同一表单，隐藏原生专用地址选择与保存密码。
 - `integration_test/direct_synology_auth_test.dart`：真实原生网络、系统安全存储、重建适配器恢复、退出后旧会话失效验证。
 
 先用 `SYNO.API.Info` 发现接口。密码只放在 HTTPS POST 请求体中，禁止重定向。
@@ -44,7 +44,7 @@ SID、SynoToken、UID 仅写系统安全存储，密码与 OTP 不保存。安�
 - 会话过期需重新输入密码；未实现独立应用刷新令牌、应用级角色、全设备退出或后台撤销服务。一个设备退出不影响其他设备。
 - 断网退出的远端撤销在程序再次运行并联网后完成。如果登录响应丢失而 NAS 已创建会话，客户端不知道 SID，只能等 NAS 过期或管理员撤销。
 - NAS origin 改变会形成新数据命名空间；删除重建 NAS 用户时 UID 可能复用，不能在未处理旧数据时把同一 UID 当成新用户。
-- 当前 Web 被禁用。原生共享逻辑不能绕过浏览器 CORS；不将 NAS token 放入浏览器 localStorage。
+- Web 复用账号状态机，通过同源网关处理 DSM 通信；原生共享逻辑仍不能直接绕过浏览器 CORS，不将 NAS token 放入浏览器 localStorage。
 
 保存 / 回滚见 [认证保存点](identity-preservation.md)，验收范围见 [验证记录](identity-validation.md)。
 

@@ -191,15 +191,15 @@ void main() {
       final config = AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6-luna');
       await guest.saveAiApiConfig(config);
       await guest.saveAssetSourceConfigs(AssetSourceConfig.defaults);
-      await guest.saveColorScheme(ColorSchemeOption.classic);
+      await guest.saveColorScheme(ColorSchemeOption.spatialCinema);
       expect((await a.loadAiApiConfig()).toJson(), config.toJson());
       expect(
         (await a.loadAssetSourceConfigs()).length,
         AssetSourceConfig.defaults.length,
       );
-      expect(await a.loadColorScheme(), ColorSchemeOption.classic);
-      await a.saveColorScheme(ColorSchemeOption.sunsetCoast);
-      expect(await guest.loadColorScheme(), ColorSchemeOption.sunsetCoast);
+      expect(await a.loadColorScheme(), ColorSchemeOption.spatialCinema);
+      await a.saveColorScheme(ColorSchemeOption.cinema);
+      expect(await guest.loadColorScheme(), ColorSchemeOption.cinema);
     },
   );
 
@@ -1056,7 +1056,7 @@ void main() {
         Widget page(Widget child) => AccountScope(
           service: service,
           child: MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.classic),
+            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,

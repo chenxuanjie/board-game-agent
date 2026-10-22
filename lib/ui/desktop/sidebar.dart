@@ -4,6 +4,9 @@ import '../../core/localization/app_copy.dart';
 import '../../core/theme/app_motion.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
+import '../../core/theme/cinema_theme.dart';
+import '../../core/theme/app_palette.dart';
+import '../shared/cinema/cinema_surface.dart';
 
 class DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
@@ -34,7 +37,7 @@ class DesktopSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metrics = DesktopMetricsScope.of(context);
-    return Container(
+    final body = Container(
       key: ValueKey<String>(
         compact ? 'desktop-sidebar-rail' : 'desktop-sidebar-full',
       ),
@@ -44,13 +47,15 @@ class DesktopSidebar extends StatelessWidget {
               ? metrics.px(DesktopResponsive.compactSidebarWidth)
               : metrics.px(DesktopResponsive.fullSidebarWidth)),
       height: double.infinity,
-      decoration: const BoxDecoration(
-        color: DesktopColors.sidebar,
-        border: Border(right: BorderSide(color: DesktopColors.line)),
+      decoration: BoxDecoration(
+        color: isCinema(context)
+            ? Colors.transparent
+            : desktopColors(context).sidebar,
+        border: Border(right: BorderSide(color: desktopColors(context).line)),
       ),
       child: Stack(
         children: [
-          if (!compact)
+          if (!compact && !isCinema(context))
             Positioned(
               left: 0,
               right: 0,
@@ -59,7 +64,7 @@ class DesktopSidebar extends StatelessWidget {
                 aspectRatio: 940 / 1672,
                 child: ShaderMask(
                   blendMode: BlendMode.dstIn,
-                  shaderCallback: (bounds) => const LinearGradient(
+                  shaderCallback: (bounds) => LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     // Blend the blank paper margin into the sidebar background.
@@ -68,7 +73,7 @@ class DesktopSidebar extends StatelessWidget {
                   ).createShader(bounds),
                   child: Image.asset(
                     'assets/desktop/home/sidebar_castle.png',
-                    key: const ValueKey<String>('desktop-sidebar-art'),
+                    key: ValueKey<String>('desktop-sidebar-art'),
                     width: double.infinity,
                     fit: BoxFit.fitWidth,
                     alignment: Alignment.bottomCenter,
@@ -97,7 +102,7 @@ class DesktopSidebar extends StatelessWidget {
                           alignment: Alignment.topCenter,
                           child: Image.asset(
                             'assets/desktop/home/logo.png',
-                            key: const ValueKey<String>('desktop-sidebar-logo'),
+                            key: ValueKey<String>('desktop-sidebar-logo'),
                             width: metrics.px(48),
                             height: metrics.px(48),
                             fit: BoxFit.contain,
@@ -110,9 +115,7 @@ class DesktopSidebar extends StatelessWidget {
                               padding: EdgeInsets.only(left: metrics.px(21)),
                               child: Image.asset(
                                 'assets/desktop/home/logo.png',
-                                key: const ValueKey<String>(
-                                  'desktop-sidebar-logo',
-                                ),
+                                key: ValueKey<String>('desktop-sidebar-logo'),
                                 width: metrics.px(77),
                                 height: metrics.px(72),
                                 fit: BoxFit.contain,
@@ -141,7 +144,7 @@ class DesktopSidebar extends StatelessWidget {
                 Stack(
                   children: [
                     AnimatedPositioned(
-                      key: const ValueKey('desktop-navigation-indicator'),
+                      key: ValueKey('desktop-navigation-indicator'),
                       duration: AppMotion.duration(context, AppMotion.content),
                       curve: AppMotion.curve,
                       top: metrics.px(47.0 * selectedIndex),
@@ -153,9 +156,17 @@ class DesktopSidebar extends StatelessWidget {
                           borderRadius: BorderRadius.circular(
                             metrics.radius(11),
                           ),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFF5D45), Color(0xFFFF9D58)],
-                          ),
+                          color: isCinema(context)
+                              ? AppPalette.of(context).primary
+                              : null,
+                          gradient: isCinema(context)
+                              ? null
+                              : const LinearGradient(
+                                  colors: [
+                                    Color(0xFFFF5D45),
+                                    Color(0xFFFF9D58),
+                                  ],
+                                ),
                         ),
                       ),
                     ),
@@ -185,6 +196,7 @@ class DesktopSidebar extends StatelessWidget {
         ],
       ),
     );
+    return isCinema(context) ? CinemaSurface(radius: 0, child: body) : body;
   }
 }
 
@@ -234,12 +246,16 @@ class _NavTileState extends State<_NavTile> {
           ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(metrics.radius(11)),
-            color: !active && hovering ? const Color(0x0B9A5B38) : null,
+            color: !active && hovering ? Color(0x0B9A5B38) : null,
           ),
           foregroundDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(metrics.radius(11)),
             border: Border.all(
-              color: focused ? DesktopColors.brown : Colors.transparent,
+              color: focused
+                  ? (isCinema(context)
+                        ? AppPalette.of(context).focusRing
+                        : desktopColors(context).brown)
+                  : Colors.transparent,
               width: 2,
             ),
           ),
@@ -249,9 +265,16 @@ class _NavTileState extends State<_NavTile> {
                 : MainAxisAlignment.start,
             children: [
               ColorFiltered(
-                colorFilter: active
-                    ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
-                    : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                colorFilter: isCinema(context)
+                    ? ColorFilter.mode(
+                        active
+                            ? AppPalette.of(context).onPrimary
+                            : AppPalette.of(context).textSecondary,
+                        BlendMode.srcIn,
+                      )
+                    : active
+                    ? ColorFilter.mode(Colors.white, BlendMode.srcIn)
+                    : ColorFilter.mode(Colors.transparent, BlendMode.dst),
                 child: Image.asset(
                   'assets/desktop/home/sidebar_icons/${widget.asset}',
                   key: ValueKey<String>('desktop-sidebar-icon-${widget.asset}'),
@@ -270,7 +293,13 @@ class _NavTileState extends State<_NavTile> {
                     style: DefaultTextStyle.of(context).style.copyWith(
                       fontSize: metrics.font(17),
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                      color: active ? Colors.white : const Color(0xFF4B4038),
+                      color: isCinema(context)
+                          ? (active
+                                ? AppPalette.of(context).onPrimary
+                                : AppPalette.of(context).textPrimary)
+                          : active
+                          ? Colors.white
+                          : Color(0xFF4B4038),
                     ),
                     child: Text(widget.label, maxLines: 2),
                   ),

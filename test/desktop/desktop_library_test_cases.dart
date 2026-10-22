@@ -158,6 +158,86 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
+  for (final desktop in [true, false]) {
+    for (final fail in [true, false]) {
+      testWidgets(
+        'favorite intent lights immediately and resolves correctly desktop=$desktop failure=$fail',
+        (tester) async {
+          final c = context.controller, prefs = context.preferences;
+          final game = c.games.first;
+          if (desktop) {
+            await _mount(tester, c, const Size(1440, 800));
+            await _navigate(tester, '游戏库');
+            await tester.ensureVisible(
+              find.byKey(ValueKey<String>('desktop-poster-${game.id}')),
+            );
+            await tester.pumpAndSettle();
+            await tester.tap(
+              find.byKey(ValueKey<String>('desktop-poster-${game.id}')),
+            );
+            await tester.pumpAndSettle();
+          } else {
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: AppTheme.buildTheme(c.palette),
+                home: Scaffold(
+                  body: Center(
+                    child: FavoriteToggleButton(
+                      key: const ValueKey('favorite-toggle'),
+                      controller: c,
+                      game: game,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+          final button = find.byKey(
+            ValueKey(
+              desktop ? 'desktop-detail-favorite-button' : 'favorite-toggle',
+            ),
+          );
+          final writes = prefs.favoriteWrites;
+          prefs.favoriteWriteGate = Completer<void>();
+          prefs.failFavoriteWrite = fail;
+          addTearDown(() {
+            if (!prefs.favoriteWriteGate!.isCompleted) {
+              prefs.favoriteWriteGate!.complete();
+            }
+          });
+          await tester.tap(button);
+          await tester.pump();
+          FavoriteFeedbackIcon feedback() =>
+              tester.widget<FavoriteFeedbackIcon>(
+                find.descendant(
+                  of: button,
+                  matching: find.byType(FavoriteFeedbackIcon),
+                ),
+              );
+          expect(feedback().selected, isTrue);
+          expect(
+            find.descendant(
+              of: button,
+              matching: find.byType(CircularProgressIndicator),
+            ),
+            findsNothing,
+          );
+          prefs.favoriteWriteGate!.complete();
+          await tester.pump();
+          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+          await tester.pumpAndSettle();
+          expect(feedback().selected, !fail);
+          expect(c.isFavorite(game), !fail);
+          expect(prefs.favoriteWrites - writes, 1);
+          expect(
+            find.byKey(const ValueKey('app-failure-notice')),
+            fail ? findsOneWidget : findsNothing,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
   testWidgets(
     'responsive shell switches between full sidebar, rail and drawer',
     (tester) async {

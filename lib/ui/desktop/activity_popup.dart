@@ -70,20 +70,22 @@ class DesktopActivityPopupState extends State<DesktopActivityPopup> {
                               color: palette.primary,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              copy.activityTitle,
-                              style:
-                                  (compact
-                                          ? Theme.of(
-                                              context,
-                                            ).textTheme.titleMedium
-                                          : Theme.of(
-                                              context,
-                                            ).textTheme.titleLarge)
-                                      ?.copyWith(
-                                        color: palette.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                            Expanded(
+                              child: Text(
+                                copy.activityTitle,
+                                style:
+                                    (compact
+                                            ? Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium
+                                            : Theme.of(
+                                                context,
+                                              ).textTheme.titleLarge)
+                                        ?.copyWith(
+                                          color: palette.textPrimary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                              ),
                             ),
                             if (activities.isNotEmpty) ...<Widget>[
                               const SizedBox(width: 8),
@@ -108,7 +110,6 @@ class DesktopActivityPopupState extends State<DesktopActivityPopup> {
                                 ),
                               ),
                             ],
-                            const Spacer(),
                             IconButton(
                               tooltip: copy.dialogClose,
                               visualDensity: compact

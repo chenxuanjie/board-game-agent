@@ -29,6 +29,8 @@
 ## 实现与验证
 
 - 默认只修改代码并执行必要的格式、静态检查及测试。只有用户明确要求构建时，才构建 Web、Windows、Android 或其他产物；修复界面和业务问题不自动触发构建。构建、打包与上传分别遵循用户明确指定的范围。
+- 本地 `release/` 按平台只保留一套最新完整交付：Android APK、Windows 安装器、每种架构的 Docker 镜像包及必要配套文件。APK/Windows 打包与发布统一通过 `scripts/package-app-release.ps1` 调用共享发布器，成功后自动清理同平台旧文件；Docker 镜像打包入口也必须执行同一保留规则。清理前验证新产物及 SHA-256，构建/打包失败不触发清理，不默认归档本地旧版本。构建日志与 Docker 报告放到 `release/reports/`，开发源码包放到 `build/docker-source/`。详细命令见 [本地交付产物](docs/release-artifacts.md)。
+- Docker 只生成一个固定名称的镜像导入文件：`release/board-game-agent-linux-amd64-images.tar`（其他架构替换架构名）。每次成功构建、导出并验证后覆盖同名 TAR，不生成部署 ZIP，不在文件名中加入应用版本、Git 修订或时间戳。群晖交付 Compose 必须固定匹配 TAR 的两个镜像标签和架构，直接包含 NAS 配置，不依赖 `.env` 或本机环境变量；版本和验证记录放在 `release/reports/docker-linux-amd64/`，同名覆盖，不打成另一份交付包。根目录参数化 Compose 仅供开发。构建失败保留旧 TAR。
 
 同步与资料检查的术语、频率、并发、共享包边界和当前实现状态见 [同步与更新检查规范](docs/sync-and-update.md)。修改相关逻辑时同步维护该文档；不得把可用性检测写成已完成资料更新检查，也不得把讨论中的方案标为已实现。
 

@@ -1,14 +1,14 @@
-enum ColorSchemeOption { classic, sunsetCoast, warmwoodStudy }
+enum ColorSchemeOption { cinema, warmwoodStudy, spatialCinema }
 
 const ColorSchemeOption defaultColorScheme = ColorSchemeOption.warmwoodStudy;
 
 extension ColorSchemeOptionX on ColorSchemeOption {
   String get code {
     switch (this) {
-      case ColorSchemeOption.classic:
-        return 'classic';
-      case ColorSchemeOption.sunsetCoast:
-        return 'sunset_coast';
+      case ColorSchemeOption.cinema:
+        return 'cinema';
+      case ColorSchemeOption.spatialCinema:
+        return 'spatial_cinema';
       case ColorSchemeOption.warmwoodStudy:
         return 'warmwood_study';
     }
@@ -16,12 +16,12 @@ extension ColorSchemeOptionX on ColorSchemeOption {
 
   static ColorSchemeOption fromCode(String? code) {
     switch (code?.trim().toLowerCase()) {
-      case 'classic':
-        return ColorSchemeOption.classic;
-      case 'sunset_coast':
-      case 'sunsetcoast':
-      case 'sunset-coast':
-        return ColorSchemeOption.sunsetCoast;
+      case 'spatial_cinema':
+      case '空间影院':
+        return ColorSchemeOption.spatialCinema;
+      case 'cinema':
+      case '影院':
+        return ColorSchemeOption.cinema;
       case 'warmwood_study':
       case 'warmwoodstudy':
       case 'warmwood-study':
