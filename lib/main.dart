@@ -87,7 +87,7 @@ Future<void> main() async {
             accessAllowed: () => true,
             accountScope: () =>
                 accountService.dataScopeReady && accountService.user != null
-                ? accountService.configuration!.accountScope(
+                ? accountService.serviceConfiguration!.accountScope(
                     accountService.user!.id,
                   )
                 : 'web_guest',

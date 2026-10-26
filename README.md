@@ -20,7 +20,7 @@ Web 默认通过预构建 Docker 镜像交付，开发电脑构建、NAS 导入�
 
 ## 当前功能
 
-- Android / Windows 当前使用群晖账号密码直接登录，按需输入验证码；Web 通过同源网关登录，本机数据按账号隔离，游客可读已发布资料和评论，账号数据传输及评论写入已在源码接入。共用后台客户端切换尚未完成，部署和实测范围见 [实现基线](docs/development-standards.md#implementation)、[Web 账号](docs/web-account.md) 和 [Web 同源资料](docs/web-library.md)。
+- 账号已在开发分支切换为共用应用服务：Android/Windows 配置应用服务地址，Web 使用同源会话。旧 DSM 直连和旧 Web 登录适配器已移除，不转换旧会话；业务同步、公开资料和模型服务仍待分别接入。当前不是全功能迁移交付，部署前提与真实验收范围见 [实现基线](docs/development-standards.md#implementation)。
 - 默认简体中文，同时支持英文界面切换
 - 多桌游目录首页，卡片与详情页基于 `assets/catalog.json` 和各游戏 `game.json` 生成
 - 每个桌游都有独立 AI 助手入口，首页还有一个通用 AI 入口

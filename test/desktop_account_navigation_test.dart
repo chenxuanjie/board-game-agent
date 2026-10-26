@@ -5,7 +5,6 @@ import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
-import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
@@ -39,7 +38,7 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
   testWidgets(
-    'ready login probes resource access immediately before refreshing the index',
+    'new login never derives credentials or starts old NAS resource requests',
     (tester) async {
       await tester.binding.setSurfaceSize(
         defaultTargetPlatform == TargetPlatform.android
@@ -60,15 +59,11 @@ void main() {
           controller: controller,
           webDav: settings,
           savedLoginStorage: MemoryLoginStorage(),
-          credentialStore: (_) => MemoryLoginStorage(),
+
           gatewayFactory: (_) async => gateway,
           switchScope: (_) async {},
         );
-        await account.saveConfiguration(
-          AccountConfiguration.fromFields(
-            nasUrl: 'https://nas.example.test:5001',
-          ),
-        );
+        await account.configureService('https://service.example.test');
       });
       await tester.pumpWidget(
         BoardGameAgentApp(
@@ -107,17 +102,11 @@ void main() {
         await tester.pump(const Duration(milliseconds: 20));
         if (account.resourceCredentialsReady && !account.isBusy) break;
       }
-      expect(account.resourceCredentialsReady, isTrue);
       await tester.runAsync(() => login);
       await tester.pump(const Duration(milliseconds: 500));
-      expect(account.resourceCredentialsReady, isTrue);
-      expect(remote.resourceEvents.first, 'access');
-      expect(remote.resourceEvents.last, 'index');
-      expect(
-        remote.resourceEvents.where((e) => e == 'access'),
-        hasLength(controller.assetSourceConfigs.length),
-      );
-      expect(remote.resourceEvents.where((e) => e == 'index'), hasLength(1));
+      expect(account.isSignedIn, isTrue);
+      expect(account.resourceCredentialsReady, isFalse);
+      expect(remote.resourceEvents, isEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
@@ -144,17 +133,13 @@ void main() {
           account = AccountService(
             controller: controller,
             savedLoginStorage: MemoryLoginStorage(),
-            credentialStore: (_) => MemoryLoginStorage(),
+
             gatewayFactory: (_) async => gateway,
             switchScope: (scope) async {
               if (scope == null && scopeGate != null) await scopeGate.future;
             },
           );
-          await account.saveConfiguration(
-            AccountConfiguration.fromFields(
-              nasUrl: 'https://nas.example.test:5001',
-            ),
-          );
+          await account.configureService('https://service.example.test');
         });
         final settings = WebDavSettingsController(
           store: _Store(),

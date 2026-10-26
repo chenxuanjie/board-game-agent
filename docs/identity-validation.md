@@ -1,4 +1,22 @@
-# 群晖直连验证记录
+# 账号验证记录
+
+## 2026-10-26：应用服务账号生命周期（codex/service-account-lifecycle）
+
+以下旧章节保留历史验收，不代表新客户端仍支持 DSM 直连或旧 Web 登录。
+
+- 阶段 0 提交：API `069c630`（feature/multi-app-foundation）、app_client `7a46f4d` 与桌游规范 `d1db269`（codex/multi-app-foundation）。未推送或部署。
+- 阶段 0 提交前重新执行后端 ruff check/format、243 项真实 PostgreSQL 测试；公共包分析和 39 项测试通过。真实 PowerSync 8 项隔离检查为此前验证记录。
+- 阶段 1：桌游端改为应用服务的原生刷新会话/同源浏览器会话，固定 board_game_agent 应用作用域，删除旧 Web 登录和文件传输适配器，以及 AccountService 中的 DSM 创建、入口回退、旧凭据转换与资源密码投影。
+- 客户端 `flutter analyze --no-pub` 无问题；完整 `flutter test --no-pub` **656 项通过**。覆盖登录/恢复/过期、OTP、跨账号响应拒绝、取消、超时迟到写入、断网退出与重启标记、存储失败、Web CSRF、菜单退出、窄屏/大字按钮与账号切换。旧登录衍生传输测试随旧路径退场，本机存储/AI/领域和布局测试保留。
+- 本地日志：`build/account-lifecycle-analyze-final.log`、`build/account-lifecycle-full-tests-final.log`；阶段 1 尚未提交，无安装包、镜像构建、上传或 NAS 改动。
+- 资料公开接口、私人业务同步、社区传输、更新文件服务与 Loomex 尚未接入，旧传输不挂到新账号。这是账号阶段开发源码，不是全功能迁移交付。
+
+### 人工验证前提与检查
+
+需要先发布匹配的新 API、升级到 0011 并注册应用；原生端填写应用服务 HTTPS 地址（不是 DSM 的 5001 入口）。也可在自行编译时设置 `APP_SERVICE_ORIGIN`。Web 需要 HTTPS 站点、正确的 board_game_agent browser_origin 和同源 `/api/` 转发；原旧 Web 账号容器不提供新协议。
+
+用户自行编译后检查：正确与错误密码/验证码、首次登录与取消后重试、重启会话恢复、退出后重启不恢复、另一个账号的本机作用域。真实设备安全存储、系统代理、Cookie 部署和真实账号尚未验证，不能仅凭单次登录或本轮 Mock HTTP 测试判定通过。
+
 
 2026-10-05，主项目与公共 `app_identity` 工作分支均为 `codex/synology-direct-auth`。
 旧服务方案结果保存在 `codex/synology-auth`；不得将旧构建当成本次直连构建。

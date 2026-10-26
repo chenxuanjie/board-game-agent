@@ -1,17 +1,15 @@
 import 'app_modals.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/ui_tokens.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/color_scheme_option.dart';
 import 'account_scope.dart';
-import 'account_resources_section.dart';
-import '../../features/identity/services/account_cloud_sync.dart';
 import '../../features/identity/services/account_service.dart';
 import '../../features/identity/services/saved_login_store.dart';
-import '../../features/identity/models/account_configuration.dart';
-import 'package:app_identity/app_identity.dart';
+import '../../features/identity/models/service_configuration.dart';
 
 class AccountEntry extends StatelessWidget {
   const AccountEntry({super.key, required this.title});
@@ -31,7 +29,7 @@ class AccountEntry extends StatelessWidget {
             ? account.displayName
             : (!account.supportsSignIn
                   ? (english ? 'Knowledge library connections' : '知识库连接')
-                  : (english ? 'Account and knowledge library' : '账户与知识库连接')),
+                  : (english ? 'Account and personal data' : '账号与个人数据')),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -53,15 +51,13 @@ class AccountScreen extends StatefulWidget {
 
 class _AccountScreenState extends State<AccountScreen> {
   final _form = GlobalKey<FormState>();
-  final _resourcesKey = GlobalKey();
   final _account = TextEditingController();
   final _password = TextEditingController();
   final _otp = TextEditingController();
   final _customServer = TextEditingController();
-  String? _selectedServer;
-  static const _customChoice = '__custom__';
   bool _working = false, _showPassword = false, _otpShown = false;
   bool _signingIn = false, _canceling = false;
+  int _loginGeneration = 0;
   bool _savePassword = false, _credentialsEdited = false;
   String? _formEnvironment, _prefilledUsername;
   AccountService? _historyService;
@@ -87,9 +83,6 @@ class _AccountScreenState extends State<AccountScreen> {
     _savePassword = entry.hasPassword;
     _prefilledUsername = entry.username;
     _showPassword = false;
-    if (service.configuration!.servers.any((s) => s.id == entry.serverId)) {
-      _selectedServer = entry.serverId;
-    }
   }
 
   Future<void> _run(Future<void> Function() operation, String failure) async {
@@ -117,21 +110,24 @@ class _AccountScreenState extends State<AccountScreen> {
       return;
     }
     FocusScope.of(context).unfocus();
+    final username = _account.text, password = _password.text;
+    final verification = _otpShown || service.needsOtp ? _otp.text : null;
+    final generation = ++_loginGeneration;
     setState(() => _signingIn = true);
     try {
-      await _run(
-        () => service.signIn(
-          account: _account.text,
-          password: _password.text,
+      await _run(() async {
+        if (!service.usesWebAccount &&
+            _customServer.text.trim() != service.serviceAddress) {
+          await service.configureService(_customServer.text);
+        }
+        if (!mounted || generation != _loginGeneration) return;
+        await service.signIn(
+          account: username,
+          password: password,
           savePassword: _savePassword,
-          otp: _otpShown || service.needsOtp ? _otp.text : null,
-          serverId: _selectedServer == _customChoice ? null : _selectedServer,
-          customOrigin: _selectedServer == _customChoice
-              ? Uri.parse(_customServer.text.trim())
-              : null,
-        ),
-        _text('登录失败，请重试。', 'Could not sign in. Retry.'),
-      );
+          otp: verification,
+        );
+      }, _text('登录失败，请重试。', 'Could not sign in. Retry.'));
       if (!mounted) return;
       if (service.isSignedIn) {
         _password.clear();
@@ -148,6 +144,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _cancel() async {
     if (_canceling) return;
+    ++_loginGeneration;
     final service = AccountScope.maybeOf(context);
     setState(() {
       _canceling = true;
@@ -183,21 +180,6 @@ class _AccountScreenState extends State<AccountScreen> {
     super.dispose();
   }
 
-  Widget _serverLabel(NasServerAddress server) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(server.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      Text(
-        server.loginOrigin.toString(),
-        maxLines: 2,
-        softWrap: true,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    ],
-  );
-
   Future<void> _editNickname(AccountService service) async {
     final value = await showAppDialog<String>(
       context: context,
@@ -221,36 +203,29 @@ class _AccountScreenState extends State<AccountScreen> {
     final service = AccountScope.maybeOf(context);
     final theme = Theme.of(context), colors = Theme.of(context).colorScheme;
     final signedIn = service?.isSignedIn ?? false;
-    final cloud = service?.cloud;
     final busy = _working || _canceling || (service?.isBusy ?? false);
     final signingIn = (_signingIn || _canceling) && !signedIn;
     final otp = _otpShown || (service?.needsOtp ?? false);
     final error = _failure ?? service?.error;
-    final loginConfig = !signedIn && service?.supportsSignIn == true
-        ? service!.loginConfiguration
-        : null;
-    if (loginConfig != null && !otp) {
-      if (_formEnvironment != loginConfig.environmentId) {
-        if (_formEnvironment != null) {
-          _account.clear();
-          _password.clear();
-          _savePassword = false;
-          _credentialsEdited = false;
-          _prefilledUsername = null;
-        }
-        _formEnvironment = loginConfig.environmentId;
-      }
-      if (!_credentialsEdited &&
-          _prefilledUsername == null &&
-          service!.savedLogins.isNotEmpty) {
-        _fillSavedLogin(service.savedLogins.first, service);
-      }
+    final environment = service?.serviceConfiguration?.environmentId;
+    if (!signedIn &&
+        !otp &&
+        environment != null &&
+        _formEnvironment != environment) {
+      _formEnvironment = environment;
+      _customServer.text = service!.serviceAddress;
+      _account.clear();
+      _password.clear();
+      _savePassword = false;
+      _credentialsEdited = false;
+      _prefilledUsername = null;
     }
     if (!signedIn &&
-        loginConfig != null &&
-        _selectedServer != _customChoice &&
-        !loginConfig.servers.any((s) => s.id == _selectedServer)) {
-      _selectedServer = loginConfig.activeServer.id;
+        !_credentialsEdited &&
+        _prefilledUsername == null &&
+        service != null &&
+        service.savedLogins.isNotEmpty) {
+      _fillSavedLogin(service.savedLogins.first, service);
     }
     final fieldDecoration = InputDecoration(
       filled: true,
@@ -284,7 +259,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       ? service!.displayName
                       : service?.supportsSignIn == false
                       ? _text('访客', 'Guest')
-                      : _text('登录群晖账号', 'Sign in with Synology'),
+                      : _text('登录账号', 'Sign in'),
                   key: const ValueKey('account-display-name'),
                   style: theme.textTheme.headlineSmall,
                 ),
@@ -307,268 +282,45 @@ class _AccountScreenState extends State<AccountScreen> {
                           '网页版暂不支持账号登录，知识库不可用。',
                           'Web sign-in is unavailable. The knowledge library requires sign-in.',
                         )
-                      : _text(
-                          '使用你的群晖账号和密码。',
-                          'Use your Synology account and password.',
-                        ),
+                      : _text('使用你的账号和密码。', 'Use your account and password.'),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: UiTokens.sectionGap),
-                if (signedIn && cloud != null) ...[
-                  SwitchListTile.adaptive(
-                    key: const ValueKey('account-cloud-enabled'),
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(_text('账号云同步', 'Account cloud sync')),
-                    subtitle: Text(
-                      _text(
-                        '私人资料与公共收藏、投票统计',
-                        'Personal data, public likes and votes',
-                      ),
-                    ),
-                    value: cloud.enabled,
-                    onChanged: busy
-                        ? null
-                        : (value) => _run(
-                            () => cloud.setEnabled(value),
-                            _text(
-                              '同步设置保存失败，请重试',
-                              'Could not save sync setting. Retry.',
-                            ),
-                          ),
-                  ),
-                  ExpansionTile(
-                    key: const ValueKey('account-sync-details'),
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: const EdgeInsets.only(bottom: 8),
-                    leading: Icon(
-                      cloud.overallStatus == AccountCloudStatus.synced
-                          ? Icons.cloud_done_outlined
-                          : cloud.overallStatus == AccountCloudStatus.paused
-                          ? Icons.cloud_off_outlined
-                          : Icons.cloud_sync_outlined,
-                      size: 20,
-                    ),
-                    title: Text(switch (cloud.overallStatus) {
-                      AccountCloudStatus.syncing => _text('正在同步…', 'Syncing…'),
-                      AccountCloudStatus.synced => _text('已同步', 'Synced'),
-                      AccountCloudStatus.pending => _text(
-                        cloud.publicError == null && cloud.publicSynced ||
-                                cloud.error == null &&
-                                    cloud.status == AccountCloudStatus.synced
-                            ? '部分数据待重试'
-                            : '等待重试',
-                        cloud.publicError == null && cloud.publicSynced ||
-                                cloud.error == null &&
-                                    cloud.status == AccountCloudStatus.synced
-                            ? 'Some data needs retry'
-                            : 'Retry needed',
-                      ),
-                      AccountCloudStatus.paused => _text('已暂停', 'Paused'),
-                      AccountCloudStatus.idle => _text('待同步', 'Ready to sync'),
-                    }),
-                    subtitle: cloud.overallStatus == AccountCloudStatus.pending
-                        ? Text(
-                            _text(
-                              cloud.publicError == null && cloud.publicSynced
-                                  ? '公共统计已同步，私人资料待重试'
-                                  : cloud.error == null &&
-                                        cloud.status ==
-                                            AccountCloudStatus.synced
-                                  ? '私人资料已同步，公共统计待重试'
-                                  : '本机数据已保留，点击查看详情',
-                              'Local data is saved. Tap for details.',
-                            ),
-                          )
-                        : null,
-                    children: [
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(_text('私人资料', 'Personal data')),
-                        subtitle: Text(
-                          cloud.error ??
-                              _text(
-                                switch (cloud.status) {
-                                  AccountCloudStatus.syncing => '正在同步…',
-                                  AccountCloudStatus.synced => '已同步',
-                                  AccountCloudStatus.paused => '已暂停',
-                                  _ => '待同步',
-                                },
-                                cloud.status == AccountCloudStatus.synced
-                                    ? 'Synced'
-                                    : 'Pending',
-                              ),
-                        ),
-                      ),
-                      if (cloud.publicReactions != null) ...[
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(_text('自己的收藏与投票', 'My likes and votes')),
-                          subtitle: Text(
-                            cloud.publicationError ??
-                                _text(
-                                  !cloud.enabled
-                                      ? '已暂停'
-                                      : cloud.publishing
-                                      ? '正在发布…'
-                                      : cloud.publicPublished
-                                      ? '已发布'
-                                      : '保存在本机，待发布',
-                                  !cloud.enabled
-                                      ? 'Paused'
-                                      : cloud.publishing
-                                      ? 'Publishing…'
-                                      : cloud.publicPublished
-                                      ? 'Published'
-                                      : 'Saved locally; pending publication',
-                                ),
-                          ),
-                        ),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(_text('公共排行榜', 'Public rankings')),
-                          subtitle: Text(
-                            cloud.rankingError ??
-                                _text(
-                                  !cloud.enabled
-                                      ? '已暂停'
-                                      : cloud.refreshingRankings
-                                      ? '正在刷新…'
-                                      : cloud.rankingsAvailable
-                                      ? '已刷新'
-                                      : '待刷新',
-                                  !cloud.enabled
-                                      ? 'Paused'
-                                      : cloud.refreshingRankings
-                                      ? 'Refreshing…'
-                                      : cloud.rankingsAvailable
-                                      ? 'Refreshed'
-                                      : 'Pending refresh',
-                                ),
-                          ),
-                        ),
-                        if (cloud.rankingError != null &&
-                            cloud.publicReactions!.diagnostic != null)
-                          Text(
-                            _text('问题记录：', 'Record to check: ') +
-                                cloud.publicReactions!.diagnostic!.path,
-                            style: theme.textTheme.bodySmall,
-                          ),
-                      ],
-                    ],
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      key: const ValueKey('account-cloud-sync'),
-                      onPressed:
-                          busy ||
-                              !cloud.enabled ||
-                              (cloud.syncing &&
-                                  cloud.publicError == null &&
-                                  cloud.error == null)
-                          ? null
-                          : cloud.retry,
-                      child: Text(
-                        _text(
-                          cloud.overallStatus == AccountCloudStatus.pending
-                              ? '重试'
-                              : '同步',
-                          cloud.overallStatus == AccountCloudStatus.pending
-                              ? 'Retry'
-                              : 'Sync',
-                        ),
-                      ),
-                    ),
-                  ),
+                if (signedIn && service != null)
                   TextButton.icon(
-                    onPressed: () =>
-                        cloud.controller.reactionDiagnostics.show(),
-                    icon: const Icon(Icons.manage_search_rounded, size: 18),
-                    label: Text(_text('查看同步过程', 'Sync details')),
-                  ),
-                  TextButton.icon(
-                    key: const ValueKey('account-edit-nickname'),
-                    onPressed: busy ? null : () => _editNickname(service!),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    onPressed: busy ? null : () => _editNickname(service),
+                    icon: const Icon(Icons.edit_outlined),
                     label: Text(_text('修改昵称', 'Edit nickname')),
                   ),
-                  const SizedBox(height: UiTokens.itemGap),
-                ],
                 if (!signedIn && service != null && service.supportsSignIn) ...[
-                  if (!service.usesWebAccount)
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(
-                        'account-login-server-${loginConfig!.nasOrigin}',
-                      ),
-                      initialValue: _selectedServer,
-                      isExpanded: true,
-                      isDense: false,
-                      itemHeight: MediaQuery.textScalerOf(context).scale(72),
-                      decoration: fieldDecoration.copyWith(
-                        labelText: _text('登录网址', 'Sign-in address'),
-                      ),
-                      items: [
-                        for (final server in loginConfig.servers)
-                          DropdownMenuItem(
-                            value: server.id,
-                            child: _serverLabel(server),
-                          ),
-                        DropdownMenuItem(
-                          value: _customChoice,
-                          child: Text(_text('自定义网址', 'Custom address')),
-                        ),
-                      ],
-                      onChanged: busy || otp
-                          ? null
-                          : (value) {
-                              setState(() {
-                                if (value == _customChoice &&
-                                    _customServer.text.isEmpty) {
-                                  _customServer.text = loginConfig
-                                      .activeServer
-                                      .loginOrigin
-                                      .toString();
-                                }
-                                _selectedServer = value;
-                                _failure = null;
-                              });
-                            },
-                    ),
-                  if (_selectedServer == _customChoice) ...[
-                    const SizedBox(height: UiTokens.itemGap),
+                  if (!service.usesWebAccount) ...[
                     TextFormField(
-                      key: const ValueKey('account-custom-server'),
+                      key: const ValueKey('account-service-address'),
                       controller: _customServer,
                       readOnly: busy || otp,
                       keyboardType: TextInputType.url,
                       autocorrect: false,
                       enableSuggestions: false,
                       decoration: fieldDecoration.copyWith(
-                        labelText: _text('群晖登录地址', 'Synology sign-in URL'),
-                        hintText: 'https://nas.example:5001',
-                        helperText: _text(
-                          '登录地址，不含 friend 目录',
-                          'Login URL without a storage folder',
-                        ),
+                        labelText: _text('应用服务地址', 'Application service URL'),
+                        hintText: 'https://service.example',
                       ),
                       validator: (value) {
                         try {
-                          SynologyIdentityGateway.validateOrigin(
-                            Uri.parse(value?.trim() ?? ''),
-                          );
+                          ServiceConfiguration(Uri.parse(value?.trim() ?? ''));
                           return null;
                         } catch (_) {
                           return _text(
-                            '请输入 HTTPS 登录地址',
-                            'Enter an HTTPS sign-in URL',
+                            '请输入有效的 HTTPS 服务地址',
+                            'Enter a valid HTTPS service URL',
                           );
                         }
                       },
                     ),
+                    const SizedBox(height: UiTokens.itemGap),
                   ],
-                  const SizedBox(height: UiTokens.itemGap),
                   TextFormField(
                     key: const ValueKey('account-username'),
                     controller: _account,
@@ -790,6 +542,16 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: Text(_text('取消验证', 'Cancel verification')),
                     ),
                   FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      minimumSize: Size(
+                        0,
+                        48 *
+                            math.max(
+                              1.0,
+                              MediaQuery.textScalerOf(context).scale(14) / 14,
+                            ),
+                      ),
+                    ),
                     key: ValueKey(
                       signedIn ? 'account-sign-out' : 'account-sign-in',
                     ),
@@ -884,21 +646,7 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
       ),
     );
-    final resources = service?.configuration == null || service!.usesWebAccount
-        ? null
-        : Card(
-            key: _resourcesKey,
-            child: Padding(
-              padding: const EdgeInsets.all(UiTokens.sectionGap),
-              child: AccountResourcesSection(
-                key: ValueKey(
-                  'resources-${signedIn ? service.user!.id : 'guest'}-${service.configuration!.environmentId}',
-                ),
-                service: service,
-                expanded: widget.showConnections,
-              ),
-            ),
-          );
+    const Widget? resources = null;
     return Scaffold(
       key: const ValueKey('account-screen'),
       appBar: AppBar(
