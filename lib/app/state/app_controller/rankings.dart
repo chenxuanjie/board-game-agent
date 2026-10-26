@@ -60,12 +60,12 @@ extension AppRankingController on AppController {
     // A brief journal projection is not an account switch. Queue ranking entry
     // behind that commit instead of silently dropping its refresh request.
     final deadline = DateTime.now().add(const Duration(seconds: 15));
-    while (_accountCloudWork != null) {
+    while (_personalReloadWork != null) {
       final remaining = deadline.difference(DateTime.now());
       if (remaining <= Duration.zero) throw TimeoutException('本机提交等待超时');
       await trace.measure(
         '等待本机提交释放',
-        () => _accountCloudWork!.timeout(remaining),
+        () => _personalReloadWork!.timeout(remaining),
       );
       if (epoch != _identityScopeEpoch || _identityScopeRequests > 0) {
         throw StateError('账号已切换');

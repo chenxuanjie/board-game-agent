@@ -47,8 +47,8 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
           children: [
             Text(
               copy.localized(
-                '登录后使用知识库',
-                'Sign in to use the knowledge library',
+                '公开资料暂不可用，请检查服务地址',
+                'Public library unavailable. Check the service URL.',
               ),
             ),
             const SizedBox(height: 16),
@@ -57,7 +57,7 @@ class DesktopLibraryPaneState extends State<DesktopLibraryPane> {
                 onPressed: () => Navigator.of(context).push<void>(
                   MaterialPageRoute(builder: (_) => const AccountScreen()),
                 ),
-                child: Text(copy.localized('登录', 'Sign in')),
+                child: Text(copy.localized('连接设置', 'Connection settings')),
               ),
           ],
         ),

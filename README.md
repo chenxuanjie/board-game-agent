@@ -1,3 +1,5 @@
+> 当前源码已接入新应用账号、匿名公开资料与 PowerSync 类型化个人业务；阶段 2、3 见 [接入记录](docs/service-business.md)。本轮未构建、上传或部署，旧包/旧网关不能代表当前协议。以下版本历史中的 FileStation 同步说明已退役。
+
 # 桌游导师
 
 这是一个参考 Ludomentor 风格制作的 Flutter 安卓项目，用于把桌游目录、规则资料和 AI 助手整合到同一个应用里。
@@ -160,4 +162,4 @@ Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段
 - 如果首次打开某个规则书或 FAQ，应用可能会先下载远端文件，再进入阅读页
 - AI 和资源访问能力依赖当前配置的接口地址、资源源可达性以及本地缓存状态
 
-账号个人数据云同步已复用公共包增量协议，保存到登录用户的群晖私有 home；同步方式总览见 [开发规范：同步与检查](docs/development-standards.md#sync)，范围、离线重试和限制见 [账号云同步](docs/account-cloud-sync.md)。
+账号个人数据已改用 PowerSync 与应用 API，公开资料匿名读取；标准见 [开发规范](docs/development-standards.md)，契约及验证见 [业务接入](docs/service-business.md)。

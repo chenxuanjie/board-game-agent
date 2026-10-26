@@ -1,20 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
-import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:board_game_agent/features/identity/services/account_sync_store.dart';
-import 'support/account_sync_fixture.dart';
-import 'support/account_public_fixture.dart';
 import 'package:board_game_agent/features/games/models/game_vote_record.dart';
-import 'package:webdav_sync/webdav_sync.dart' show sha256Json;
-import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
-import 'package:board_game_agent/features/identity/services/account_public_reactions.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -40,35 +32,9 @@ import 'package:board_game_agent/features/library/models/asset_source_config.dar
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
+import 'package:board_game_agent/features/identity/services/board_personal_store.dart';
 
 void main() {
-  test(
-    'inactive account cannot acknowledge an unexecuted publication or ranking request',
-    () async {
-      final app = await _app(), hub = PublicFixtureHub();
-      final cloud = AccountCloudSync(
-        controller: app,
-        scope: 'inactive',
-        files: MemoryPrivateFiles(),
-        publicReactions: AccountPublicReactions(MemoryPublicFiles(hub, 101)),
-        isActive: () => false,
-      );
-      addTearDown(cloud.dispose);
-      await expectLater(
-        cloud.publishReactions(),
-        throwsA(isA<PrivateFileException>()),
-      );
-      await expectLater(
-        cloud.refreshPublic(),
-        throwsA(isA<PrivateFileException>()),
-      );
-      expect(cloud.publicPublished, isFalse);
-      expect(cloud.publicationError, isNotNull);
-      expect(cloud.rankingError, isNotNull);
-      expect(hub.writes, 0);
-    },
-  );
-
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
@@ -635,163 +601,6 @@ void main() {
       expect(app.nationalDayList.slugs, [app.games.first.slug]);
     },
   );
-
-  test(
-    'cloud projection persists personal stores and excludes credentials',
-    () async {
-      final app = await _app();
-      await app.switchIdentityScope('a');
-      await app.toggleFavorite(app.games.first);
-      final prefs = PreferencesService(identityUserId: 'a');
-      await prefs.saveVoiceReplyEnabled(true);
-      final local = AccountSyncLocalStore(
-        datasetId: 'a',
-        transaction: <T>(work) => app.accountCloudTransaction<T>('a', work),
-      );
-      await local.initialize();
-      await local.capture();
-      final outbox = await local.pendingOperations(afterSequence: 0);
-      expect(outbox.any((op) => op.entityType == 'favorite'), isTrue);
-      expect(outbox.any((op) => op.entityType == 'preference'), isTrue);
-      expect(
-        outbox.every(
-          (op) =>
-              !op.canonicalJson.contains('apiKey') &&
-              !op.canonicalJson.contains('lastRun'),
-        ),
-        isTrue,
-      );
-      await app.accountCloudTransaction<void>('a', (current, project) async {
-        final projected = cloneEntities(current);
-        projected['nickname|profile'] = {'value': 'cloud nickname'};
-        projected['vote|${app.games.last.slug}'] = {
-          'slug': app.games.last.slug,
-          'campaign': GameVoteBallot.campaign,
-        };
-        projected['seasonalList|${GameVoteBallot.campaign}'] = {
-          'slugs': [app.games.last.slug],
-        };
-        projected['search|${sha256Json('cabo')}'] = {
-          'query': 'Cabo',
-          'searchedAt': '2026-10-08T01:00:00Z',
-        };
-        projected['recommendation|2026-10-08'] = {
-          'date': '2026-10-08',
-          'gameIds': [app.games.last.id],
-        };
-        projected['recent|${app.games.last.slug}'] = RecentGameRecord(
-          gameSlug: app.games.last.slug,
-          viewedAt: DateTime.utc(2026, 10, 5),
-        ).toMap();
-        projected['conversation|conversation:cloud-chat'] = {
-          'id': 'conversation:cloud-chat',
-          'title': 'From cloud',
-          'scope': 'global',
-          'opened': true,
-          'createdAt': '2026-10-05T00:00:00Z',
-          'updatedAt': '2026-10-05T00:00:00Z',
-          'messages': [
-            {
-              'role': 'user',
-              'text': 'Question',
-              'timestamp': '2026-10-05T00:00:00Z',
-            },
-          ],
-        };
-        await project(projected);
-      });
-      expect(
-        (await prefs.loadRecentGames()).single.gameSlug,
-        app.games.last.slug,
-      );
-      expect(app.gameVotes.hasVoted(app.games.last.slug), isTrue);
-      expect(await prefs.loadNationalDayGameSlugs(), [app.games.last.slug]);
-      expect((await prefs.loadSearchHistory()).single.query, 'Cabo');
-      expect(
-        (await prefs.loadDailyRecommendations()).single.date,
-        '2026-10-08',
-      );
-      expect(
-        (await SharedPreferences.getInstance()).getString(
-          'identity.profile.a.nickname',
-        ),
-        'cloud nickname',
-      );
-      expect(
-        jsonDecode(
-          (await const ConversationStore(
-            browserStorage: true,
-            identityUserId: 'a',
-          ).load())!,
-        )['conversations']['conversation:cloud-chat']['title'],
-        'From cloud',
-      );
-      expect(
-        app.conversations
-            .singleWhere((chat) => chat.id == 'conversation:cloud-chat')
-            .title,
-        'From cloud',
-      );
-      await app.switchIdentityScope('b');
-      expect(
-        await PreferencesService(identityUserId: 'b').loadFavoriteGames(),
-        isEmpty,
-      );
-    },
-  );
-  test(
-    'invalid cloud preferences fail before any business store is changed',
-    () async {
-      final app = await _app();
-      await app.switchIdentityScope('a');
-      await app.toggleFavorite(app.games.first);
-      await expectLater(
-        app.accountCloudTransaction<void>('a', (current, project) async {
-          await project({
-            'preference|voice_reply_enabled': {'value': 'wrong type'},
-          });
-        }),
-        throwsFormatException,
-      );
-      expect(
-        await PreferencesService(identityUserId: 'a').loadFavoriteGames(),
-        hasLength(1),
-      );
-      expect(app.accountCloudIdle, isTrue);
-    },
-  );
-  test(
-    'account transition cancels a pending projection before adopting another scope',
-    () async {
-      final app = await _app();
-      await app.switchIdentityScope('a');
-      final entered = Completer<void>(), release = Completer<void>();
-      final transaction = app.accountCloudTransaction<void>('a', (
-        current,
-        project,
-      ) async {
-        entered.complete();
-        await release.future;
-        await project({
-          'nickname|profile': {'value': 'late value'},
-        });
-      });
-      await entered.future;
-      final rejected = expectLater(transaction, throwsStateError);
-      final transition = app.switchIdentityScope('b');
-      release.complete();
-      await rejected;
-      await transition;
-      expect(app.identityUserId, 'b');
-      expect(
-        (await SharedPreferences.getInstance()).getString(
-          'identity.profile.b.nickname',
-        ),
-        isNull,
-      );
-      expect(app.accountCloudIdle, isTrue);
-    },
-  );
 }
 
 Future<AppController> _app({
@@ -964,8 +773,10 @@ class _FaultStore extends ConversationStore {
   _FaultStore(this.faults, {super.identityUserId});
   final _StoreFaults faults;
   @override
-  ConversationStore forIdentityScope(String? userId) =>
-      _FaultStore(faults, identityUserId: userId);
+  ConversationStore forIdentityScope(
+    String? userId, {
+    BoardPersonalStore? store,
+  }) => _FaultStore(faults, identityUserId: userId);
   @override
   Future<String?> load() async {
     if (identityUserId != null && identityUserId == faults.failReadScope) {

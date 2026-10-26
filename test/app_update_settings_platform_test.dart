@@ -34,7 +34,7 @@ void main() {
           preferencesService: PreferencesService(),
           aiService: _NoAi(),
           gameManifestService: GameManifestService(),
-          remoteAssetService: RemoteAssetService(accessAllowed: () => false),
+          remoteAssetService: RemoteAssetService(),
           speechService: SpeechService(),
           ttsService: _NoTts(),
         );

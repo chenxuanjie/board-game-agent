@@ -66,6 +66,7 @@ class GameVoteService extends ChangeNotifier {
       ? accountPublicationError?.call() ?? '已保存在本机，发布失败，请重试'
       : null;
   bool Function()? cachedCountVisibility;
+  bool Function()? localSelectionVisibility;
   String? get syncError => accountSyncError?.call();
   String? _scope;
   int _revision = 0;
@@ -74,7 +75,9 @@ class GameVoteService extends ChangeNotifier {
   int _confirmedRevision = -1;
   int get selectionRevision => _revision;
   List<String> get selectedGames => List.unmodifiable(
-    externalGames?.call() ?? _cache?.ballot.games ?? const <String>[],
+    localSelectionVisibility?.call() == false
+        ? const <String>[]
+        : externalGames?.call() ?? _cache?.ballot.games ?? const <String>[],
   );
   GameVoteSyncStatus status = GameVoteSyncStatus.localOnly;
   bool get ready => _cache != null && loadError == null;
@@ -84,8 +87,7 @@ class GameVoteService extends ChangeNotifier {
             accountScopeProvider?.call() ?? scopeProvider?.call() ?? _scope,
           ) ??
           false);
-  bool hasVoted(String slug) =>
-      (externalGames?.call() ?? _cache?.ballot.games)?.contains(slug) ?? false;
+  bool hasVoted(String slug) => selectedGames.contains(slug);
   int count(String slug) =>
       (cachedCountVisibility?.call() == false
           ? 0

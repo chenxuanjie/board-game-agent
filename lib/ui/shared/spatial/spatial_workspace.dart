@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../personal_account_access.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
@@ -162,6 +163,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
   );
 
   Future<void> _toggleSpatialFavorite(GameInfo game) async {
+    if (!requirePersonalAccount(context)) return;
     if (_favoriteSaving.contains(game.id)) return;
     setState(() {
       _favoriteSaving.add(game.id);

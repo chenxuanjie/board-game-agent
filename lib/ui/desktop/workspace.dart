@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../shared/personal_account_access.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -298,6 +299,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   Future<void> _toggleFavorite(GameInfo game) async {
+    if (!requirePersonalAccount(context)) return;
     if (_favoriteSaving.contains(game.id)) return;
     setState(() {
       _favoriteSaving.add(game.id);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../shared/personal_account_access.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -434,6 +435,7 @@ class _DesktopNationalDayPageState extends State<DesktopNationalDayPage> {
                                   !widget.controller.gameVotes.ready
                               ? null
                               : () async {
+                                  if (!requirePersonalAccount(context)) return;
                                   final saved = await widget
                                       .controller
                                       .gameVotes

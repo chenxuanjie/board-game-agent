@@ -739,13 +739,16 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         SnackBar(
           content: Text(
             controller.copy.localized(
-              '登录后使用知识库',
-              'Sign in to use the knowledge library',
+              '公开资料暂不可用，请检查服务地址',
+              'Public library unavailable. Check the service URL.',
             ),
           ),
           action: AccountScope.maybeOf(context)?.supportsSignIn == true
               ? SnackBarAction(
-                  label: controller.copy.localized('登录', 'Sign in'),
+                  label: controller.copy.localized(
+                    '连接设置',
+                    'Connection settings',
+                  ),
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute(builder: (_) => const AccountScreen()),
                   ),

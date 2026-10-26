@@ -45,8 +45,9 @@ extension AppCollectionController on AppController {
   }
 
   Future<bool> _saveFavoriteIntent(GameInfo game, ReactionTrace trace) async {
+    if (_requirePersonalAccount && identityUserId == null) return false;
     if (_identityScopeRequests > 0 ||
-        (_switchingIdentityScope && _accountCloudWork == null)) {
+        (_switchingIdentityScope && _personalReloadWork == null)) {
       trace.event('账号正在切换，此次操作未保存');
       return false;
     }
@@ -55,14 +56,14 @@ extension AppCollectionController on AppController {
     final deadline = DateTime.now().add(const Duration(seconds: 15));
     // Wait before joining the mutation queue. Joining first would deadlock a
     // projection that is draining that queue. Keep the user's intended state.
-    while (_accountCloudWork != null) {
+    while (_personalReloadWork != null) {
       desired ??= !isFavorite(game);
       final remaining = deadline.difference(DateTime.now());
       if (remaining <= Duration.zero) return false;
       try {
         await trace.measure(
           '等待本机同步提交释放',
-          () => _accountCloudWork!.timeout(remaining),
+          () => _personalReloadWork!.timeout(remaining),
         );
       } catch (_) {
         return false;

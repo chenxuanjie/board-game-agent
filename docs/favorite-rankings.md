@@ -8,7 +8,7 @@
 
 Windows/Android 登录后以 DSM UID 去重，同账号多个设备仅贡献一次。当前账号贡献来自成功保存的收藏，远端缓存排除自己的 UID，避免重复叠加；乐观显示和失败保存不发布。访客仅展示本机收藏，没有匿名公共上传；登录的 Web 已通过同源网关接入 UID 公共统计。
 
-公共快照只导出收藏/想玩操作及取消标记，不公开私人对话或凭据。FileStation 文件所有者 UID 必须与目录和记录匹配。NAS 允许共享读写，不以其他账号目录可写为由阻止统计。取消采用日志版本合并，旧设备不会恢复已取消内容。错误保留上次完整统计并提供重试。存储、调度及迁移见 [公共账号数据](public-account-data.md)。
+公共快照只导出收藏/想玩操作及取消标记，不公开私人对话或凭据。FileStation 文件所有者 UID 必须与目录和记录匹配。NAS 允许共享读写，不以其他账号目录可写为由阻止统计。取消采用日志版本合并，旧设备不会恢复已取消内容。错误保留上次完整统计并提供重试。存储、调度及迁移见 [公共账号数据](service-business.md)。
 
 实现：GameFavoriteRanker、AppController/rankings.dart、GameRankingScreen，及 account_public_reactions.dart；复用现有投票状态与缓存，旧匿名 WebDavGameVoteStore 已移除。
 

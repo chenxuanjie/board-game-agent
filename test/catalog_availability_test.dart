@@ -20,7 +20,7 @@ import 'package:board_game_agent/features/games/models/game_catalog_manifest.dar
 import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
-import 'package:board_game_agent/features/library/services/same_origin_library_service.dart';
+
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/main.dart';
 import 'package:board_game_agent/ui/shared/library_catalog_status.dart';
@@ -76,10 +76,9 @@ void main() {
     () async {
       final gate = Completer<void>();
       var requests = 0;
-      final remote = SameOriginLibraryService(
-        accountScope: () => 'web_guest',
-        accessAllowed: () => true,
-        site: Uri.parse('https://site.test'),
+      final remote = RemoteAssetService(
+        serviceOrigin: () => Uri.parse('https://site.test'),
+        browser: true,
         client: MockClient((request) async {
           requests++;
           await gate.future;
@@ -406,7 +405,7 @@ AppController _controller(
   preferencesService: preferences ?? _Preferences(),
   aiService: ai ?? _Ai(),
   gameManifestService: manifests,
-  remoteAssetService: remote ?? RemoteAssetService(accessAllowed: () => false),
+  remoteAssetService: remote ?? RemoteAssetService(),
   speechService: _Speech(),
   ttsService: _Tts(),
   conversationStore: const ConversationStore(browserStorage: true),
@@ -432,12 +431,17 @@ class _Manifests extends GameManifestService {
 }
 
 class _WebRemote extends RemoteAssetService {
-  _WebRemote() : super(accessAllowed: () => false);
+  _WebRemote() : super();
   bool allowed = false;
   @override
   bool get accessAllowed => allowed;
   @override
-  bool get usesSameOriginLibrary => true;
+  bool get usesPublishedLibrary => true;
+  @override
+  Future<bool> refreshPublishedLibrary({
+    bool complete = false,
+    String? checkedCatalog,
+  }) async => false;
 }
 
 class _Preferences extends PreferencesService {

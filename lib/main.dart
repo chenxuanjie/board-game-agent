@@ -18,7 +18,7 @@ import 'features/games/services/game_vote_service.dart';
 import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
-import 'features/library/services/same_origin_library_service.dart';
+
 import 'features/settings/services/board_game_update_settings.dart';
 import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/library/services/board_game_remote_layout.dart';
@@ -82,22 +82,9 @@ Future<void> main() async {
       ),
     ),
     gameManifestService: GameManifestService(),
-    remoteAssetService: kIsWeb
-        ? SameOriginLibraryService(
-            accessAllowed: () => true,
-            accountScope: () =>
-                accountService.dataScopeReady && accountService.user != null
-                ? accountService.serviceConfiguration!.accountScope(
-                    accountService.user!.id,
-                  )
-                : 'web_guest',
-          )
-        : RemoteAssetService(
-            settingsProvider: () => updateSettingsController.saved,
-            accessAllowed: () => accountService.resourceCredentialsReady,
-            resourceSettingsProvider: (target) =>
-                accountService.settingsForResource(target),
-          ),
+    remoteAssetService: RemoteAssetService(
+      serviceOrigin: () => accountService.serviceConfiguration?.origin,
+    ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
@@ -487,14 +474,6 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   }
 
   List<WebDavSettings> _updateConnections() {
-    final accounts = widget.accountService;
-    final config = accounts?.configuration;
-    if (config != null && accounts!.resourceCredentialsReady) {
-      return [
-        for (final server in config.servers)
-          accounts.settingsForResource(server.webDavRoot(config.storageFolder)),
-      ];
-    }
     return [widget.updateSettingsController.saved];
   }
 
@@ -539,20 +518,12 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       _windowChrome.reset();
     }
     _lastAccountKey = key;
-    if (account != null &&
-        !account.isBusy &&
-        account.resourceCredentialsReady) {
-      final connection =
-          '${account.nicknameKey}|${account.configuration!.resourceSources.map((s) => s.testUrl).join('|')}';
-      if (_lastResourceConnection != connection) {
-        _lastResourceConnection = connection;
-        // Credentials and the account scope are ready now. Probe immediately
-        // rather than leaving the resource status unknown until the next tick.
-        unawaited(widget.controller.refreshAssetAccessStatus());
-        unawaited(widget.controller.refreshLibraryResources(force: true));
-      }
-    } else if (account?.isSignedIn == false) {
-      _lastResourceConnection = null;
+    final connection = account?.serviceAddress;
+    if (connection != null && connection != _lastResourceConnection) {
+      _lastResourceConnection = connection;
+      unawaited(widget.controller.retryGameCatalog());
+      unawaited(widget.controller.refreshAssetAccessStatus());
+      unawaited(widget.controller.refreshLibraryResources(force: true));
     }
     setState(() {});
   }

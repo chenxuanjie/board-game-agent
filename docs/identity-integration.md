@@ -1,3 +1,5 @@
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # 群晖直连登录
 
 Android / Windows → HTTPS `SYNO.API.Auth` v6 → NAS 验证账号密码。
@@ -30,7 +32,7 @@ Web 不尝试直连认证，改由同源网关完成账号登录与 Cookie 会�
 
 应用身份以固定 HTTPS NAS origin 与验证后的 UID 生成。账号名仅作显示，不用于认领旧数据。
 收藏、最近浏览、AI 会话使用独立账号命名空间；切换前排空旧写入，完成后展示新账号数据。
-访客和此前 Supabase / 服务方案的数据不自动合并。Android / Windows 已接入个人账号云同步，范围与私有目录见 [账号云同步](account-cloud-sync.md)。
+访客和此前 Supabase / 服务方案的数据不自动合并。Android / Windows 已接入个人账号云同步，范围与私有目录见 [账号云同步](service-business.md)。
 新配置使用 v3 键，系统安全存储使用 synology-direct:v1 命名空间；旧配置不参与直连登录。
 
 SID、SynoToken、UID 仅写系统安全存储，密码与 OTP 不保存。安全存储不可用时拒绝登录，不回退明文。

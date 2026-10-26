@@ -56,7 +56,7 @@ void main() {
       final first = service.currentAccountScope;
       expect(service.user?.id, 'first');
       expect(first, isNotNull);
-      expect(service.resourceCredentialsReady, isFalse);
+
       await service.signOut();
       expect(service.user, isNull);
       expect(scopes.last, isNull);

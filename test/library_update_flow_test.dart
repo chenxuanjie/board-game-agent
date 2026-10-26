@@ -37,9 +37,9 @@ class _Remote extends RemoteAssetService {
   int accountCacheClears = 0;
   final publishedChecks = <bool>[];
   @override
-  bool get usesSameOriginLibrary => sameOrigin;
+  bool get usesPublishedLibrary => sameOrigin;
   @override
-  void clearAccountCache() => accountCacheClears++;
+  void invalidatePublication() => accountCacheClears++;
   @override
   Future<bool> refreshPublishedLibrary({
     bool complete = false,

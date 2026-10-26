@@ -64,7 +64,7 @@
 
 按功能归属放置代码，不按调用它的桌面/手机页面复制服务。不为对称性建立空 `models/` 或 `services/`。Dart `part` 仍共享同一 library 私有状态，按行数分文件不等于拆开架构。
 
-常用接线入口：目录恢复在 `app/state/app_controller/catalog.dart`；资料检查在 `library_updates.dart`；账号在 `features/identity/services/account_service.dart` 与 `service_identity_gateway.dart`；旧 `account_cloud_sync.dart` 尚未替换为新业务同步，不挂载到新账号；资源缓存在 `features/library/services/remote_asset_service.dart`；配置保存/恢复在 `features/settings/services/settings_transfer_service.dart`；共用窗口在 `ui/desktop/desktop_window_frame.dart`。以上 `app/`、`features/`、`ui/` 路径均相对 `lib/`。
+常用接线入口：目录恢复在 `app/state/app_controller/catalog.dart`；资料检查在 `library_updates.dart`；账号在 `features/identity/services/account_service.dart` 与 `service_identity_gateway.dart`；个人业务在 `features/identity/services/board_personal_store.dart` 直接使用 PowerSync；资源缓存在 `features/library/services/remote_asset_service.dart`；配置保存/恢复在 `features/settings/services/settings_transfer_service.dart`；共用窗口在 `ui/desktop/desktop_window_frame.dart`。以上 `app/`、`features/`、`ui/` 路径均相对 `lib/`。
 
 <a id="product"></a>
 ## 3. 产品、权限与长期演进
@@ -243,10 +243,9 @@ Apple 按钮指南通常建议 44×44 pt 的命中区域，Android 触控建议�
 
 ### NAS 操作边界
 
-- 开发与诊断不得擅自修改 NAS 权限、所有者或真实账号目录，不删除、移动或重命名 NAS 文件夹。本限制不应转成“权限过宽就拒绝读取”的 App 门槛。
-- 当前 FileStation 链路的公共根 `/<共享目录>/apps/board_game_agent/public/v1` 由管理员准备；App 只受控初始化自己的 `u<UID>` 和 `/home/Apps/board_game_agent/sync/v1/<environment>/operations` 固定目录链。
-- FileStation 上传显式 `create_parents=false`；目录初始化单独核查并逐级 `force_parent=false`。仅明确目录缺失可初始化，无权限、断网或会话错误不得当作缺失。
-- 新日志写固定 `operations/`，设备 ID 在文件名中，不新建设备子目录。当前旧设备目录的只读处理属于现状，不扩展为新后台兼容需求，也不据此迁移或清理真实数据。
+- 开发与诊断不得擅自修改 NAS 权限、所有者或真实账号目录，不删除、移动或重命名 NAS 文件夹。保留旧真实数据，后续清理单独授权。
+- 新账号只提供应用身份，不派生 WebDAV 凭据，不初始化 FileStation 同步目录。公开资料由管理员准备完整快照并只读挂载，客户端不遍历 NAS 共享目录。
+- 公共资料允许匿名读取；私人数据经应用 API、数据集权限和 PowerSync 处理，不能为了读取规则重新要求 NAS 登录。
 
 <a id="content"></a>
 ## 8. 资料与资源发布
@@ -379,37 +378,29 @@ Docker 使用 `scripts/build-docker-release.ps1` 的 plan/build/verify 入口，
 
 以下为 2026-10-26 的源码基线，保留诊断所需事实，不要求新架构兼容这些旧协议。后续完成替换时直接更新本节、删除旧路径，不另建第二份“新规范”。测试数量和构建流水放专项验收记录，不在这里滚动堆积。
 
-### 13.1 新账号生命周期接入阶段
+### 13.1 新账号生命周期与阶段 2、3
 
-阶段 0 已于 2026-10-26 审查并本地提交：后端 `069c630`、公共客户端 `7a46f4d`、桌游规范 `d1db269`。没有推送、构建或部署；下述阶段 1 是后续工作区源码，尚未作为完整功能版本交付。
+首次登录超时修复已先行提交：桌游 `7f1a663`、后台 `38aa1bd`。阶段 2、3 在 `codex/board-service-business` 和后台 `feature/board-game-business` 继续开发，未构建或部署。
 
-- 桌游客户端已改用 `app_client`，应用 ID 固定为 `board_game_agent`。原生登录/刷新/退出走 `/v1/apps/board_game_agent/auth/...`，Web 走同源 `/api/v1/apps/board_game_agent/auth/browser/...`。
-- `ServiceConfiguration` 只管理应用 API 地址与应用/账号本机命名空间；NAS 资料地址不参与用户身份计算。原生账号页直接填写 HTTPS 应用服务地址，也可通过构建参数 `APP_SERVICE_ORIGIN` 提供初值；不默认猜测真实部署地址。
-- 原生刷新凭据使用新的应用/环境安全存储键，访问令牌不落盘；Web 凭据由服务端 HttpOnly Cookie 管理，浏览器持久化只保存退出标记。可选保存的账号/密码使用独立的新安全历史空间，不派生 NAS 资料凭据。
-- 未读取、转换或回退到旧 DSM 会话、旧 Web 账号网关、旧密码历史和旧资源身份。新账号数据使用新作用域，真实旧数据保留，不自动导入或清理。
-- 恢复时向服务端刷新验证稳定用户 ID；并发恢复合并，账号变化与 401 拒绝旧身份，断网可保留本机已缓存身份但不能作为远端授权。返回前台和登录后 60 秒检查会话。
-- 认证提交使用 45 秒外层预算，底层 JSON 请求 40 秒；首次地址保存和会话存储预读取是独立配置步骤，不承诺按钮点击后所有工作总计只需 45 秒；取消/失败清理另有最多 8 秒的控制器等待。预算不包括用户输入和独立业务同步，不再按多个 DSM 入口逐一累加。
-- 首次登录慢响应修复在源码中增加上游 `provider_timeout` 的明确分类；服务端冷响应预算与真实 TLS 回归见 [账号验证记录](identity-validation.md)。本次修复尚未进入现有安装包或 API 镜像，不能把源码验证当作真实 NAS 首次登录已修复。
-- 退出立即隐藏私人界面，先写退出标记再尝试服务端撤销；断网或撤销失败保留重试标记，重启不能自动恢复该会话。取消/超时后的迟到请求与安全存储写入不能恢复账号。无法取得响应的原生候选会话不能保证当场远端撤销，不宣称取消等于服务端完全无残留。
-- 登录与取消继续是同一主按钮，保留动态条与进度反馈；窄屏与大字体为最长状态文案预留稳定高度。
+- 固定 `board_game_agent` 应用 ID。原生走 `/v1/apps/board_game_agent/`，Web 走同源 `/api/v1/apps/board_game_agent/`；不探测旧 DSM 会话或旧 Web 网关。
+- 应用服务地址可以独立保存；公开资料匿名读取。登录只负责身份和个人功能，密码不参与 WebDAV、公开资料或私人同步授权。
+- 访问令牌只在内存中，原生续期凭据使用独立安全存储；Web 凭据由 HttpOnly Cookie 管理。认证控制器预算 45 秒、JSON 传输 40 秒，首次配置/存储和独立业务同步不计作同一个 45 秒工作。
+- 登录/恢复、取消、退出、账号切换保持阶段 1 的代际保护。个人 SQLite 按应用、origin、用户和数据集划分；登录等待本机工作区准备，不等待远端全量下载。
+- 收藏、最近浏览、个人偏好、会话/消息和投票直接保存到类型化 PowerSync 数据库；失败保留本机数据与 SDK 队列。删除旧 FileStation 日志和公共账号文件的运行实现，不双写、不读取旧日志、不自动合并游客数据。
+- 评论通过 API 确定作者和所有权，本机持久保存幂等命令与草稿；公开统计仅返回允许公开的汇总，不能下载其他人的私人集合来计算排行榜。
+- 模型 Key、认证资料及 AI Run 原始轨迹不进云端聊天；设备外观、语言等保持本机设置。游客仍能使用自己的模型配置。
+- SDK、PostgreSQL、权限及本机回归分别验收；真实 NAS、Android/Windows 安装产物和浏览器部署不由源码测试代替。旧真实数据保留，不执行破坏性清理。
 
-**尚未接入**：公开资料新接口、私人业务表及 PowerSync、评论/点赞/排行的新接口、应用文件/更新服务和 Loomex。现有客户端尚有待替换的资料/业务模块，它们不是新接口的兼容通道；本阶段不把旧私人同步、旧评论传输或 WebDAV 密码挂接到新账号，不展示虚假的已同步状态。账号页已移除旧 NAS 登录入口及同步面板。下一阶段需要替换相应业务模块，不能将当前开发分支当成全功能迁移版本。
+具体接口、状态与测试入口见 [阶段 2、3 接入记录](service-business.md)。Loomex、更新/安装产物服务接入、Web 部署和最终旧部署清理仍未完成；本轮不将这些内容写成已实现。登录/取消同一按钮及动态条继续保持。
 
-**真实验证前提**：新的 API 镜像、0010/0011 迁移、应用注册和部署配置必须匹配；Web 还需为 `board_game_agent` 配置正确的 HTTPS browser_origin，并将 `/api/` 转发到共用 API。旧 `services/web_account` 网关不能提供新的账号协议。本轮没有更改 NAS 或部署，不能保证只编译客户端就能连接尚未更新的服务。
+### 13.2 共用后台与上线边界
 
-本轮分析和完整 656 项测试通过，实际范围与人工验收前提见 [账号验证记录](identity-validation.md)。客户端验收入口：`test/service_identity_gateway_test.dart`、`test/account_service_test.dart`、`test/account_screen_test.dart`、`test/account_menu_test.dart` 与 `test/desktop_account_navigation_test.dart`。本机业务/AI/布局的其他回归继续维护；旧登录、旧浏览器文件传输及旧登录衍生同步测试已随路径退场，新测试不依赖真实密码。
+- 共用核心管理账号、令牌、应用注册、个人空间与权限；应用模块声明自己的 schema、路由、能力、文件区域、复制表与同步流。
+- 桌游模块新增 0012 类型化表、公共资料 API、社区命令/统计和六类私人同步流。Zheri 客户端不需要为桌游业务修改。
+- 正式运行须匹配 API 镜像、0012 迁移、应用注册、生成的 PowerSync 规则、公开资料只读挂载及应用配置。仅重新编译客户端不能让旧后台获得新接口。
+- 新 API 保持纯 API 镜像，不包含 Zheri 网页。Web `/api/` 入口及浏览器现场联调仍按用户要求暂缓，旧 Python 账号网关不能代替新协议。
 
-人工验收重点：正确/错误密码与验证码、取消后重新登录、重启恢复、退出后重启不恢复、账号切换，以及服务不可达时保留明确重试入口。自动化不能证明真实 NAS、设备代理或浏览器 Cookie 部署正确；实际验证结果必须单独记录。
-
-### 13.2 共用后台第一阶段
-
-- 公共核心已统一应用登记、账号、令牌、可撤销会话、个人空间与权限；应用模块声明 schema、路由、能力、文件区、复制表与同步流。Zheri 业务已归属其服务端模块，未修改其客户端。
-- 新应用路径 `/v1/apps/<app_id>/...`，路径/请求头/签名范围一致；不默认猜成 Zheri，不保留无应用签名旧令牌回退。浏览器 Cookie/CSRF、文件、会话退出按应用隔离。
-- 新应用增加模块、类型化迁移、安装登记和配置；公共认证不添加应用名称分支。第三个阅读笔记测试模块已验证接入与隔离，但不进入生产安装清单。模块注册不等于运行时自动生成业务系统。
-- 桌游助手已有应用登记及独立区域，客户端正在接入账号生命周期；桌游业务表、公开资料接口、资料整理发布、个人收藏/聊天同步与 Loomex 尚未接入。旧资料保留，不双写或建立旧协议回退。
-- 当前阶段未构建交付镜像或部署新后台，不能用旧 Web 网关镜像代替。上线需匹配的 API 镜像、0010/0011 迁移、模块注册、`APP_DATA_APPLICATIONS` 与生成的 PowerSync 配置；旧会话可能需重登，不清空账本/队列。
-
-服务端详细接入与证据以其独立仓库为准：[架构](../../apps/app_data_service/docs/architecture.md)、[新增应用](../../apps/app_data_service/docs/adding-an-application.md)、[应用隔离](../../apps/app_data_service/docs/application-scope.md)、[验收记录](../../apps/app_data_service/docs/validation.md)。本文件只管理桌游工程的标准与接线边界，不复制另一仓库的实现手册。
+服务端契约与部署字段见 [后台桌游业务](../../apps/app_data_service/docs/board-game-business.md)；扩展应用的方法见其 [架构](../../apps/app_data_service/docs/architecture.md) 和 [新增应用](../../apps/app_data_service/docs/adding-an-application.md)。不在本文件重复另一仓库的操作手册。
 
 ### 13.3 当前 UI 与动效实现
 

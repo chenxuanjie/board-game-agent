@@ -33,29 +33,36 @@ extension AppIdentityScopeController on AppController {
   /// Call and await before exposing a new authenticated identity to the UI.
   /// Null selects the legacy guest namespace; no data is copied or merged.
   /// A failed drain keeps personal actions locked until a successful retry.
-  Future<void> switchIdentityScope(String? userId) {
+  Future<void> switchIdentityScope(
+    String? userId, {
+    BoardPersonalStore? personalStore,
+  }) {
     PreferencesService.validateIdentityUserId(userId);
-    if (!_switchingIdentityScope && userId == identityUserId) {
+    if (!_switchingIdentityScope &&
+        userId == identityUserId &&
+        identical(personalStore, _preferencesService.personalStore)) {
       return Future<void>.value();
     }
     _identityScopeRequests++;
     _switchingIdentityScope = true;
-    _remoteAssetService.clearAccountCache();
     _invalidateActiveRuns();
     _gameVotes.dispose();
     _favoriteStatistics?.dispose();
     final operation = _identityScopeQueue
         .catchError((Object _) {})
         .then((_) async {
-          await _accountCloudWork;
-          await _switchIdentityScopeNow(userId);
+          await _personalReloadWork;
+          await _switchIdentityScopeNow(userId, personalStore);
         })
         .whenComplete(() => _identityScopeRequests--);
     _identityScopeQueue = operation;
     return operation;
   }
 
-  Future<void> _switchIdentityScopeNow(String? userId) async {
+  Future<void> _switchIdentityScopeNow(
+    String? userId,
+    BoardPersonalStore? personalStore,
+  ) async {
     _switchingIdentityScope = true;
     _identityScopeEpoch++;
     _cancelGameCatalogRequest();
@@ -166,8 +173,14 @@ extension AppIdentityScopeController on AppController {
     browseSession.reset();
     _favoriteStatistics = null;
     _nationalDayList = null;
-    _preferencesService = _basePreferencesService.forIdentityScope(userId);
-    _conversationStore = _baseConversationStore.forIdentityScope(userId);
+    _preferencesService = _basePreferencesService.forIdentityScope(
+      userId,
+      store: personalStore,
+    );
+    _conversationStore = _baseConversationStore.forIdentityScope(
+      userId,
+      store: personalStore,
+    );
     _gameVotes = GameVoteService(
       preferences: _preferencesService,
       // The anonymous DAV protocol owns one device ballot. Never use it for
@@ -227,6 +240,35 @@ extension AppIdentityScopeController on AppController {
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
     );
+  }
+
+  /// Refresh only while editing and streaming have settled. Called after
+  /// PowerSync commits remote rows, never in the middle of a local mutation.
+  Future<bool> reloadServicePersonalState() async {
+    if (!personalDataIdle) return false;
+    await Future.wait([
+      _conversationSaveQueue,
+      _favoriteMutationQueue,
+      _recentGamesMutationQueue,
+      _preferencesService.drainPersonalWrites(),
+    ]);
+    if (!personalDataIdle) return false;
+    final done = Completer<void>();
+    _personalReloadWork = done.future;
+    _personalReloadCommit = true;
+    _switchingIdentityScope = true;
+    try {
+      _favoriteRecordsLoaded = false;
+      await _reloadIdentityPersonalState();
+      await _gameVotes.reload();
+    } finally {
+      _personalReloadCommit = false;
+      _personalReloadWork = null;
+      _switchingIdentityScope = _identityScopeRequests > 0;
+      done.complete();
+    }
+    _notifyListeners();
+    return true;
   }
 
   String _providerConversationId(String localId) {

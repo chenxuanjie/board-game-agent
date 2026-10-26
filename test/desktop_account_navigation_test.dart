@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'dart:async';
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
@@ -38,7 +41,7 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
   testWidgets(
-    'new login never derives credentials or starts old NAS resource requests',
+    'public resource checks work before and after account login',
     (tester) async {
       await tester.binding.setSurfaceSize(
         defaultTargetPlatform == TargetPlatform.android
@@ -88,8 +91,8 @@ void main() {
       }
       expect(find.byKey(const ValueKey('app-startup-loading')), findsNothing);
       expect(account.isBusy, isFalse);
-      expect(account.resourceCredentialsReady, isFalse);
-      expect(remote.resourceEvents, isEmpty);
+
+      expect(remote.resourceEvents, isNotEmpty);
       late Future<void> login;
       await tester.runAsync(() async {
         login = account.signIn(account: 'Fixture', password: 'fixture');
@@ -100,13 +103,13 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)),
         );
         await tester.pump(const Duration(milliseconds: 20));
-        if (account.resourceCredentialsReady && !account.isBusy) break;
+        if (account.isSignedIn && !account.isBusy) break;
       }
       await tester.runAsync(() => login);
       await tester.pump(const Duration(milliseconds: 500));
       expect(account.isSignedIn, isTrue);
-      expect(account.resourceCredentialsReady, isFalse);
-      expect(remote.resourceEvents, isEmpty);
+
+      expect(remote.resourceEvents, isNotEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
@@ -131,12 +134,23 @@ void main() {
           controller = _Controller();
           gateway = _Gateway();
           account = AccountService(
+            httpClientFactory: () => MockClient(
+              (_) async => http.Response(
+                jsonEncode({
+                  'favorites': {},
+                  'votes': [],
+                  'own_favorites': [],
+                  'own_votes': [],
+                }),
+                200,
+              ),
+            ),
             controller: controller,
             savedLoginStorage: MemoryLoginStorage(),
 
             gatewayFactory: (_) async => gateway,
             switchScope: (scope) async {
-              if (scope == null && scopeGate != null) await scopeGate.future;
+              if (scope == null) await scopeGate?.future;
             },
           );
           await account.configureService('https://service.example.test');
@@ -173,7 +187,13 @@ void main() {
           find.byKey(const ValueKey('desktop-window-sidebar-background')),
           findsNothing,
         );
-        if (slowScope) scopeGate = Completer<void>();
+        if (slowScope) {
+          // The account service runs in runAsync. Its deliberately held gate
+          // must belong to that same real clock, rather than the widget clock.
+          await tester.runAsync(() async {
+            scopeGate = Completer<void>();
+          });
+        }
         late Future<void> logout;
         await tester.runAsync(() async {
           await tester.ensureVisible(
@@ -295,6 +315,8 @@ class _Controller extends AppController {
       );
   @override
   Future<void> initialize() async {}
+  @override
+  Future<void> reloadGames() async {}
   @override
   bool get checkForUpdates => false;
 }

@@ -51,7 +51,7 @@ class GameManifestService {
             jsonDecode(resourceSource) as Map<String, dynamic>,
           );
         } catch (error) {
-          if (remoteAssetService.usesSameOriginLibrary &&
+          if (remoteAssetService.usesPublishedLibrary &&
               remoteAssetService.accessAllowed) {
             rethrow;
           }
@@ -66,7 +66,7 @@ class GameManifestService {
         );
         manifests.add(manifest);
       } catch (error) {
-        if (remoteAssetService.usesSameOriginLibrary &&
+        if (remoteAssetService.usesPublishedLibrary &&
             remoteAssetService.accessAllowed) {
           rethrow;
         }
@@ -100,7 +100,7 @@ class GameManifestService {
     }
 
     // 1. Check local cache
-    if (remoteAssetService.usesSameOriginLibrary &&
+    if (remoteAssetService.usesPublishedLibrary &&
         remoteAssetService.accessAllowed) {
       final text = await remoteAssetService.loadText(
         sources: sources,
@@ -110,7 +110,7 @@ class GameManifestService {
       return text;
     }
     if (kIsWeb) {
-      final cachedSource = await remoteAssetService.loadCachedOrBundledText(
+      final cachedSource = await remoteAssetService.loadCachedText(
         remotePath: remotePath,
       );
       if (cachedSource != null) return cachedSource;
@@ -166,7 +166,7 @@ class GameManifestService {
   Future<GameCatalogManifest> loadMergedCatalogManifest({
     required RemoteAssetService remoteAssetService,
   }) async {
-    if (remoteAssetService.usesSameOriginLibrary &&
+    if (remoteAssetService.usesPublishedLibrary &&
         remoteAssetService.accessAllowed) {
       final source = await remoteAssetService.loadText(
         sources: const [],
@@ -177,7 +177,7 @@ class GameManifestService {
     }
     final GameCatalogManifest local = await loadBundledCatalogManifest();
     if (kIsWeb) {
-      final source = await remoteAssetService.loadCachedOrBundledText(
+      final source = await remoteAssetService.loadCachedText(
         remotePath: 'assets/catalog.json',
       );
       if (source == null) return local;

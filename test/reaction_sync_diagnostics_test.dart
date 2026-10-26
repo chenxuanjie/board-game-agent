@@ -1,18 +1,13 @@
 import 'dart:async';
 
-import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/features/games/models/game_vote_record.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
 import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
-import 'package:board_game_agent/features/identity/services/account_public_reactions.dart';
 import 'package:board_game_agent/features/identity/services/reaction_sync_diagnostics.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/ui/shared/reaction_sync_diagnostics_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'support/account_public_fixture.dart';
-import 'support/account_sync_fixture.dart';
 
 void main() {
   test(
@@ -40,39 +35,6 @@ void main() {
       expect(log.events, isEmpty);
       expect(log.activeStages, isEmpty);
       expect(log.visible, isFalse);
-    },
-  );
-
-  test(
-    'verified native capability avoids duplicate readback and reports actual cancellation',
-    () async {
-      final hub = PublicFixtureHub(), device = SyncDeviceFixture();
-      await device.start();
-      final files = _VerifiedMemoryFiles(hub, 101);
-      final remote = AccountPublicReactions(files);
-      final log = ReactionSyncDiagnostics()..watch('cabo');
-      addTearDown(log.dispose);
-      device.entities['favorite|cabo'] = {
-        'gameSlug': 'cabo',
-        'createdAt': '2026-10-18T01:00:00Z',
-      };
-      await remote.publish(device.local, trace: log.start('publish'));
-      expect(hub.reads.values.single, 1); // Adapter's own readback only.
-      device.entities.clear();
-      await remote.publish(device.local, trace: log.start('cancel'));
-      expect(hub.reads.values.single, 3); // One fresh input plus one readback.
-      expect(
-        remote.confirmsSelection(GameVoteBallot.favoritesNamespace, []),
-        isTrue,
-      );
-      expect(log.export(), contains('远端已核对状态'));
-      expect(log.export(), contains('已取消（删除标记）'));
-      expect(log.export(), contains('上传并读回核对'));
-      await remote.refresh(device.local);
-      expect(
-        remote.observedRemoteCount(GameVoteBallot.favoritesNamespace, 'cabo'),
-        0,
-      );
     },
   );
 
@@ -148,16 +110,6 @@ void main() {
         log.dispose();
       },
     );
-  }
-}
-
-class _VerifiedMemoryFiles extends MemoryPublicFiles
-    implements VerifiedAccountPublicFiles {
-  _VerifiedMemoryFiles(super.hub, super.uid);
-  @override
-  Future<void> replaceOwn(String path, String text) async {
-    await super.replaceOwn(path, text);
-    if (await read(path) != text) throw StateError('readback mismatch');
   }
 }
 

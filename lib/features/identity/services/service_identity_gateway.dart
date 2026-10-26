@@ -58,6 +58,49 @@ final class ServiceIdentityGateway
   int _generation = 0;
   Future<void> _writes = Future.value();
   Future<IdentityUser?>? _verification;
+  String? _access, _datasetId;
+  DateTime _accessExpires = DateTime.fromMillisecondsSinceEpoch(0);
+  String? get datasetId => _datasetId;
+
+  void _acceptAccess(Map<String, dynamic> data) {
+    final token = data['access_token'] as String;
+    _access = token;
+    _accessExpires = DateTime.fromMillisecondsSinceEpoch(0);
+    try {
+      final payload =
+          jsonDecode(
+                utf8.decode(
+                  base64Url.decode(base64Url.normalize(token.split('.')[1])),
+                ),
+              )
+              as Map;
+      _accessExpires = DateTime.fromMillisecondsSinceEpoch(
+        (payload['exp'] as num).toInt() * 1000,
+      );
+    } catch (_) {
+      /* Scheduling hint only. The service validates the token. */
+    }
+    _datasetId = data['dataset_id'] as String? ?? _datasetId;
+  }
+
+  Future<String> accessToken(String expectedUser) async {
+    if (_user?.id != expectedUser || _pendingLogout || _disposed) {
+      throw const IdentityFailure(IdentityFailureCode.sessionRejected);
+    }
+    if (_access == null ||
+        _accessExpires.isBefore(
+          DateTime.now().add(const Duration(seconds: 30)),
+        )) {
+      await verifyCurrentUser();
+    }
+    if (_user?.id != expectedUser ||
+        _access == null ||
+        _pendingLogout ||
+        _disposed) {
+      throw const IdentityFailure(IdentityFailureCode.sessionRejected);
+    }
+    return _access!;
+  }
 
   @override
   IdentityUser? get cachedUser => _user;
@@ -89,6 +132,7 @@ final class ServiceIdentityGateway
       'refresh_token': _refresh,
       if (_user != null) 'user_id': _user!.id,
       if (_user != null) 'display_name': _user!.displayName,
+      if (_datasetId != null) 'dataset_id': _datasetId,
     },
   });
 
@@ -115,6 +159,7 @@ final class ServiceIdentityGateway
           if (!_pendingLogout && refresh == null) throw const FormatException();
           _refresh = refresh as String?;
           if (!_pendingLogout) _user = _identity(data);
+          _datasetId = data['dataset_id'] as String?;
         }
       }
       _loaded = true;
@@ -169,6 +214,7 @@ final class ServiceIdentityGateway
         _refresh = refresh;
       }
       _user = _identity(data);
+      _acceptAccess(data);
       // Persist before publishing success; cancellation queues a tombstone after
       // this write, so a late secure-store completion cannot revive the session.
       await _persist(browser ? null : _record(logout: false));
@@ -206,6 +252,7 @@ final class ServiceIdentityGateway
       final data = await session.refresh(_refresh);
       _check(generation);
       _validate(data, expected: expected);
+      _acceptAccess(data);
       final identity = _identity(data);
       _user = IdentityUser(
         id: identity.id,
@@ -221,6 +268,8 @@ final class ServiceIdentityGateway
           failure.code == IdentityFailureCode.sessionRejected) {
         _user = null;
         _refresh = null;
+        _access = null;
+        _datasetId = null;
         await _persist(null);
       }
       throw failure;
@@ -230,6 +279,7 @@ final class ServiceIdentityGateway
   @override
   void cancelRequests() {
     _generation++;
+    _access = null;
     session.client.cancelRequests();
     if (_authenticating) {
       _pendingLogout = true;
@@ -247,6 +297,7 @@ final class ServiceIdentityGateway
     _pendingLogout = true;
     final tombstone = _record(logout: true);
     _user = null;
+    _access = null;
     if (!_disposed) {
       _events.add(const IdentityEvent(type: IdentityEventType.signedOut));
     }

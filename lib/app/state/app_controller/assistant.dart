@@ -29,11 +29,7 @@ extension AppAssistantController on AppController {
       AiConversation? replacement;
       if (remaining.isEmpty) {
         final now = DateTime.now();
-        var serial = now.microsecondsSinceEpoch;
-        var freshId = 'conversation:$serial';
-        while (_conversations.containsKey(freshId)) {
-          freshId = 'conversation:${++serial}';
-        }
+        final freshId = 'conversation:${const Uuid().v4()}';
         replacement = AiConversation(
           id: freshId,
           title: copy.newConversation,
@@ -83,11 +79,7 @@ extension AppAssistantController on AppController {
     final gameId = useGlobalMode ? null : selectedGame.id;
     if (!useGlobalMode && !hasGames) throw StateError('No game selected');
     final now = DateTime.now();
-    var serial = now.microsecondsSinceEpoch;
-    var id = 'conversation:$serial';
-    while (_conversations.containsKey(id)) {
-      id = 'conversation:${++serial}';
-    }
+    final id = 'conversation:${const Uuid().v4()}';
     _conversations[id] = AiConversation(
       id: id,
       title: copy.newConversation,
@@ -478,7 +470,7 @@ extension AppAssistantController on AppController {
     );
 
     final userMessage = ChatMessage(
-      id: '${DateTime.now().microsecondsSinceEpoch}-user',
+      id: '${const Uuid().v4()}-user',
       role: ChatRole.user,
       text: trimmed,
       timestamp: DateTime.now(),
@@ -500,7 +492,7 @@ extension AppAssistantController on AppController {
     _startRunPresentation(generation);
     final Completer<void> generationAbort = Completer<void>();
     generation.abort = generationAbort;
-    final String draftId = '${DateTime.now().microsecondsSinceEpoch}-assistant';
+    final String draftId = '${const Uuid().v4()}-assistant';
     final ChatMessage draftMessage = ChatMessage(
       id: draftId,
       role: ChatRole.assistant,

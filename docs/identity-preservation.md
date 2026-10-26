@@ -1,3 +1,5 @@
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # 认证方案保存点
 
 当前工作分支为 `codex/synology-direct-auth`，主项目与公共 `app_identity` 同名。它直接访问 DSM，不部署应用会话服务。

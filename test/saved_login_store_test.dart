@@ -169,7 +169,7 @@ void main() {
       );
       expect(service.savedLogins.single.password, 'synthetic');
       await service.signOut();
-      expect(service.resourceCredentialsReady, isFalse);
+
       expect(service.savedLogins.single.username, 'reader');
       service.dispose();
       service = create();

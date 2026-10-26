@@ -120,7 +120,7 @@ extension AppLibraryUpdateController on AppController {
     _libraryUpdateError = null;
     _notifyListeners();
     try {
-      if (_remoteAssetService.usesSameOriginLibrary) {
+      if (_remoteAssetService.usesPublishedLibrary) {
         final changed = await _remoteAssetService.refreshPublishedLibrary(
           complete: complete,
           checkedCatalog: catalogSource,
@@ -367,10 +367,10 @@ extension AppLibraryUpdateController on AppController {
       }
     } catch (_) {
       if (current()) {
-        if (_remoteAssetService.usesSameOriginLibrary) {
+        if (_remoteAssetService.usesPublishedLibrary) {
           // A transport comparison is not an applied catalog. A failed reload
           // must be retried even when the next catalog body is unchanged.
-          _remoteAssetService.clearAccountCache();
+          _remoteAssetService.invalidatePublication();
         }
         _libraryUpdateError = copy.localized(
           '无法检查资料更新，请检查连接后重试。',

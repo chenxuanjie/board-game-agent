@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:app_client/app_client.dart';
 import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
@@ -16,6 +17,9 @@ import '../models/service_configuration.dart';
 import '../../community/services/game_comments_service.dart';
 import 'saved_login_store.dart';
 import 'service_identity_gateway.dart';
+import 'board_personal_store.dart';
+import '../../games/services/service_game_statistics.dart';
+import '../../games/models/game_vote_record.dart';
 
 /// Owns the sole app-service identity and the account's local workspace.
 /// Resource configuration is independent and never supplies login credentials.
@@ -39,7 +43,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
        _switchScope = switchScope,
        _browserOrigin = browserOrigin,
        usesWebAccount = browserAccounts ?? kIsWeb,
-       supportsSignIn = signInSupported ?? true;
+       supportsSignIn = signInSupported ?? true {
+    _controller.configureAccountReactions(requireAccount: true);
+  }
 
   static const authenticationTimeout = Duration(seconds: 45);
   static const serviceOriginKey = 'board_game_agent.app_service.origin.v1';
@@ -66,6 +72,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   String? _setupError, _scopeError, _appliedScope, _requestedScope, _nickname;
   int _scopeGeneration = 0, _loginGeneration = 0;
   Future<void> _scopeQueue = Future.value();
+  BoardPersonalStore? _personalStore;
+  AppJsonClient? _businessClient;
+  GameCommentsService? _comments;
+  final _personalWatchers = <StreamSubscription<dynamic>>[];
+  Timer? _personalRefresh;
+  bool _refreshingPersonal = false;
+  String? get personalSyncError => _personalStore?.syncError;
 
   AppController get controller => _controller;
   AccountConfiguration? get configuration => _configuration;
@@ -98,9 +111,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   // These capabilities are not supplied by authentication. Their old NAS
   // transports are never attached to a new service session.
-  GameCommentsService? get comments => null;
-  bool get resourceCredentialsReady => false;
-  WebDavSettings settingsForResource(Uri target) => const WebDavSettings();
+  GameCommentsService? get comments => _comments;
 
   List<SavedLogin> get savedLogins => _savedLogins.entries
       .where((e) => e.environment == _serviceConfiguration?.environmentId)
@@ -136,6 +147,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> initialize() async {
     if (_initializing || _disposed) return;
     if (_identity != null) {
+      if (_serviceConfiguration case final config?) {
+        _controller.configureApplicationLibrary(config.origin);
+      }
       await restore();
       return;
     }
@@ -201,6 +215,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _connect({bool restoreSession = true}) async {
     final config = _serviceConfiguration!;
+    _controller.configureApplicationLibrary(config.origin);
     IdentityGateway gateway;
     if (_gatewayFactory != null) {
       gateway = await _gatewayFactory(config);
@@ -247,6 +262,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     )..addListener(_identityChanged);
     if (restoreSession) await _identity!.initialize();
     _identityChanged();
+    if (_comments == null && _requestedScope == null) _queueScope(null);
     await _scopeQueue;
     _verificationTimer?.cancel();
     _verificationTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -270,33 +286,197 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _scopeChanging = true;
     _scopeError = null;
     _nickname = null;
-    _controller.configureAccountReactions();
-    _scopeQueue = _scopeQueue.then((_) async {
+    _controller.configureAccountReactions(requireAccount: true);
+    final config = _serviceConfiguration;
+    final selectedUser = user;
+    final gateway = _gateway;
+    _scopeQueue = _scopeQueue.catchError((Object _) {}).then((_) async {
       if (_disposed || generation != _scopeGeneration) return;
+      BoardPersonalStore? nextStore;
       try {
-        await (_switchScope ?? _controller.switchIdentityScope)(target);
-        if (_disposed || generation != _scopeGeneration) return;
-        _appliedScope = target;
-        _scopeChanging = false;
-        final key = nicknameKey;
-        try {
-          final nickname = (await SharedPreferences.getInstance()).getString(
-            key,
-          );
-          if (!_disposed &&
-              generation == _scopeGeneration &&
-              key == nicknameKey) {
-            _nickname = nickname;
+        final oldStore = _personalStore;
+        await _comments?.drain();
+        _comments?.dispose();
+        _comments = null;
+        _businessClient?.close();
+        _businessClient = null;
+        _personalRefresh?.cancel();
+        for (final watcher in _personalWatchers) {
+          await watcher.cancel();
+        }
+        _personalWatchers.clear();
+        await oldStore?.database.disconnect();
+        final client = config == null
+            ? null
+            : AppJsonClient(
+                config.origin,
+                applicationId: ServiceConfiguration.applicationId,
+                client: _httpClientFactory(),
+                baseUri: config.origin.resolve(usesWebAccount ? '/api/' : '/'),
+                maxResponseBytes: 4 * 1024 * 1024,
+                requestTimeout: const Duration(seconds: 20),
+              );
+        _businessClient = client;
+        Future<String>? access() =>
+            gateway is ServiceIdentityGateway && selectedUser != null
+            ? gateway.accessToken(selectedUser.id)
+            : null;
+        if (target != null &&
+            gateway is ServiceIdentityGateway &&
+            selectedUser != null &&
+            client != null) {
+          var dataset = gateway.datasetId;
+          if (dataset == null) {
+            final result = await client.request(
+              '/v1/datasets',
+              get: true,
+              token: await access(),
+            );
+            dataset =
+                ((result['datasets'] as List).single as Map)['id'] as String;
           }
-        } catch (_) {
-          /* Display preferences do not invalidate a committed scope. */
+          nextStore = await BoardPersonalStore.open(target, dataset);
+        }
+        if (_disposed || generation != _scopeGeneration) {
+          await nextStore?.close();
+          nextStore = null;
+          return;
+        }
+        if (_switchScope != null) {
+          await _switchScope(target);
+        } else {
+          await _controller.switchIdentityScope(
+            target,
+            personalStore: nextStore,
+          );
+        }
+        _personalStore = nextStore;
+        nextStore = null;
+        await oldStore?.close();
+        _appliedScope = target;
+        if (_disposed || generation != _scopeGeneration) return;
+        _scopeChanging = false;
+        bool active() =>
+            !_disposed &&
+            generation == _scopeGeneration &&
+            currentAccountScope == target &&
+            !_scopeChanging;
+        final token =
+            target != null &&
+                gateway is ServiceIdentityGateway &&
+                selectedUser != null
+            ? () => gateway.accessToken(selectedUser.id)
+            : null;
+        if (client != null && config != null) {
+          final scope = target ?? 'public-${config.environmentId}';
+          _comments = GameCommentsService(
+            client: client,
+            scope: scope,
+            token: token,
+            uid: selectedUser == null
+                ? ''
+                : sha256
+                      .convert(
+                        utf8.encode(
+                          'board_game_agent.public.v1|${selectedUser.id}',
+                        ),
+                      )
+                      .toString(),
+            isActive: active,
+            displayName: () => displayName,
+          );
+          _controller.configureAccountReactions(
+            scope: scope,
+            error: () => personalSyncError,
+            provider: (namespace) => ServiceGameStatistics(
+              client: client,
+              scope: scope,
+              namespace: namespace,
+              token: token,
+              store: _personalStore,
+              active: active,
+              target: () => namespace == GameVoteBallot.favoritesNamespace
+                  ? _controller.favoriteStatistics
+                  : _controller.gameVotes,
+            ),
+          );
+        }
+        if (_personalStore case final store?) {
+          store.addListener(() {
+            if (active() && identical(_personalStore, store)) notifyListeners();
+          });
+          _nickname = (await store.preferences())['nickname'] as String;
+          for (final table in [
+            'favorites',
+            'recent_games',
+            'preferences',
+            'conversations',
+            'messages',
+            'votes',
+          ]) {
+            _personalWatchers.add(
+              store.database
+                  .watch('SELECT * FROM $table')
+                  .listen(
+                    (_) {
+                      if (active()) _schedulePersonalRefresh(store, active);
+                    },
+                    onError: (Object _) {
+                      /* SDK keeps the database and pending queue. */
+                    },
+                  ),
+            );
+          }
+          // First network synchronization never blocks successful local login.
+          unawaited(
+            store
+                .connect(
+                  BoardSyncConnector(
+                    client: client!,
+                    store: store,
+                    token: token!,
+                    active: active,
+                    userId: selectedUser!.id,
+                  ),
+                )
+                .catchError((Object _) {
+                  if (active()) {
+                    store.syncError = '个人数据已保存在本机，同步未完成';
+                    notifyListeners();
+                  }
+                }),
+          );
         }
       } catch (_) {
+        await nextStore?.close();
         if (!_disposed && generation == _scopeGeneration) {
           _scopeError = '账号数据切换未完成，请重试';
         }
       }
       if (!_disposed) notifyListeners();
+    });
+  }
+
+  void _schedulePersonalRefresh(
+    BoardPersonalStore store,
+    bool Function() active,
+  ) {
+    _personalRefresh?.cancel();
+    _personalRefresh = Timer(const Duration(milliseconds: 250), () async {
+      if (!active() || _refreshingPersonal) return;
+      _refreshingPersonal = true;
+      try {
+        final refreshed = await _controller.reloadServicePersonalState();
+        if (active()) {
+          _nickname = (await store.preferences())['nickname'] as String;
+          notifyListeners();
+          if (!refreshed) _schedulePersonalRefresh(store, active);
+        }
+      } catch (_) {
+        if (active()) _schedulePersonalRefresh(store, active);
+      } finally {
+        _refreshingPersonal = false;
+      }
     });
   }
 
@@ -383,12 +563,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> saveNickname(String nickname) async {
     if (user == null || isBusy || nickname.trim().length > 80) return;
     final key = nicknameKey;
-    if (!await (await SharedPreferences.getInstance()).setString(
-      key,
-      nickname.trim(),
-    )) {
-      throw StateError('昵称保存失败');
-    }
+    final store = _personalStore;
+    if (store == null) throw StateError('个人数据尚未准备好');
+    await store.setPreference('nickname', nickname.trim());
     if (key == nicknameKey) {
       _nickname = nickname.trim();
       notifyListeners();
@@ -431,6 +608,19 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     final gateway = _gateway;
     _gateway = null;
     await gateway?.dispose();
+    _personalRefresh?.cancel();
+    for (final watcher in _personalWatchers) {
+      await watcher.cancel();
+    }
+    _personalWatchers.clear();
+    await _comments?.drain();
+    _comments?.dispose();
+    _comments = null;
+    _businessClient?.close();
+    _businessClient = null;
+    await _scopeQueue;
+    await _personalStore?.close();
+    _personalStore = null;
   }
 
   @override

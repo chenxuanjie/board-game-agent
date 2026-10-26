@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../settings/services/preferences_service.dart';
+import '../../identity/services/board_personal_store.dart';
 
 /// Retains the native v4 file location; Web uses browser-backed preferences.
 /// The controller serializes writes to this store.
@@ -13,21 +14,27 @@ class ConversationStore {
     this.directory,
     this.browserStorage = kIsWeb,
     this.identityUserId,
+    this.personalStore,
   });
 
   final Directory? directory;
   final bool browserStorage;
   final String? identityUserId;
+  final BoardPersonalStore? personalStore;
   static const _browserKey = 'chat_conversations_v4';
 
-  ConversationStore forIdentityScope(String? userId) {
+  ConversationStore forIdentityScope(
+    String? userId, {
+    BoardPersonalStore? store,
+  }) {
     PreferencesService.validateIdentityUserId(userId);
-    return userId == identityUserId
+    return userId == identityUserId && identical(store, personalStore)
         ? this
         : ConversationStore(
             directory: directory,
             browserStorage: browserStorage,
             identityUserId: userId,
+            personalStore: store,
           );
   }
 
@@ -47,6 +54,7 @@ class ConversationStore {
   }
 
   Future<String?> load() async {
+    if (personalStore case final store?) return store.loadConversations();
     if (browserStorage) {
       return (await SharedPreferences.getInstance()).getString(
         _scopedBrowserKey,
@@ -57,6 +65,9 @@ class ConversationStore {
   }
 
   Future<void> save(String payload) async {
+    if (personalStore case final store?) {
+      return store.saveConversations(payload);
+    }
     if (browserStorage) {
       if (!await (await SharedPreferences.getInstance()).setString(
         _scopedBrowserKey,

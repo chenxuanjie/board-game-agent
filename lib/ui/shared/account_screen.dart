@@ -294,6 +294,13 @@ class _AccountScreenState extends State<AccountScreen> {
                     icon: const Icon(Icons.edit_outlined),
                     label: Text(_text('修改昵称', 'Edit nickname')),
                   ),
+                if (signedIn && service?.personalSyncError != null)
+                  Text(
+                    service!.personalSyncError!,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.error,
+                    ),
+                  ),
                 if (!signedIn && service != null && service.supportsSignIn) ...[
                   if (!service.usesWebAccount) ...[
                     TextFormField(
@@ -306,6 +313,21 @@ class _AccountScreenState extends State<AccountScreen> {
                       decoration: fieldDecoration.copyWith(
                         labelText: _text('应用服务地址', 'Application service URL'),
                         hintText: 'https://service.example',
+                        suffixIcon: IconButton(
+                          tooltip: _text('保存服务地址', 'Save service URL'),
+                          icon: const Icon(Icons.check_rounded),
+                          onPressed: busy || otp
+                              ? null
+                              : () => _run(
+                                  () => service.configureService(
+                                    _customServer.text,
+                                  ),
+                                  _text(
+                                    '服务地址未保存，请检查后重试',
+                                    'Could not save service URL.',
+                                  ),
+                                ),
+                        ),
                       ),
                       validator: (value) {
                         try {

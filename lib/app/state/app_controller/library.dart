@@ -272,7 +272,7 @@ extension AppLibraryController on AppController {
   Future<_RemoteLibraryIndexResult> _loadRemoteLibraryIndex() async {
     final List<String> slugs = await _remoteLibraryGameSlugs();
     if (slugs.isEmpty) {
-      if (_remoteAssetService.usesSameOriginLibrary) {
+      if (_remoteAssetService.usesPublishedLibrary) {
         return const _RemoteLibraryIndexResult(resources: []);
       }
       throw StateError('远端资料库没有可检查的游戏资料');
@@ -306,7 +306,7 @@ extension AppLibraryController on AppController {
     );
 
     if (loadedManifestCount == 0) {
-      if (_remoteAssetService.usesSameOriginLibrary) {
+      if (_remoteAssetService.usesPublishedLibrary) {
         throw StateError('远端资料清单暂不可用');
       }
       // If a legacy remote library has no manifests, retain the existing
@@ -346,7 +346,7 @@ extension AppLibraryController on AppController {
 
   Future<List<String>> _remoteLibraryGameSlugs() async {
     final Set<String> slugs = <String>{
-      if (!_remoteAssetService.usesSameOriginLibrary)
+      if (!_remoteAssetService.usesPublishedLibrary)
         for (final GameInfo game in _games) game.slug,
     };
     try {
@@ -354,7 +354,7 @@ extension AppLibraryController on AppController {
         sources: _assetSourceConfigs,
         remotePath: 'assets/catalog.json',
       );
-      if (_remoteAssetService.usesSameOriginLibrary && source == null) {
+      if (_remoteAssetService.usesPublishedLibrary && source == null) {
         throw StateError('远端目录暂不可用');
       }
       if (source != null && source.trim().isNotEmpty) {
@@ -366,7 +366,7 @@ extension AppLibraryController on AppController {
           if (entry is! Map<String, dynamic> || entry['enabled'] == false) {
             continue;
           }
-          if (_remoteAssetService.usesSameOriginLibrary &&
+          if (_remoteAssetService.usesPublishedLibrary &&
               entry['enabled'] != true) {
             continue;
           }
@@ -377,7 +377,7 @@ extension AppLibraryController on AppController {
         }
       }
     } catch (error) {
-      if (_remoteAssetService.usesSameOriginLibrary) rethrow;
+      if (_remoteAssetService.usesPublishedLibrary) rethrow;
       debugPrint(
         '[assets] remote catalog unavailable for library index: $error',
       );

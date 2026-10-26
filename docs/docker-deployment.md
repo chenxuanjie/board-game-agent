@@ -1,3 +1,5 @@
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # Docker 部署
 
 2026-10-16 起，默认交付预构建的两个 Linux 运行镜像。Flutter 编译、Python 依赖安装在开发电脑或构建环境完成，NAS 只导入并运行。外部端口保持 **8887**，账号协议与只读资料挂载不变，见 [Web 账号](web-account.md) 和 [Web 同源资料](web-library.md)。

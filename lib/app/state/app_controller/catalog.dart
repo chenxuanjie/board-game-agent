@@ -55,7 +55,7 @@ extension AppCatalogController on AppController {
       final deadline = Completer<List<GameInfo>>();
       // Native metadata is local/bundled (preferRemote=false); only the Web
       // authority performs network I/O here and needs this total budget.
-      final timer = _remoteAssetService.usesSameOriginLibrary
+      final timer = _remoteAssetService.usesPublishedLibrary
           ? Timer(const Duration(seconds: 25), () {
               deadline.completeError(
                 TimeoutException('Catalog loading timed out'),

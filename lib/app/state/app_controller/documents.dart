@@ -9,8 +9,8 @@ extension AppDocumentController on AppController {
     _assetConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.failure,
       message: copy.localized(
-        '请先登录后使用知识库',
-        'Sign in to use the knowledge library',
+        '请先公开资料暂不可用，请检查服务地址',
+        'Public library unavailable. Check the service URL.',
       ),
       checkedAt: DateTime.now(),
     );
@@ -19,7 +19,7 @@ extension AppDocumentController on AppController {
   }
 
   Future<List<int>?> _loadWebDocument(String path) async {
-    if (_remoteAssetService.usesSameOriginLibrary) {
+    if (_remoteAssetService.usesPublishedLibrary) {
       return _remoteAssetService.loadBytes(
         sources: _assetSourceConfigs,
         remotePath: path,
@@ -122,7 +122,7 @@ extension AppDocumentController on AppController {
 
   Future<String?> loadLibraryResourceText(String remotePath) async {
     if (!_requireLibraryAccess()) return null;
-    if (_remoteAssetService.usesSameOriginLibrary) {
+    if (_remoteAssetService.usesPublishedLibrary) {
       return _remoteAssetService.loadText(
         sources: _assetSourceConfigs,
         remotePath: remotePath,
@@ -179,7 +179,7 @@ extension AppDocumentController on AppController {
     if (remotePath.trim().isEmpty || isOtherStoragePath(remotePath)) {
       return null;
     }
-    if (_remoteAssetService.usesSameOriginLibrary) {
+    if (kIsWeb && _remoteAssetService.usesPublishedLibrary) {
       return _remoteAssetService.resourceUri(remotePath)?.toString();
     }
     if (_resolvedAssetPaths.containsKey(remotePath)) {
@@ -228,7 +228,7 @@ extension AppDocumentController on AppController {
     if (kIsWeb) {
       for (final candidate in candidates) {
         try {
-          if (_remoteAssetService.usesSameOriginLibrary) {
+          if (_remoteAssetService.usesPublishedLibrary) {
             final file = await _remoteAssetService.ensureCached(
               sources: _assetSourceConfigs,
               remotePath: candidate,
@@ -293,7 +293,9 @@ extension AppDocumentController on AppController {
       checkedAt: DateTime.now(),
     );
     _notifyListeners();
-    if (fallback.isNotEmpty && !isOtherStoragePath(fallback)) {
+    if (!_remoteAssetService.usesPublishedLibrary &&
+        fallback.isNotEmpty &&
+        !isOtherStoragePath(fallback)) {
       return ResolvedDocument(
         remotePath: fallback,
         renderType: _documentRenderTypeForPath(fallback),

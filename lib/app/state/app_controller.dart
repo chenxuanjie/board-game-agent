@@ -7,11 +7,11 @@ import '../../core/platform/background_transfer_notifications.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/painting.dart' show PaintingBinding;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_sync/webdav_sync.dart' show canonicalJson, sha256Json;
-import '../../features/identity/services/account_sync_store.dart';
+import 'package:webdav_sync/webdav_sync.dart' show canonicalJson;
+import '../../features/identity/services/board_personal_store.dart';
 import '../../features/identity/services/reaction_sync_diagnostics.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
@@ -77,7 +77,6 @@ part 'app_controller/catalog.dart';
 part 'app_controller/library_updates.dart';
 part 'app_controller/documents.dart';
 part 'app_controller/identity_scope.dart';
-part 'app_controller/account_cloud.dart';
 
 enum AiModelLoadState { idle, loading, success, empty, failure }
 
@@ -150,34 +149,52 @@ class AppController extends ChangeNotifier {
   GameVoteService _gameVotes;
   final GameVoteService? _guestVoteTemplate;
   GameVoteService get gameVotes => _gameVotes
-    ..canMutate = (() => !_switchingIdentityScope && !_accountReactionCommit)
+    ..localSelectionVisibility = (() =>
+        !_requirePersonalAccount || identityUserId != null)
+    ..canMutate = (() =>
+        !_switchingIdentityScope &&
+        !_personalReloadCommit &&
+        (!_requirePersonalAccount || identityUserId != null))
     ..cachedCountVisibility = (() =>
-        identityUserId != null || _gameVotes.remoteProvider != null)
+        identityUserId != null ||
+        _gameVotes.remoteProvider != null ||
+        _accountReactionProvider != null)
     ..accountScopeProvider = (() =>
         _accountReactionScope ??
         (identityUserId == null ? null : 'account-public-v1.$identityUserId'))
     ..onSaved = _notifyListeners;
   String? get identityUserId => _preferencesService.identityUserId;
+  void configureApplicationLibrary(Uri origin) {
+    if (_assetSourceConfigs.length == 1 &&
+        _assetSourceConfigs.single.id == 'application_service' &&
+        _assetSourceConfigs.single.address == origin.origin) {
+      return;
+    }
+    _assetSourceConfigs = [
+      AssetSourceConfig(
+        id: 'application_service',
+        name: '公开资料',
+        address: origin.origin,
+        testUrl: origin.resolve('/v1/apps/board_game_agent/library').toString(),
+      ),
+    ];
+    _invalidateAssetAccessStatus();
+  }
+
   bool _switchingIdentityScope = false;
   bool get isSwitchingIdentityScope => _switchingIdentityScope;
   int _identityScopeEpoch = 0;
   Future<void> _identityScopeQueue = Future<void>.value();
   int _identityScopeRequests = 0;
-  Future<void>? _accountCloudWork;
-  bool _accountReactionCommit = false;
+  Future<void>? _personalReloadWork;
+  bool _personalReloadCommit = false;
   bool _controllerDisposed = false;
-  bool get accountCloudIdle =>
+  bool get personalDataIdle =>
       !_controllerDisposed &&
       !_switchingIdentityScope &&
-      !_accountReactionCommit &&
+      !_personalReloadCommit &&
       !_gameVotes.saving &&
       !(_nationalDayList?.saving ?? false) &&
-      !_generationStates.values.any((state) => state.isSending) &&
-      !_isListening;
-  bool get canStartPrivateCloudSync =>
-      !_controllerDisposed &&
-      _identityScopeRequests == 0 &&
-      (!_switchingIdentityScope || _accountCloudWork != null) &&
       !_generationStates.values.any((state) => state.isSending) &&
       !_isListening;
   Future<void>? _initializationFuture;
@@ -201,6 +218,7 @@ class AppController extends ChangeNotifier {
   final Set<String> _committedFavoriteSlugs = {};
   RemoteGameVoteStore Function(String)? _accountReactionProvider;
   String? _accountReactionScope;
+  bool _requirePersonalAccount = false;
   String? Function()? _accountReactionError;
   String? Function()? _accountPublicationError;
   void configureAccountReactions({
@@ -208,7 +226,9 @@ class AppController extends ChangeNotifier {
     String? scope,
     String? Function()? error,
     String? Function()? publicationError,
+    bool? requireAccount,
   }) {
+    if (requireAccount != null) _requirePersonalAccount = requireAccount;
     _accountReactionProvider = provider;
     _accountReactionScope = scope;
     _accountReactionError = error;
@@ -242,15 +262,20 @@ class AppController extends ChangeNotifier {
               (anonymousReactionPublishingEnabled
                   ? _favoriteScopeProvider?.call()
                   : null),
-          externalGames: () =>
-              _favoriteRecordsLoaded ? _committedFavoriteSlugs : null,
+          externalGames: () => _requirePersonalAccount && identityUserId == null
+              ? const <String>[]
+              : _favoriteRecordsLoaded
+              ? _committedFavoriteSlugs
+              : null,
           cacheLoader: _preferencesService.loadFavoriteRankingCache,
           cacheSaver: _preferencesService.saveFavoriteRankingCache,
         )
         ..accountSyncError = _accountReactionError
         ..accountPublicationError = _accountPublicationError
         ..cachedCountVisibility = (() =>
-            identityUserId != null || _favoriteRemoteProvider != null);
+            identityUserId != null ||
+            _favoriteRemoteProvider != null ||
+            _accountReactionProvider != null);
   NationalDayListController? _nationalDayList;
   NationalDayListController get nationalDayList => _nationalDayList ??=
       NationalDayListController(
@@ -548,7 +573,9 @@ class AppController extends ChangeNotifier {
     return List<GameInfo>.unmodifiable(result);
   }
 
-  int get favoriteCount => _favoriteCreatedAtBySlug.length;
+  int get favoriteCount => _requirePersonalAccount && identityUserId == null
+      ? 0
+      : _favoriteCreatedAtBySlug.length;
   List<SearchHistoryRecord> get searchHistory =>
       List<SearchHistoryRecord>.unmodifiable(_searchHistory);
 
@@ -569,6 +596,7 @@ class AppController extends ChangeNotifier {
   int get recentlyViewedCount => _recentGameRecords.length;
 
   bool isFavorite(GameInfo game) {
+    if (_requirePersonalAccount && identityUserId == null) return false;
     final slug = game.slug.trim();
     return slug.isNotEmpty && _favoriteCreatedAtBySlug.containsKey(slug);
   }
@@ -922,7 +950,7 @@ class AppController extends ChangeNotifier {
     await _restoreGameGallerySelections();
     // Native startup reads local/bundled metadata. Web's authoritative catalog
     // is a network dependency and must not gate accounts, settings or chat.
-    if (!_remoteAssetService.usesSameOriginLibrary) {
+    if (!_remoteAssetService.usesPublishedLibrary) {
       try {
         await _loadGameCatalog();
       } catch (_) {
@@ -962,7 +990,7 @@ class AppController extends ChangeNotifier {
     }
     _queueConversationSave();
     unawaited(() async {
-      if (_remoteAssetService.usesSameOriginLibrary) await retryGameCatalog();
+      if (_remoteAssetService.usesPublishedLibrary) await retryGameCatalog();
       if (!_controllerDisposed) await _initializeRemoteLibrary();
     }());
     if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
@@ -1082,6 +1110,7 @@ class AppController extends ChangeNotifier {
     _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
     super.dispose();
+    _remoteAssetService.dispose();
   }
 
   void _startAssetStatusPolling() {

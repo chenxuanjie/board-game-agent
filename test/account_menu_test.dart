@@ -85,9 +85,7 @@ class _MineFixture extends ChangeNotifier implements AppController {
   @override
   List<AssetSourceConfig> get assetSourceConfigs => AssetSourceConfig.defaults;
   @override
-  bool get accountCloudIdle => false;
-  @override
-  bool get canStartPrivateCloudSync => false;
+  bool get personalDataIdle => false;
   @override
   AppCopy get copy => AppCopy(AppLanguage.zhHans);
   @override

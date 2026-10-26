@@ -77,7 +77,7 @@ flutter test integration_test/direct_synology_auth_test.dart -d windows
 
 ## 账号云同步验证与最新构建
 
-2026-10-05，在同一工作分支新增账号云同步，范围与实现见 [账号云同步](account-cloud-sync.md)。
+2026-10-05，在同一工作分支新增账号云同步，范围与实现见 [账号云同步](service-business.md)。
 
 - 主项目完整回归 420 项通过，`app_identity` 29 项通过，`webdav_sync` 19 项通过；主项目及认证公共包静态分析无问题。
 - Windows 真实原生客户端使用 Shane 账号验证私有 home 目录：上传、第二个独立本地存储读取、删除同步、重启读取均通过。使用独立临时目录和合成数据，测试结束删除该目录并退出，没有改变已有个人文件、NAS 权限或系统配置。

@@ -67,6 +67,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     ++_actionEpoch;
     _service?.removeListener(_changed);
     _service = service;
+    service?.watchGame(widget.gameSlug);
     _freshId = null;
     _liking.clear();
     _likeErrors.clear();

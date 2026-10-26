@@ -6,8 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_settings/webdav_settings.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_copy.dart';
@@ -233,34 +231,6 @@ void main() {
       await reloaded.load();
       expect(reloaded.saved.baseUrl, _newDav.baseUrl);
       expect(reloaded.saved.password, _newDav.password);
-      final requests = <http.Request>[];
-      final remote = RemoteAssetService(
-        settingsProvider: () => reloaded.saved,
-        client: MockClient((request) async {
-          requests.add(request);
-          return http.Response('rule', 200);
-        }),
-      );
-      expect(
-        await remote.fetchRemoteText(
-          sources: f.app.assetSourceConfigs,
-          remotePath: 'assets/catalog.json',
-        ),
-        'rule',
-      );
-      final authenticated = requests.singleWhere(
-        (r) => r.url.host == 'dav.example',
-      );
-      expect(
-        authenticated.headers['Authorization'],
-        'Basic ${base64Encode(utf8.encode('${_newDav.username}:${_newDav.password}'))}',
-      );
-      expect(
-        requests
-            .where((r) => r.url.host != 'dav.example')
-            .every((r) => !r.headers.containsKey('Authorization')),
-        isTrue,
-      );
     },
   );
   testWidgets(
@@ -296,56 +266,7 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-  test(
-    'imported WebDAV credentials stay within the configured origin and root',
-    () async {
-      final requests = <http.Request>[];
-      final service = RemoteAssetService(
-        settingsProvider: () => _newDav,
-        client: MockClient((request) async {
-          requests.add(request);
-          return http.Response('missing', 404);
-        }),
-      );
-      await service.fetchRemoteBytes(
-        sources: [
-          const AssetSourceConfig(
-            id: 'own',
-            name: 'Own',
-            address: '',
-            testUrl: 'https://dav.example/friend/',
-          ),
-          const AssetSourceConfig(
-            id: 'other',
-            name: 'Other',
-            address: '',
-            testUrl: 'https://other.example/friend/',
-          ),
-          const AssetSourceConfig(
-            id: 'sibling',
-            name: 'Sibling',
-            address: '',
-            testUrl: 'https://dav.example/another/',
-          ),
-          const AssetSourceConfig(
-            id: 'insecure',
-            name: 'Insecure',
-            address: '',
-            testUrl: 'http://dav.example/friend/',
-          ),
-        ],
-        remotePath: 'games/demo/rule.pdf',
-      );
-      expect(requests, hasLength(4));
-      expect(
-        requests.first.headers['Authorization'],
-        'Basic ${base64Encode(utf8.encode('${_newDav.username}:${_newDav.password}'))}',
-      );
-      for (final request in requests.skip(1)) {
-        expect(request.headers.containsKey('Authorization'), isFalse);
-      }
-    },
-  );
+
   test('a failed optional WebDAV check remains retryable', () async {
     final f = _Fixture();
     addTearDown(f.dispose);
