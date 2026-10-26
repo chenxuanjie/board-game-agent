@@ -299,6 +299,7 @@ void main() {
         ('invalid_credentials', 401, IdentityFailureCode.invalidCredentials),
         ('rate_limited', 429, IdentityFailureCode.rateLimited),
         ('http_error', 503, IdentityFailureCode.providerUnavailable),
+        ('provider_timeout', 504, IdentityFailureCode.timeout),
       ]) {
         final g = gateway(Vault(), (_) async => json({'detail': code}, status));
         await expectLater(

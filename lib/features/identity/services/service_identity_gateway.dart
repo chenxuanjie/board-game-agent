@@ -307,6 +307,7 @@ final class ServiceIdentityGateway
       'password_change_required' => IdentityFailureCode.passwordChangeRequired,
       'cancelled' => IdentityFailureCode.cancelled,
       'timeout' => IdentityFailureCode.timeout,
+      'provider_timeout' => IdentityFailureCode.timeout,
       'network' => IdentityFailureCode.network,
       'storage' => IdentityFailureCode.storage,
       _ => switch (error.status) {
