@@ -34,7 +34,7 @@ python3 /path/to/flutter-release-publisher/scripts/flutter_docker_release.py --p
 
 唯一交付文件为 `release/board-game-agent-linux-amd64-images.tar`。每次成功构建、导出并校验后原子替换同名文件，不生成部署 ZIP，不累积版本或时间戳文件。镜像内部标签记录应用版本、Git 修订、dirty 状态与构建时间；显式使用已存在镜像标签仍拒绝覆盖，默认自动生成新的内部标签，不影响固定 TAR 覆盖。构建失败、空导出或无效 TAR 时保留旧文件。不自动安装 Docker、不连接 NAS、不上传。
 
-配套小文件位于 `release/reports/docker-linux-amd64/`：群晖专用 Compose、部署脚本、`release.json`、`checksums.sha256`、`timings.json` 和实际验证后生成的 `validation.json`。交付 YAML 已固定匹配 TAR 的两个镜像引用和架构，所有 NAS 设置直接写在 YAML 中，不依赖 `.env`。目录不打成另一份压缩包，同名更新；新构建清除旧验证结果。首次下载和缓存命中影响实测时间，见 [本地交付产物](release-artifacts.md)。
+配套小文件位于 `release/reports/docker-linux-amd64/`：群晖专用 Compose、部署脚本、`release.json`、`checksums.sha256`、`timings.json` 和实际验证后生成的 `validation.json`。交付 YAML 已固定匹配 TAR 的两个镜像引用和架构，所有 NAS 设置直接写在 YAML 中，不依赖 `.env`。目录不打成另一份压缩包，同名更新；新构建清除旧验证结果。首次下载和缓存命中影响实测时间，见 [开发规范：构建与交付](development-standards.md#delivery)。
 
 镜像版不包含完整 Flutter 工程、共享包源码、Flutter SDK、真实 `.env` 或 NAS 正文资料；界面图片、字体和轻量元数据仍属于运行资源。Python 网关的运行代码与依赖位于其镜像中，不是转换为二进制程序。大小以真实构建结果为准，不承诺比源码版更小。
 

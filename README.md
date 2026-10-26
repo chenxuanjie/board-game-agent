@@ -6,17 +6,13 @@
 
 当前版本已经不再是早期的单桌游原型，而是一个以 `catalog + game.json + manifest.json + 远端资源缓存` 为核心的数据驱动应用。现在目录中已接入 `21` 款桌游，并支持按资源源优先级从远端拉取图片、文档和桌游元数据。
 
-代码目录及各层职责见 [工程目录说明](docs/architecture.md)。
-
-本地安装包与 Docker 包按平台只保留最新一套，打包入口和目录规则见 [本地交付产物](docs/release-artifacts.md)。
+开发、审查、验证与交付统一遵循 [开发规范与标准](docs/development-standards.md)。后续标准只在该文件维护，包含工程分层、UI、数据与权限、AI、同步、测试和交付；当前客户端与新后台的接入边界见其中的 [实现基线](docs/development-standards.md#implementation)。
 
 ## 同步与更新检查
 
 桌游详情支持文字评论、楼中楼回复、点赞和可选的 1～10 分桌友评分，两端复用现有 NAS 账号。评论独立于收藏/投票统计保存，目录准备、评分与删除规则、重试及范围见 [桌游评论](docs/game-comments.md)。
 
-桌游资料检查、WebDAV 可用性检测、私人账号数据同步、公共收藏/投票及 APK/EXE 版本检查的定义、频率、并发、共享包与当前实现状态统一见 [同步与更新检查规范](docs/sync-and-update.md)。
-
-资料检查按“初始化完整检查、周期轻量快速检查”规范维护，保留现有 catalog 和资源 manifest，不要求新增 SHA-256 版本清单。启动先读取目录验证 WebDAV 可用性，复用成功响应继续完整检查；登录恢复或连接就绪后立即补查，不等待资料索引或图片预缓存。之后每 60 秒的目录读取同时验证可用性并快速比较目录；设置提供快速检查和完整性检查，通知及桌游库点击入口也使用快速检查，桌游库检查时显示顶部细进度条。账号同步的 60 秒补拉、收藏/投票立即提交和应用启动版本检查是不同任务，不能混为同一种“同步”。
+资料检查、资源可用性、账号同步和应用更新是独立任务，术语见 [开发规范：同步与检查](docs/development-standards.md#sync)，当前调度、预算与限制见 [实现基线](docs/development-standards.md#implementation)。
 
 上述 WebDAV 与下载确认针对原生端；Web 改用同源只读挂载资料，保留检查调度与界面，资料变化在后台重新读取。完整检查由服务端检查登记文件元数据，PDF 按需分段读取；正文不再内置 Web 或 Docker 源码包。详见 [Web 同源资料](docs/web-library.md)。
 
@@ -24,7 +20,7 @@ Web 默认通过预构建 Docker 镜像交付，开发电脑构建、NAS 导入�
 
 ## 当前功能
 
-- Android / Windows 使用群晖账号密码直接登录，按需输入验证码，无需另部署登录服务；Web 通过同源网关登录，并按当前账号权限读取只读挂载的 NAS 资料，本机数据按账号隔离；Web 云同步和评论尚未接入。详见 [账号接入](docs/identity-integration.md)、[Web 账号](docs/web-account.md) 和 [Web 同源资料](docs/web-library.md)。
+- Android / Windows 当前使用群晖账号密码直接登录，按需输入验证码；Web 通过同源网关登录，本机数据按账号隔离，游客可读已发布资料和评论，账号数据传输及评论写入已在源码接入。共用后台客户端切换尚未完成，部署和实测范围见 [实现基线](docs/development-standards.md#implementation)、[Web 账号](docs/web-account.md) 和 [Web 同源资料](docs/web-library.md)。
 - 默认简体中文，同时支持英文界面切换
 - 多桌游目录首页，卡片与详情页基于 `assets/catalog.json` 和各游戏 `game.json` 生成
 - 每个桌游都有独立 AI 助手入口，首页还有一个通用 AI 入口
@@ -164,4 +160,4 @@ Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段
 - 如果首次打开某个规则书或 FAQ，应用可能会先下载远端文件，再进入阅读页
 - AI 和资源访问能力依赖当前配置的接口地址、资源源可达性以及本地缓存状态
 
-账号个人数据云同步已复用公共包增量协议，保存到登录用户的群晖私有 home；同步方式总览见 [同步与更新检查规范](docs/sync-and-update.md)，范围、离线重试和限制见 [账号云同步](docs/account-cloud-sync.md)。
+账号个人数据云同步已复用公共包增量协议，保存到登录用户的群晖私有 home；同步方式总览见 [开发规范：同步与检查](docs/development-standards.md#sync)，范围、离线重试和限制见 [账号云同步](docs/account-cloud-sync.md)。

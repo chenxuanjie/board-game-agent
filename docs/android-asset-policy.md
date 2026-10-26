@@ -1,10 +1,12 @@
 # Android APK 资源范围
 
+本文保留资源排除机制、操作及历史验收；长期规则统一维护在 [开发规范：资料与资源发布](development-standards.md#content)，不在本文另设标准。
+
 Android APK 不内置 PDF、规则书、FAQ、知识文本、索引、翻译、研究素材或压缩资料。所有 `assets/games/<slug>/docs/` 通过 Flutter 的平台资源声明排除 Android，Windows/Web 继续保留原有资料。
 
 APK 保留界面必需字体/图标/插图、游戏封面以及 game.json/manifest.json/catalog.json 轻量目录元数据。目录中的远端文档路径是索引信息，不代表 PDF 或文档正文已内置。登录后从 NAS 按需下载；已下载缓存位于设备应用数据目录，不参与 APK 打包。
 
-规则写在项目 AGENTS.md；Android Gradle 的所有 merge*Assets 任务检查合并产物，禁止 docs、PDF 及放在其他桌游目录中的正文/压缩文件。没有修改、删减或重新签名已生成 APK。
+Android Gradle 的所有 merge*Assets 任务检查合并产物，禁止 docs、PDF 及放在其他桌游目录中的正文/压缩文件。没有修改、删减或重新签名已生成 APK。
 
 交付检查：
 
