@@ -74,3 +74,19 @@
 最终客户端 `flutter analyze` 无问题，完整 **575 项 Flutter 测试通过**；未执行应用/镜像构建、Git 提交、推送、上传或真实部署。
 
 客户端验收入口为 `test/board_public_sync_test.dart`（合并、有限重试、刷新中后续变化）、`test/service_game_statistics_test.dart`（串行快照和本人去重）、`test/game_comments_api_test.dart`（当前游戏刷新和窗口引用计数）、`test/account_service_test.dart`（公共同步关闭失败不阻断退出/切换）。
+
+## 资料 SQL 化：后台基础（2026-10-27）
+
+本轮仅在共用后台桌游模块增加 `0014_board_library`、公开 `/catalog` 查询/文件/文本接口、Compose 启动自动导入与原子发布。SQL 保存类型化元数据以及默认 4 MiB 内的文件原文字节、可解码文本和 JSON；未知附加字段先保留并警告，禁用/缺失/归档和历史记录保留，公开接口单独过滤。
+
+旧快照生成工具已移除，新发布直接提交 SQL 发布版本与持久变化记录。当前 Flutter 未切换，既有 `/library` 只读入口留待下一阶段一起删除；新接口没有旧路径回退或双写。资料 PowerSync 通知、客户端缓存替换、OCR/索引及真实导入均尚未实施。
+
+维护命令、字段映射、文件存储和部署条件见 [后台资料库协议](../../apps/app_data_service/docs/library-catalog.md)。资料库基础阶段当时未构建、未提交/推送、未上传或操作真实 NAS，也没有修改 Zheri 客户端；后续实现和本次本地构建结果见下文记录。
+
+后台基础阶段 ruff/格式检查及真实 PostgreSQL 完整 271 项测试通过，证据见其 [验证记录](../../apps/app_data_service/docs/validation.md)。当时本机实际资料只做只读预览：24 个条目、374 条资源、0 个阻断错误；未登记文件和缺失记录分别保留，没有进行真实资料入库或清理。随后扩展的启动导入验证单独记录如下。
+
+随后按用户要求扩展为“更新镜像及 Compose 后，启动即导入，在 api 日志确认”。已只读核对 `Y:\friend\apps\board_game_agent\board-game-lib`：24 个游戏、372 条原清单资源登记、元数据无身份错误；没有读取其他应用的资料，没有写回 NAS。日志逐文件记录原文入 SQL，逐桌游列名称与资源/小文件/缺失数；完成记录和专用命名卷身份保证重启跳过，更换导入编号才重新扫描。
+
+本地新的私有构建输入为后台 `.local/board-library-input.yaml`，沿用 NAS 配置与已批准的待交付 Loomex 配置，未轮换秘密；构建出的 Compose 与 API 镜像标签匹配，不能搭配旧镜像使用。客户端切换、实际 NAS 导入和 NAS 部署仍未实施。
+
+该扩展最终后台 ruff/格式检查、真实 PostgreSQL 完整 278 项 pytest 通过。Compose 配置解析和 Linux 启动脚本语法检查通过；本机新预览有 421 个文件对象、402 个符合默认 SQL 原文阈值，实际 NAS 大文件与容器读取权限未验收。随后于 2026-10-27 按后台提交 `653548c` 构建本地 `linux/amd64` API-only 镜像 `app-data-service:0.5.0-653548c-20261027133021`；镜像归档 SHA-256 为 `76bf1c576bdd7f5c52d65ba448f08f07ed5a57ef040a3659cdef99af66ece361`。隔离 Compose 启动冒烟、迁移失败阻断检查及健康/JWKS 检查通过；复用了现有 Postgres/PowerSync 归档，没有运行镜像内业务测试，没有导入真实资料或部署 NAS。后台 Git 候选标签 `v0.5.0-rc.2` 仅在本地，未推送；完整证据见后台验证记录。
