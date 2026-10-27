@@ -301,6 +301,12 @@ class _AccountScreenState extends State<AccountScreen> {
                       color: colors.error,
                     ),
                   ),
+                if (service?.publicSyncError != null)
+                  TextButton.icon(
+                    onPressed: busy ? null : service!.retryPublicSync,
+                    icon: const Icon(Icons.refresh),
+                    label: Text(_text('公共数据更新未完成，重试', 'Retry public updates')),
+                  ),
                 if (!signedIn && service != null && service.supportsSignIn) ...[
                   if (!service.usesWebAccount) ...[
                     TextFormField(

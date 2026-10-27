@@ -25,12 +25,14 @@ final class GameCommentsService extends ChangeNotifier {
   bool get readOnly => token == null;
   bool get canWrite => !readOnly && !_disposed && isActive();
   final _games = <String>{};
+  final _watchCounts = <String, int>{};
+  final _requestedGames = <String>{};
   final _rows = <String, Map<String, dynamic>>{};
   final _commands = <Map<String, dynamic>>[];
   final _optimistic = <String, Map<String, dynamic>>{};
   final _likes = <String, bool>{};
   Future<void>? _ready, _sync;
-  Future<void> _writes = Future.value();
+  Future<void>? _writes;
   SharedPreferences? _prefs;
   bool _disposed = false, loading = false;
   String? error;
@@ -53,7 +55,29 @@ final class GameCommentsService extends ChangeNotifier {
   static String newId([String prefix = 'c']) =>
       '$prefix${const Uuid().v4().replaceAll('-', '')}';
   void watchGame(String slug) {
-    if (CommentOperation.gamePattern.hasMatch(slug)) _games.add(slug);
+    if (!CommentOperation.gamePattern.hasMatch(slug)) return;
+    _watchCounts[slug] = (_watchCounts[slug] ?? 0) + 1;
+    _games.add(slug);
+  }
+
+  void unwatchGame(String slug) {
+    final count = _watchCounts[slug] ?? 0;
+    if (count > 1) {
+      _watchCounts[slug] = count - 1;
+      return;
+    }
+    _watchCounts.remove(slug);
+    if (!_commands.any((command) => command['game_slug'] == slug)) {
+      _games.remove(slug);
+      _requestedGames.remove(slug);
+    }
+  }
+
+  Set<String> get watchedGames => Set.unmodifiable(_watchCounts.keys);
+
+  Future<void> refreshGames(Iterable<String> changed) {
+    _requestedGames.addAll(changed.where(_watchCounts.containsKey));
+    return _requestedGames.isEmpty ? Future.value() : _startSync();
   }
 
   void _check() {
@@ -70,15 +94,18 @@ final class GameCommentsService extends ChangeNotifier {
     if (raw == null) return;
     final data = jsonDecode(raw) as Map<String, dynamic>;
     _commands.addAll((data['commands'] as List).cast<Map<String, dynamic>>());
+    _games.addAll(_commands.map((command) => command['game_slug'] as String));
     for (final r in (data['optimistic'] as List).cast<Map<String, dynamic>>()) {
       _optimistic[r['id'] as String] = r;
     }
   })();
   Future<void> _local(Future<void> Function() work) {
-    final next = _writes.catchError((Object _) {}).then((_) async {
-      _check();
-      await work();
-    });
+    final next = (_writes ?? Future<void>.value())
+        .catchError((Object _) {})
+        .then((_) async {
+          _check();
+          await work();
+        });
     _writes = next;
     return next;
   }
@@ -198,11 +225,42 @@ final class GameCommentsService extends ChangeNotifier {
   }
 
   Future<void> synchronize() {
-    if (_disposed) return Future.value();
-    return _sync ??= _synchronize().whenComplete(() => _sync = null);
+    _requestedGames.addAll(_games);
+    return _startSync();
   }
 
-  Future<void> _synchronize() async {
+  Future<void> _startSync() {
+    if (_disposed) return Future.value();
+    return _sync ??=
+        (() async {
+          // Drain changes received during a read as a fresh follow-up snapshot.
+          // Keep one in-flight request set, bounded even for a continuously busy feed.
+          for (var pass = 0; pass < 8; pass++) {
+            final games = Set<String>.of(_requestedGames);
+            _requestedGames.clear();
+            await _synchronize(games);
+            if (error != null ||
+                _disposed ||
+                !isActive() ||
+                _requestedGames.isEmpty) {
+              break;
+            }
+          }
+        })().whenComplete(() {
+          _sync = null;
+          if (!_disposed &&
+              isActive() &&
+              error == null &&
+              _requestedGames.isNotEmpty) {
+            _retry = Timer(
+              const Duration(milliseconds: 250),
+              () => unawaited(_startSync()),
+            );
+          }
+        });
+  }
+
+  Future<void> _synchronize(Set<String> games) async {
     loading = true;
     error = null;
     _retry?.cancel();
@@ -232,7 +290,7 @@ final class GameCommentsService extends ChangeNotifier {
           }
         });
       }
-      for (final game in _games.toList()) {
+      for (final game in games) {
         final next = <String, Map<String, dynamic>>{};
         String? cursor;
         for (var page = 0; page < 100; page++) {
@@ -257,6 +315,11 @@ final class GameCommentsService extends ChangeNotifier {
         );
       }
       await _local(_save);
+      _games.removeWhere(
+        (game) =>
+            !_watchCounts.containsKey(game) &&
+            !_commands.any((command) => command['game_slug'] == game),
+      );
       _attempts = 0;
     } catch (_) {
       if (!_disposed && isActive()) {
@@ -297,7 +360,7 @@ final class GameCommentsService extends ChangeNotifier {
     });
   }
 
-  Future<void> drain() => _writes;
+  Future<void> drain() => _writes ?? Future.value();
   @override
   void dispose() {
     _disposed = true;

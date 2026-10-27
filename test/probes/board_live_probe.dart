@@ -5,6 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:app_client/app_client.dart';
 import 'package:board_game_agent/features/identity/services/board_personal_store.dart';
+import 'package:board_game_agent/features/community/services/board_public_sync.dart';
+import 'package:board_game_agent/features/community/services/game_comments_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:powersync/powersync.dart';
@@ -26,6 +30,8 @@ void main() {
         }
         final clients = <AppJsonClient>[];
         final stores = <BoardPersonalStore>[];
+        BoardPublicSync? public;
+        final commentServices = <GameCommentsService>[];
         Future<(BoardPersonalStore, BoardSyncConnector)> device(
           String id,
           String user,
@@ -156,9 +162,139 @@ void main() {
           await until(() async => (await b.records('favorites')).length == 1);
           expect(await other.records('conversations'), isEmpty);
           expect(await other.records('preferences'), isEmpty);
+          SharedPreferences.setMockInitialValues({});
+          AppJsonClient api() {
+            final client = AppJsonClient(
+              Uri.parse(config['api'] as String),
+              applicationId: 'board_game_agent',
+              client: http.Client(),
+            );
+            clients.add(client);
+            return client;
+          }
+
+          final guest = api();
+          GameCommentsService comments(String? user) {
+            final service = GameCommentsService(
+              client: api(),
+              scope: user ?? 'guest',
+              uid: user == null
+                  ? ''
+                  : sha256
+                        .convert(
+                          utf8.encode('board_game_agent.public.v1|$user'),
+                        )
+                        .toString(),
+              isActive: () => true,
+              displayName: () => user ?? '',
+              token: user == null
+                  ? null
+                  : () async => config['tokens'][user] as String,
+            );
+            service.watchGame('live-public');
+            commentServices.add(service);
+            return service;
+          }
+
+          final reader = comments(null),
+              author = comments('alice'),
+              voter = comments('bob');
+          Map<String, dynamic>? totals;
+          final publicDb = PowerSyncDatabase(
+            schema: boardPublicSchema,
+            path: '${root.path}/public-guest.sqlite',
+          );
+          await publicDb.initialize();
+          public = BoardPublicSync(
+            database: publicDb,
+            client: guest,
+            active: () => true,
+            httpClient: http.Client.new,
+            refresh: (statistics, games) async {
+              if (statistics) {
+                totals = await guest.request(
+                  '/v1/community/statistics',
+                  get: true,
+                );
+              }
+              for (final service in commentServices) {
+                await service.refreshGames(games);
+                if (service.error != null) throw StateError(service.error!);
+              }
+            },
+          );
+          await public.start();
+          await publicDb.waitForFirstSync().timeout(
+            const Duration(seconds: 35),
+          );
+          final beforePublic = await a.loadCollection('favorites');
+          await a.saveCollection('favorites', [
+            ...beforePublic,
+            {
+              'id': 'live-public',
+              'game_slug': 'live-public',
+              'created_at': '2026-10-27T00:00:00Z',
+            },
+          ]);
+          await until(
+            () async => (totals?['favorites'] as Map?)?['live-public'] == 1,
+          );
+          final commentId = await author.publish(
+            game: 'live-public',
+            text: 'Live comment',
+            rating: 8,
+          );
+          await author.synchronize();
+          await until(
+            () async => reader.projection.comments.containsKey(commentId),
+          );
+          await until(
+            () async => voter.projection.comments.containsKey(commentId),
+          );
+          await voter.toggleLike(
+            voter.projection.forGame('live-public', {}).single,
+          );
+          await until(
+            () async =>
+                reader.projection.forGame('live-public', {}).single.likes == 1,
+          );
+          expect(
+            reader.projection.forGame('live-public', {}).single.likedByMe,
+            false,
+          );
+          expect(
+            voter.projection.forGame('live-public', {}).single.likedByMe,
+            true,
+          );
+          await public.setForeground(false);
+          await author.delete(
+            author.projection.forGame('live-public', {}).single,
+          );
+          await a.loadCollection('favorites');
+          await a.saveCollection('favorites', beforePublic);
+          await a.waitForUpload();
+          expect(reader.projection.deleted.contains(commentId), false);
+          await public.setForeground(true);
+          await until(
+            () async => reader.projection.deleted.contains(commentId),
+          );
+          await until(
+            () async =>
+                ((totals?['favorites'] as Map?)?['live-public'] ?? 0) == 0,
+          );
+          expect(
+            (await publicDb.getAll('SELECT * FROM public_changes')).isNotEmpty,
+            true,
+          );
+          // ignore: avoid_print
+          print('BOARD_PUBLIC_REALTIME_PASSED');
           // ignore: avoid_print
           print('BOARD_LIVE_PROBE_PASSED');
         } finally {
+          await public?.close();
+          for (final service in commentServices) {
+            service.dispose();
+          }
           for (final store in stores) {
             await store.close();
           }
@@ -168,6 +304,6 @@ void main() {
         }
       }, _RealNetwork());
     },
-    timeout: const Timeout(Duration(minutes: 2)),
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 }

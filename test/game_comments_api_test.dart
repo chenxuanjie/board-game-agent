@@ -17,6 +17,50 @@ void main() {
         client: MockClient(handler),
       );
   test(
+    'updates during a read queue a fresh snapshot; watchers are reference counted',
+    () async {
+      final started = Completer<void>(), first = Completer<http.Response>();
+      var reads = 0;
+      final api = client((r) async {
+        reads++;
+        if (reads == 1) {
+          started.complete();
+          return first.future;
+        }
+        return http.Response(
+          jsonEncode({'comments': [], 'next_cursor': null}),
+          200,
+        );
+      });
+      addTearDown(api.close);
+      final service = GameCommentsService(
+        client: api,
+        scope: 'public',
+        isActive: () => true,
+        displayName: () => '',
+      );
+      addTearDown(service.dispose);
+      service.watchGame('cabo');
+      service.watchGame('cabo');
+      final initial = service.synchronize();
+      await started.future;
+      final update = service.refreshGames(['cabo', 'unwatched']);
+      expect(reads, 1);
+      first.complete(
+        http.Response(jsonEncode({'comments': [], 'next_cursor': null}), 200),
+      );
+      await Future.wait([initial, update]);
+      expect(reads, 2);
+      service.unwatchGame('cabo');
+      await service.refreshGames(['cabo']);
+      expect(reads, 3);
+      service.unwatchGame('cabo');
+      await service.refreshGames(['cabo']);
+      expect(reads, 3);
+      expect(service.watchedGames, isEmpty);
+    },
+  );
+  test(
     'guests read public comments without identity; writes require login',
     () async {
       final api = client((r) async {

@@ -33,7 +33,7 @@
 
 ## 公开资料与部署前提
 
-后台需要迁移 **0012**、注册模块及更新生成的 PowerSync 配置；仅重新编译客户端不够。另需管理员准备经过校验的公开资料快照，将其只读挂给 API，在应用配置中声明 `public_file_roots.library`。工具不自动创建真实 NAS 目录，也不从账号密码获得资源权限。
+后台需要迁移 **0013**、注册模块及更新生成的 PowerSync 配置；仅重新编译客户端不够。另需管理员准备经过校验的公开资料快照，将其只读挂给 API，在应用配置中声明 `public_file_roots.library`。工具不自动创建真实 NAS 目录，也不从账号密码获得资源权限。
 
 快照保留 `catalog.json`、`game.json`、资源 `manifest.json` 与显式文件清单；路径、大小和 SHA-256 通过验证后才提供文件。支持 ETag、HEAD、Range；大文件流式写本机暂存，校验后替换原缓存，内存读取单次限 64 MiB，文件下载限 512 MiB/5 分钟。新缓存按服务 origin 隔离，失败保留上次已确认缓存；账号退出不会删除公共缓存。配置新服务后不回退到旧 NAS 或旧规则正文。
 
@@ -45,14 +45,32 @@
 - `test/game_comments_api_test.dart`、`test/public_library_service_test.dart`：匿名读取、身份与凭据边界、命令重试、缓存及服务切换。
 - `test/board_worker_assets_test.dart`：Web SDK Worker 内容摘要和依赖锁匹配。
 - 共用后台完整 pytest 使用真实 PostgreSQL 随机测试库；`tests/test_board_game_business.py` 验证 RLS、应用范围、评论所有权、评分、分页、发布完整性和字段合并。
-- 后台 `tools/run_sync_probe.py --board-flutter <flutter.bat绝对路径>` 启动隔离 API、PowerSync 1.27.0 与三个实际 SDK 数据库，执行 `test/probes/board_live_probe.dart`，结束只清理该次测试资源。
+- 后台 `tools/run_sync_probe.py --board-flutter <flutter.bat绝对路径>` 启动隔离 API、PowerSync 1.27.0、三个私人 SDK 数据库和一个公共 SDK 数据库，执行 `test/probes/board_live_probe.dart`，结束只清理该次测试资源。
 
 真实 NAS、Android/Windows 安装产物及浏览器部署未在本轮验证。源码/协议测试不能替代后续设备验收；不删除旧真实数据作为“验证通过”的捷径。
 
-## 本轮检查结果
+## 阶段 2、3 检查结果（2026-10-26）
 
 - Dart 静态分析无问题；主工程完整 **573 项测试通过**。
 - 共用后台 ruff 检查、格式检查及真实 PostgreSQL 完整 **245 项 pytest 通过**，无数据库跳过。
 - PowerSync 1.27.0、隔离 API、三个独立本机 SDK 数据库联调通过：同账号两份工作区的离线收敛、跨账号隔离、偏好字段合并、真实本地时间上传和会话/消息同步。Run checkpoint 没有进入另一工作区。
 - 临时测试容器、数据库、角色和复制槽已清理；只使用本地测试环境。没有修改真实 NAS、生产数据或权限。
 - 本记录随阶段 2、3 客户端源码提交保存，配套后台提交为 `30d5f3f`（`feature/board-game-business`）。未推送、构建、上传或部署；Web 网关部署、真实安装产物和设备验收仍按前述边界待办。
+
+## 公共实时更新（2026-10-27 源码扩展）
+
+有人修改收藏/想玩票、发布/删除评论、回复或为评论点赞时，数据库在同一事务中递增该游戏的公共版本。PowerSync 将游戏 ID 和统计/评论版本推给其他客户端；客户端收到变化后重新读取 `/community/statistics` 和当前打开游戏的评论，统计服务驱动已有排行重新排序。通知不包含某人收藏了什么，也不复制私人集合来计算总数。
+
+- 游客和登录用户都使用独立公共 SQLite；按服务 origin 划分，与账号私人数据库分开。匿名 `/community/sync-credentials` 只签发 5 分钟、只用于公共同步的凭据，不授权私人读取或写入。
+- 250 ms 合并连续变化，统计和评论版本分别处理；同类快照串行读取，读取过程中发生变化会再读一次，避免迟到的旧结果覆盖新结果。
+- 评论窗口引用计数管理关注游戏；关闭最后一个窗口后停止刷新该游戏，保留待发送命令。断网保留已有结果，读取失败最多重试 5 次（1/2/4/8/16 秒），新变化、恢复前台或手动重试可再次触发。前台恢复和同步重新连接会补读最新快照；后台不承诺操作系统唤醒推送。
+- 退出、切换账号或服务会关闭旧公共订阅，旧响应仍受账号代际保护。公共更新失败单独提示重试，不报成登录失败；不添加调试弹窗。
+- 此扩展需要新客户端、新 API、0013 迁移和配套生成的 PowerSync 配置。PostgreSQL/PowerSync 基础镜像无需升级，Web 同源转发部署仍待处理。没有构建或部署本轮产物。
+
+Loomex 仍属于阶段 4：登录后提供为默认模型服务选项，用户可以继续添加、选择其他自定义服务；游客继续 BYOK。本轮没有改模型调用或覆盖用户的自定义配置。
+
+本轮公共同步验证：后台 ruff 检查、格式检查和真实 PostgreSQL 完整 **255 项 pytest 通过**；真实 PowerSync 1.27.0 联调通过收藏汇总、评论发布、跨账号点赞状态、评论删除、暂停/恢复补齐以及伪造身份/参数/订阅的公共凭据隔离。探针使用一次性数据和数据库，不访问生产 NAS；测试资源已清理。实际 Android、Windows 安装产物与 Web 浏览器部署尚未验收。
+
+最终客户端 `flutter analyze` 无问题，完整 **575 项 Flutter 测试通过**；未执行应用/镜像构建、Git 提交、推送、上传或真实部署。
+
+客户端验收入口为 `test/board_public_sync_test.dart`（合并、有限重试、刷新中后续变化）、`test/service_game_statistics_test.dart`（串行快照和本人去重）、`test/game_comments_api_test.dart`（当前游戏刷新和窗口引用计数）、`test/account_service_test.dart`（公共同步关闭失败不阻断退出/切换）。

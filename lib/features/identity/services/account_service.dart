@@ -15,6 +15,7 @@ import '../../../app/state/app_controller.dart';
 import '../models/account_configuration.dart';
 import '../models/service_configuration.dart';
 import '../../community/services/game_comments_service.dart';
+import '../../community/services/board_public_sync.dart';
 import 'saved_login_store.dart';
 import 'service_identity_gateway.dart';
 import 'board_personal_store.dart';
@@ -31,6 +32,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     Future<IdentityGateway> Function(ServiceConfiguration)? gatewayFactory,
     RefreshSessionStore Function(ServiceConfiguration)? sessionStoreFactory,
     http.Client Function()? httpClientFactory,
+    PublicSyncFactory? publicSyncFactory,
     Future<void> Function(String?)? switchScope,
     bool? signInSupported,
     bool? browserAccounts,
@@ -40,6 +42,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
        _gatewayFactory = gatewayFactory,
        _storeFactory = sessionStoreFactory,
        _httpClientFactory = httpClientFactory ?? createDefaultAiHttpClient,
+       _publicSyncFactory = publicSyncFactory ?? BoardPublicSync.open,
        _switchScope = switchScope,
        _browserOrigin = browserOrigin,
        usesWebAccount = browserAccounts ?? kIsWeb,
@@ -57,6 +60,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   final Future<IdentityGateway> Function(ServiceConfiguration)? _gatewayFactory;
   final RefreshSessionStore Function(ServiceConfiguration)? _storeFactory;
   final http.Client Function() _httpClientFactory;
+  final PublicSyncFactory _publicSyncFactory;
   final Future<void> Function(String?)? _switchScope;
   final SavedLoginStore _savedLogins;
   ServiceConfiguration? _serviceConfiguration;
@@ -75,6 +79,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   BoardPersonalStore? _personalStore;
   AppJsonClient? _businessClient;
   GameCommentsService? _comments;
+  BoardPublicSync? _publicSync;
+  String? _publicSyncError;
+  int _publicGeneration = 0;
+  final _statisticsReaders = <String, ServiceGameStatistics>{};
+  String? get publicSyncError => _publicSyncError ?? _publicSync?.error;
   final _personalWatchers = <StreamSubscription<dynamic>>[];
   Timer? _personalRefresh;
   bool _refreshingPersonal = false;
@@ -295,6 +304,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       BoardPersonalStore? nextStore;
       try {
         final oldStore = _personalStore;
+        await _stopPublicSync();
+        _statisticsReaders.clear();
         await _comments?.drain();
         _comments?.dispose();
         _comments = null;
@@ -385,10 +396,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
             isActive: active,
             displayName: () => displayName,
           );
-          _controller.configureAccountReactions(
-            scope: scope,
-            error: () => personalSyncError,
-            provider: (namespace) => ServiceGameStatistics(
+          for (final namespace in [
+            GameVoteBallot.favoritesNamespace,
+            GameVoteBallot.campaign,
+          ]) {
+            _statisticsReaders[namespace] = ServiceGameStatistics(
               client: client,
               scope: scope,
               namespace: namespace,
@@ -398,9 +410,15 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
               target: () => namespace == GameVoteBallot.favoritesNamespace
                   ? _controller.favoriteStatistics
                   : _controller.gameVotes,
-            ),
+            );
+          }
+          _controller.configureAccountReactions(
+            scope: scope,
+            error: () => publicSyncError ?? personalSyncError,
+            provider: (namespace) => _statisticsReaders[namespace]!,
           );
         }
+        if (client != null) unawaited(_startPublicSync(client, active));
         if (_personalStore case final store?) {
           store.addListener(() {
             if (active() && identical(_personalStore, store)) notifyListeners();
@@ -478,6 +496,93 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         _refreshingPersonal = false;
       }
     });
+  }
+
+  Future<void> _startPublicSync(
+    AppJsonClient client,
+    bool Function() active,
+  ) async {
+    final generation = ++_publicGeneration;
+    bool valid() =>
+        !_disposed &&
+        generation == _publicGeneration &&
+        active() &&
+        identical(_businessClient, client);
+    BoardPublicSync? next;
+    try {
+      next = await _publicSyncFactory(
+        client: client,
+        active: valid,
+        onStatusChanged: () {
+          if (valid()) notifyListeners();
+        },
+        refresh: (statistics, games) async {
+          if (!valid()) throw StateError('Account changed');
+          if (statistics) {
+            try {
+              await Future.wait(
+                _statisticsReaders.values.map((reader) => reader.synchronize()),
+              );
+            } catch (_) {
+              if (valid()) {
+                _controller.favoriteStatistics.markPublicFailure();
+                _controller.gameVotes.markPublicFailure();
+              }
+              rethrow;
+            }
+            if (!valid()) throw StateError('Public statistics unavailable');
+          }
+          final comments = _comments;
+          if (comments != null) {
+            await comments.initialize();
+            if (!valid()) throw StateError('Account changed');
+            if (comments.pending || comments.error != null) {
+              await comments.synchronize();
+            } else if (games.any(comments.watchedGames.contains)) {
+              await comments.refreshGames(games);
+            }
+            if (!valid() || comments.error != null) {
+              throw StateError('Comments unavailable');
+            }
+          }
+        },
+      );
+      if (!valid()) {
+        await next.close();
+        return;
+      }
+      _publicSyncError = null;
+      _publicSync = next;
+      await next.start();
+    } catch (_) {
+      await next?.close().catchError((Object _) {});
+      if (valid()) {
+        if (identical(_publicSync, next)) _publicSync = null;
+        _publicSyncError = '公共数据实时更新未完成，请重试';
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> retryPublicSync() async {
+    if (_disposed || _scopeChanging) return;
+    final sync = _publicSync;
+    if (sync != null) {
+      try {
+        _publicSyncError = null;
+        notifyListeners();
+        await sync.setForeground(true);
+      } catch (_) {
+        _publicSyncError = '公共数据实时更新未完成，请重试';
+        if (!_disposed) notifyListeners();
+      }
+    } else if (_businessClient case final client?) {
+      final generation = _scopeGeneration;
+      await _startPublicSync(
+        client,
+        () => !_disposed && generation == _scopeGeneration && !_scopeChanging,
+      );
+    }
   }
 
   Future<void> restore() async {
@@ -601,6 +706,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _disconnect() async {
+    await _stopPublicSync();
     _verificationTimer?.cancel();
     _identity?.removeListener(_identityChanged);
     _identity?.dispose();
@@ -623,8 +729,37 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _personalStore = null;
   }
 
+  Future<void> _stopPublicSync() async {
+    ++_publicGeneration;
+    final sync = _publicSync;
+    _publicSync = null;
+    _publicSyncError = null;
+    // Invalidated callbacks can no longer write. A failed public database close
+    // must not strand identity cleanup or turn login into a public-sync error.
+    await sync?.close().catchError((Object _) {});
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final sync = _publicSync;
+      if (sync != null) {
+        unawaited(sync.setForeground(true).catchError((Object _) {}));
+      } else if (_businessClient case final client?
+          when !_scopeChanging && !_disposed) {
+        final generation = _scopeGeneration;
+        unawaited(
+          _startPublicSync(
+            client,
+            () =>
+                !_disposed && generation == _scopeGeneration && !_scopeChanging,
+          ),
+        );
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_publicSync?.setForeground(false).catchError((Object _) {}));
+    }
     if (state == AppLifecycleState.resumed && !isBusy && isConfigured) {
       unawaited(restore());
     }

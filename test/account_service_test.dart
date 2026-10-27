@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
+import 'package:board_game_agent/features/community/services/board_public_sync.dart';
 import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,46 @@ AccountConfiguration configuration([String host = 'service.example.test']) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'public subscription failure cannot block account switching or logout',
+    () async {
+      final subscriptions = <FixturePublicSync>[];
+      final refreshes = <Future<void> Function(bool, Set<String>)>[];
+      final service = AccountService(
+        controller: FixtureApp(),
+        gatewayFactory: (_) async => FixtureGateway(),
+        savedLoginStorage: MemoryStorage(),
+        switchScope: (_) async {},
+        publicSyncFactory:
+            ({
+              required client,
+              required active,
+              required refresh,
+              onStatusChanged,
+            }) async {
+              refreshes.add(refresh);
+              final sync = FixturePublicSync();
+              subscriptions.add(sync);
+              return sync;
+            },
+      );
+      addTearDown(service.dispose);
+      await service.configureService('https://service.example.test');
+      await Future<void>.delayed(Duration.zero);
+      final guest = subscriptions.last, staleRefresh = refreshes.last;
+      await service.signIn(account: 'reader', password: 'fixture');
+      expect(guest.closes, 1);
+      expect(service.isSignedIn, isTrue);
+      expect(service.error, isNull);
+      await expectLater(staleRefresh(true, {}), throwsStateError);
+      final signedIn = subscriptions.last;
+      await service.signOut();
+      expect(signedIn.closes, 1);
+      expect(service.isSignedIn, isFalse);
+      expect(service.dataScopeReady, isTrue);
+      expect(service.error, isNull);
+    },
+  );
   test(
     'cancelling an accepted account during scope activation still signs out',
     () async {
@@ -111,6 +152,19 @@ void main() {
     await attempt;
     expect(service.user, isNull);
   });
+}
+
+class FixturePublicSync extends Fake implements BoardPublicSync {
+  int closes = 0;
+  @override
+  String? get error => null;
+  @override
+  Future<void> start() async {}
+  @override
+  Future<void> close() async {
+    closes++;
+    throw StateError('Public SQLite close failure');
+  }
 }
 
 class FixtureApp implements AppController {

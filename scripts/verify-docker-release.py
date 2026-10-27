@@ -1,4 +1,4 @@
-"""Real local Docker smoke test. Uses only an isolated temporary library/fake DSM."""
+"""Validate local Docker artifacts; full synthetic business acceptance is opt-in."""
 from pathlib import Path
 import argparse
 import http.cookiejar
@@ -18,6 +18,8 @@ from release_retention import inspect_docker_archive, digest
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--archive', type=Path)
+parser.add_argument('--full-validation', action='store_true',
+                    help='Run the full isolated gateway/library business suite')
 parser.add_argument('--source-overlay', action='store_true',
                     help='Developer check: existing images with current source/config mounted; not a built-image acceptance')
 arguments = parser.parse_args()
@@ -80,6 +82,23 @@ with tempfile.TemporaryDirectory(prefix='bga-bundle-validation-') as temporary:
     check('delivered YAML resolves without .env or image-tag environment variables',not (deploy/'.env').exists() and '${' not in (deploy/'docker-compose.yml').read_text())
     check('delivered YAML references exactly the two imported images',
           {item['image'] for item in configuration['services'].values()} == {item['reference'] for item in release['images']})
+    if not (arguments.full_validation or arguments.source_overlay):
+        run(['docker', 'image', 'load', '--input', str(bundle)])
+        for image in release['images']:
+            inspected = json.loads(run(['docker', 'image', 'inspect', image['reference']],
+                                       capture_output=True).stdout)[0]
+            check('imported image identity and architecture: ' + image['reference'],
+                  inspected['Id'] == image['id'] and
+                  inspected['Os'] + '/' + inspected['Architecture'] == details['platform'])
+        result['validationScope'] = 'artifact-and-compose'
+        result['businessTests'] = 'not_run'
+        result['passed'] = True
+        result['realNasTested'] = False
+        result['seconds']['completeVerification'] = time.perf_counter()-started
+        (source_support/'validation.json').write_text(json.dumps(result, indent=2)+'\n')
+        print(json.dumps(result, indent=2), flush=True)
+        raise SystemExit(0)
+    result['validationScope'] = 'full-business'
     library = stage/'library'
     comments = stage/'comments'
     comments.mkdir()
@@ -235,6 +254,7 @@ for root in (pathlib.Path('/test/library'),pathlib.Path('/test/comments')):
         check('logout revokes private and public account sync',request(private_uri,headers=sync_headers)[0]==401 and request(public_uri,headers=sync_headers)[0]==401)
         check('full deployment completes without creating or reading .env',not (deploy/'.env').exists())
         result['passed']=True
+        result['businessTests']='passed'
     finally:
         cleanup=locals().get('tested',compose)
         subprocess.run(cleanup+['down','--remove-orphans'],env=env,text=True,timeout=90)

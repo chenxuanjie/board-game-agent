@@ -3,13 +3,12 @@ import 'dart:convert';
 import 'package:app_client/app_client.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:powersync/powersync.dart';
 import 'package:sqlite_async/sqlite_async.dart';
 import 'package:uuid/uuid.dart';
 // ignore: implementation_imports
 import 'package:app_ai_client/src/default_http_client.dart';
-import 'board_worker_version.dart';
+import 'board_sync_database.dart';
 
 const _fields = <String, List<String>>{
   'favorites': ['game_slug', 'created_at'],
@@ -92,37 +91,8 @@ class BoardPersonalStore extends ChangeNotifier {
         .convert(utf8.encode('$scope|$datasetId'))
         .toString();
     final filename = 'board-personal-v1-$workspace.sqlite';
-    final path = kIsWeb
-        ? filename
-        : '${(await getApplicationSupportDirectory()).path}/$filename';
-    final base = Uri.base;
-    final db = PowerSyncDatabase(
-      schema: boardPersonalSchema,
-      path: path,
-      sqliteOptions: SqliteOptions(
-        webSqliteOptions: WebSqliteOptions(
-          wasmUri: base.resolve('powersync/sqlite3.wasm').toString(),
-          workerUri: base
-              .resolve('powersync/powersync_db.worker.js')
-              .replace(queryParameters: {'v': boardWorkerVersion})
-              .toString(),
-        ),
-      ),
-    );
-    try {
-      await db.initialize().timeout(const Duration(seconds: 15));
-      return BoardPersonalStore(database: db, datasetId: datasetId);
-    } catch (_) {
-      // Initialization may complete late (for example a browser Worker failing
-      // to start). This isolated instance can never publish an account scope.
-      unawaited(
-        db
-            .close()
-            .timeout(const Duration(seconds: 5))
-            .catchError((Object _) {}),
-      );
-      rethrow;
-    }
+    final db = await openBoardSyncDatabase(filename, boardPersonalSchema);
+    return BoardPersonalStore(database: db, datasetId: datasetId);
   }
 
   Future<void> connect(
@@ -501,23 +471,7 @@ class BoardSyncConnector extends PowerSyncBackendConnector {
       token: await token(),
     );
     _guard();
-    final endpoint = Uri.parse(data['endpoint'] as String);
-    final browserProxy = client.baseUri.path == '/api/';
-    if (data['user_id'] != userId ||
-        data['app_id'] != 'board_game_agent' ||
-        !['http', 'https'].contains(endpoint.scheme) ||
-        endpoint.userInfo.isNotEmpty ||
-        endpoint.hasQuery ||
-        endpoint.hasFragment ||
-        !browserProxy && endpoint.origin != client.origin.origin) {
-      throw StateError('Sync identity mismatch');
-    }
-    // Browser streams stay on the site's fixed API forwarding entry. The
-    // shared API's public origin can belong to a different application host.
-    data['endpoint'] = browserProxy
-        ? client.baseUri.resolve('powersync/').toString()
-        : '${(data['endpoint'] as String).replaceFirst(RegExp(r'/+$'), '')}/';
-    return PowerSyncCredentials.fromJson(data);
+    return boardSyncCredentials(client, data, userId: userId);
   }
 
   @override

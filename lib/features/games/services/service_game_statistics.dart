@@ -24,6 +24,8 @@ final class ServiceGameStatistics implements CoordinatedGameVoteStore {
   final bool Function() active;
   final BoardPersonalStore? store;
   final Future<String> Function()? token;
+  Future<void>? _sync;
+  int _requests = 0;
   @override
   bool get enabled => active();
   @override
@@ -35,7 +37,23 @@ final class ServiceGameStatistics implements CoordinatedGameVoteStore {
   }
 
   @override
-  Future<void> synchronize() async {
+  Future<void> synchronize() {
+    _requests++;
+    return _sync ??= (() async {
+      // A notification during a read requires a fresh follow-up. Serializing
+      // reads and cache commits prevents an older HTTP snapshot winning last.
+      for (var pass = 0; pass < 8; pass++) {
+        final request = _requests;
+        await _readSnapshot();
+        if (_requests == request) return;
+      }
+      throw StateError(
+        'Public statistics changed continuously; retry required',
+      );
+    })().whenComplete(() => _sync = null);
+  }
+
+  Future<void> _readSnapshot() async {
     if (!enabled) throw StateError('账号已变化');
     final data = await client.request(
       '/v1/community/statistics',

@@ -115,6 +115,15 @@ Future<(AccountService, _UiGateway)> _configuredService(
       savedLoginStorage: MemoryLoginStorage(),
       controller: controller,
       gatewayFactory: (_) async => gateway,
+      publicSyncFactory:
+          ({
+            required client,
+            required active,
+            required refresh,
+            onStatusChanged,
+          }) async => throw StateError(
+            'Public network unavailable in account menu fixture',
+          ),
       switchScope: (_) async {},
     );
     await service.configureService('https://service.example.test');

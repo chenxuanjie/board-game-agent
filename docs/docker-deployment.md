@@ -113,10 +113,10 @@ USV Compose 含 `build: .`，Dockerfile 编译 C++ 和前端，在 NAS 执行时
 2026-10-16：脚本与故障测试 15 项通过；真实镜像包部署测试 16 项通过，包括包内 `deploy.sh` 导入启动、网页与编译后 JS、匿名访问拦截、只读挂载、HTTPS 模拟 DSM 登录与会话恢复、PDF Range 206 / ETag 304 / HEAD、缺失文件与注销。验证脚本使用临时资料和独立 Compose 项目，完成后清理测试容器，不操作 NAS。
 
 ```sh
-python3 scripts/verify-docker-release.py --archive /path/to/board-game-agent-linux-amd64-images.tar
+python3 scripts/verify-docker-release.py --archive /path/to/board-game-agent-linux-amd64-images.tar --full-validation
 ```
 
-需要 Linux Docker、Python 3 和 OpenSSL。脚本先在无 `.env` 的目录解析实际交付 YAML 并核对 TAR 中两个镜像引用，再替换临时资料路径、随机回环端口和模拟 DSM 地址做运行验证；真实 NAS 配置不会被测试值覆盖。结果在配套目录生成 `validation.json`。验证使用既有镜像缓存，真实 NAS 首次导入可能更慢。实测与交付文件见 [本地 Docker 验证记录](docker-validation-2026-10-16.md)。这只证明本地配置解析和模拟环境运行通过，不能等同真实 NAS、真实 DSM 账号或完整浏览器操作验收。
+默认构建/verify 只校验归档、配套 YAML、镜像导入身份与架构，记录 `businessTests: not_run`；不要求全套业务测试通过。以上 `--full-validation` 显式选择完整容器业务验收，需要 Linux Docker、Python 3 和 OpenSSL。完整验收先在无 `.env` 的目录解析实际交付 YAML 并核对 TAR 中两个镜像引用，再替换临时资料路径、随机回环端口和模拟 DSM 地址做运行验证；真实 NAS 配置不会被测试值覆盖。结果在配套目录生成 `validation.json`。验证使用既有镜像缓存，真实 NAS 首次导入可能更慢。实测与交付文件见 [本地 Docker 验证记录](docker-validation-2026-10-16.md)。这只证明本地配置解析和模拟环境运行通过，不能等同真实 NAS、真实 DSM 账号或完整浏览器操作验收。
 
 ## 本机 WSL 使用说明
 
