@@ -40,12 +40,11 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
     });
   }
 
-  Future<void> _refresh({bool showDiagnostics = false}) async {
-    if (showDiagnostics) widget.controller.reactionDiagnostics.show();
+  Future<void> _refresh({bool userInitiated = false}) async {
     if (_refreshRunning) {
       // A press during an older read must reach the coordinator, which queues
       // one fresh scan after that read rather than swallowing the request here.
-      if (showDiagnostics) {
+      if (userInitiated) {
         try {
           await widget.controller.refreshFavoriteRankings();
         } catch (_) {
@@ -129,14 +128,9 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
             ),
             actions: [
               IconButton(
-                tooltip: copy.localized('同步过程', 'Sync details'),
-                onPressed: () => controller.reactionDiagnostics.show(),
-                icon: const Icon(Icons.manage_search_rounded),
-              ),
-              IconButton(
                 key: const ValueKey('ranking-refresh'),
                 tooltip: copy.localized('刷新', 'Refresh'),
-                onPressed: () => _refresh(showDiagnostics: true),
+                onPressed: () => _refresh(userInitiated: true),
                 icon: const Icon(Icons.refresh_rounded),
               ),
             ],
@@ -221,7 +215,7 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                         ),
                       Expanded(
                         child: RefreshIndicator(
-                          onRefresh: () => _refresh(showDiagnostics: true),
+                          onRefresh: () => _refresh(userInitiated: true),
                           child: ListView.separated(
                             key: const ValueKey('game-ranking-list'),
                             physics: const AlwaysScrollableScrollPhysics(),

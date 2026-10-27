@@ -13,7 +13,6 @@ import 'package:board_game_agent/features/assistant/models/ai_conversation.dart'
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
-import 'package:board_game_agent/features/identity/services/reaction_sync_diagnostics.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/ui/shared/account_scope.dart';
@@ -61,8 +60,6 @@ Future<void> _mount(
 }
 
 class _MineFixture extends ChangeNotifier implements AppController {
-  @override
-  final reactionDiagnostics = ReactionSyncDiagnostics();
   final _votes = GameVoteService(preferences: PreferencesService());
   final _likes = GameVoteService(preferences: PreferencesService());
   @override
@@ -71,7 +68,6 @@ class _MineFixture extends ChangeNotifier implements AppController {
   GameVoteService get favoriteStatistics => _likes;
   @override
   void dispose() {
-    reactionDiagnostics.dispose();
     _votes.dispose();
     _likes.dispose();
     super.dispose();

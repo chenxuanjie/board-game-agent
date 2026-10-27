@@ -71,7 +71,6 @@ extension AppIdentityScopeController on AppController {
     _gameCatalogRequestKey = null;
     _gameCatalogLoadState = LibraryLoadState.idle;
     _gameCatalogFailed = _gameCatalogNoticeDismissed = false;
-    reactionDiagnostics.reset();
     _pendingLibraryUpdate = null;
     _libraryUpdateError = null;
     _libraryUpdatePromptSeen = false;

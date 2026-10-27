@@ -18,37 +18,9 @@ extension AppCollectionController on AppController {
       '${nationalDayGames.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}';
 
   Future<bool> toggleFavorite(GameInfo game) async {
-    reactionDiagnostics.watch(game.slug);
-    final trace = reactionDiagnostics.start(
-      isFavorite(game) ? '取消喜欢' : '喜欢',
-      show: true,
-      detail: game.slug,
-    );
-    try {
-      final saved = await _saveFavoriteIntent(game, trace);
-      trace.finish(
-        failed: !saved,
-        detail: saved
-            ? identityUserId == null
-                  ? '本机已保存；未登录，不上传账号记录'
-                  : '本机已保存；后台发布任务已触发，尚不代表远端已确认'
-            : '本机保存未完成，未发布此次操作',
-      );
-      return saved;
-    } catch (failure) {
-      trace.finish(
-        failed: true,
-        detail: ReactionSyncDiagnostics.failureLabel(failure),
-      );
-      rethrow;
-    }
-  }
-
-  Future<bool> _saveFavoriteIntent(GameInfo game, ReactionTrace trace) async {
     if (_requirePersonalAccount && identityUserId == null) return false;
     if (_identityScopeRequests > 0 ||
         (_switchingIdentityScope && _personalReloadWork == null)) {
-      trace.event('账号正在切换，此次操作未保存');
       return false;
     }
     final epoch = _identityScopeEpoch;
@@ -61,10 +33,7 @@ extension AppCollectionController on AppController {
       final remaining = deadline.difference(DateTime.now());
       if (remaining <= Duration.zero) return false;
       try {
-        await trace.measure(
-          '等待本机同步提交释放',
-          () => _personalReloadWork!.timeout(remaining),
-        );
+        await _personalReloadWork!.timeout(remaining);
       } catch (_) {
         return false;
       }
@@ -78,14 +47,10 @@ extension AppCollectionController on AppController {
         .catchError((Object _) {})
         .then<bool>(
           (_) => epoch == _identityScopeEpoch && !_controllerDisposed
-              ? trace.measure(
-                  '写入本机收藏',
-                  () => _toggleFavoriteNow(game, desired: desired),
-                )
+              ? _toggleFavoriteNow(game, desired: desired)
               : false,
         );
     _favoriteMutationQueue = operation.then<void>((_) {});
-    trace.event('等待本机收藏写入队列', status: ReactionTraceStatus.running);
     return operation;
   }
 

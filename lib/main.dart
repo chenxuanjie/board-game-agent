@@ -39,7 +39,6 @@ import 'ui/mobile/game_detail_screen.dart';
 import 'ui/shared/game_ranking_screen.dart';
 import 'ui/shared/account_scope.dart';
 import 'ui/shared/account_screen.dart';
-import 'ui/shared/reaction_sync_diagnostics_panel.dart';
 import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_window_frame.dart';
 import 'ui/desktop/desktop_responsive.dart';
@@ -240,10 +239,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   (_showAccountLoginAtRoot && !accounts.isSignedIn)) {
                 return ValueListenableBuilder<bool>(
                   valueListenable: _windowChrome.sidebarVisible,
-                  child: ReactionSyncDiagnosticsHost(
-                    diagnostics: widget.controller.reactionDiagnostics,
-                    child: child ?? const SizedBox.shrink(),
-                  ),
+                  child: child ?? const SizedBox.shrink(),
                   builder: (context, hasSidebar, child) => DesktopWindowFrame(
                     spatial:
                         widget.controller.colorScheme ==

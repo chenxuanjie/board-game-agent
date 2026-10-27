@@ -12,7 +12,6 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:webdav_sync/webdav_sync.dart' show canonicalJson;
 import '../../features/identity/services/board_personal_store.dart';
-import '../../features/identity/services/reaction_sync_diagnostics.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
@@ -102,7 +101,6 @@ class _RemoteLibraryIndexResult {
 
 class AppController extends ChangeNotifier {
   final browseSession = BrowseSession();
-  final reactionDiagnostics = ReactionSyncDiagnostics();
   AppController({
     required PreferencesService preferencesService,
     required AiService aiService,
@@ -1105,7 +1103,6 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _controllerDisposed = true;
     _cancelGameCatalogRequest();
-    reactionDiagnostics.dispose();
     _assetStatusTimer?.cancel();
     _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
