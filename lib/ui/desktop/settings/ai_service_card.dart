@@ -52,7 +52,8 @@ class _AiServiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppCopy copy = controller.copy;
-    final bool hasKey = apiKeyController.text.trim().isNotEmpty;
+    final bool managed = selectedProviderId == 'builtin:loomex';
+    final bool hasKey = managed || apiKeyController.text.trim().isNotEmpty;
     final List<AiReasoningEffort> visibleEfforts =
         AiModelPolicy.selectableReasoningEfforts(modelController.text) ?? [];
     final AiApiConfig savedConfig = controller.aiApiConfig;
@@ -88,7 +89,9 @@ class _AiServiceCard extends StatelessWidget {
                 child: _AiModelDropdownField(
                   fieldKey: ValueKey<String>('desktop-settings-ai-model'),
                   label: copy.localized('模型', 'Model'),
-                  models: controller.availableAiModels,
+                  models: managed && controller.availableAiModels.isEmpty
+                      ? const [AiModel(id: 'gpt-6-sol', ownedBy: 'loomex')]
+                      : controller.availableAiModels,
                   selectedModel: modelController.text,
                   loadState: controller.aiModelLoadState,
                   enabled: !saving,
@@ -109,33 +112,34 @@ class _AiServiceCard extends StatelessWidget {
             ),
           ],
           SizedBox(height: _px(context, 8)),
-          _EditableValueField(
-            fieldKey: ValueKey<String>('desktop-settings-ai-api-key'),
-            label: 'API Key',
-            controller: apiKeyController,
-            enabled: !saving,
-            obscureText: !showApiKey,
-            onChanged: onAiFieldChanged,
-            trailing: IconButton(
-              tooltip: showApiKey
-                  ? copy.localized('隐藏 API Key', 'Hide API Key')
-                  : copy.localized('显示 API Key', 'Show API Key'),
-              onPressed: saving ? null : onToggleApiKey,
-              icon: Icon(
-                showApiKey
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-                size: _px(context, 18),
+          if (!managed)
+            _EditableValueField(
+              fieldKey: ValueKey<String>('desktop-settings-ai-api-key'),
+              label: 'API Key',
+              controller: apiKeyController,
+              enabled: !saving,
+              obscureText: !showApiKey,
+              onChanged: onAiFieldChanged,
+              trailing: IconButton(
+                tooltip: showApiKey
+                    ? copy.localized('隐藏 API Key', 'Hide API Key')
+                    : copy.localized('显示 API Key', 'Show API Key'),
+                onPressed: saving ? null : onToggleApiKey,
+                icon: Icon(
+                  showApiKey
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: _px(context, 18),
+                ),
+                visualDensity: VisualDensity.compact,
               ),
-              visualDensity: VisualDensity.compact,
             ),
-          ),
           SizedBox(height: _px(context, 8)),
           _EditableValueField(
             fieldKey: ValueKey<String>('desktop-settings-ai-base-url'),
             label: copy.localized('接口地址', 'Base URL'),
             controller: baseUrlController,
-            enabled: !saving,
+            enabled: !saving && !managed,
             onChanged: onAiFieldChanged,
           ),
           SizedBox(height: _px(context, 10)),

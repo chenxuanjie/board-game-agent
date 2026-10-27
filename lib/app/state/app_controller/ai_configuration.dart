@@ -1,6 +1,27 @@
 part of '../app_controller.dart';
 
 extension AppAiConfigurationController on AppController {
+  void configureAccountAi(String? scope) {
+    _accountAiScope = scope;
+    if (scope != null && !_aiApiConfig.isConfigured) {
+      // Supply the login default without overwriting a saved BYOK selection.
+      _aiApiConfig = AiApiConfig.defaultLoomex;
+    }
+    if (_aiApiConfig.accountService) {
+      _aiApiConfig = _aiApiConfig.copyWith(accountContext: scope ?? '');
+      invalidateAiModels();
+      if (scope != null) {
+        _availableAiModels = const [
+          AiModel(id: 'gpt-6-sol', ownedBy: 'loomex'),
+        ];
+      }
+      _aiConnectivityStatus = ConnectivityStatus.unknown(
+        scope == null ? '请登录后使用 Loomex' : '等待检查',
+      );
+    }
+    _notifyListeners();
+  }
+
   Future<void> saveAiApiConfig(
     AiApiConfig next, {
     bool forNextRun = false,
@@ -23,6 +44,9 @@ extension AppAiConfigurationController on AppController {
     required bool rememberPreset,
   }) async {
     final AiApiConfig previous = _aiApiConfig;
+    next = next.copyWith(
+      accountContext: next.accountService ? (_accountAiScope ?? '') : '',
+    );
     // Publish config/clear Run state only after the durable write succeeds.
     await _preferencesService.saveAiApiConfig(next);
     ++_aiServiceStatusGeneration;
@@ -37,12 +61,15 @@ extension AppAiConfigurationController on AppController {
       _clearIncompatibleRunState(preserveActiveRuns: forNextRun);
     }
     _aiConnectivityStatus = ConnectivityStatus.unknown(
-      next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
-          ? '未配置 AI 服务'
-          : '等待检查',
+      !next.isConfigured ? '未配置 AI 服务' : '等待检查',
     );
     if (_aiModelSignature(previous) != _aiModelSignature(next)) {
       invalidateAiModels();
+      if (next.accountService && accountAiAvailable) {
+        _availableAiModels = const [
+          AiModel(id: 'gpt-6-sol', ownedBy: 'loomex'),
+        ];
+      }
     }
     if (rememberPreset && _isSaveableCustomPreset(next)) {
       final presets = _upsertCustomPreset(_customAiPresets, next);
@@ -116,6 +143,8 @@ extension AppAiConfigurationController on AppController {
 
   bool _aiRunContextChanged(AiApiConfig previous, AiApiConfig next) {
     return previous.name.trim() != next.name.trim() ||
+        previous.accountService != next.accountService ||
+        previous.accountContext != next.accountContext ||
         previous.baseUrl.trim() != next.baseUrl.trim() ||
         previous.apiKey.trim() != next.apiKey.trim() ||
         previous.model.trim() != next.model.trim() ||
@@ -254,7 +283,7 @@ extension AppAiConfigurationController on AppController {
   }
 
   String _aiModelSignature(AiApiConfig config) {
-    return '${config.baseUrl.trim()}\n${config.apiKey.trim()}';
+    return '${config.clientBaseUrl.trim()}\n${config.apiKey.trim()}\n${config.accountContext}';
   }
 
   Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> next) async {

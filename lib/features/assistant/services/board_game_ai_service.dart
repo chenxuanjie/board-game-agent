@@ -393,6 +393,7 @@ class BoardGameAiService implements AiService, AiConversationContextReset {
     return _responsesWorkflow != null &&
         config.model.trim().isNotEmpty &&
         (config.providerPreset == AiProviderPreset.openAi ||
+            config.providerPreset == AiProviderPreset.loomex ||
             config.providerPreset == AiProviderPreset.custom);
   }
 
@@ -701,8 +702,8 @@ class BoardGameAiService implements AiService, AiConversationContextReset {
   }) {
     return AiEndpointConfig(
       name: config.name,
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey,
+      baseUrl: config.clientBaseUrl,
+      apiKey: config.clientApiKey,
       model: config.model,
       apiKeyHeader: 'Authorization',
       chatPath: '/chat/completions',

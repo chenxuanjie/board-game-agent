@@ -314,6 +314,7 @@ class AppController extends ChangeNotifier {
   AiAnswerMode _globalAnswerMode = AiAnswerMode.knowledgeThenDirect;
   bool _globalUseCurrentGameKnowledge = false;
   AiApiConfig _aiApiConfig = AiApiConfig.defaultOpenAi;
+  String? _accountAiScope;
   List<AiApiConfig> _customAiPresets = <AiApiConfig>[];
   List<AiModel> _availableAiModels = <AiModel>[];
   AiModelLoadState _aiModelLoadState = AiModelLoadState.idle;
@@ -447,6 +448,8 @@ class AppController extends ChangeNotifier {
   bool get globalUseCurrentGameKnowledge =>
       _globalUseCurrentGameKnowledge && assistantKnowledgeAvailable;
   AiApiConfig get aiApiConfig => _aiApiConfig;
+  bool get accountAiAvailable =>
+      _accountAiScope != null && !_switchingIdentityScope;
   List<AiApiConfig> get customAiPresets =>
       List<AiApiConfig>.unmodifiable(_customAiPresets);
   List<AiModel> get availableAiModels =>
@@ -968,9 +971,7 @@ class AppController extends ChangeNotifier {
       '[updates] initialize loaded games: ${_games.map((g) => '${g.slug}:${g.title}').join(', ')}',
     );
     _aiConnectivityStatus = ConnectivityStatus.unknown(
-      _aiApiConfig.baseUrl.trim().isEmpty || _aiApiConfig.apiKey.trim().isEmpty
-          ? '未配置 AI 服务'
-          : '未检测',
+      !_aiApiConfig.isConfigured ? '未配置 AI 服务' : '未检测',
     );
     for (final source in _assetSourceConfigs) {
       _assetSourceStatuses[source.id] = ConnectivityStatus.unknown('未检测');
@@ -991,8 +992,7 @@ class AppController extends ChangeNotifier {
       if (_remoteAssetService.usesPublishedLibrary) await retryGameCatalog();
       if (!_controllerDisposed) await _initializeRemoteLibrary();
     }());
-    if (_aiApiConfig.baseUrl.trim().isNotEmpty &&
-        _aiApiConfig.apiKey.trim().isNotEmpty) {
+    if (_aiApiConfig.isConfigured && !_aiApiConfig.accountService) {
       unawaited(_refreshAiModelsOnInitialize());
     }
     notifyListeners();

@@ -237,6 +237,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       final DesktopAiSettingsResult result = await _desktopAiSettings
           .saveAndCheck(
             DesktopAiSettingsDraft(
+              accountService: _aiProviderOptionId == 'builtin:loomex',
               provider: _aiProvider.text,
               model: _aiModel.text,
               apiKey: _aiApiKey.text,
@@ -282,6 +283,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
 
   String _providerOptionId(AiApiConfig config) =>
       switch (config.providerPreset) {
+        AiProviderPreset.loomex => 'builtin:loomex',
         AiProviderPreset.openAi => 'builtin:openai',
         AiProviderPreset.deepSeek => 'builtin:deepseek',
         AiProviderPreset.custom =>
@@ -304,6 +306,11 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       custom.insert(0, current);
     }
     return <_DesktopAiProviderOption>[
+      _DesktopAiProviderOption(
+        id: 'builtin:loomex',
+        label: 'Loomex',
+        config: AiApiConfig.defaultLoomex,
+      ),
       _DesktopAiProviderOption(
         id: 'builtin:openai',
         label: copy.aiProviderPresetName(AiProviderPreset.openAi),

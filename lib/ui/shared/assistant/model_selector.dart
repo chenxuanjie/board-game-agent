@@ -243,8 +243,7 @@ class _AssistantModelPickerPanelState
   void initState() {
     super.initState();
     if (widget.controller.availableAiModels.isEmpty &&
-        widget.controller.aiApiConfig.apiKey.trim().isNotEmpty &&
-        widget.controller.aiApiConfig.baseUrl.trim().isNotEmpty &&
+        widget.controller.aiApiConfig.isConfigured &&
         widget.controller.aiModelLoadState != AiModelLoadState.loading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_refreshModels());
@@ -331,9 +330,7 @@ class _AssistantModelPickerPanelState
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     final copy = widget.controller.copy;
-    final canRefresh =
-        widget.controller.aiApiConfig.apiKey.trim().isNotEmpty &&
-        widget.controller.aiApiConfig.baseUrl.trim().isNotEmpty;
+    final canRefresh = widget.controller.aiApiConfig.isConfigured;
     return Material(
       key: const ValueKey('desktop-model-picker-panel'),
       color: palette.surface,
@@ -605,9 +602,7 @@ class _AssistantModelPickerPanelState
                         Text(
                           query.isNotEmpty
                               ? copy.localized('没有匹配的模型', 'No matching models')
-                              : widget.controller.aiApiConfig.apiKey
-                                    .trim()
-                                    .isEmpty
+                              : !widget.controller.aiApiConfig.isConfigured
                               ? copy.localized(
                                   '请先在设置中配置 AI 服务',
                                   'Configure the AI service in Settings',
@@ -635,9 +630,10 @@ class _AssistantModelPickerPanelState
                           ),
                         ],
                         if (query.isEmpty &&
-                            widget.controller.aiApiConfig.apiKey
-                                .trim()
-                                .isNotEmpty) ...<Widget>[
+                            widget
+                                .controller
+                                .aiApiConfig
+                                .isConfigured) ...<Widget>[
                           const SizedBox(height: 8),
                           TextButton.icon(
                             key: const ValueKey<String>(

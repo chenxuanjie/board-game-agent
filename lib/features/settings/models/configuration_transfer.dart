@@ -49,6 +49,7 @@ abstract final class ConfigurationTransfer {
     'chatPath',
     'reasoningEffort',
     'responseSpeed',
+    'serviceMode',
   ];
   static const webDavFields = [
     'baseUrl',
@@ -66,6 +67,7 @@ abstract final class ConfigurationTransfer {
     'chatPath' => copy.localized('请求路径', 'Request path'),
     'reasoningEffort' => copy.localized('推理强度', 'Reasoning effort'),
     'responseSpeed' => copy.localized('服务等级', 'Service tier'),
+    'serviceMode' => copy.localized('服务方式', 'Service mode'),
     'username' => copy.localized('账号', 'Username'),
     'password' => copy.localized('密码', 'Password'),
     'connections' => copy.localized('服务器配置', 'Server configuration'),
@@ -386,6 +388,8 @@ abstract final class ConfigurationTransfer {
     '推理强度': 'reasoningEffort',
     'responsespeed': 'responseSpeed',
     'servicetier': 'responseSpeed',
+    'servicemode': 'serviceMode',
+    '服务方式': 'serviceMode',
     '服务等级': 'responseSpeed',
     'username': 'username',
     'user': 'username',
@@ -405,6 +409,12 @@ abstract final class ConfigurationTransfer {
       (key, value) => MapEntry(key, value as String),
     );
     values.addAll(patch);
+    if (!patch.containsKey('serviceMode') &&
+        ((patch['apiKey']?.isNotEmpty ?? false) ||
+            (patch.containsKey('baseUrl') &&
+                patch['baseUrl'] != current.baseUrl))) {
+      values['serviceMode'] = 'byok';
+    }
     if (patch.containsKey('baseUrl') &&
         patch['baseUrl']!.trim() != current.baseUrl.trim() &&
         !patch.containsKey('apiKey')) {
@@ -435,6 +445,15 @@ abstract final class ConfigurationTransfer {
     Map<String, String> values, {
     bool validate = true,
   }) {
+    if (values['serviceMode'] == 'account') {
+      return AiApiConfig.defaultLoomex.copyWith(
+        model: values['model']?.trim() ?? AiApiConfig.defaultLoomex.model,
+        reasoningEffort: AiReasoningEffortX.fromStored(
+          values['reasoningEffort'],
+        ),
+        responseSpeed: AiResponseSpeedX.fromStored(values['responseSpeed']),
+      );
+    }
     final config = AiApiConfig(
       name: values['name']!.trim(),
       baseUrl: values['baseUrl']!.trim(),

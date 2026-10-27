@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum AiProviderPreset { openAi, deepSeek, custom }
+enum AiProviderPreset { loomex, openAi, deepSeek, custom }
 
 /// How much deliberate reasoning the selected model should spend.
 ///
@@ -74,6 +74,8 @@ class AiApiConfig {
     this.chatPath = '/chat/completions',
     this.reasoningEffort = AiReasoningEffort.automatic,
     this.responseSpeed = AiResponseSpeed.standard,
+    this.accountService = false,
+    this.accountContext = '',
   });
 
   final String name;
@@ -84,6 +86,26 @@ class AiApiConfig {
   final String chatPath;
   final AiReasoningEffort reasoningEffort;
   final AiResponseSpeed responseSpeed;
+  final bool accountService;
+  // Runtime account namespace, never a provider key and never exported.
+  final String accountContext;
+  bool get isConfigured =>
+      accountService || (baseUrl.trim().isNotEmpty && apiKey.trim().isNotEmpty);
+  static const accountTransportOrigin = 'https://loomex.account.invalid';
+  String get clientBaseUrl =>
+      accountService ? '$accountTransportOrigin/v1' : baseUrl;
+  String get clientApiKey => accountService ? 'account-session' : apiKey;
+
+  static const defaultLoomex = AiApiConfig(
+    name: 'Loomex',
+    baseUrl: 'https://www.loomex.lol/v1',
+    apiKey: '',
+    model: 'gpt-6-sol',
+    apiKeyHeader: 'Authorization',
+    reasoningEffort: AiReasoningEffort.low,
+    responseSpeed: AiResponseSpeed.standard,
+    accountService: true,
+  );
 
   /// A stable comparison key used for custom supplier presets.
   ///
@@ -127,6 +149,8 @@ class AiApiConfig {
     String? chatPath,
     AiReasoningEffort? reasoningEffort,
     AiResponseSpeed? responseSpeed,
+    bool? accountService,
+    String? accountContext,
   }) {
     return AiApiConfig(
       name: name ?? this.name,
@@ -137,6 +161,8 @@ class AiApiConfig {
       chatPath: chatPath ?? this.chatPath,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       responseSpeed: responseSpeed ?? this.responseSpeed,
+      accountService: accountService ?? this.accountService,
+      accountContext: accountContext ?? this.accountContext,
     );
   }
 
@@ -144,7 +170,8 @@ class AiApiConfig {
     return <String, dynamic>{
       'name': name,
       'baseUrl': baseUrl,
-      'apiKey': apiKey,
+      'apiKey': accountService ? '' : apiKey,
+      'serviceMode': accountService ? 'account' : 'byok',
       'model': model,
       'apiKeyHeader': apiKeyHeader,
       'chatPath': chatPath,
@@ -196,6 +223,7 @@ class AiApiConfig {
   static bool isBuiltInProviderName(String value) {
     final String normalized = value.trim().toLowerCase();
     return normalized == defaultOpenAi.name.toLowerCase() ||
+        normalized == defaultLoomex.name.toLowerCase() ||
         normalized == defaultDeepSeek.name.toLowerCase() ||
         normalized == defaultCustom.name.toLowerCase();
   }
@@ -210,6 +238,20 @@ class AiApiConfig {
     try {
       final Map<String, dynamic> json =
           jsonDecode(source) as Map<String, dynamic>;
+      if (json['serviceMode'] == 'account') {
+        return defaultLoomex.copyWith(
+          model: (json['model'] as String?)?.trim().isNotEmpty == true
+              ? (json['model'] as String).trim()
+              : defaultLoomex.model,
+          reasoningEffort: AiReasoningEffortX.fromStored(
+            (json['reasoningEffort'] as String?) ??
+                defaultLoomex.reasoningEffort.name,
+          ),
+          responseSpeed: AiResponseSpeedX.fromStored(
+            json['responseSpeed'] as String?,
+          ),
+        );
+      }
       final String baseUrl =
           (json['baseUrl'] as String?)?.trim().isNotEmpty == true
           ? json['baseUrl'] as String
@@ -258,6 +300,8 @@ class AiApiConfig {
 extension AiProviderPresetX on AiProviderPreset {
   AiApiConfig get template {
     switch (this) {
+      case AiProviderPreset.loomex:
+        return AiApiConfig.defaultLoomex;
       case AiProviderPreset.openAi:
         return AiApiConfig.defaultOpenAi;
       case AiProviderPreset.deepSeek:
@@ -278,6 +322,7 @@ bool _isRemovedMimoModel(String? value) {
 }
 
 AiProviderPreset detectAiProviderPreset(AiApiConfig config) {
+  if (config.accountService) return AiProviderPreset.loomex;
   final String baseUrl = config.baseUrl.trim().toLowerCase();
   if (baseUrl.contains('api.openai.com')) {
     return AiProviderPreset.openAi;

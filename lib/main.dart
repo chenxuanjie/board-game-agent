@@ -13,6 +13,9 @@ import 'package:window_manager/window_manager.dart';
 
 import 'features/assistant/services/board_game_ai_service.dart';
 import 'features/assistant/services/web_ai_http_client.dart';
+import 'features/assistant/services/account_ai_http_client.dart';
+// ignore: implementation_imports
+import 'package:app_ai_client/src/default_http_client.dart';
 import 'features/games/services/game_manifest_service.dart';
 import 'features/games/services/game_vote_service.dart';
 import 'features/settings/services/preferences_service.dart';
@@ -59,7 +62,11 @@ Future<void> main() async {
   );
 
   late final AccountService accountService;
-  final webAiHttpClient = kIsWeb ? WebAiHttpClient() : null;
+  AccountAiHttpClient aiTransport() => AccountAiHttpClient(
+    account: () => accountService,
+    byok: kIsWeb ? WebAiHttpClient() : createDefaultAiHttpClient(),
+  );
+  final modelHttpClient = aiTransport();
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
@@ -67,14 +74,14 @@ Future<void> main() async {
     gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(
-        httpClient: webAiHttpClient,
-        streamClientFactory: kIsWeb ? WebAiHttpClient.new : null,
+        httpClient: modelHttpClient,
+        streamClientFactory: aiTransport,
       ),
-      onDispose: webAiHttpClient?.close,
+      onDispose: modelHttpClient.close,
       responsesWorkflow: ResponsesRulesWorkflow(
         responsesClient: OpenAiDartResponsesAiClient(
-          httpClient: webAiHttpClient,
-          streamClientFactory: kIsWeb ? WebAiHttpClient.new : null,
+          httpClient: modelHttpClient,
+          streamClientFactory: aiTransport,
         ),
         compactionStore: SecureResponsesCompactionStore(),
         telemetrySink: SharedPreferencesAiRunTelemetrySink(),

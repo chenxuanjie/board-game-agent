@@ -18,6 +18,25 @@ class AiErrorPresentation {
   }) {
     final bool chinese = language == AppLanguage.zhHans;
     final String value = _flatten(error).toLowerCase();
+    if (value.contains('请先登录后使用 loomex') || value.contains('请先登录后使用loomex')) {
+      return AiErrorPresentation(
+        code: 'account_required',
+        message: chinese
+            ? '请登录后使用 Loomex，或选择自定义模型服务'
+            : 'Sign in to use Loomex, or choose a custom model service',
+      );
+    }
+    if (value.contains('loomex_session_expired') ||
+        (value.contains('/ai/loomex/') ||
+                value.contains('loomex.account.invalid')) &&
+            (_hasStatus(value, 401) || _hasStatus(value, 403))) {
+      return AiErrorPresentation(
+        code: 'account_expired',
+        message: chinese
+            ? '登录已过期，请重新登录'
+            : 'Your session expired; sign in again',
+      );
+    }
     final bool authenticationCode =
         value.contains('invalid_api_key') ||
         value.contains('invalid api key') ||

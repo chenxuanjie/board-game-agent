@@ -122,6 +122,24 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   // transports are never attached to a new service session.
   GameCommentsService? get comments => _comments;
 
+  Future<String> aiAccessToken() async {
+    final gateway = _gateway, current = user, generation = _scopeGeneration;
+    if (gateway is! ServiceIdentityGateway ||
+        current == null ||
+        _scopeChanging ||
+        _disposed) {
+      throw StateError('请先登录后使用 Loomex');
+    }
+    final token = await gateway.accessToken(current.id);
+    if (_disposed ||
+        _scopeChanging ||
+        generation != _scopeGeneration ||
+        user?.id != current.id) {
+      throw StateError('账号已切换，请重新发送');
+    }
+    return token;
+  }
+
   List<SavedLogin> get savedLogins => _savedLogins.entries
       .where((e) => e.environment == _serviceConfiguration?.environmentId)
       .toList(growable: false);
@@ -362,6 +380,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           );
         }
         _personalStore = nextStore;
+        _controller.configureAccountAi(target);
         nextStore = null;
         await oldStore?.close();
         _appliedScope = target;

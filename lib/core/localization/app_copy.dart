@@ -130,6 +130,8 @@ class AppCopy {
 
   String aiProviderPresetName(AiProviderPreset preset) {
     switch (preset) {
+      case AiProviderPreset.loomex:
+        return 'Loomex';
       case AiProviderPreset.openAi:
         return 'OpenAI';
       case AiProviderPreset.deepSeek:

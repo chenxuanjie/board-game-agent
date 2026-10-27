@@ -228,13 +228,14 @@ extension AppServiceStatusController on AppController {
     void Function(AiServiceCheckStage stage)? onStage,
   }) async {
     final AiApiConfig config = _aiApiConfig;
-    if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
+    if (!config.isConfigured ||
+        (config.accountService && !accountAiAvailable)) {
       _availableAiModels = <AiModel>[];
       _aiModelLoadState = AiModelLoadState.idle;
       _aiModelLoadError = null;
       _aiConnectivityStatus = ConnectivityStatus(
         state: ConnectivityState.failure,
-        message: '未配置 AI 服务',
+        message: config.accountService ? '请登录后使用 Loomex' : '未配置 AI 服务',
         checkedAt: DateTime.now(),
       );
       _notifyListeners();

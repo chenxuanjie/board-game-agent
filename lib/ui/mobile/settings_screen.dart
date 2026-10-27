@@ -387,12 +387,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                     onChanged: _handleAiFieldChanged,
                                   ),
                                   const SizedBox(height: 12),
-                                  _ApiField(
-                                    label: copy.aiApiKeyLabel,
-                                    controller: _keyController,
-                                    obscureText: true,
-                                    onChanged: _handleAiFieldChanged,
-                                  ),
+                                  if (!selectedPreset.config.accountService)
+                                    _ApiField(
+                                      label: copy.aiApiKeyLabel,
+                                      controller: _keyController,
+                                      obscureText: true,
+                                      onChanged: _handleAiFieldChanged,
+                                    ),
                                   const SizedBox(height: 14),
                                   _ModelDiscoveryPanel(
                                     controller: controller,
@@ -654,7 +655,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     List<AiModel>? models;
     Object? modelError;
     try {
-      if (draft.baseUrl.trim().isNotEmpty && draft.apiKey.trim().isNotEmpty) {
+      if (draft.isConfigured) {
         models = await _refreshModels(draft);
       } else {
         controller.invalidateAiModels();
@@ -720,9 +721,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   }
 
   Future<void> _resetDefault() async {
-    final _AiPresetOption openAi = _presetOptions(
-      widget.controller,
-    ).firstWhere((_AiPresetOption option) => option.id == 'builtin:openai');
+    final _AiPresetOption openAi = _presetOptions(widget.controller).firstWhere(
+      (_AiPresetOption option) =>
+          option.id ==
+          (widget.controller.accountAiAvailable
+              ? 'builtin:loomex'
+              : 'builtin:openai'),
+    );
     _applyPreset(openAi);
     final AiApiConfig next = _draftConfig();
     await widget.controller.saveAiApiConfig(next);
@@ -741,6 +746,10 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   AiApiConfig _draftConfig() {
     final current = widget.controller.aiApiConfig;
     return current.copyWith(
+      accountService: _selectedPreset.config.accountService,
+      accountContext: _selectedPreset.config.accountService
+          ? current.accountContext
+          : '',
       name: _selectedPreset.isCustom
           ? _nameController.text.trim()
           : _selectedPreset.config.name,
@@ -780,6 +789,11 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     final AppCopy copy = controller.copy;
     return <_AiPresetOption>[
       _AiPresetOption(
+        id: 'builtin:loomex',
+        label: 'Loomex',
+        config: AiApiConfig.defaultLoomex,
+      ),
+      _AiPresetOption(
         id: 'builtin:openai',
         label: copy.aiProviderPresetName(AiProviderPreset.openAi),
         config: AiApiConfig.defaultOpenAi,
@@ -815,6 +829,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     AiApiConfig config,
   ) {
     final String id = switch (config.providerPreset) {
+      AiProviderPreset.loomex => 'builtin:loomex',
       AiProviderPreset.openAi => 'builtin:openai',
       AiProviderPreset.deepSeek => 'builtin:deepseek',
       AiProviderPreset.custom =>
