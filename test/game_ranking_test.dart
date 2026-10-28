@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat;
@@ -404,7 +405,7 @@ void main() {
       final app = _app(
         _Preferences(),
         cloud: cloud,
-        manifests: GameManifestService(),
+        manifests: FixtureGameManifestService(),
       );
       await tester.runAsync(app.reloadGames);
       final games = app.games.take(7).toList();
@@ -442,7 +443,7 @@ void main() {
         () => Future.wait([
           for (final game in games)
             precacheImage(
-              AssetImage(game.coverAssetPath),
+              FileImage(File(game.coverAssetPath)),
               tester.element(find.byKey(capture)),
             ),
         ]),
@@ -626,7 +627,7 @@ void main() {
 }
 
 GameManifest _manifest(String slug, {String score = '1.0'}) =>
-    GameManifest.fromJson({
+    catalogGameFixture({
       'id': slug,
       'slug': slug,
       'score': score,

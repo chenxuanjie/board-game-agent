@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -25,7 +26,6 @@ import 'package:board_game_agent/features/games/models/daily_recommendation_reco
 import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
 import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
@@ -614,7 +614,7 @@ Future<AppController> _app({
   final app = AppController(
     preferencesService: preferences ?? PreferencesService(),
     aiService: ai ?? _UnusedAi(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: _NoNetwork(),
     speechService: speech ?? _Speech(),
     ttsService: _Tts(),

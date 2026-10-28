@@ -7,6 +7,7 @@ class _SyncBackupCard extends StatelessWidget {
     required this.checking,
     required this.onCheckSources,
     this.onEditSource,
+    this.onManageConnections,
     this.transferMenu,
     this.onReorder,
   });
@@ -15,6 +16,7 @@ class _SyncBackupCard extends StatelessWidget {
   final bool checking;
   final VoidCallback onCheckSources;
   final ValueChanged<AssetSourceConfig>? onEditSource;
+  final VoidCallback? onManageConnections;
   final Widget? transferMenu;
   final void Function(int, int)? onReorder;
   @override
@@ -42,14 +44,10 @@ class _SyncBackupCard extends StatelessWidget {
                 icon: Icon(Icons.refresh_rounded, size: 16),
                 label: Text(copy.localized('检测资源访问', 'Check resource access')),
               ),
-              if (onEditSource != null &&
-                  controller.assetSourceConfigs.isNotEmpty)
+              if (onManageConnections != null)
                 TextButton.icon(
                   key: ValueKey('desktop-settings-webdav-config'),
-                  onPressed: checking
-                      ? null
-                      : () =>
-                            onEditSource!(controller.assetSourceConfigs.first),
+                  onPressed: checking ? null : onManageConnections,
                   icon: Icon(Icons.account_circle_outlined, size: 16),
                   label: Text(copy.localized('账号与连接', 'Account & connections')),
                 ),

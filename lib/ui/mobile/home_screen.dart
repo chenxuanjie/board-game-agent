@@ -10,7 +10,6 @@ import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_conversation.dart';
 import '../../features/games/models/game_info.dart';
-import '../../features/library/models/remote_library_update.dart';
 import '../../core/models/app_activity.dart';
 import '../shared/library_update_review.dart';
 import '../shared/game_ranking_screen.dart';
@@ -48,12 +47,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
   bool _accountRouteOpen = false;
-  RemoteLibraryUpdate? _lastSeenUpdate;
 
   @override
   void initState() {
@@ -69,9 +67,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'mine' || 'favorites' || 'settings' => 3,
       _ => 0,
     };
-    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkLibraryUpdate());
     if (openingDetail) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -87,16 +83,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
-      _lastSeenUpdate = null;
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _checkLibraryUpdate(),
-      );
     }
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
     super.dispose();
   }
@@ -437,24 +428,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _onControllerChanged() {
     if (!mounted) return;
     setState(() {});
-    _checkLibraryUpdate();
-  }
-
-  void _checkLibraryUpdate() {
-    if (!mounted ||
-        _showingLibraryUpdateDialog ||
-        !widget.controller.shouldShowLibraryUpdatePrompt() ||
-        ModalRoute.of(context)?.isCurrent != true ||
-        (WidgetsBinding.instance.lifecycleState != null &&
-            WidgetsBinding.instance.lifecycleState !=
-                AppLifecycleState.resumed)) {
-      return;
-    }
-    final next = widget.controller.pendingLibraryUpdate;
-    if (next == null || identical(next, _lastSeenUpdate)) return;
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _showLibraryUpdateDialog(),
-    );
   }
 
   Future<void> _showLibraryUpdateDialog({bool fromNotification = false}) async {
@@ -465,22 +438,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             WidgetsBinding.instance.lifecycleState != null &&
             WidgetsBinding.instance.lifecycleState !=
                 AppLifecycleState.resumed) ||
-        (!fromNotification && ModalRoute.of(context)?.isCurrent != true) ||
-        (!fromNotification &&
-            !widget.controller.shouldShowLibraryUpdatePrompt())) {
+        (!fromNotification && ModalRoute.of(context)?.isCurrent != true)) {
       return;
     }
-    _lastSeenUpdate = widget.controller.pendingLibraryUpdate;
     _showingLibraryUpdateDialog = true;
     try {
       await showLibraryUpdateReview(context, widget.controller);
     } finally {
       _showingLibraryUpdateDialog = false;
     }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _checkLibraryUpdate();
   }
 }

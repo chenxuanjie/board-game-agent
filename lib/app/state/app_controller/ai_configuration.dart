@@ -1,27 +1,6 @@
 part of '../app_controller.dart';
 
 extension AppAiConfigurationController on AppController {
-  void configureAccountAi(String? scope) {
-    _accountAiScope = scope;
-    if (scope != null && !_aiApiConfig.isConfigured) {
-      // Supply the login default without overwriting a saved BYOK selection.
-      _aiApiConfig = AiApiConfig.defaultLoomex;
-    }
-    if (_aiApiConfig.accountService) {
-      _aiApiConfig = _aiApiConfig.copyWith(accountContext: scope ?? '');
-      invalidateAiModels();
-      if (scope != null) {
-        _availableAiModels = const [
-          AiModel(id: 'gpt-6-sol', ownedBy: 'loomex'),
-        ];
-      }
-      _aiConnectivityStatus = ConnectivityStatus.unknown(
-        scope == null ? '请登录后使用 Loomex' : '等待检查',
-      );
-    }
-    _notifyListeners();
-  }
-
   Future<void> saveAiApiConfig(
     AiApiConfig next, {
     bool forNextRun = false,
@@ -301,9 +280,8 @@ extension AppAiConfigurationController on AppController {
           (old) => !saved.any((source) => source.id == old.id),
         )) {
       _invalidateAssetAccessStatus();
-      _pendingLibraryUpdate = null;
+      _lastLibraryUpdate = null;
       _libraryUpdateError = null;
-      _libraryUpdatePromptSeen = false;
     }
     _assetSourceConfigs = saved;
     _assetSourceStatuses.removeWhere(

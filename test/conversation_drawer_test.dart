@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -22,7 +23,6 @@ import 'package:board_game_agent/features/assistant/services/conversation_store.
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/library/models/remote_asset_file.dart';
@@ -702,7 +702,7 @@ AppController _buildController(_MemoryStore store, {AiService? ai}) =>
     AppController(
       preferencesService: PreferencesService(),
       aiService: ai ?? _UnusedAi(),
-      gameManifestService: GameManifestService(),
+      gameManifestService: FixtureGameManifestService(),
       remoteAssetService: _NoNetwork(),
       speechService: SpeechService(),
       ttsService: _SilentTts(),

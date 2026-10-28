@@ -108,7 +108,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
   );
 
   _assistantDesignTest(
-    'resource access shows one device with entrance details on demand',
+    'resource access shows the application service on demand',
     (tester) async {
       final controller = _SourcePreviewController();
       addTearDown(controller.dispose);
@@ -135,28 +135,35 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
       expect(find.text('资源可用'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('resource-source-lan_share')),
+        find.byKey(const ValueKey('resource-source-application_service')),
         findsNothing,
       );
       await tester.tap(summary);
       await tester.pumpAndSettle();
-      final card = find.byKey(const ValueKey('resource-source-lan_share'));
+      final card = find.byKey(
+        const ValueKey('resource-source-application_service'),
+      );
       expect(
-        find.descendant(of: card, matching: find.text('内网访问')),
+        find.descendant(of: card, matching: find.text('公开资料')),
         findsOneWidget,
       );
       expect(
         find.descendant(of: card, matching: find.text('已连接')),
         findsOneWidget,
       );
-      final remote = find.byKey(const ValueKey('resource-source-cznas_dev'));
       expect(
-        find.descendant(of: remote, matching: find.text('外网访问')),
+        find.text(
+          'https://catalog.example/v1/apps/board_game_agent/catalog/revision',
+        ),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: remote, matching: find.text('未连接')),
-        findsOneWidget,
+        find.byKey(const ValueKey('resource-source-lan_share')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('resource-source-cznas_dev')),
+        findsNothing,
       );
       expect(find.text('已连接 1/2'), findsNothing);
       expect(
@@ -364,7 +371,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         preferencesService: preferences,
         aiService: _FakeAiService(),
         conversationStore: _WorkspaceConversationStore(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
@@ -466,7 +473,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         preferencesService: preferences,
         aiService: _FakeAiService(),
         conversationStore: _WorkspaceConversationStore(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
@@ -654,7 +661,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       preferencesService: _InMemoryPreferencesService(),
       aiService: _FakeAiService(),
       conversationStore: _WorkspaceConversationStore(),
-      gameManifestService: GameManifestService(),
+      gameManifestService: FixtureGameManifestService(),
       remoteAssetService: _NoNetworkAssetService(),
       speechService: SpeechService(),
       ttsService: _UnavailableTtsService(),
@@ -808,11 +815,13 @@ class _SourcePreviewController extends AppController {
     : super(
         preferencesService: _InMemoryPreferencesService(),
         aiService: _FakeAiService(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
         remoteAssetService: _NoNetworkAssetService(),
-      );
+      ) {
+    configureApplicationLibrary(Uri.parse('https://catalog.example'));
+  }
   @override
   ConnectivityStatus get assetConnectivityStatus => ConnectivityStatus(
     state: ConnectivityState.success,
@@ -821,13 +830,8 @@ class _SourcePreviewController extends AppController {
   );
   @override
   Map<String, ConnectivityStatus> get assetSourceStatuses => {
-    'lan_share': ConnectivityStatus(
+    'application_service': ConnectivityStatus(
       state: ConnectivityState.success,
-      message: 'test',
-      checkedAt: DateTime.now(),
-    ),
-    'cznas_dev': ConnectivityStatus(
-      state: ConnectivityState.failure,
       message: 'test',
       checkedAt: DateTime.now(),
     ),

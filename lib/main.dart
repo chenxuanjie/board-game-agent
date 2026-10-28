@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'core/platform/background_transfer_notifications.dart';
 import 'core/platform/native_window_surface.dart';
 import 'ui/shared/spatial/spatial_workspace.dart';
 
@@ -70,7 +69,6 @@ Future<void> main() async {
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
-    backgroundTransfers: createBackgroundTransferNotifications(),
     gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
       aiClient: OpenAiDartAiClient(
@@ -178,7 +176,8 @@ class BoardGameAgentApp extends StatefulWidget {
   State<BoardGameAgentApp> createState() => _BoardGameAgentAppState();
 }
 
-class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
+class _BoardGameAgentAppState extends State<BoardGameAgentApp>
+    with WidgetsBindingObserver {
   late final SettingsTransferService _transferService = SettingsTransferService(
     controller: widget.controller,
     webDav: widget.updateSettingsController,
@@ -198,6 +197,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_handleControllerChange);
     widget.accountService?.addListener(_handleAccountChange);
     _initialization = _initialize();
@@ -205,6 +205,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_handleControllerChange);
     widget.accountService?.removeListener(_handleAccountChange);
     widget.accountService?.dispose();
@@ -212,6 +213,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     widget.updateSettingsController.dispose();
     _windowChrome.sidebarVisible.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_initializationComplete && state == AppLifecycleState.resumed) {
+      unawaited(widget.controller.checkForLibraryUpdatesQuick());
+    }
   }
 
   @override

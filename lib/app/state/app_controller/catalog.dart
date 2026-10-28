@@ -53,10 +53,10 @@ extension AppCatalogController on AppController {
     final future = Future<bool>.microtask(() async {
       if (!current()) return false;
       final deadline = Completer<List<GameInfo>>();
-      // Native metadata is local/bundled (preferRemote=false); only the Web
-      // authority performs network I/O here and needs this total budget.
+      // All platforms share the published catalog lane. Keep UI loading bounded
+      // even if a transport or storage provider does not settle promptly.
       final timer = _remoteAssetService.usesPublishedLibrary
-          ? Timer(const Duration(seconds: 25), () {
+          ? Timer(const Duration(seconds: 65), () {
               deadline.completeError(
                 TimeoutException('Catalog loading timed out'),
               );
@@ -76,7 +76,11 @@ extension AppCatalogController on AppController {
         // the last good list or masquerade as a successful empty library.
         _games = games;
         _selectedGameId = _resolveSelectedGameId(_selectedGameId);
-        _refreshLibraryGameTitles();
+        _libraryResources = _catalogLibraryResources(_games);
+        _libraryLoadState = _libraryResources.isEmpty
+            ? LibraryLoadState.empty
+            : LibraryLoadState.success;
+        _libraryLoadError = null;
         _gameCatalogFailed = false;
         _gameCatalogNoticeDismissed = false;
         _gameCatalogLoadState = games.isEmpty

@@ -35,7 +35,7 @@ void _registerDesktopNationalDayTests(_DesktopWorkspaceTestContext context) {
             pageContext,
           ),
           for (final game in context.controller.defaultNationalDayGames)
-            precacheImage(AssetImage(game.coverAssetPath), pageContext),
+            precacheImage(FileImage(File(game.coverAssetPath)), pageContext),
         ]),
       );
       await tester.pumpAndSettle();

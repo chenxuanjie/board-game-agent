@@ -7,8 +7,7 @@ import '../../core/theme/app_motion.dart';
 import '../../features/library/models/asset_source_config.dart';
 import 'resource_source_list.dart';
 
-/// One resource device, several network entrances. Per-entrance diagnostics are
-/// shown on demand while the main settings surface only reports availability.
+/// Public catalog availability with application-service details on demand.
 class ResourceAccessSummary extends StatelessWidget {
   const ResourceAccessSummary({
     super.key,
@@ -82,7 +81,9 @@ class ResourceAccessSummary extends StatelessWidget {
             (s) => s.isLoading,
           );
           return AlertDialog(
-            title: Text(controller.copy.localized('访问入口', 'Access entrances')),
+            title: Text(
+              controller.copy.localized('应用服务', 'Application service'),
+            ),
             content: SizedBox(
               width: 480,
               child: SingleChildScrollView(
@@ -94,8 +95,8 @@ class ResourceAccessSummary extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text(
                       controller.copy.localized(
-                        '这些地址访问同一台设备',
-                        'These addresses access the same device',
+                        '公开资料由当前应用服务提供',
+                        'Public resources are provided by the current application service',
                       ),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),

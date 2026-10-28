@@ -3,159 +3,85 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_motion.dart';
-import '../../features/library/models/remote_library_update.dart';
 import 'smooth_progress.dart';
 
 Future<void> showLibraryUpdateReview(
   BuildContext context,
-  AppController controller, {
-  bool completeCheck = false,
-}) async {
+  AppController controller,
+) async {
   if (controller.appUpdateInProgress) return;
-  controller.dismissPendingLibraryUpdatePrompt();
-  final narrow = MediaQuery.sizeOf(context).width < 700;
-  if (narrow) {
+  if (MediaQuery.sizeOf(context).width < 700) {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => LibraryUpdateReview(
-          controller: controller,
-          fullPage: true,
-          completeCheck: completeCheck,
-        ),
+        builder: (_) =>
+            LibraryUpdateReview(controller: controller, fullPage: true),
       ),
     );
   } else {
     await showAppDialog<void>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
-      builder: (_) => LibraryUpdateReview(
-        controller: controller,
-        completeCheck: completeCheck,
-      ),
+      builder: (_) => LibraryUpdateReview(controller: controller),
     );
   }
 }
 
+/// Publication metadata is committed atomically; documents remain on demand.
 class LibraryUpdateReview extends StatefulWidget {
   const LibraryUpdateReview({
     super.key,
     required this.controller,
     this.fullPage = false,
-    this.completeCheck = false,
   });
   final AppController controller;
   final bool fullPage;
-  final bool completeCheck;
   @override
   State<LibraryUpdateReview> createState() => _LibraryUpdateReviewState();
 }
 
 class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
-  RemoteLibraryUpdate? _applied;
-  bool _startingCheck = true;
-  late bool _completeCheck;
+  bool _starting = true;
   @override
   void initState() {
     super.initState();
-    _completeCheck = widget.completeCheck;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() => _startingCheck = false);
-      unawaited(_check());
+      setState(() => _starting = false);
+      unawaited(widget.controller.checkForLibraryUpdates());
     });
-  }
-
-  Future<void> _check({bool? complete}) {
-    if (_applied != null) {
-      setState(() => _applied = null);
-    }
-    if (complete != null && complete != _completeCheck) {
-      setState(() => _completeCheck = complete);
-    }
-    return _completeCheck
-        ? widget.controller.checkForLibraryUpdates()
-        : widget.controller.checkForLibraryUpdatesQuick();
-  }
-
-  Future<void> _apply() async {
-    if (_applied != null) {
-      setState(() => _applied = null);
-    }
-    final controller = widget.controller;
-    final update = controller.pendingLibraryUpdate;
-    final revision = controller.libraryContentRevision;
-    await controller.applyPendingLibraryUpdate();
-    if (mounted && controller.libraryContentRevision > revision) {
-      setState(() => _applied = update);
-    }
   }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
     builder: (context, _) {
-      final c = widget.controller;
-      final copy = c.copy;
-      final busy =
-          _startingCheck || c.applyingLibraryUpdate || c.checkingLibraryUpdate;
-      final update = c.pendingLibraryUpdate ?? _applied;
+      final c = widget.controller, copy = c.copy;
+      final busy = _starting || c.checkingLibraryUpdate;
+      final update = c.lastLibraryUpdate;
       final error = c.libraryUpdateError;
-      final upToDate =
-          !busy && _applied == null && update == null && error == null;
-      final entries = update?.changes.isNotEmpty == true
-          ? update!.changes
-          : [
-              for (final path in update?.changedPaths ?? <String>[])
-                RemoteLibraryChange(path: path, title: path.split('/').last),
-            ];
       final content = Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SmoothProgress(
-            visible: busy || _applied != null,
-            value: _applied != null
-                ? 1
-                : c.applyingLibraryUpdate &&
-                      update != null &&
-                      update.changedCount > 0
-                ? c.libraryUpdateCompleted / update.changedCount
-                : null,
-            label: copy.localized('资料更新进度', 'Library update progress'),
+          Text(
+            copy.localized('资料更新', 'Library updates'),
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          if (busy) ...[
-            const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          SmoothProgress(
+            visible: busy,
+            label: copy.localized('正在检查资料更新', 'Checking library updates'),
+          ),
+          if (busy)
             Text(
-              c.applyingLibraryUpdate
-                  ? '${copy.updatingNow} ${c.libraryUpdateCompleted}/${update?.changedCount ?? 0}'
-                  : copy.localized('正在检查资料更新…', 'Checking for updates…'),
+              copy.localized(
+                '正在读取最新资料版本…',
+                'Checking the latest library version…',
+              ),
             ),
-          ] else if (_applied != null) ...[
-            Text(
-              copy.localized('资料已更新', 'Library updated'),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(copy.libraryUpdateChangeSummary(_applied!.changedCount)),
-          ] else if (update != null) ...[
-            Text(
-              copy.libraryUpdateChangeSummary(update.changedCount),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                for (final entry in update.changedResourceCounts.entries)
-                  Text(
-                    '${copy.libraryUpdateResourceLabel(entry.key)} ${entry.value}',
-                  ),
-              ],
-            ),
-          ] else if (error == null)
-            Text(copy.localized('资料已是最新。', 'Your library is up to date.')),
-          if (error != null) ...[
-            const SizedBox(height: 12),
+          if (!busy && error == null)
+            Text(copy.localized('当前资料已是最新。', 'Your library is up to date.')),
+          if (error != null)
             Semantics(
               liveRegion: true,
               child: Text(
@@ -163,129 +89,58 @@ class _LibraryUpdateReviewState extends State<LibraryUpdateReview> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
-          ],
-          if (entries.isNotEmpty) ...[
+          if (update != null && update.changedGameTitles.isNotEmpty) ...[
             const SizedBox(height: 16),
-            for (final entry in entries)
+            Text(
+              copy.localized('最近更新的桌游', 'Recently updated games'),
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            for (final title in update.changedGameTitles)
               Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${copy.libraryUpdateKindLabel(entry.kind)} · ${entry.title == 'catalog' ? copy.libraryUpdateResourceLabel(RemoteLibraryResourceType.catalog) : entry.title}',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      entry.fields.isNotEmpty
-                          ? entry.fields
-                                .map(
-                                  (field) =>
-                                      entry.valueChanges.containsKey(field)
-                                      ? '${copy.libraryUpdateFieldLabel(field)}：${entry.valueChanges[field]}'
-                                      : copy.libraryUpdateFieldLabel(field),
-                                )
-                                .toSet()
-                                .join(' · ')
-                          : copy.libraryUpdateResourceLabel(
-                              RemoteLibraryUpdate.resourceTypeForPath(
-                                entry.path,
-                              ),
-                            ),
-                    ),
-                    if (entry.path != 'assets/catalog.json' &&
-                        !entry.path.endsWith('/game.json') &&
-                        !entry.path.endsWith('/manifest.json'))
-                      Text(
-                        entry.path.split('/').last,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
-                ),
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(title),
               ),
           ],
+          const SizedBox(height: 20),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: busy
+                    ? null
+                    : () => unawaited(c.checkForLibraryUpdates()),
+                child: Text(copy.localized('重新检查', 'Check again')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(copy.localized('关闭', 'Close')),
+              ),
+            ],
+          ),
         ],
       );
-      final actions = [
-        if (!upToDate)
-          TextButton(
-            key: const ValueKey('library-update-later'),
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              copy.localized(
-                busy
-                    ? '后台继续'
-                    : _applied == null && update != null
-                    ? '暂不更新'
-                    : '关闭',
-                busy
-                    ? 'Continue in background'
-                    : _applied == null && update != null
-                    ? 'Later'
-                    : 'Close',
+      return widget.fullPage
+          ? Scaffold(
+              appBar: AppBar(
+                title: Text(copy.localized('资料更新', 'Library updates')),
               ),
-            ),
-          ),
-        if (_applied == null && update != null)
-          FilledButton(
-            key: const ValueKey('library-update-apply'),
-            onPressed: busy ? null : _apply,
-            child: Text(
-              copy.localized(
-                error == null ? '更新资料' : '重试更新',
-                error == null ? 'Update library' : 'Retry update',
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: content,
               ),
-            ),
-          ),
-        if (_applied == null && update == null)
-          TextButton(
-            key: const ValueKey('library-update-check'),
-            onPressed: busy ? null : _check,
-            child: Text(copy.localized('重新检查', 'Check again')),
-          ),
-        if (upToDate && !_completeCheck)
-          TextButton(
-            key: const ValueKey('library-update-full-check'),
-            onPressed: () => _check(complete: true),
-            child: Text(copy.localized('完整性检查', 'Full check')),
-          ),
-        if (upToDate)
-          FilledButton(
-            key: const ValueKey('library-update-confirm'),
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(copy.localized('确认', 'OK')),
-          ),
-      ];
-      if (widget.fullPage) {
-        return Scaffold(
-          key: const ValueKey('library-update-review'),
-          appBar: AppBar(title: Text(copy.localized('资料更新', 'Library update'))),
-          body: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [content],
-          ),
-          bottomNavigationBar: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 12,
-                children: actions,
+            )
+          : Dialog(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: content,
+                ),
               ),
-            ),
-          ),
-        );
-      }
-      return AlertDialog(
-        key: const ValueKey('library-update-review'),
-        title: Text(copy.localized('资料更新', 'Library update')),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(child: content),
-        ),
-        actions: actions,
-      );
+            );
     },
   );
 }

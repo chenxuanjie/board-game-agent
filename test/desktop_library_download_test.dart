@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
@@ -12,7 +13,6 @@ import 'package:board_game_agent/features/assistant/models/chat_message.dart';
 import 'package:board_game_agent/features/library/models/desktop_library_resource.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
@@ -36,7 +36,7 @@ void main() {
     final AppController controller = AppController(
       preferencesService: PreferencesService(),
       aiService: _FakeAiService(),
-      gameManifestService: GameManifestService(),
+      gameManifestService: FixtureGameManifestService(),
       remoteAssetService: remote,
       speechService: SpeechService(),
       ttsService: TtsService(),

@@ -741,7 +741,7 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
   testWidgets(
     'home library load failures are shown in notifications, not inline',
     (tester) async {
-      await context.controller.refreshLibraryResources();
+      await context.controller.refreshLibraryResources(force: true);
       expect(context.controller.libraryLoadError, isNotNull);
       expect(
         context.controller.activities.any(

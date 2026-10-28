@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,7 +17,6 @@ import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/conversation_store.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/models/configuration_transfer.dart';
@@ -160,7 +160,7 @@ class _Fixture {
   late final app = AppController(
     preferencesService: preferences,
     aiService: _NoAi(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: _NoNetwork(),
     speechService: SpeechService(),
     ttsService: _NoTts(),
@@ -173,6 +173,9 @@ class _Fixture {
   );
   Future<void> setup() async {
     await dav.load();
+    // Exercise explicit configuration-store transactions without relying on
+    // legacy NAS sources being supplied by application startup.
+    await app.saveAssetSourceConfigs(AssetSourceConfig.defaults.toList());
     await app.saveAiApiConfig(_oldAi);
   }
 

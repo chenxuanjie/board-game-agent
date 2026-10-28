@@ -94,12 +94,12 @@ extension AppServiceStatusController on AppController {
     await Future.wait(
       sources.map((source) async {
         ConnectivityStatus status;
-        String? checkedCatalog;
+        int? checkedRevision;
         try {
           status = await _remoteAssetService.checkAccess(
             source,
             abort: abort,
-            onCatalog: (text) => checkedCatalog = text,
+            onRevision: (value) => checkedRevision = value,
           );
         } catch (_) {
           status = ConnectivityStatus(
@@ -116,12 +116,12 @@ extension AppServiceStatusController on AppController {
         _notifyListeners();
         if (!quickStarted &&
             status.state == ConnectivityState.success &&
-            checkedCatalog != null) {
+            checkedRevision != null) {
           quickStarted = true;
           unawaited(
             _initialLibraryFullPending
-                ? checkForLibraryUpdates(catalogSource: checkedCatalog)
-                : checkForLibraryUpdatesQuick(catalogSource: checkedCatalog),
+                ? checkForLibraryUpdates(knownRevision: checkedRevision)
+                : checkForLibraryUpdatesQuick(knownRevision: checkedRevision),
           );
         }
       }),

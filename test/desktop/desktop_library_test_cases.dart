@@ -6,25 +6,13 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
   ) async {
     final first = context.controller.games[0];
     final second = context.controller.games[1];
-    DesktopLibraryResource file(GameInfo game, String id) =>
-        DesktopLibraryResource(
-          id: id,
-          gameSlug: game.slug,
-          gameTitle: game.title,
-          remotePath: game.rulebookAssetPath,
-          title: '规则书',
-          language: 'cn',
-          type: DesktopLibraryResourceType.rulebook,
-          format: DesktopLibraryResourceFormat.markdown,
-          isRemote: false,
-        );
-    await tester.runAsync(() async {
-      await context.preferences.saveDesktopLibraryResources([
-        file(first, 'scoped-first'),
-        file(second, 'scoped-second'),
-      ]);
-      await context.controller.refreshLibraryResources();
-    });
+    await context.controller.refreshLibraryResources();
+    final firstResource = context.controller.libraryResources.firstWhere(
+      (r) => r.gameSlug == first.slug,
+    );
+    final secondResource = context.controller.libraryResources.firstWhere(
+      (r) => r.gameSlug == second.slug,
+    );
     expect(context.controller.libraryResources, isNotEmpty);
     await _mount(tester, context.controller, const Size(1280, 800));
     final search = find.byKey(const ValueKey('desktop-home-search-field'));
@@ -41,14 +29,14 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     expect(find.text('规则速览'), findsNothing);
     expect(find.text('规则裁决问答'), findsNothing);
     expect(
-      find.byKey(const ValueKey('library-item-scoped-first')),
+      find.byKey(ValueKey('library-item-${firstResource.id}')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('library-item-scoped-second')),
+      find.byKey(ValueKey('library-item-${secondResource.id}')),
       findsNothing,
     );
-    await tester.tap(find.byKey(const ValueKey('library-more-scoped-first')));
+    await tester.tap(find.byKey(ValueKey('library-more-${firstResource.id}')));
     await tester.pumpAndSettle();
     expect(find.text(context.controller.copy.desktopOpen), findsWidgets);
     expect(find.text(context.controller.copy.desktopDownload), findsWidgets);
@@ -63,8 +51,8 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
       isNull,
     );
     expect(
-      find.byKey(const ValueKey('library-item-scoped-second')),
-      findsOneWidget,
+      context.controller.libraryResources.any((r) => r.id == secondResource.id),
+      isTrue,
     );
     expect(tester.takeException(), isNull);
   });

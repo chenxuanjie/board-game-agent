@@ -1,9 +1,9 @@
+import 'support/catalog_fixture.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/ui/desktop/desktop_responsive.dart';
@@ -33,7 +33,7 @@ void main() {
         final controller = AppController(
           preferencesService: PreferencesService(),
           aiService: _NoAi(),
-          gameManifestService: GameManifestService(),
+          gameManifestService: FixtureGameManifestService(),
           remoteAssetService: RemoteAssetService(),
           speechService: SpeechService(),
           ttsService: _NoTts(),

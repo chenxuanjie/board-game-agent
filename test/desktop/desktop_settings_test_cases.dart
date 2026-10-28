@@ -347,7 +347,7 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     final AppController local = AppController(
       preferencesService: _InMemoryPreferencesService(),
       aiService: aiService,
-      gameManifestService: GameManifestService(),
+      gameManifestService: FixtureGameManifestService(),
       remoteAssetService: _NoNetworkAssetService(),
       speechService: SpeechService(),
       ttsService: _UnavailableTtsService(),

@@ -88,7 +88,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     onApplied: _importApplied,
     enabled: !_savingAi && !_checkingSources,
   );
-  Future<void> _editResourceConnection(AssetSourceConfig source) async {
+  Future<void> _editResourceConnection([AssetSourceConfig? source]) async {
     if (_transfer.webDav == null || _transfer.isBusy || _checkingSources) {
       return;
     }
@@ -468,6 +468,9 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
         ),
         if (AccountScope.maybeOf(context) == null)
           _SyncBackupCard(
+            onManageConnections: _transfer.webDav == null
+                ? null
+                : () => _editResourceConnection(),
             onEditSource: _transfer.webDav == null
                 ? null
                 : _editResourceConnection,

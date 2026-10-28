@@ -1,7 +1,4 @@
-/// A resource registered in a game's manifest.json.
-///
-/// Paths are relative to `assets/games/<slug>/` in the manifest. The runtime
-/// converts them to Flutter asset paths when it creates a GameInfo instance.
+/// A public resource in a published SQL catalog edition.
 class GameResource {
   const GameResource({
     required this.id,
@@ -19,6 +16,8 @@ class GameResource {
     required this.sourceUrl,
     required this.reviewStatus,
     required this.notes,
+    this.sha256,
+    this.contentUrl,
   });
 
   final String id;
@@ -36,6 +35,8 @@ class GameResource {
   final String? sourceUrl;
   final String reviewStatus;
   final String? notes;
+  final String? sha256;
+  final String? contentUrl;
 
   bool get isAvailable => status == 'available';
 
@@ -68,23 +69,44 @@ class GameResource {
     return 'assets/games/$slug/$path';
   }
 
-  factory GameResource.fromJson(Map<String, dynamic> json) {
+  factory GameResource.fromCatalog(Map<String, dynamic> json) {
+    final digest = json['file_sha256'] as String;
+    final url = json['content_url'] as String;
+    final uri = Uri.parse(url);
+    final id = json['id'] as String;
+    if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$').hasMatch(id) ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(digest) ||
+        uri.hasScheme ||
+        uri.hasAuthority ||
+        uri.hasFragment ||
+        uri.pathSegments.join('/') !=
+            'v1/apps/board_game_agent/catalog/resources/$id/content' ||
+        uri.queryParametersAll.length != 1 ||
+        uri.queryParametersAll['version']?.length != 1 ||
+        uri.queryParametersAll['version']?.single != digest ||
+        json['visibility'] != 'public' ||
+        json['enabled'] != true ||
+        json['status'] != 'available') {
+      throw const FormatException('Invalid published resource');
+    }
     return GameResource(
       id: _stringValue(json['id']),
       path: _stringValue(json['path']),
-      documentType: _stringValue(json['documentType'], fallback: 'other'),
-      sourceClass: _stringValue(json['sourceClass'], fallback: 'unknown'),
+      documentType: _stringValue(json['document_type'], fallback: 'other'),
+      sourceClass: _stringValue(json['source_class'], fallback: 'unknown'),
       origin: _stringValue(json['origin'], fallback: 'unknown'),
       language: _stringValue(json['language'], fallback: 'none'),
-      edition: _stringValue(json['edition'], fallback: 'unknown'),
+      edition: _stringValue(json['edition_code'], fallback: 'unknown'),
       status: _stringValue(json['status'], fallback: 'unverified'),
       enabled: json['enabled'] as bool? ?? false,
-      aiEnabled: json['aiEnabled'] as bool? ?? false,
+      aiEnabled: json['ai_enabled'] as bool? ?? false,
       priority: (json['priority'] as num?)?.toInt() ?? 500,
-      derivedFrom: _stringList(json['derivedFrom']),
-      sourceUrl: json['sourceUrl'] as String?,
-      reviewStatus: _stringValue(json['reviewStatus'], fallback: 'unreviewed'),
+      derivedFrom: _stringList(json['derived_from']),
+      sourceUrl: json['source_url'] as String?,
+      reviewStatus: _stringValue(json['review_status'], fallback: 'unreviewed'),
       notes: json['notes'] as String?,
+      sha256: digest,
+      contentUrl: url,
     );
   }
 }
@@ -101,47 +123,6 @@ bool isOtherStoragePath(String path) {
     }
   }
   return false;
-}
-
-class GameResourceManifest {
-  const GameResourceManifest({
-    required this.schemaVersion,
-    required this.gameId,
-    required this.gameSlug,
-    required this.edition,
-    required this.resources,
-  });
-
-  final int schemaVersion;
-  final String gameId;
-  final String gameSlug;
-  final String edition;
-  final List<GameResource> resources;
-
-  factory GameResourceManifest.fromJson(Map<String, dynamic> json) {
-    final Map<String, dynamic> game = _mapValue(json['game']);
-    final List<dynamic> resourcesJson =
-        json['resources'] as List<dynamic>? ?? const <dynamic>[];
-
-    return GameResourceManifest(
-      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 1,
-      gameId: _stringValue(game['id']),
-      gameSlug: _stringValue(game['slug']),
-      edition: _stringValue(game['edition'], fallback: 'unknown'),
-      resources: List<GameResource>.unmodifiable(
-        resourcesJson.whereType<Map<String, dynamic>>().map(
-          GameResource.fromJson,
-        ),
-      ),
-    );
-  }
-}
-
-Map<String, dynamic> _mapValue(dynamic value) {
-  if (value is Map<String, dynamic>) {
-    return value;
-  }
-  return <String, dynamic>{};
 }
 
 String _stringValue(dynamic value, {String fallback = ''}) {

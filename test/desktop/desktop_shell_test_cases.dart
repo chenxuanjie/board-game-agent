@@ -137,7 +137,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('外观与主题'), findsOneWidget);
       expect(find.text('桌游检查'), findsOneWidget);
       expect(find.byKey(const ValueKey('library-check-quick')), findsOneWidget);
-      expect(find.byKey(const ValueKey('library-check-full')), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-check-full')), findsNothing);
       expect(find.text('通知设置'), findsNothing);
       expect(find.text('服务器与资料'), findsOneWidget);
       expect(find.text('关于与更新'), findsOneWidget);

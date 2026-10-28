@@ -3,12 +3,10 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'browse_session.dart';
-import '../../core/platform/background_transfer_notifications.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:webdav_sync/webdav_sync.dart' show canonicalJson;
 import '../../features/identity/services/board_personal_store.dart';
@@ -34,10 +32,8 @@ import '../../features/games/models/favorite_game_record.dart';
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_ranking_entry.dart';
 import '../../features/games/models/game_vote_record.dart';
-import '../../features/games/models/game_catalog_manifest.dart';
 import '../../features/library/models/game_resource.dart';
 import '../../features/library/models/remote_library_update.dart';
-import '../../features/library/models/remote_asset_file.dart';
 import '../../features/games/models/recent_game_record.dart';
 import '../../features/library/models/resolved_document.dart';
 import '../../features/games/models/search_history_record.dart';
@@ -54,7 +50,6 @@ import '../../features/games/services/game_favorite_ranker.dart';
 import '../../features/games/services/remote_game_vote_store.dart';
 import '../../features/games/services/national_day_list_controller.dart';
 import '../../features/library/services/remote_asset_service.dart';
-import '../../features/library/services/library_update_diff.dart';
 import '../../features/assistant/services/speech_service.dart';
 import '../../features/assistant/services/tts_service.dart';
 import '../../features/assistant/services/realtime_voice_service.dart';
@@ -85,20 +80,6 @@ enum LibraryLoadState { idle, loading, success, empty, failure }
 
 /// Result of reading the remote library manifests.
 ///
-/// [warning] is non-fatal: a partial index can still be shown while the UI
-/// exposes that one or more game manifests were unavailable.
-class _RemoteLibraryIndexResult {
-  const _RemoteLibraryIndexResult({
-    required this.resources,
-    this.warning,
-    this.failedSlugs = const <String>{},
-  });
-
-  final List<DesktopLibraryResource> resources;
-  final String? warning;
-  final Set<String> failedSlugs;
-}
-
 class AppController extends ChangeNotifier {
   final browseSession = BrowseSession();
   AppController({
@@ -114,8 +95,6 @@ class AppController extends ChangeNotifier {
     RemoteGameVoteStore? Function()? favoriteRemoteProvider,
     String? Function()? favoriteScopeProvider,
     ConversationStore? conversationStore,
-    BackgroundTransferNotifications backgroundTransfers =
-        const NoBackgroundTransferNotifications(),
   }) : _preferencesService = preferencesService,
        _favoriteRemoteProvider = favoriteRemoteProvider,
        _favoriteScopeProvider = favoriteScopeProvider,
@@ -129,7 +108,6 @@ class AppController extends ChangeNotifier {
        _conversationStore = conversationStore ?? const ConversationStore(),
        _gameManifestService = gameManifestService,
        _remoteAssetService = remoteAssetService,
-       _backgroundTransfers = backgroundTransfers,
        _speechService = speechService,
        _ttsService = ttsService,
        _realtimeVoiceService =
@@ -139,6 +117,27 @@ class AppController extends ChangeNotifier {
       _gameVotes.dispose();
       _gameVotes = GameVoteService(preferences: _preferencesService);
     }
+  }
+
+  void configureAccountAi(String? scope) {
+    _accountAiScope = scope;
+    if (scope != null && !_aiApiConfig.isConfigured) {
+      // Supply the login default without overwriting a saved BYOK selection.
+      _aiApiConfig = AiApiConfig.defaultLoomex;
+    }
+    if (_aiApiConfig.accountService) {
+      _aiApiConfig = _aiApiConfig.copyWith(accountContext: scope ?? '');
+      invalidateAiModels();
+      if (scope != null) {
+        _availableAiModels = const [
+          AiModel(id: 'gpt-6-sol', ownedBy: 'loomex'),
+        ];
+      }
+      _aiConnectivityStatus = ConnectivityStatus.unknown(
+        scope == null ? '请登录后使用 Loomex' : '等待检查',
+      );
+    }
+    _notifyListeners();
   }
 
   PreferencesService _preferencesService;
@@ -173,9 +172,22 @@ class AppController extends ChangeNotifier {
         id: 'application_service',
         name: '公开资料',
         address: origin.origin,
-        testUrl: origin.resolve('/v1/apps/board_game_agent/library').toString(),
+        testUrl: origin
+            .resolve('/v1/apps/board_game_agent/catalog/revision')
+            .toString(),
       ),
     ];
+    _cancelGameCatalogRequest();
+    _gameCatalogGeneration++;
+    _gameCatalogFuture = null;
+    _games = [];
+    _libraryResources = [];
+    _resolvedAssetPaths.clear();
+    _lastLibraryUpdate = null;
+    _libraryLoadState = LibraryLoadState.idle;
+    _gameCatalogLoadState = LibraryLoadState.idle;
+    _libraryRefreshGeneration++;
+    _libraryRefreshFuture = null;
     _invalidateAssetAccessStatus();
   }
 
@@ -287,7 +299,6 @@ class AppController extends ChangeNotifier {
   ConversationStore _conversationStore;
   final GameManifestService _gameManifestService;
   final RemoteAssetService _remoteAssetService;
-  final BackgroundTransferNotifications _backgroundTransfers;
   final SpeechService _speechService;
   final TtsService _ttsService;
   final RealtimeVoiceService _realtimeVoiceService;
@@ -322,7 +333,7 @@ class AppController extends ChangeNotifier {
   Future<List<AiModel>>? _aiModelRefreshFuture;
   String? _aiModelRefreshSignature;
   int _aiModelRefreshGeneration = 0;
-  List<AssetSourceConfig> _assetSourceConfigs = AssetSourceConfig.defaults;
+  List<AssetSourceConfig> _assetSourceConfigs = [];
   List<GameInfo> _games = <GameInfo>[];
   List<GameInfo>? _personalizedCatalog;
   Set<String> _personalizedFavoriteSlugs = {};
@@ -331,8 +342,6 @@ class AppController extends ChangeNotifier {
   LibraryLoadState _libraryLoadState = LibraryLoadState.idle;
   String? _libraryLoadError;
   Future<void>? _libraryRefreshFuture;
-  Future<void>? _libraryCacheLoadFuture;
-  bool _libraryCacheLoadAttempted = false;
   int _libraryRefreshGeneration = 0;
   ConnectivityStatus _aiConnectivityStatus = ConnectivityStatus(
     state: ConnectivityState.unknown,
@@ -352,7 +361,7 @@ class AppController extends ChangeNotifier {
   Future<void>? _serviceStatusRefreshFuture;
   Future<void>? _aiServiceStatusRefreshFuture;
   int _aiServiceStatusGeneration = 0;
-  RemoteLibraryUpdate? _pendingLibraryUpdate;
+  RemoteLibraryUpdate? _lastLibraryUpdate;
   bool _checkingLibraryUpdate = false;
   Future<void>? _libraryCheckFuture;
   bool _libraryFullRequested = false;
@@ -360,11 +369,8 @@ class AppController extends ChangeNotifier {
   int? _libraryCheckEpoch;
   String? _libraryCheckSignature;
   bool _initialLibraryFullPending = false;
-  bool _applyingLibraryUpdate = false;
-  bool _libraryUpdatePromptSeen = false;
   int _appUpdateInteractions = 0;
   String? _libraryUpdateError;
-  int _libraryUpdateCompleted = 0;
   int _libraryContentRevision = 0;
   bool _homeAssetsLoading = false;
   int _homeAssetsLoaded = 0;
@@ -492,12 +498,10 @@ class AppController extends ChangeNotifier {
     return List<AiConversation>.unmodifiable(result);
   }
 
-  RemoteLibraryUpdate? get pendingLibraryUpdate => _pendingLibraryUpdate;
+  RemoteLibraryUpdate? get lastLibraryUpdate => _lastLibraryUpdate;
   String? get libraryUpdateError => _libraryUpdateError;
-  int get libraryUpdateCompleted => _libraryUpdateCompleted;
   int get libraryContentRevision => _libraryContentRevision;
   bool get checkingLibraryUpdate => _checkingLibraryUpdate;
-  bool get applyingLibraryUpdate => _applyingLibraryUpdate;
   bool get homeAssetsLoading => _homeAssetsLoading;
   int get homeAssetsLoaded => _homeAssetsLoaded;
   int get homeAssetsTotal => _homeAssetsTotal;
@@ -850,29 +854,6 @@ class AppController extends ChangeNotifier {
     return nearest ?? conversation.updatedAt.difference(createdAt).abs();
   }
 
-  void _setPendingLibraryUpdate(
-    RemoteLibraryUpdate update, {
-    int? identityEpoch,
-  }) {
-    if (identityEpoch != null && identityEpoch != _identityScopeEpoch) return;
-    final RemoteLibraryUpdate? previous = _pendingLibraryUpdate;
-    _pendingLibraryUpdate = update;
-    _libraryUpdatePromptSeen = false;
-    final bool isSame =
-        previous != null &&
-        previous.changedPaths.length == update.changedPaths.length &&
-        previous.changedPaths.toSet().containsAll(update.changedPaths) &&
-        update.changedPaths.toSet().containsAll(previous.changedPaths);
-    if (!isSame) {
-      _recordActivity(
-        identityEpoch: identityEpoch,
-        kind: AppActivityKind.libraryUpdate,
-        title: copy.activityLibraryUpdateTitle,
-        message: copy.activityLibraryUpdateMessage(update.changedCount),
-      );
-    }
-  }
-
   Future<void> initialize() => _initializationFuture ??= _initialize();
 
   Future<void> _initialize() async {
@@ -947,11 +928,15 @@ class AppController extends ChangeNotifier {
       _customAiPresets = _upsertCustomPreset(_customAiPresets, _aiApiConfig);
       await _preferencesService.saveAiCustomPresets(_customAiPresets);
     }
-    _assetSourceConfigs = await _preferencesService.loadAssetSourceConfigs();
+    if (_remoteAssetService.serviceOrigin case final origin?) {
+      configureApplicationLibrary(origin);
+    }
     await _restoreGameGallerySelections();
-    // Native startup reads local/bundled metadata. Web's authoritative catalog
-    // is a network dependency and must not gate accounts, settings or chat.
-    if (!_remoteAssetService.usesPublishedLibrary) {
+    await _remoteAssetService.restoreCatalog();
+    // Restore an origin-scoped SQL snapshot before loading public metadata.
+    // Network refresh must not gate accounts, settings or chat.
+    if (!_remoteAssetService.usesPublishedLibrary ||
+        _remoteAssetService.catalog != null) {
       try {
         await _loadGameCatalog();
       } catch (_) {

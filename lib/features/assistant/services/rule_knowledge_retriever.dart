@@ -1,7 +1,3 @@
-import 'dart:io';
-
-import 'package:flutter/services.dart' show rootBundle;
-
 import '../../library/models/asset_source_config.dart';
 import '../models/evidence_chunk.dart';
 import '../../games/models/game_info.dart';
@@ -37,14 +33,10 @@ class RuleKnowledgeRetriever {
       }
 
       try {
-        String? content = await _loadLocalKnowledgeFile(remotePath);
-        content =
-            await remoteAssetService.loadTextFromAny(
-              sources: assetSourceConfigs,
-              remotePaths: <String>[remotePath],
-            ) ??
-            content ??
-            await _loadBundledKnowledgeFile(remotePath);
+        String? content = await remoteAssetService.loadTextFromAny(
+          sources: assetSourceConfigs,
+          remotePaths: <String>[remotePath],
+        );
         if (content == null) {
           continue;
         }
@@ -114,32 +106,5 @@ class RuleKnowledgeRetriever {
         .replaceAll('\r', '\n')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
-  }
-
-  Future<String?> _loadLocalKnowledgeFile(String remotePath) async {
-    final List<File> candidates = <File>[
-      File(remotePath),
-      File('${Directory.current.path}${Platform.pathSeparator}$remotePath'),
-      File.fromUri(Uri.base.resolve(remotePath)),
-    ];
-
-    for (final File file in candidates) {
-      try {
-        if (await file.exists()) {
-          return file.readAsString();
-        }
-      } catch (_) {
-        continue;
-      }
-    }
-    return null;
-  }
-
-  Future<String?> _loadBundledKnowledgeFile(String assetPath) async {
-    try {
-      return await rootBundle.loadString(assetPath);
-    } catch (_) {
-      return null;
-    }
   }
 }

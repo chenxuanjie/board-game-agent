@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
@@ -18,7 +19,6 @@ import 'package:board_game_agent/features/assistant/models/chat_message.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/library/models/remote_asset_file.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
@@ -104,7 +104,7 @@ Future<AppController> _createController() async {
   final AppController controller = AppController(
     preferencesService: PreferencesService(),
     aiService: _FakeAiService(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: _NoNetworkAssetService(),
     speechService: SpeechService(),
     ttsService: TtsService(),
@@ -140,12 +140,6 @@ class _NoNetworkAssetService extends RemoteAssetService {
     int maxDepth = 6,
     int maxEntries = 1000,
   }) async => const <RemoteAssetFile>[];
-
-  @override
-  Future<bool> hasRemoteChanged({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async => false;
 }
 
 class _NoopHttpClient extends http.BaseClient {

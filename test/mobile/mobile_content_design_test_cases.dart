@@ -16,7 +16,7 @@ class _ContentDesignController extends AppController {
     : super(
         preferencesService: _ContentDesignPreferences(),
         aiService: _UnusedAiService(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),

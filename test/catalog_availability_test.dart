@@ -1,5 +1,7 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -27,7 +29,6 @@ import 'package:board_game_agent/ui/shared/library_catalog_status.dart';
 import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -39,8 +40,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late GameManifest game;
   setUpAll(() async {
-    game = GameManifest.fromJson(
-      jsonDecode(await rootBundle.loadString('assets/games/cabo/game.json')),
+    game = catalogGameFixture(
+      jsonDecode(await File('assets/games/cabo/game.json').readAsString()),
     );
   });
   setUp(() {
@@ -225,7 +226,7 @@ void main() {
     unawaited(c.retryGameCatalog());
     await tester.pump();
     expect(c.gameCatalogLoadState, LibraryLoadState.loading);
-    await tester.pump(const Duration(seconds: 26));
+    await tester.pump(const Duration(seconds: 66));
     expect(c.gameCatalogFailed, isTrue);
     c.dispose();
     gate.complete();
@@ -438,10 +439,7 @@ class _WebRemote extends RemoteAssetService {
   @override
   bool get usesPublishedLibrary => true;
   @override
-  Future<bool> refreshPublishedLibrary({
-    bool complete = false,
-    String? checkedCatalog,
-  }) async => false;
+  Future<bool> refreshCatalog({int? knownRevision}) async => false;
 }
 
 class _Preferences extends PreferencesService {

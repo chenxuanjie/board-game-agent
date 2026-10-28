@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat;
@@ -13,7 +14,6 @@ import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/related_game_recommender.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
@@ -190,7 +190,10 @@ void main() {
 
   testWidgets('mobile home and settings fit phone sizes', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    final controller = _controller(ttsService: _UnavailableTtsService());
+    final controller = _controller(
+      ttsService: _UnavailableTtsService(),
+      assets: _CachedImageAssetService(),
+    );
     addTearDown(controller.dispose);
     await controller.reloadGames();
     final squareGame = controller.games.firstWhere(
@@ -240,11 +243,11 @@ void main() {
     await tester.runAsync(
       () => Future.wait([
         precacheImage(
-          AssetImage(squareGame.coverAssetPath),
+          FileImage(File(squareGame.coverAssetPath).absolute),
           tester.element(find.byKey(const ValueKey('square-cover'))),
         ),
         precacheImage(
-          AssetImage(portraitGame.coverAssetPath),
+          FileImage(File(portraitGame.coverAssetPath).absolute),
           tester.element(find.byKey(const ValueKey('portrait-cover'))),
         ),
       ]),
@@ -779,11 +782,12 @@ void main() {
 AppController _controller({
   TtsService? ttsService,
   PreferencesService? preferences,
+  RemoteAssetService? assets,
 }) => AppController(
   preferencesService: preferences ?? PreferencesService(),
   aiService: _UnusedAiService(),
-  gameManifestService: GameManifestService(),
-  remoteAssetService: _NoNetworkAssetService(),
+  gameManifestService: FixtureGameManifestService(),
+  remoteAssetService: assets ?? _NoNetworkAssetService(),
   speechService: SpeechService(),
   ttsService: ttsService ?? TtsService(),
 );
@@ -806,4 +810,25 @@ class _NoNetworkAssetService extends RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async => null;
+}
+
+/// The UI sees a verified local cache result, never a bundled game asset.
+class _CachedImageAssetService extends _NoNetworkAssetService {
+  @override
+  Future<CachedAsset?> ensureCached({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+    bool forceRefresh = false,
+    bool allowCachedFallback = true,
+  }) async {
+    final file = File(remotePath).absolute;
+    if (!remotePath.contains('/images/') || !file.existsSync()) return null;
+    return CachedAsset(
+      remotePath: remotePath,
+      localPath: file.path,
+      exists: true,
+      fromRemote: false,
+      sourceId: 'fixture',
+    );
+  }
 }

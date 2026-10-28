@@ -5,12 +5,12 @@ void main() {
   test('groups changed paths by resource type', () {
     const RemoteLibraryUpdate update = RemoteLibraryUpdate(
       changedPaths: <String>[
-        'assets/catalog.json',
+        'catalog',
         'assets/games/cabo/images/cover.jpg',
         'assets/games/cabo/images/banner.jpg',
         'assets/games/cabo/docs/rulebook_official_zh.pdf',
         'assets/games/cabo/docs/faq_zh.md',
-        'assets/games/cabo/game.json',
+        'editions/cabo',
       ],
       changedGameTitles: <String>['Cabo'],
     );

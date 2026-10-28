@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -7,7 +8,6 @@ import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
@@ -308,7 +308,7 @@ class _Controller extends AppController {
     : super(
         preferencesService: PreferencesService(),
         aiService: _Ai(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: remote ?? RemoteAssetService(),
         speechService: _Speech(),
         ttsService: _Tts(),
@@ -327,7 +327,7 @@ class _ProbeRemote extends RemoteAssetService {
   Future<ConnectivityStatus> checkAccess(
     AssetSourceConfig source, {
     Completer<void>? abort,
-    void Function(String catalogSource)? onCatalog,
+    void Function(int)? onRevision,
   }) async {
     resourceEvents.add('access');
     return ConnectivityStatus(

@@ -9,7 +9,7 @@ extension AppDocumentController on AppController {
     _assetConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.failure,
       message: copy.localized(
-        '请先公开资料暂不可用，请检查服务地址',
+        '公开资料暂不可用，请检查服务地址',
         'Public library unavailable. Check the service URL.',
       ),
       checkedAt: DateTime.now(),
@@ -18,30 +18,8 @@ extension AppDocumentController on AppController {
     return false;
   }
 
-  Future<List<int>?> _loadWebDocument(String path) async {
-    if (_remoteAssetService.usesPublishedLibrary) {
-      return _remoteAssetService.loadBytes(
-        sources: _assetSourceConfigs,
-        remotePath: path,
-      );
-    }
-    final updated = await _remoteAssetService.cachedBytesFor(path);
-    if (updated != null) return updated;
-    // Shipped documents remain readable when WebDAV is offline. A remote-only
-    // document still falls back to the configured source.
-    if (path.startsWith('assets/')) {
-      try {
-        final data = await rootBundle.load(path);
-        return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      } catch (_) {
-        // This document is not bundled with the application.
-      }
-    }
-    return _remoteAssetService.loadBytes(
-      sources: _assetSourceConfigs,
-      remotePath: path,
-    );
-  }
+  Future<List<int>?> _loadWebDocument(String path) => _remoteAssetService
+      .loadBytes(sources: _assetSourceConfigs, remotePath: path);
 
   Future<String?> cacheDocument(String remotePath) async {
     if (!_requireLibraryAccess()) return null;
@@ -122,28 +100,10 @@ extension AppDocumentController on AppController {
 
   Future<String?> loadLibraryResourceText(String remotePath) async {
     if (!_requireLibraryAccess()) return null;
-    if (_remoteAssetService.usesPublishedLibrary) {
-      return _remoteAssetService.loadText(
-        sources: _assetSourceConfigs,
-        remotePath: remotePath,
-      );
-    }
-    final String? localPath = await cacheDocument(remotePath);
-    if (localPath == null) {
-      if (remotePath.startsWith('assets/')) {
-        try {
-          return await rootBundle.loadString(remotePath);
-        } catch (_) {
-          return null;
-        }
-      }
-      return null;
-    }
-    try {
-      return await File(localPath).readAsString();
-    } catch (_) {
-      return null;
-    }
+    return _remoteAssetService.loadText(
+      sources: _assetSourceConfigs,
+      remotePath: remotePath,
+    );
   }
 
   Future<ResolvedDocument?> resolveRulebookDocument(GameInfo game) {
@@ -210,98 +170,29 @@ extension AppDocumentController on AppController {
     required String fallbackLabel,
   }) async {
     if (!_requireLibraryAccess()) return null;
-    final String fallback = fallbackRemotePath.trim();
-    final List<String> candidates = _documentCandidates(
-      game: game,
-      baseName: baseName,
-    );
-    if (candidates.isEmpty) {
-      _assetConnectivityStatus = ConnectivityStatus(
-        state: ConnectivityState.failure,
-        message: '文档暂时不可用',
-        checkedAt: DateTime.now(),
-      );
-      _notifyListeners();
-      return null;
-    }
-
-    if (kIsWeb) {
-      for (final candidate in candidates) {
-        try {
-          if (_remoteAssetService.usesPublishedLibrary) {
-            final file = await _remoteAssetService.ensureCached(
-              sources: _assetSourceConfigs,
-              remotePath: candidate,
-            );
-            if (file == null) continue;
-            return ResolvedDocument(
-              remotePath: candidate,
-              renderType: _documentRenderTypeForPath(candidate),
-              label: fallbackLabel,
-            );
-          }
-          final bytes = await _loadWebDocument(candidate);
-          if (bytes != null && bytes.isNotEmpty) {
-            return ResolvedDocument(
-              remotePath: candidate,
-              renderType: _documentRenderTypeForPath(candidate),
-              label: fallbackLabel,
-            );
-          }
-        } catch (_) {
-          continue;
-        }
-      }
-      _assetConnectivityStatus = ConnectivityStatus(
-        state: ConnectivityState.failure,
-        message: '文档暂时不可用',
-        checkedAt: DateTime.now(),
-      );
-      _notifyListeners();
-      return null;
-    }
-
-    for (final candidate in candidates) {
-      CachedAsset? cached;
+    for (final path in _documentCandidates(game: game, baseName: baseName)) {
       try {
-        cached = await _remoteAssetService.ensureCached(
+        final cached = await _remoteAssetService.ensureCached(
           sources: _assetSourceConfigs,
-          remotePath: candidate,
+          remotePath: path,
         );
-      } catch (_) {
-        cached = null;
-      }
-      if (cached != null) {
-        _resolvedAssetPaths[candidate] = cached.localPath;
-        _assetConnectivityStatus = ConnectivityStatus(
-          state: ConnectivityState.success,
-          message: '文档已缓存',
-          checkedAt: DateTime.now(),
-        );
-        _notifyListeners();
+        if (cached == null) continue;
+        _resolvedAssetPaths[path] = cached.localPath;
         return ResolvedDocument(
-          remotePath: candidate,
-          renderType: _documentRenderTypeForPath(candidate),
+          remotePath: path,
+          renderType: _documentRenderTypeForPath(path),
           label: fallbackLabel,
         );
+      } catch (_) {
+        /* Another published format/language may be available. */
       }
     }
-
     _assetConnectivityStatus = ConnectivityStatus(
       state: ConnectivityState.failure,
       message: '文档暂时不可用',
       checkedAt: DateTime.now(),
     );
     _notifyListeners();
-    if (!_remoteAssetService.usesPublishedLibrary &&
-        fallback.isNotEmpty &&
-        !isOtherStoragePath(fallback)) {
-      return ResolvedDocument(
-        remotePath: fallback,
-        renderType: _documentRenderTypeForPath(fallback),
-        label: fallbackLabel,
-      );
-    }
     return null;
   }
 
@@ -392,53 +283,6 @@ extension AppDocumentController on AppController {
       return 2;
     }
     return 3;
-  }
-
-  Iterable<String> _trackedRemotePaths() sync* {
-    final Set<String> paths = <String>{};
-    void addPath(String path) {
-      if (path.trim().isNotEmpty && !isOtherStoragePath(path)) {
-        paths.add(path);
-      }
-    }
-
-    for (final GameInfo game in _games) {
-      addPath(game.coverAssetPath);
-      addPath(game.bannerAssetPath);
-      for (final String path in game.galleryAssetPaths) {
-        addPath(path);
-      }
-      addPath(game.rulebookAssetPath);
-      addPath(game.faqAssetPath);
-      for (final GameResource resource in game.resources) {
-        if (!resource.isInOthersDirectory) {
-          addPath(resource.assetPathFor(game.slug));
-        }
-      }
-      addPath('assets/games/${game.slug}/game.json');
-      addPath('assets/games/${game.slug}/manifest.json');
-    }
-    yield* paths;
-  }
-
-  List<AssetSourceConfig> _preferredUpdateSources() {
-    final List<AssetSourceConfig> successful = _assetSourceConfigs
-        .where(
-          (source) =>
-              _assetSourceStatuses[source.id]?.state ==
-              ConnectivityState.success,
-        )
-        .toList();
-    if (successful.isNotEmpty) {
-      return [
-        ...successful,
-        ..._assetSourceConfigs.where((source) => !successful.contains(source)),
-      ];
-    }
-    // At startup every source may still be unknown, and the first source is
-    // not necessarily reachable. Try the full configured list so a healthy
-    // fallback source can establish the update baseline.
-    return List<AssetSourceConfig>.from(_assetSourceConfigs);
   }
 
   Future<List<GameInfo>> _loadGamesForLanguage(AppLanguage language) async {

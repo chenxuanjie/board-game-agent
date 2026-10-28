@@ -92,7 +92,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final copy = controller.copy;
-    final game = widget.game;
+    final game =
+        widget.controller.games
+            .where((value) => value.id == widget.game.id)
+            .firstOrNull ??
+        widget.game;
     final gallery = <String>{
       if (game.coverAssetPath.isNotEmpty) game.coverAssetPath,
       ...game.galleryAssetPaths,
@@ -823,18 +827,10 @@ class _GalleryAsset extends StatelessWidget {
     if (path.isEmpty) {
       return MobileGameCover(controller: controller, game: game);
     }
-    if (isCinema(context)) {
-      return DesktopResolvedImage(
-        controller: controller,
-        assetPath: path,
-        palette: AppPalette.of(context),
-      );
-    }
-    return Image.asset(
-      path,
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) =>
-          MobileGameCover(controller: controller, game: game),
+    return DesktopResolvedImage(
+      controller: controller,
+      assetPath: path,
+      palette: AppPalette.of(context),
     );
   }
 }

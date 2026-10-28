@@ -71,9 +71,8 @@ extension AppIdentityScopeController on AppController {
     _gameCatalogRequestKey = null;
     _gameCatalogLoadState = LibraryLoadState.idle;
     _gameCatalogFailed = _gameCatalogNoticeDismissed = false;
-    _pendingLibraryUpdate = null;
+    _lastLibraryUpdate = null;
     _libraryUpdateError = null;
-    _libraryUpdatePromptSeen = false;
     _invalidateAssetAccessStatus();
     _invalidateActiveRuns();
     // Invalidate finally blocks as well as event/delta callbacks.

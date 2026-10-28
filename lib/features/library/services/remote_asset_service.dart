@@ -11,13 +11,16 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/models/connectivity_status.dart';
 import '../models/asset_source_config.dart';
 import '../models/cached_asset.dart';
+import '../models/game_resource.dart';
+import '../models/published_catalog.dart';
 import '../models/remote_asset_file.dart';
 import 'browser_asset_cache_stub.dart'
     if (dart.library.js_interop) 'browser_asset_cache_web.dart';
 
-/// Public, allowlisted app-service resources. Authentication never participates
-/// in this transport; caches are scoped by service origin, not user identity.
+/// Anonymous SQL publications and content-addressed, origin-scoped caches.
+/// Account credentials and legacy JSON manifests never enter this transport.
 class RemoteAssetService {
+  static const _snapshotMaxBytes = 16 * 1024 * 1024;
   RemoteAssetService({
     http.Client? client,
     Uri? Function()? serviceOrigin,
@@ -26,69 +29,80 @@ class RemoteAssetService {
     this.cacheDirectory,
   }) : _client = client ?? createDefaultAiHttpClient(),
        _origin = serviceOrigin ?? (() => kIsWeb ? Uri.base : null);
+
   final http.Client _client;
   final Uri? Function() _origin;
   final bool browser;
   final Directory? cacheDirectory;
   final Duration requestTimeout;
+  final _active = <Completer<void>>{};
+  final _pending = <String, Future<Uint8List?>>{};
+  final _downloads = <String, Future<void>>{};
+  String? _scope;
+  PublishedCatalog? _catalog;
+  Future<void>? _restoreTask;
+  Future<bool>? _catalogTask;
+  bool _closed = false;
+  int _sequence = 0;
+
   bool get usesPublishedLibrary => _origin() != null;
   bool get accessAllowed => true;
-  Map<String, dynamic> _files = {};
-  void invalidatePublication() {
-    _files = {};
-    _publicationOrigin = null;
+  Uri? get serviceOrigin => _currentOrigin();
+  PublishedCatalog? get catalog => _currentOrigin() == null ? null : _catalog;
+
+  Uri? _currentOrigin() {
+    if (_closed) return null;
+    final value = _origin();
+    final next = value?.origin;
+    if (_scope != next) {
+      for (final abort in _active.toList()) {
+        if (!abort.isCompleted) abort.complete();
+      }
+      _scope = next;
+      _catalog = null;
+      _restoreTask = null;
+      _catalogTask = null;
+    }
+    return value == null ? null : Uri.parse(value.origin);
   }
 
-  String? _publicationOrigin;
-  final _pending = <String, Future<Uint8List?>>{};
-  final _downloads = <String, Future<String>>{};
-  final _active = <Completer<void>>{};
-  bool _closed = false;
+  Uri _base(Uri origin) => origin.resolve(
+    '${browser ? '/api' : ''}/v1/apps/board_game_agent/catalog',
+  );
+  String _prefix(Uri origin) =>
+      'board-catalog-v1/${sha256.convert(utf8.encode(origin.origin))}';
+  String _objectKey(Uri origin, GameResource resource) =>
+      '${_prefix(origin)}/objects/${resource.sha256}.${resource.format}';
+  bool _current(Uri origin) => _currentOrigin()?.origin == origin.origin;
+  bool _sameResource(Uri origin, String path, GameResource resource) =>
+      _current(origin) && _catalog?.files[path]?.sha256 == resource.sha256;
+
   void dispose() {
-    if (_closed) return;
     _closed = true;
-    for (final abort in _active) {
+    for (final abort in _active.toList()) {
       if (!abort.isCompleted) abort.complete();
     }
     _client.close();
   }
 
-  // Public caches survive account changes.
-  Uri? get _base {
-    final origin = _closed ? null : _origin();
-    return origin?.resolve(
-      browser
-          ? '/api/v1/apps/board_game_agent/library'
-          : '/v1/apps/board_game_agent/library',
-    );
-  }
+  static bool validPath(String path) => validCatalogPath(path);
 
-  static bool validPath(String path) =>
-      path.length <= 1024 &&
-      RegExp(r'^assets/[A-Za-z0-9_./-]+$').hasMatch(path) &&
-      !path.split('/').any((p) => p.isEmpty || p.startsWith('.')) &&
-      !path.toLowerCase().contains('docs/others');
-  String _cacheKey(String path) {
-    final extension =
-        RegExp(r'\.[A-Za-z0-9]{1,8}$').firstMatch(path)?.group(0) ?? '.bin';
-    return 'board-public-v1/${sha256.convert(utf8.encode(_base?.origin ?? 'unconfigured'))}/'
-        '${sha256.convert(utf8.encode(path))}$extension';
+  Uri? resourceUri(String path) {
+    final origin = _currentOrigin();
+    final resource = _catalog?.files[path];
+    if (origin == null || resource == null || !validPath(path)) return null;
+    return origin.resolve('${browser ? '/api' : ''}${resource.contentUrl!}');
   }
-
-  Uri? resourceUri(String path) => validPath(path) && _base != null
-      ? Uri.parse('${_base!}/files/$path').replace(
-          queryParameters: {
-            if (_files[path] != null) 'v': _files[path]['sha256'] as String,
-          },
-        )
-      : null;
 
   Future<http.Response> _request(
     Uri uri, {
     String method = 'GET',
     Completer<void>? abort,
+    int maxBytes = 4 * 1024 * 1024,
   }) async {
-    if (_closed) throw StateError('Resource service closed');
+    if (_closed || abort?.isCompleted == true) {
+      throw StateError('Request cancelled');
+    }
     final cancellation = Completer<void>();
     _active.add(cancellation);
     abort?.future.then((_) {
@@ -104,11 +118,12 @@ class RemoteAssetService {
         final stream = await _client.send(request);
         final body = BytesBuilder(copy: false);
         await for (final bytes in stream.stream) {
-          if (body.length + bytes.length > 64 * 1024 * 1024) {
-            throw StateError('资料过大');
+          if (body.length + bytes.length > maxBytes) {
+            throw StateError('Response too large');
           }
           body.add(bytes);
         }
+        if (cancellation.isCompleted) throw StateError('Request cancelled');
         return http.Response.bytes(
           body.takeBytes(),
           stream.statusCode,
@@ -121,59 +136,261 @@ class RemoteAssetService {
     }
   }
 
-  Future<bool> refreshPublishedLibrary({
-    bool complete = false,
-    String? checkedCatalog,
+  Future<Map<String, dynamic>> _json(Uri uri, Completer<void> abort) async {
+    final response = await _request(uri, abort: abort);
+    if (response.statusCode == 409) throw const _CatalogChanged();
+    if (response.statusCode != 200) throw StateError('公开资料服务暂不可用');
+    final value = jsonDecode(utf8.decode(response.bodyBytes));
+    if (value is! Map<String, dynamic> ||
+        value['protocol'] != 1 ||
+        value['revision'] is! int ||
+        (value['revision'] as int) < 0) {
+      throw const FormatException('Invalid catalog response');
+    }
+    return value;
+  }
+
+  Future<File> _file(String key) async {
+    final directory = cacheDirectory ?? await getApplicationSupportDirectory();
+    return File('${directory.path}/$key');
+  }
+
+  Future<Uint8List?> _read(String key) async {
+    if (browser) return readBrowserAsset(key);
+    final file = await _file(key);
+    if (!await file.exists()) return null;
+    if (await file.length() > _snapshotMaxBytes) {
+      throw const FormatException('Catalog cache too large');
+    }
+    return file.readAsBytes();
+  }
+
+  Future<void> _write(String key, Uint8List bytes) async {
+    if (browser) return writeBrowserAsset(key, bytes);
+    final target = await _file(key);
+    await target.parent.create(recursive: true);
+    final staged = File(
+      '${target.path}.${DateTime.now().microsecondsSinceEpoch}.${_sequence++}.tmp',
+    );
+    try {
+      await staged.writeAsBytes(bytes, flush: true);
+      await staged.rename(target.path);
+    } finally {
+      if (await staged.exists()) await staged.delete();
+    }
+  }
+
+  Future<void> restoreCatalog() async {
+    final origin = _currentOrigin();
+    if (origin == null || _catalog != null) return;
+    if (_restoreTask != null) return _restoreTask;
+    final task = () async {
+      try {
+        final bytes = await _read('${_prefix(origin)}/snapshot.json');
+        if (bytes == null) return;
+        if (bytes.length > _snapshotMaxBytes) {
+          throw const FormatException('Catalog cache too large');
+        }
+        final decoded = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+        final restored = PublishedCatalog.fromJson(decoded);
+        if (_current(origin) && _catalog == null) _catalog = restored;
+      } on FileSystemException {
+        debugPrint('[catalog] saved snapshot is unreadable');
+      } on FormatException {
+        /* A new network snapshot may replace invalid cache data. */
+      } on TypeError {
+        /* Never recover through the old bundled catalog. */
+      }
+    }();
+    _restoreTask = task;
+    try {
+      await task;
+    } finally {
+      if (identical(_restoreTask, task)) _restoreTask = null;
+    }
+  }
+
+  Future<PublishedCatalog> loadCatalog({bool refresh = false}) async {
+    final origin = _currentOrigin();
+    if (origin == null) throw StateError('请配置应用服务地址');
+    await restoreCatalog();
+    if (!_current(origin)) throw StateError('资料入口已变化');
+    if (_catalog == null || refresh) await refreshCatalog();
+    if (!_current(origin)) throw StateError('资料入口已变化');
+    return _catalog!;
+  }
+
+  Future<bool> refreshCatalog({int? knownRevision}) {
+    final origin = _currentOrigin();
+    if (origin == null) return Future.error(StateError('请配置应用服务地址'));
+    if (_catalogTask != null) return _catalogTask!;
+    final task = () async {
+      await restoreCatalog();
+      final abort = Completer<void>();
+      final timer = Timer(const Duration(seconds: 60), () {
+        if (!abort.isCompleted) abort.complete();
+      });
+      try {
+        for (var attempt = 0; attempt < 2; attempt++) {
+          if (!_current(origin) || abort.isCompleted) {
+            throw StateError('资料请求已取消');
+          }
+          try {
+            final next = await _fetchCatalog(
+              origin,
+              abort,
+              knownRevision: attempt == 0 ? knownRevision : null,
+            );
+            if (!_current(origin) || abort.isCompleted) {
+              throw StateError('资料入口已变化');
+            }
+            if (identical(next, _catalog)) return false;
+            try {
+              await _write(
+                '${_prefix(origin)}/snapshot.json',
+                Uint8List.fromList(utf8.encode(jsonEncode(next.toJson()))),
+              );
+            } catch (error) {
+              debugPrint('[catalog] cache write failed (${error.runtimeType})');
+            }
+            if (!_current(origin) || abort.isCompleted) {
+              throw StateError('资料入口已变化');
+            }
+            _catalog = next;
+            return true;
+          } on _CatalogChanged {
+            if (attempt == 1) rethrow;
+          }
+        }
+        throw StateError('资料版本正在变化，请重试');
+      } finally {
+        timer.cancel();
+        if (!abort.isCompleted) abort.complete();
+      }
+    }();
+    _catalogTask = task;
+    task
+        .whenComplete(() {
+          if (identical(_catalogTask, task)) _catalogTask = null;
+        })
+        .catchError((Object _) => false);
+    return task;
+  }
+
+  Future<PublishedCatalog> _fetchCatalog(
+    Uri origin,
+    Completer<void> abort, {
+    int? knownRevision,
   }) async {
-    final base = _base;
-    if (base == null) throw StateError('请配置应用服务地址');
-    final response = await _request(base);
-    if (response.statusCode != 200 ||
-        response.bodyBytes.length > 4 * 1024 * 1024) {
-      throw StateError('公开资料目录暂不可用');
+    final base = _base(origin);
+    final previous = _catalog;
+    final target =
+        knownRevision != null &&
+            (previous == null || knownRevision >= previous.revision)
+        ? knownRevision
+        : (await _json(Uri.parse('$base/revision'), abort))['revision'] as int;
+    if (previous?.revision == target) return previous!;
+    if (previous != null && target < previous.revision) {
+      throw const FormatException('Catalog revision moved backwards');
     }
-    final index =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final files = index['files'] as Map<String, dynamic>;
-    if (index['version'] != 1 ||
-        files.length > 10000 ||
-        !files.containsKey('assets/catalog.json') ||
-        files.entries.any(
-          (e) =>
-              !validPath(e.key) ||
-              e.value is! Map ||
-              !RegExp(r'^[a-f0-9]{64}$').hasMatch('${e.value['sha256']}') ||
-              e.value['size'] is! int,
-        )) {
-      throw const FormatException('Invalid publication');
+    final editions = <String, Map<String, dynamic>>{...?previous?.editions};
+    final wanted = <String>{};
+    String? cursor;
+    final cursors = <String>{};
+    for (var page = 0; ; page++) {
+      if (page >= 100 || abort.isCompleted) throw StateError('资料目录超过检查范围');
+      final uri = (previous == null ? base : Uri.parse('$base/changes'))
+          .replace(
+            queryParameters: {
+              'limit': '200',
+              if (previous != null) 'after': '${previous.revision}',
+              'cursor': ?cursor,
+            },
+          );
+      final body = await _json(uri, abort);
+      if (body['revision'] != target) throw const _CatalogChanged();
+      for (final raw in body['items'] as List) {
+        final item = (raw as Map).cast<String, dynamic>();
+        final id = item[previous == null ? 'id' : 'edition_id'] as String;
+        if (id.isEmpty || id.length > 256) {
+          throw const FormatException('Invalid edition ID');
+        }
+        if (previous != null && item['kind'] == 'unpublish') {
+          editions.remove(id);
+          wanted.remove(id);
+        } else if (previous == null || item['kind'] == 'upsert') {
+          wanted.add(id);
+        } else {
+          throw const FormatException('Invalid catalog change');
+        }
+        if (wanted.length > 10000) {
+          throw const FormatException('Catalog too large');
+        }
+      }
+      cursor = body['next_cursor'] as String?;
+      if (cursor == null) {
+        if (previous != null && body['through_revision'] != target) {
+          throw const FormatException('Incomplete catalog changes');
+        }
+        break;
+      }
+      if (!cursors.add(cursor)) {
+        throw const FormatException('Repeated catalog cursor');
+      }
     }
-    if (_base != base) throw StateError('资料入口已变化');
-    final changed =
-        _publicationOrigin != base.origin ||
-        jsonEncode(files) != jsonEncode(_files);
-    _files = files;
-    _publicationOrigin = base.origin;
-    return changed;
+    var metadataBytes = utf8.encode(jsonEncode(editions)).length;
+    final ids = wanted.toList();
+    for (var start = 0; start < ids.length; start += 4) {
+      final batch = await Future.wait(
+        ids.skip(start).take(4).map((id) async {
+          final uri = base.replace(
+            pathSegments: [...base.pathSegments, 'editions', id],
+          );
+          final body = await _json(uri, abort);
+          if (body['revision'] != target) throw const _CatalogChanged();
+          final edition = (body['edition'] as Map).cast<String, dynamic>();
+          if (edition['id'] != id) {
+            throw const FormatException('Edition identity mismatch');
+          }
+          return MapEntry(id, edition);
+        }),
+      );
+      for (final entry in batch) {
+        metadataBytes += utf8.encode(jsonEncode(entry.value)).length;
+        if (metadataBytes > _snapshotMaxBytes) {
+          throw const FormatException('Catalog metadata budget exceeded');
+        }
+      }
+      editions.addEntries(batch);
+    }
+    final end = await _json(Uri.parse('$base/revision'), abort);
+    if (end['revision'] != target) throw const _CatalogChanged();
+    return PublishedCatalog.fromJson({
+      'protocol': 1,
+      'revision': target,
+      'editions': editions.values.toList(),
+    });
+  }
+
+  Future<GameResource?> _record(String path) async {
+    if (!validPath(path)) return null;
+    if (catalog == null) await loadCatalog();
+    return _catalog?.files[path];
   }
 
   Future<Uint8List?> _fetch(String path) async {
-    if (!validPath(path)) return null;
+    final resource = await _record(path);
+    final origin = _currentOrigin();
     final uri = resourceUri(path);
-    if (uri == null) return null;
+    if (resource == null || origin == null || uri == null) return null;
     final key = uri.toString();
     return _pending.putIfAbsent(key, () async {
       try {
-        if (_publicationOrigin != uri.origin || !_files.containsKey(path)) {
-          await refreshPublishedLibrary();
-        }
-        final record = _files[path] as Map?;
-        if (record == null) return null;
-        final response = await _request(uri);
-        if (resourceUri(path)?.origin != uri.origin) return null;
+        final response = await _request(uri, maxBytes: 64 * 1024 * 1024);
         if (response.statusCode != 200 ||
-            response.bodyBytes.length != record['size'] ||
-            sha256.convert(response.bodyBytes).toString() != record['sha256']) {
-          throw StateError('公开资料下载未完成，请重试');
+            sha256.convert(response.bodyBytes).toString() != resource.sha256 ||
+            !_sameResource(origin, path, resource)) {
+          throw StateError('资料完整性校验未通过');
         }
         return response.bodyBytes;
       } finally {
@@ -182,32 +399,49 @@ class RemoteAssetService {
     });
   }
 
-  Future<File> _fileFor(String path) async {
-    final key = _cacheKey(path);
-    final directory = cacheDirectory ?? await getApplicationSupportDirectory();
-    return File('${directory.path}/$key');
-  }
-
-  Future<Uint8List?> cachedBytesFor(String remotePath) async {
-    if (!validPath(remotePath)) return null;
-    if (browser) return readBrowserAsset(_cacheKey(remotePath));
-    final file = await _fileFor(remotePath);
-    return await file.exists() ? file.readAsBytes() : null;
-  }
-
-  Future<File?> cachedFileFor(String remotePath) async {
-    if (browser || !validPath(remotePath)) return null;
-    final file = await _fileFor(remotePath);
-    return await file.exists() ? file : null;
-  }
-
-  Future<String> _downloadNative(String path, Uri uri, File target) async {
-    if (_publicationOrigin != uri.origin || !_files.containsKey(path)) {
-      await refreshPublishedLibrary();
+  Future<File?> cachedFileFor(String path) async {
+    if (browser || !validPath(path)) return null;
+    await restoreCatalog();
+    final origin = _currentOrigin(), resource = _catalog?.files[path];
+    if (origin == null || resource == null) return null;
+    final file = await _file(_objectKey(origin, resource));
+    if (!await file.exists() || await file.length() > 512 * 1024 * 1024) {
+      return null;
     }
-    final record = _files[path] as Map?;
-    if (record == null) throw StateError('资料未发布');
-    final staged = File('${target.path}.download');
+    if ((await sha256.bind(file.openRead()).first).toString() !=
+            resource.sha256 ||
+        !_sameResource(origin, path, resource)) {
+      return null;
+    }
+    return file;
+  }
+
+  Future<Uint8List?> cachedBytesFor(String path) async {
+    if (!validPath(path)) return null;
+    await restoreCatalog();
+    final origin = _currentOrigin(), resource = _catalog?.files[path];
+    if (origin == null || resource == null) return null;
+    if (browser) {
+      final bytes = await readBrowserAsset(_objectKey(origin, resource));
+      return bytes != null &&
+              sha256.convert(bytes).toString() == resource.sha256 &&
+              _sameResource(origin, path, resource)
+          ? bytes
+          : null;
+    }
+    final file = await cachedFileFor(path);
+    if (file == null || await file.length() > 64 * 1024 * 1024) return null;
+    return file.readAsBytes();
+  }
+
+  Future<void> _downloadNative(
+    String path,
+    Uri uri,
+    GameResource resource,
+    File target,
+  ) async {
+    final origin = Uri.parse(uri.origin);
+    final staged = File('${target.path}.${_sequence++}.download');
     await target.parent.create(recursive: true);
     final abort = Completer<void>();
     _active.add(abort);
@@ -216,20 +450,18 @@ class RemoteAssetService {
     });
     IOSink? sink;
     try {
-      final request = http.AbortableRequest(
-        'GET',
-        uri,
-        abortTrigger: abort.future,
-      )..followRedirects = false;
-      final response = await _client.send(request);
+      final response = await _client
+          .send(
+            http.AbortableRequest('GET', uri, abortTrigger: abort.future)
+              ..followRedirects = false,
+          )
+          .timeout(requestTimeout);
       if (response.statusCode != 200) throw StateError('公开资料下载未完成');
       sink = staged.openWrite();
       var size = 0;
       await for (final chunk in response.stream) {
         size += chunk.length;
-        if (size > record['size'] ||
-            size > 512 * 1024 * 1024 ||
-            abort.isCompleted) {
+        if (size > 512 * 1024 * 1024 || abort.isCompleted) {
           throw StateError('公开资料下载未完成');
         }
         sink.add(chunk);
@@ -237,15 +469,15 @@ class RemoteAssetService {
       }
       await sink.close();
       sink = null;
-      final digest = await sha256.bind(staged.openRead()).first;
-      if (size != record['size'] ||
-          digest.toString() != record['sha256'] ||
+      final digest = (await sha256.bind(staged.openRead()).first).toString();
+      if (size == 0 ||
+          (response.contentLength != null && size != response.contentLength) ||
+          digest != resource.sha256 ||
           abort.isCompleted ||
-          resourceUri(path)?.origin != uri.origin) {
+          !_sameResource(origin, path, resource)) {
         throw StateError('资料完整性校验未通过，请重试');
       }
       await staged.rename(target.path);
-      return digest.toString();
     } finally {
       timer.cancel();
       if (!abort.isCompleted) abort.complete();
@@ -261,13 +493,13 @@ class RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async {
-    if (!validPath(remotePath)) return null;
-    final uri = resourceUri(remotePath);
+    final resource = await _record(remotePath);
+    final origin = _currentOrigin(), uri = resourceUri(remotePath);
+    if (resource == null || origin == null || uri == null) return null;
     if (browser) {
-      if (uri == null) return null;
       final response = await _request(uri, method: 'HEAD');
       if (response.statusCode != 200 ||
-          resourceUri(remotePath)?.origin != uri.origin) {
+          !_sameResource(origin, remotePath, resource)) {
         return null;
       }
       return CachedAsset(
@@ -278,39 +510,28 @@ class RemoteAssetService {
         sourceId: 'app_service',
       );
     }
-    final file = await _fileFor(remotePath);
-    var available = await file.exists();
+    final cached = await cachedFileFor(remotePath);
     var downloaded = false;
-    var stale = forceRefresh;
-    if (available && _files[remotePath] != null && !stale) {
-      stale =
-          (await sha256.bind(file.openRead()).first).toString() !=
-          _files[remotePath]['sha256'];
-    }
-    if (!available || stale) {
+    final target = await _file(_objectKey(origin, resource));
+    if (cached == null || forceRefresh) {
       try {
-        if (uri == null) return null;
-        final digest = await _downloads.putIfAbsent(
-          file.path,
-          () => _downloadNative(remotePath, uri, file).whenComplete(() {
-            _downloads.remove(file.path);
-          }),
+        await _downloads.putIfAbsent(
+          target.path,
+          () => _downloadNative(remotePath, uri, resource, target).whenComplete(
+            () {
+              _downloads.remove(target.path);
+            },
+          ),
         );
-        if (_files[remotePath]?['sha256'] != digest) {
-          throw StateError('资料版本已变化，请重试');
-        }
-        available = downloaded = true;
+        downloaded = true;
       } catch (_) {
-        if (!allowCachedFallback) rethrow;
-        if (!available) return null;
+        if (!allowCachedFallback || cached == null) rethrow;
       }
     }
-    if (!available || resourceUri(remotePath)?.origin != uri?.origin) {
-      return null;
-    }
+    if (!_sameResource(origin, remotePath, resource)) return null;
     return CachedAsset(
       remotePath: remotePath,
-      localPath: file.path,
+      localPath: target.path,
       exists: true,
       fromRemote: downloaded,
       sourceId: 'app_service',
@@ -339,23 +560,23 @@ class RemoteAssetService {
     required String remotePath,
   }) async {
     if (browser) {
+      final resource = await _record(remotePath), origin = _currentOrigin();
+      if (resource == null || origin == null) return null;
       try {
         final bytes = await _fetch(remotePath);
-        if (bytes != null && bytes.length <= 8 * 1024 * 1024) {
-          await writeBrowserAsset(_cacheKey(remotePath), bytes);
+        if (bytes != null &&
+            bytes.length <= 8 * 1024 * 1024 &&
+            _sameResource(origin, remotePath, resource)) {
+          await writeBrowserAsset(_objectKey(origin, resource), bytes);
         }
         return bytes;
       } catch (_) {
         return cachedBytesFor(remotePath);
       }
     }
-    final cached = await ensureCached(
-      sources: sources,
-      remotePath: remotePath,
-      allowCachedFallback: false,
-    );
-    if (cached == null) return null;
-    final file = File(cached.localPath);
+    final asset = await ensureCached(sources: sources, remotePath: remotePath);
+    if (asset == null) return null;
+    final file = File(asset.localPath);
     if (await file.length() > 64 * 1024 * 1024) {
       throw StateError('资料超过单次内存读取上限');
     }
@@ -381,34 +602,22 @@ class RemoteAssetService {
     return null;
   }
 
-  Future<bool> hasRemoteChanged({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async {
-    final cached = await cachedBytesFor(remotePath);
-    await refreshPublishedLibrary();
-    return cached != null &&
-        _files[remotePath] != null &&
-        sha256.convert(cached).toString() != _files[remotePath]['sha256'];
-  }
-
   Future<ConnectivityStatus> checkAccess(
     AssetSourceConfig source, {
     Completer<void>? abort,
-    void Function(String)? onCatalog,
+    void Function(int)? onRevision,
   }) async {
     try {
-      await refreshPublishedLibrary();
-      final text = await fetchRemoteText(
-        sources: [],
-        remotePath: 'assets/catalog.json',
+      final origin = _currentOrigin();
+      if (origin == null) throw StateError('No service');
+      final value = await _json(
+        Uri.parse('${_base(origin)}/revision'),
+        abort ?? Completer<void>(),
       );
-      if (text == null ||
-          jsonDecode(text)['games'] is! List ||
-          abort?.isCompleted == true) {
-        throw StateError('Unavailable');
+      if (!_current(origin) || abort?.isCompleted == true) {
+        throw StateError('Cancelled');
       }
-      onCatalog?.call(text);
+      onRevision?.call(value['revision'] as int);
       return ConnectivityStatus(
         state: ConnectivityState.success,
         message: '公开资料可读取',
@@ -432,30 +641,35 @@ class RemoteAssetService {
     }
   }
 
+  /// A filtered view of SQL metadata, with no filesystem traversal or file probes.
   Future<List<RemoteAssetFile>> listFilesRecursively({
     required List<AssetSourceConfig> sources,
     required String remotePath,
     int maxDepth = 6,
     int maxEntries = 1000,
   }) async {
-    await refreshPublishedLibrary();
+    final snapshot = await loadCatalog();
     final prefix = '$remotePath/';
     return [
-      for (final path
-          in _files.keys
+      for (final entry
+          in snapshot.files.entries
               .where(
-                (p) =>
-                    p.startsWith(prefix) &&
-                    p.substring(prefix.length).split('/').length <=
+                (e) =>
+                    e.key.startsWith(prefix) &&
+                    e.key.substring(prefix.length).split('/').length <=
                         maxDepth + 1,
               )
               .take(maxEntries))
         RemoteAssetFile(
-          remotePath: path,
-          name: path.split('/').last,
+          remotePath: entry.key,
+          name: entry.value.fileName,
           sourceId: 'app_service',
-          etag: _files[path]['sha256'] as String,
+          etag: entry.value.sha256,
         ),
     ];
   }
+}
+
+class _CatalogChanged implements Exception {
+  const _CatalogChanged();
 }

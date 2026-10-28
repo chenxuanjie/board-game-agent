@@ -5,7 +5,7 @@ class _CompactComposerController extends AppController {
     : super(
         preferencesService: PreferencesService(),
         aiService: _UnusedAiService(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),

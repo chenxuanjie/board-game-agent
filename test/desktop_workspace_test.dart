@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat, PointerDeviceKind;
@@ -45,7 +46,6 @@ import 'package:board_game_agent/features/games/models/search_history_record.dar
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/conversation_store.dart';
 import 'package:board_game_agent/features/settings/services/desktop_ai_settings_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
@@ -385,7 +385,7 @@ Future<AppController> _createController({
     preferencesService: preferencesService ?? PreferencesService(),
     aiService: aiService ?? _FakeAiService(),
     conversationStore: _WorkspaceConversationStore(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: remoteAssetService ?? _NoNetworkAssetService(),
     speechService: SpeechService(),
     ttsService: ttsService ?? TtsService(),
@@ -562,12 +562,6 @@ class _NoNetworkAssetService extends RemoteAssetService {
     int maxDepth = 6,
     int maxEntries = 1000,
   }) async => const <RemoteAssetFile>[];
-
-  @override
-  Future<bool> hasRemoteChanged({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async => false;
 }
 
 class _NoopHttpClient extends http.BaseClient {

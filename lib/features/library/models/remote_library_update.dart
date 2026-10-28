@@ -50,11 +50,10 @@ class RemoteLibraryUpdate {
 
   static RemoteLibraryResourceType resourceTypeForPath(String path) {
     final String normalized = path.trim().toLowerCase();
-    if (normalized == 'assets/catalog.json') {
+    if (normalized == 'catalog') {
       return RemoteLibraryResourceType.catalog;
     }
-    if (normalized.endsWith('/game.json') ||
-        normalized.endsWith('/manifest.json')) {
+    if (normalized.startsWith('editions/')) {
       return RemoteLibraryResourceType.gameManifest;
     }
     if (normalized.contains('/images/')) {
