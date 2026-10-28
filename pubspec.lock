@@ -7,7 +7,7 @@ packages:
       path: "../shared_packages/app_about"
       relative: true
     source: path
-    version: "0.2.0"
+    version: "0.3.0"
   app_ai_client:
     dependency: "direct main"
     description:
