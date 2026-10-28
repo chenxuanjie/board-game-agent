@@ -31,6 +31,7 @@ import 'features/assistant/services/responses_compaction_store.dart';
 import 'features/assistant/services/ai_run_telemetry.dart';
 import 'features/assistant/services/responses_rules_workflow.dart';
 import 'features/identity/services/account_service.dart';
+import 'features/identity/models/service_configuration.dart';
 import 'app/state/app_controller.dart';
 import 'core/localization/app_language.dart';
 import 'core/theme/color_scheme_option.dart';
@@ -484,13 +485,10 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     }
   }
 
-  List<WebDavSettings> _updateConnections() {
-    return [widget.updateSettingsController.saved];
-  }
-
   AppUpdateService _createUpdateService() => createBoardGameUpdateService(
-    settingsProvider: () => widget.updateSettingsController.saved,
-    settingsCandidates: _updateConnections,
+    originProvider: () =>
+        widget.accountService?.serviceConfiguration?.origin ??
+        Uri.parse(ServiceConfiguration.defaultUpdateOrigin),
     beforeInstall: () async {
       if (_transferService.isBusy) {
         throw AppUpdateFailure('设置正在保存，请完成后重试');

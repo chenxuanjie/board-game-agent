@@ -7,6 +7,8 @@ param(
     [string]$Mode = 'package',
     [switch]$BumpBuild,
     [switch]$DryRun,
+    [ValidateSet('default', 'service', 'webdav')]
+    [string]$Destination = 'default',
     [string]$ProfilesDirectory = (Join-Path $env:USERPROFILE '.codex/skills/flutter-release-publisher/profiles'),
     [string]$PublisherRoot = 'C:/Study/MyCode/MyProject/shared_packages/flutter_release_publisher'
 )
@@ -34,9 +36,11 @@ if ($BumpBuild -and ($Mode -ne 'release' -or $Target -ne 'android' -or $DryRun))
     throw 'BumpBuild requires an Android release without DryRun'
 }
 if ($DryRun -and $Mode -eq 'package') { throw 'Package is local-only; DryRun applies to push/release' }
+if ($Destination -ne 'default' -and $Mode -eq 'package') { throw 'Destination applies to push/release' }
 $arguments = @('run', 'bin/publish.dart', $Mode, '--profile', $selected.File, '--target', $Target)
 if ($BumpBuild) { $arguments += '--bump-build' }
 if ($DryRun) { $arguments += '--dry-run' }
+if ($Destination -ne 'default') { $arguments += @('--destination', $Destination) }
 Push-Location -LiteralPath $PublisherRoot
 try {
     & dart @arguments
@@ -45,6 +49,7 @@ try {
     Pop-Location
 }
 if ($publisherExitCode -ne 0) { exit $publisherExitCode }
+if ($DryRun) { exit 0 }
 # No cleanup on failed build/package/upload, and no changes to remote retention.
 & python (Join-Path $PSScriptRoot 'release_retention.py') --directory $releasePath --platform $Target
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

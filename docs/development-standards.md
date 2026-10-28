@@ -316,6 +316,7 @@ Flutter 交互优先复用现有 SDK/组件。既有动效参考 Fluent 2 Motion
 - 失败保留最后完整结果，不能用部分扫描冒充完整排行；通知时间和历史更新数量不代表此刻实时检查结果。
 - 资料 manifest 与安装包更新 manifest 分开。应用更新仅检查当前平台，下载/安装按明确操作执行；校验完整后安装，资料通知不打断正在进行的应用更新。
 - Web 程序通过管理员更新部署，不展示 APK/EXE 检查或安装入口，不执行启动安装包检查；资料刷新独立工作。
+- APK/EXE 默认使用应用服务的公开升级接口，游客可以检查和下载安装包。PostgreSQL 管理发布记录，独立文件存储提供安装包；不内置共享账号、NAS 密码或发布密钥。WebDAV 实现保留为显式备用，不自动回退或双写。客户端与发布器来源须配套，见 [游客程序更新](public-updates.md)。
 
 现有数值、协议与限制集中在 [实现基线](#implementation)，新后台接入时应替换对应说明和旧代码，不叠加另一套任务路径。
 
@@ -362,6 +363,10 @@ Native 构建复用共享 `flutter-release-publisher`，本地已有结果的打
 
 Docker 使用 `scripts/build-docker-release.ps1` 的 plan/build/verify 入口，委托共享发布器；当前 build 会统一递增构建号，失败恢复，plan/verify 不递增。底层 Python 不另行递增。新架构上线按实际服务拓扑重新核对，不能把旧 Web 网关 TAR 当成共用 API 交付。
 
+本机构建先检查 Linux Docker、Buildx 和已配置 HTTPS 代理到 Registry 鉴权接口的连通性；失败立即停止。构建及导出阶段输出与耗时保存在忽略的 `.local/task-logs/`，包括超时或取消前的输出；单张镜像构建预算 4 小时，导出预算 1 小时；长任务仍在运行时不因几分钟无新输出而取消。本机构建固定由 Windows PowerShell 发起、Ubuntu WSL 运行 Docker；后台测试固定使用 Windows `.venv` 的 `tools/run_checks.py`，持有 WSL 租约并预检真实 PostgreSQL，不临时切到 WSL 跑 pytest，不把数据库测试加入普通镜像构建。环境失败先定位当前阶段，不直接反复重跑完整流程。
+
+本机代理兼容入口由 `scripts/install-local-proxy-alias.ps1` 安装：Windows 登录后以隐藏 Python 进程仅监听 `127.0.0.1:7890`，转发至现有 `127.0.0.1:7897`；不改变 Clash 配置。重复安装复用已有进程，未知进程占用端口则报错；加 `-Remove` 只移除该入口及登录快捷方式。此脚本仅供当前构建电脑使用，不放入产品镜像或 NAS 配置；Clash 必须运行并继续监听 7897。
+
 | 类型 | 本地保留规则 |
 | --- | --- |
 | Android | 最新 APK 与对应 `.release.json`，实际 APK 检查资源范围 |
@@ -371,6 +376,8 @@ Docker 使用 `scripts/build-docker-release.ps1` 的 plan/build/verify 入口，
 | 开发源码包 | `build/docker-source/`，不与可导入镜像混放 |
 
 当前 Docker TAR 包含网页与账号网关两个真实镜像；Compose 固定匹配标签、架构和 NAS 配置，不依赖 `.env` 或本机变量。根目录参数化 Compose 仅供开发。构建电脑完成编译/依赖安装，NAS 只导入运行；源码压缩包不能改名冒充镜像 TAR。
+
+本机构建入口区分 WSL 启动与 Docker API 就绪，等待实际服务可用；已安装 Docker 或已登记的本机代理停止时只尝试启动对应服务，不重启整台 WSL。后台检查入口另等待现有开发 PostgreSQL 健康，Windows 原生转发失效且本机端口空闲时使用任务持有的 stdio 转发到同一数据库，结束清理；端口占用、权限不足或 WSL 无响应时报告对应故障层。恢复不创建数据库卷、不改生产配置，也不扩大普通构建的测试范围。
 
 ### 12.2 校验与清理
 

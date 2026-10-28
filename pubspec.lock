@@ -21,7 +21,7 @@ packages:
       path: "../shared_packages/app_client"
       relative: true
     source: path
-    version: "0.3.0"
+    version: "0.4.0"
   app_identity:
     dependency: "direct main"
     description:

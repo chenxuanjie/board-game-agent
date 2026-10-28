@@ -15,14 +15,15 @@ try {
     if ($forbidden.Count -gt 0) {
         throw "APK contains $($forbidden.Count) prohibited game documents: $((@($forbidden | Select-Object -First 10 -ExpandProperty FullName)) -join ', ')"
     }
-    if ($null -eq $archive.GetEntry('assets/flutter_assets/assets/catalog.json')) {
-        throw 'APK is missing its required game catalog.'
+    if ($null -ne $archive.GetEntry('assets/flutter_assets/assets/catalog.json')) {
+        throw 'APK contains the retired bundled game catalog; runtime catalog data must come from the SQL API.'
     }
     [pscustomobject]@{
         Apk = $apkPath
         SizeMiB = [math]::Round((Get-Item -LiteralPath $apkPath).Length / 1MB, 2)
         Entries = $archive.Entries.Count
         GameDocumentEntries = $forbidden.Count
+        BundledGameCatalog = $false
     } | ConvertTo-Json
 } finally {
     $archive.Dispose()
