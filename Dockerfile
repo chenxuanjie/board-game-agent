@@ -17,7 +17,7 @@ COPY shared_packages ./shared_packages
 COPY board-game-agent ./board-game-agent
 WORKDIR /workspace/board-game-agent
 RUN python3 scripts/prepare-web-assets.py pubspec.yaml --apply \
-    && flutter pub get --enforce-lockfile && flutter build web --release --no-pub --base-href=/
+    && flutter pub get --enforce-lockfile && flutter build web --release --no-wasm-dry-run --no-pub --base-href=/
 
 FROM nginx:1.28-alpine AS runtime
 COPY board-game-agent/packaging/docker/nginx-main.conf /etc/nginx/nginx.conf

@@ -20,6 +20,7 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release_retention import cleanup, inspect_docker_archive, linked
+from build_diagnostics import TaskLog
 PLATFORMS = ("linux/amd64", "linux/arm64")
 REPOSITORIES = ("board-game-agent", "board-game-agent-web-account")
 
@@ -31,19 +32,31 @@ class ReleaseError(Exception):
 class Docker:
     def __init__(self, root):
         self.root = root
+        self.log = TaskLog(root, 'docker-build')
         self.binary = shutil.which("docker")
         if not self.binary:
             raise ReleaseError("Docker CLI not found. Use a build computer with Docker Engine and Buildx; no image was built.")
 
-    def run(self, *args, check=True, timeout=30):
+    def preflight(self):
+        # Respect this process's configured proxy. Never log proxy credentials
+        # or token responses. Failure stops before copying/building any inputs.
+        self.log.run('proxy-registry-preflight',
+                     [sys.executable, str(ROOT / 'scripts/check-docker-proxy.py')], timeout=120)
+
+    def ready(self):
+        self.log.run('docker-environment-ready',
+                     [sys.executable, str(ROOT / 'scripts/docker_environment.py')], timeout=900)
+
+    def run(self, *args, check=True, timeout=120):
+        if check:
+            return self.log.run('docker-' + '-'.join(args[:2]).replace('/', '-'),
+                                [self.binary, *args], cwd=self.root, capture=True, timeout=timeout)
         result = subprocess.run([self.binary, *args], cwd=self.root, capture_output=True,
                                 text=True, timeout=timeout)
-        if check and result.returncode:
-            raise ReleaseError(f"docker {' '.join(args[:3])} failed: {result.stderr.strip()}")
         return result
 
     def build(self, *args):
-        # Stream build progress; credentials are never passed as build args.
+        # Persist plain build progress; credentials are never passed as build args.
         # Materialize a small allowlisted context: never send the whole parent
         # workspace (or rely solely on daemon-specific ignore-file discovery).
         with tempfile.TemporaryDirectory(prefix="bga-build-inputs-") as temporary:
@@ -54,9 +67,8 @@ class Docker:
             relative = Path(arguments[file_index]).relative_to(self.root)
             arguments[file_index] = str(context / "board-game-agent" / relative)
             arguments[-1] = str(context if relative == Path("Dockerfile") else context / "board-game-agent")
-            result = subprocess.run([self.binary, "buildx", "build", *arguments], cwd=self.root, timeout=3600)
-        if result.returncode:
-            raise ReleaseError("Docker image build failed; no release bundle was generated.")
+            self.log.run('image-build', [self.binary, "buildx", "build", '--progress=plain', *arguments],
+                         cwd=self.root, timeout=14400)
 
 
 def stage_build_context(root, destination):
@@ -214,9 +226,13 @@ def build_release(root=ROOT, output=None, platform="linux/amd64", tag=None, dock
         raise ReleaseError("Import file cannot be a symlink")
 
     docker = docker or Docker(root)
-    if docker.run("info", "--format", "{{.OSType}}", timeout=15).stdout.strip() != "linux":
+    if isinstance(docker, Docker):
+        docker.ready()
+    if docker.run("info", "--format", "{{.OSType}}", timeout=120).stdout.strip() != "linux":
         raise ReleaseError("A running Linux Docker engine is required")
     docker.run("buildx", "version")
+    if isinstance(docker, Docker):
+        docker.preflight()
     for reference in references:
         if docker.run("image", "inspect", reference, check=False).returncode == 0:
             raise ReleaseError(f"Image tag already exists: {reference}; choose a new tag to preserve rollback")
@@ -247,7 +263,7 @@ def build_release(root=ROOT, output=None, platform="linux/amd64", tag=None, dock
         stage = Path(temporary).resolve()
         archive = stage / 'images.tar'
         stage_started = time.perf_counter()
-        docker.run('image', 'save', '--output', str(archive), *references, timeout=600)
+        docker.run('image', 'save', '--output', str(archive), *references, timeout=3600)
         timings['imageExportSeconds'] = round(time.perf_counter() - stage_started, 3)
         if not archive.is_file() or archive.stat().st_size == 0:
             raise ReleaseError('Docker did not export an image archive')

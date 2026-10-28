@@ -55,7 +55,7 @@ def check(name, expression):
     print('PASS',name,flush=True)
 
 def run(args, **kwargs):
-    return subprocess.run(args, check=True, text=True, timeout=180, **kwargs)
+    return subprocess.run(args, check=True, text=True, timeout=3600, **kwargs)
 
 started = time.perf_counter()
 with tempfile.TemporaryDirectory(prefix='bga-bundle-validation-') as temporary:
