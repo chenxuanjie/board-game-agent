@@ -156,8 +156,10 @@ class _MobileRuleMaterialsScreenState extends State<MobileRuleMaterialsScreen> {
                         child: CatalogEmptyState(
                           controller: widget.controller,
                           emptyMessage: copy.localized(
-                            '没有找到规则资料',
-                            'No rule materials found',
+                            query.isEmpty ? '暂无规则资料' : '没有找到规则资料',
+                            query.isEmpty
+                                ? 'No rule materials yet'
+                                : 'No rule materials found',
                           ),
                           onClear: query.isEmpty
                               ? null

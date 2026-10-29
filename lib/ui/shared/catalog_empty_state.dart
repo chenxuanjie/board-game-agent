@@ -9,6 +9,7 @@ class CatalogEmptyState extends StatelessWidget {
     required this.controller,
     required this.emptyMessage,
     this.onClear,
+    this.clearLabel,
     this.onBrowse,
     this.failureMessage,
   });
@@ -16,6 +17,7 @@ class CatalogEmptyState extends StatelessWidget {
   final AppController controller;
   final String emptyMessage;
   final VoidCallback? onClear;
+  final String? clearLabel;
   final VoidCallback? onBrowse;
   final String? failureMessage;
 
@@ -69,7 +71,9 @@ class CatalogEmptyState extends StatelessWidget {
             else if (!loading && onClear != null)
               TextButton(
                 onPressed: onClear,
-                child: Text(copy.localized('清除搜索', 'Clear search')),
+                child: Text(
+                  clearLabel ?? copy.localized('清除搜索', 'Clear search'),
+                ),
               )
             else if (!loading && onBrowse != null)
               TextButton(

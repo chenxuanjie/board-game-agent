@@ -137,11 +137,15 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
                               ? '还没有喜欢的桌游'
                               : widget.recentOnly && query.isEmpty
                               ? '还没有浏览记录'
+                              : query.isEmpty && !widget.controller.hasGames
+                              ? '暂无桌游资料'
                               : '没有找到桌游',
                           widget.favoritesOnly && query.isEmpty
                               ? 'No liked games yet'
                               : widget.recentOnly && query.isEmpty
                               ? 'No recently viewed games'
+                              : query.isEmpty && !widget.controller.hasGames
+                              ? 'No games yet'
                               : 'No games found',
                         ),
                         onClear: query.isEmpty

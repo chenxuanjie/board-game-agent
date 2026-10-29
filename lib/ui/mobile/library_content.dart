@@ -288,6 +288,10 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                                 _browse.clearFilters();
                               })
                             : null,
+                        clearLabel: copy.localized(
+                          '清除搜索和筛选',
+                          'Clear search and filters',
+                        ),
                       ),
                     )
                   : LayoutBuilder(
