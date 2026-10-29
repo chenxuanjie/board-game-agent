@@ -727,6 +727,46 @@ void main() {
     expect(controller.selectedGame.id, game.id);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('detail gallery indicator stays fixed while images move', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = _controller(ttsService: _UnavailableTtsService());
+    addTearDown(controller.dispose);
+    await tester.runAsync(controller.reloadGames);
+    final game = controller.games.firstWhere(
+      (game) => {game.coverAssetPath, ...game.galleryAssetPaths}.length > 1,
+    );
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: GameDetailScreen(controller: controller, game: game),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final indicator = find.byKey(
+      const ValueKey('mobile-detail-gallery-indicator'),
+    );
+    final gallery = find.byKey(const ValueKey('mobile-detail-gallery'));
+    expect(indicator, findsOneWidget);
+    final original = tester.getCenter(indicator);
+    final gesture = await tester.startGesture(tester.getCenter(gallery));
+    await gesture.moveBy(const Offset(-30, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-220, 0));
+    await tester.pump();
+    expect(tester.widget<PageView>(gallery).controller!.offset, greaterThan(0));
+    expect(tester.getCenter(indicator), original);
+    expect(indicator, findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(indicator), original);
+    expect(tester.widget<PageView>(gallery).controller!.page, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   _registerCompactComposerTests();
   testWidgets(
     'compact cover uses the same Hero into detail and returns safely',

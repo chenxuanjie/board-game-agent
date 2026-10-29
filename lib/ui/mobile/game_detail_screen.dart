@@ -184,6 +184,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                             fit: StackFit.expand,
                             children: [
                               PageView.builder(
+                                key: const ValueKey('mobile-detail-gallery'),
                                 controller: _galleryController,
                                 itemCount: gallery.length,
                                 onPageChanged: (index) =>
@@ -218,63 +219,62 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                             game: game,
                                             path: gallery[index],
                                           ),
-                                        if (gallery.length > 1)
-                                          Positioned(
-                                            bottom: 12,
-                                            left: 0,
-                                            right: 0,
-                                            child: Center(
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 12,
-                                                      vertical: 7,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black45,
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: List.generate(
-                                                    gallery.length,
-                                                    (dot) => AnimatedContainer(
-                                                      duration:
-                                                          AppMotion.duration(
-                                                            context,
-                                                          ),
-                                                      margin:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 3,
-                                                          ),
-                                                      width:
-                                                          dot == _galleryIndex
-                                                          ? 18
-                                                          : 6,
-                                                      height: 6,
-                                                      decoration: BoxDecoration(
-                                                        color:
-                                                            dot == _galleryIndex
-                                                            ? Colors.white
-                                                            : Colors.white54,
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              6,
-                                                            ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
                                       ],
                                     ),
                                   ),
                                 ),
                               ),
+                              if (gallery.length > 1)
+                                Positioned(
+                                  key: const ValueKey(
+                                    'mobile-detail-gallery-indicator',
+                                  ),
+                                  bottom: 12,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black45,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: List.generate(
+                                            gallery.length,
+                                            (dot) => AnimatedContainer(
+                                              duration: AppMotion.duration(
+                                                context,
+                                              ),
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 3,
+                                                  ),
+                                              width: dot == _galleryIndex
+                                                  ? 18
+                                                  : 6,
+                                              height: 6,
+                                              decoration: BoxDecoration(
+                                                color: dot == _galleryIndex
+                                                    ? Colors.white
+                                                    : Colors.white54,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
