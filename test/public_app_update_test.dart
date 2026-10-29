@@ -28,10 +28,12 @@ void main() {
   late _Installer installer;
   var origin = Uri.parse('https://api.test');
   var corrupt = false;
+  var artifactArchitecture = 'arm64';
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('board_guest_update_');
     origin = Uri.parse('https://api.test');
     corrupt = false;
+    artifactArchitecture = 'arm64';
     installer = _Installer();
     service = NativeAppUpdateService(
       config: const NativeAppUpdateConfig(
@@ -79,7 +81,7 @@ void main() {
               'artifacts': [
                 {
                   'platform': 'android',
-                  'architecture': 'arm64',
+                  'architecture': artifactArchitecture,
                   'path': '$digest.apk',
                   'size': bytes.length,
                   'sha256': digest,
@@ -121,6 +123,13 @@ void main() {
       throwsA(isA<AppUpdateFailure>()),
     );
     expect(installer.launched, isFalse);
+  });
+  test('generic any APK reaches the arm64 installer without a login', () async {
+    artifactArchitecture = 'any';
+    final result = await service.check();
+    expect(result.status, AppUpdateStatus.available, reason: result.message);
+    await service.install(result);
+    expect(installer.launched, isTrue);
   });
   test('changing service origin invalidates the checked installer', () async {
     final result = await service.check();

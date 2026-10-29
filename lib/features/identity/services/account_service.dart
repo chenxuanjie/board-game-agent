@@ -16,6 +16,7 @@ import '../models/account_configuration.dart';
 import '../models/service_configuration.dart';
 import '../../community/services/game_comments_service.dart';
 import '../../community/services/board_public_sync.dart';
+import '../../community/services/public_publication.dart';
 import 'saved_login_store.dart';
 import 'service_identity_gateway.dart';
 import 'board_personal_store.dart';
@@ -83,6 +84,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   String? _publicSyncError;
   int _publicGeneration = 0;
   final _statisticsReaders = <String, ServiceGameStatistics>{};
+
+  /// The application shell owns native discovery; public sync never installs.
+  Future<void> Function(Uri, List<PublicPublication>)? onPublications;
   String? get publicSyncError => _publicSyncError ?? _publicSync?.error;
   final _personalWatchers = <StreamSubscription<dynamic>>[];
   Timer? _personalRefresh;
@@ -204,7 +208,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       final address = usesWebAccount
           ? (_browserOrigin ?? Uri.base).origin
           : prefs.getString(serviceOriginKey) ??
-                const String.fromEnvironment('APP_SERVICE_ORIGIN');
+                ServiceConfiguration.defaultUpdateOrigin;
       if (address.isNotEmpty) {
         _serviceConfiguration = ServiceConfiguration(Uri.parse(address));
         await _connect();
@@ -534,6 +538,24 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         active: valid,
         onStatusChanged: () {
           if (valid()) notifyListeners();
+        },
+        refreshPublications: (publications) async {
+          if (!valid()) throw StateError('Public service changed');
+          int? revision;
+          for (final item in publications.where(
+            (item) => item.topic == 'catalog',
+          )) {
+            if (revision == null || item.revision > revision) {
+              revision = item.revision;
+            }
+          }
+          await Future.wait<void>([
+            if (publications.isEmpty || revision != null)
+              _controller.refreshPublishedLibrary(knownRevision: revision),
+            if (onPublications case final handler?)
+              handler(client.origin, publications),
+          ]);
+          if (!valid()) throw StateError('Public service changed');
         },
         refresh: (statistics, games) async {
           if (!valid()) throw StateError('Account changed');

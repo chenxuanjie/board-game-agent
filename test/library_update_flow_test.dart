@@ -57,6 +57,41 @@ void main() {
     },
   );
   test(
+    'publication failure retains cache and a retry applies the target',
+    () async {
+      fixture.put('cabo', title: 'Published', bump: true);
+      fixture.offline = true;
+      await expectLater(
+        controller.refreshPublishedLibrary(knownRevision: 2),
+        throwsStateError,
+      );
+      expect(remote.catalog!.revision, 1);
+      fixture.offline = false;
+      await controller.refreshPublishedLibrary(knownRevision: 2);
+      expect(remote.catalog!.revision, 2);
+      expect(controller.games.single.title, 'Published');
+      expect(
+        fixture.requests.any((r) => r.url.path.endsWith('/changes')),
+        isTrue,
+      );
+      expect(
+        fixture.requests.any((r) => r.url.path.contains('/content')),
+        isFalse,
+      );
+    },
+  );
+  test('new publication arriving during a check is not lost', () async {
+    fixture.gate = Completer<void>();
+    final first = controller.checkForLibraryUpdatesQuick(knownRevision: 1);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    fixture.put('cabo', title: 'Concurrent', bump: true);
+    final next = controller.refreshPublishedLibrary(knownRevision: 2);
+    fixture.gate!.complete();
+    await Future.wait([first, next]);
+    expect(remote.catalog!.revision, 2);
+    expect(controller.games.single.title, 'Concurrent');
+  });
+  test(
     'an unpublished edition disappears atomically without retaining bundled cards',
     () async {
       fixture.remove('cabo');

@@ -29,6 +29,7 @@ void main() {
               required client,
               required active,
               required refresh,
+              required refreshPublications,
               onStatusChanged,
             }) async {
               refreshes.add(refresh);

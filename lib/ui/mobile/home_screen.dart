@@ -36,11 +36,13 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.transferService,
   });
 
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final SettingsTransferService? transferService;
 
   @override
@@ -399,14 +401,23 @@ class _HomeScreenState extends State<HomeScreen> {
                       subtitle: Text(activities[index].message),
                       trailing:
                           activities[index].kind ==
-                              AppActivityKind.libraryUpdate
+                                  AppActivityKind.libraryUpdate ||
+                              activities[index].kind ==
+                                  AppActivityKind.appUpdate
                           ? const Icon(Icons.chevron_right_rounded)
                           : null,
                       onTap:
                           activities[index].kind ==
-                              AppActivityKind.libraryUpdate
+                                  AppActivityKind.libraryUpdate ||
+                              activities[index].kind ==
+                                  AppActivityKind.appUpdate
                           ? () {
                               Navigator.of(sheetContext).pop();
+                              if (activities[index].kind ==
+                                  AppActivityKind.appUpdate) {
+                                (widget.onCheckUpdates ?? widget.onOpenAbout)();
+                                return;
+                              }
                               unawaited(
                                 _showLibraryUpdateDialog(
                                   fromNotification: true,

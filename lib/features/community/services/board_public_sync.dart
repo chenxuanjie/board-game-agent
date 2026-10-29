@@ -6,6 +6,7 @@ import 'package:powersync/powersync.dart';
 // ignore: implementation_imports
 import 'package:app_ai_client/src/default_http_client.dart';
 import '../../identity/services/board_sync_database.dart';
+import 'public_publication.dart';
 
 typedef PublicSyncFactory =
     Future<BoardPublicSync> Function({
@@ -13,6 +14,8 @@ typedef PublicSyncFactory =
       required bool Function() active,
       required Future<void> Function(bool statistics, Set<String> games)
       refresh,
+      required Future<void> Function(List<PublicPublication>)
+      refreshPublications,
       void Function()? onStatusChanged,
     });
 
@@ -20,6 +23,14 @@ const boardPublicSchema = Schema([
   Table('public_changes', [
     Column.integer('statistics_version'),
     Column.integer('comments_version'),
+  ]),
+  Table('publication_versions', [
+    Column.text('app_id'),
+    Column.text('topic'),
+    Column.integer('revision'),
+    Column.text('channel'),
+    Column.text('platform'),
+    Column.text('architecture'),
   ]),
 ]);
 
@@ -33,6 +44,7 @@ class BoardPublicSync {
     required this.refresh,
     this.httpClient,
     this.onStatusChanged,
+    this.refreshPublications,
   });
   final PowerSyncDatabase database;
   final AppJsonClient client;
@@ -40,7 +52,11 @@ class BoardPublicSync {
   final Future<void> Function(bool statistics, Set<String> games) refresh;
   final HttpClientFactory? httpClient;
   final void Function()? onStatusChanged;
-  StreamSubscription<dynamic>? _rows, _status;
+  final Future<void> Function(List<PublicPublication>)? refreshPublications;
+  StreamSubscription<dynamic>? _rows, _status, _publications;
+  final _publicationVersions = <String, PublicPublication>{};
+  final _dirtyPublications = <String, PublicPublication>{};
+  bool _publicationProbe = false;
   final _versions = <String, (int, int)>{};
   final _dirtyGames = <String>{};
   bool _statisticsDirty = false,
@@ -65,6 +81,7 @@ class BoardPublicSync {
     required AppJsonClient client,
     required bool Function() active,
     required Future<void> Function(bool statistics, Set<String> games) refresh,
+    required Future<void> Function(List<PublicPublication>) refreshPublications,
     void Function()? onStatusChanged,
   }) async {
     final namespace = sha256
@@ -79,12 +96,34 @@ class BoardPublicSync {
       client: client,
       active: active,
       refresh: refresh,
+      refreshPublications: refreshPublications,
       onStatusChanged: onStatusChanged,
     );
   }
 
   Future<void> start() async {
     if (_closed || !active()) return;
+    _publications = database.watch('SELECT * FROM publication_versions').listen(
+      (rows) {
+        if (_closed || !active()) return;
+        try {
+          for (final row in rows) {
+            final next = PublicPublication.fromRow(row);
+            if (_publicationVersions[next.id]?.revision != next.revision) {
+              _dirtyPublications[next.id] = next;
+              _publicationVersions[next.id] = next;
+            }
+          }
+          if (_dirtyPublications.isNotEmpty) {
+            _attempts = 0;
+            _schedule(const Duration(milliseconds: 250));
+          }
+        } catch (_) {
+          _setError('公开发布通知读取失败，请重试');
+        }
+      },
+      onError: (Object _) => _setError('公开发布通知读取失败，请重试'),
+    );
     _rows = database
         .watch('SELECT * FROM public_changes')
         .listen(
@@ -114,11 +153,24 @@ class BoardPublicSync {
     _status = database.statusStream.listen((state) {
       if (_closed || !active()) return;
       _setError(state.anyError == null ? null : '公共数据实时更新未完成，请重试');
-      if (state.connected && !_connected) requestRefresh(games: _versions.keys);
+      if (state.connected && !_connected) {
+        requestPublicationRefresh();
+        requestRefresh(games: _versions.keys);
+      }
       _connected = state.connected;
     });
     requestRefresh(games: _versions.keys);
+    requestPublicationRefresh();
     await _connect();
+  }
+
+  /// Re-read authoritative APIs after startup/reconnect, including an empty DB.
+  void requestPublicationRefresh() {
+    if (_closed || !active() || refreshPublications == null) return;
+    _publicationProbe = true;
+    _dirtyPublications.addAll(_publicationVersions);
+    _attempts = 0;
+    _schedule(const Duration(milliseconds: 250));
   }
 
   void requestRefresh({
@@ -149,29 +201,58 @@ class BoardPublicSync {
   Future<void> _flush() async {
     if (_closed || _paused || _running || !active()) return;
     final statistics = _statisticsDirty, games = Set<String>.of(_dirtyGames);
-    if (!statistics && games.isEmpty) return;
+    final publications = Map<String, PublicPublication>.of(_dirtyPublications);
+    final probe = _publicationProbe;
+    if (!statistics && games.isEmpty && publications.isEmpty && !probe) return;
     _statisticsDirty = false;
     _dirtyGames.clear();
+    _dirtyPublications.clear();
+    _publicationProbe = false;
     _running = true;
     var failed = false;
     try {
-      await refresh(statistics, games);
-      if (!_closed && active()) {
-        _setError(null);
-        _attempts = 0;
+      // Independent domains: a comment failure must not starve release notices.
+      final work = <Future<void>>[];
+      if (statistics || games.isNotEmpty) {
+        work.add(() async {
+          try {
+            await refresh(statistics, games);
+          } catch (_) {
+            failed = true;
+            _statisticsDirty |= statistics;
+            _dirtyGames.addAll(games);
+          }
+        }());
       }
-    } catch (_) {
-      failed = true;
+      if ((probe || publications.isNotEmpty) && refreshPublications != null) {
+        work.add(() async {
+          try {
+            await refreshPublications!(publications.values.toList());
+          } catch (_) {
+            failed = true;
+            _publicationProbe |= probe;
+            for (final entry in publications.entries) {
+              final latest = _dirtyPublications[entry.key];
+              if (latest == null || latest.revision < entry.value.revision) {
+                _dirtyPublications[entry.key] = entry.value;
+              }
+            }
+          }
+        }());
+      }
+      await Future.wait(work);
       if (!_closed && active()) {
-        _setError('公共数据更新未完成，已保留上次结果');
-        _statisticsDirty |= statistics;
-        _dirtyGames.addAll(games);
+        _setError(failed ? '公共数据更新未完成，已保留上次结果' : null);
+        if (!failed) _attempts = 0;
       }
     } finally {
       _running = false;
       if (!_closed &&
           active() &&
-          (_statisticsDirty || _dirtyGames.isNotEmpty)) {
+          (_statisticsDirty ||
+              _dirtyGames.isNotEmpty ||
+              _publicationProbe ||
+              _dirtyPublications.isNotEmpty)) {
         if (!failed) {
           _schedule(const Duration(milliseconds: 250));
         } else if (_attempts < 5) {
@@ -205,6 +286,7 @@ class BoardPublicSync {
     if (_paused) {
       _timer?.cancel();
     } else {
+      requestPublicationRefresh();
       requestRefresh(games: _versions.keys);
     }
     await _connect();
@@ -217,6 +299,7 @@ class BoardPublicSync {
     _timer?.cancel();
     await _rows?.cancel();
     await _status?.cancel();
+    await _publications?.cancel();
     await _connection?.catchError((Object _) {});
     await database.close().timeout(const Duration(seconds: 5));
   }

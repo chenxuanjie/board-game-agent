@@ -395,6 +395,10 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     closePanel?.call();
     unawaited(widget.controller.markActivityRead(activity.id));
     activity = widget.controller.resolveActivityTarget(activity);
+    if (activity.kind == AppActivityKind.appUpdate) {
+      (widget.onCheckUpdates ?? widget.onOpenAbout)();
+      return;
+    }
     if (activity.kind == AppActivityKind.libraryUpdate) {
       unawaited(showLibraryUpdateReview(context, widget.controller));
       return;

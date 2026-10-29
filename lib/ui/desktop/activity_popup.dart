@@ -237,7 +237,8 @@ class _DesktopActivityTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          if (activity.kind == AppActivityKind.libraryUpdate)
+          if (activity.kind == AppActivityKind.libraryUpdate ||
+              activity.kind == AppActivityKind.appUpdate)
             Icon(
               Icons.chevron_right_rounded,
               size: 18,
@@ -277,6 +278,7 @@ IconData _activityIcon(AppActivityKind kind) {
     AppActivityKind.aiCompleted => Icons.check_circle_outline_rounded,
     AppActivityKind.aiFailed => Icons.error_outline_rounded,
     AppActivityKind.libraryUpdate => Icons.system_update_alt_rounded,
+    AppActivityKind.appUpdate => Icons.system_update_rounded,
     AppActivityKind.libraryLoadFailed => Icons.error_outline_rounded,
     AppActivityKind.info => Icons.info_outline_rounded,
   };
@@ -288,6 +290,7 @@ Color _activityColor(AppPalette palette, AppActivityKind kind) {
     AppActivityKind.aiCompleted => palette.success,
     AppActivityKind.aiFailed => palette.error,
     AppActivityKind.libraryUpdate => palette.warning,
+    AppActivityKind.appUpdate => palette.primary,
     AppActivityKind.libraryLoadFailed => palette.error,
     AppActivityKind.info => palette.textSecondary,
   };

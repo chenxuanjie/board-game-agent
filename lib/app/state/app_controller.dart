@@ -316,6 +316,7 @@ class AppController extends ChangeNotifier {
   bool _voiceReplyEnabled = true;
   AssistantMode _assistantMode = AssistantMode.textAndDictation;
   bool _checkForUpdates = true;
+  int? _libraryRequestedRevision;
   bool _speechAvailable = false;
   bool _isListening = false;
   double _speechLevel = 0;
@@ -354,7 +355,6 @@ class AppController extends ChangeNotifier {
   final Map<String, ConnectivityStatus> _assetSourceStatuses =
       <String, ConnectivityStatus>{};
   final Map<String, String> _resolvedAssetPaths = <String, String>{};
-  Timer? _assetStatusTimer;
   Future<void>? _assetStatusRefreshFuture;
   int _assetStatusGeneration = 0;
   Completer<void>? _assetStatusAbort;
@@ -1061,7 +1061,6 @@ class AppController extends ChangeNotifier {
     gameVotes.dispose();
     _favoriteStatistics?.dispose();
     _nationalDayList?.dispose();
-    _assetStatusTimer?.cancel();
     for (final _ChatGenerationState generation in _generationStates.values) {
       generation.wasStopped = true;
       final Completer<void>? generationAbort = generation.abort;
@@ -1088,18 +1087,10 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _controllerDisposed = true;
     _cancelGameCatalogRequest();
-    _assetStatusTimer?.cancel();
     _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
     super.dispose();
     _remoteAssetService.dispose();
-  }
-
-  void _startAssetStatusPolling() {
-    _assetStatusTimer?.cancel();
-    _assetStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      unawaited(refreshAssetAccessStatus());
-    });
   }
 }
 

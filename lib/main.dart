@@ -23,6 +23,7 @@ import 'features/library/services/remote_asset_service.dart';
 
 import 'features/settings/services/board_game_update_settings.dart';
 import 'features/settings/services/board_game_app_update_service.dart';
+import 'features/settings/services/public_release_monitor.dart';
 import 'features/library/services/board_game_remote_layout.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
@@ -194,6 +195,30 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
   bool _startupUpdateCheckScheduled = false;
   String? _lastAccountKey;
   String? _lastResourceConnection;
+  String? _releaseNotificationContext;
+  late bool _lastCheckUpdates = widget.controller.checkForUpdates;
+  late final _releaseMonitor = PublicReleaseMonitor(
+    origin: _publicOrigin,
+    enabled: () =>
+        widget.controller.checkForUpdates &&
+        widget.accountService?.dataScopeReady != false,
+    platform: kIsWeb
+        ? null
+        : switch (boardGameUpdateTarget) {
+            AppUpdateTarget.android => 'android',
+            AppUpdateTarget.windows => 'windows',
+            null => null,
+          },
+    service: _createUpdateService,
+    onAvailable: (info) => widget.controller.recordAppUpdate(
+      version: info.latestVersion!,
+      build: info.latestBuild!,
+    ),
+  );
+
+  Uri _publicOrigin() =>
+      widget.accountService?.serviceConfiguration?.origin ??
+      Uri.parse(ServiceConfiguration.defaultUpdateOrigin);
 
   @override
   void initState() {
@@ -201,6 +226,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_handleControllerChange);
     widget.accountService?.addListener(_handleAccountChange);
+    widget.accountService?.onPublications = _releaseMonitor.refresh;
     _initialization = _initialize();
   }
 
@@ -209,6 +235,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_handleControllerChange);
     widget.accountService?.removeListener(_handleAccountChange);
+    widget.accountService?.onPublications = null;
+    _releaseMonitor.dispose();
     widget.accountService?.dispose();
     widget.controller.disposeServices();
     widget.updateSettingsController.dispose();
@@ -382,6 +410,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
                     controller: widget.controller,
                     transferService: _transferService,
                     onOpenAbout: _openAbout,
+                    onCheckUpdates: () => _openAbout(checkOnOpen: true),
                   );
                 }
                 if (desktopLayout) {
@@ -399,6 +428,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
                   controller: widget.controller,
                   transferService: _transferService,
                   onOpenAbout: _openAbout,
+                  onCheckUpdates: () => _openAbout(checkOnOpen: true),
                 );
               },
             ),
@@ -502,6 +532,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     onWindowsInstallerLaunched: () => windowManager.destroy(),
   );
   void _handleControllerChange() {
+    final enabled = widget.controller.checkForUpdates;
+    if (!_lastCheckUpdates && enabled) {
+      unawaited(widget.accountService?.retryPublicSync());
+    }
+    _lastCheckUpdates = enabled;
     if (mounted) {
       setState(() {});
     }
@@ -527,6 +562,13 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
       _windowChrome.reset();
     }
     _lastAccountKey = key;
+    final notificationContext = account?.dataScopeReady == true
+        ? '${account!.serviceAddress}|$key'
+        : null;
+    if (_releaseNotificationContext != notificationContext) {
+      _releaseNotificationContext = notificationContext;
+      _releaseMonitor.resetNotificationContext();
+    }
     final connection = account?.serviceAddress;
     if (connection != null && connection != _lastResourceConnection) {
       _lastResourceConnection = connection;

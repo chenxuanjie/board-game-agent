@@ -43,10 +43,12 @@ class SpatialWorkspace extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.transferService,
   });
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final SettingsTransferService? transferService;
   @override
   State<SpatialWorkspace> createState() => _SpatialWorkspaceState();
@@ -219,6 +221,10 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
     );
     if (!mounted || selected == null) return;
     final activity = c.resolveActivityTarget(selected!);
+    if (activity.kind == AppActivityKind.appUpdate) {
+      (widget.onCheckUpdates ?? widget.onOpenAbout)();
+      return;
+    }
     if (activity.kind == AppActivityKind.libraryUpdate) {
       await showLibraryUpdateReview(
         _navigator.currentState?.overlay?.context ?? context,

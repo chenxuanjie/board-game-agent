@@ -120,6 +120,7 @@ Future<(AccountService, _UiGateway)> _configuredService(
             required client,
             required active,
             required refresh,
+            required refreshPublications,
             onStatusChanged,
           }) async => throw StateError(
             'Public network unavailable in account menu fixture',

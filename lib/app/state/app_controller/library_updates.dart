@@ -6,7 +6,6 @@ extension AppLibraryUpdateController on AppController {
     _initialLibraryFullPending = true;
     // A revision response supplies availability and the update watermark.
     // Metadata refresh never downloads documents or scans a NAS directory.
-    _startAssetStatusPolling();
     try {
       await refreshAssetAccessStatus();
       if (_controllerDisposed) return;
@@ -27,6 +26,17 @@ extension AppLibraryUpdateController on AppController {
 
   Future<void> checkForLibraryUpdatesQuick({int? knownRevision}) =>
       _startLibraryCheck(complete: false, knownRevision: knownRevision);
+
+  /// Acknowledge an invalidation only after applying its target version.
+  Future<void> refreshPublishedLibrary({int? knownRevision}) async {
+    await checkForLibraryUpdatesQuick(knownRevision: knownRevision);
+    if (_controllerDisposed ||
+        _libraryUpdateError != null ||
+        (knownRevision != null &&
+            (_remoteAssetService.catalog?.revision ?? -1) < knownRevision)) {
+      throw StateError('Published library refresh incomplete');
+    }
+  }
 
   Future<void> _startLibraryCheck({
     required bool complete,
@@ -62,6 +72,12 @@ extension AppLibraryUpdateController on AppController {
         });
       }
       if (complete && !_libraryUpdateCheckFull) _libraryFullRequested = true;
+      // A newer notification arriving during a read gets another pass.
+      if (knownRevision != null &&
+          (_libraryRequestedRevision == null ||
+              knownRevision > _libraryRequestedRevision!)) {
+        _libraryRequestedRevision = knownRevision;
+      }
       return active;
     }
     final done = Completer<void>();
@@ -71,19 +87,20 @@ extension AppLibraryUpdateController on AppController {
     _libraryCheckSignature = _updateSourceSignature;
     _checkingLibraryUpdate = true;
     _libraryFullRequested = complete;
+    _libraryRequestedRevision = knownRevision;
     _notifyListeners();
     unawaited(() async {
       try {
-        var source = knownRevision;
         do {
+          final source = _libraryRequestedRevision;
+          _libraryRequestedRevision = null;
           _libraryUpdateCheckFull = _libraryFullRequested;
           _libraryFullRequested = false;
           await _runLibraryCheck(
             complete: _libraryUpdateCheckFull,
             knownRevision: source,
           );
-          source = null;
-        } while (_libraryFullRequested &&
+        } while ((_libraryFullRequested || _libraryRequestedRevision != null) &&
             !_controllerDisposed &&
             epoch == _identityScopeEpoch);
       } finally {
@@ -181,6 +198,25 @@ extension AppLibraryUpdateController on AppController {
   }
 
   bool get appUpdateInProgress => _appUpdateInteractions > 0;
+
+  void recordAppUpdate({required String version, required int build}) {
+    if (_controllerDisposed) return;
+    final message = copy.localized(
+      '版本 $version（$build）已发布，点击查看并更新。',
+      'Version $version ($build) is available. Open to review and update.',
+    );
+    if (_activities.any(
+      (item) =>
+          item.kind == AppActivityKind.appUpdate && item.message == message,
+    )) {
+      return;
+    }
+    _recordActivity(
+      kind: AppActivityKind.appUpdate,
+      title: copy.localized('发现新版本', 'Update available'),
+      message: message,
+    );
+  }
 
   /// Holds unsolicited library prompts while an app update is being reviewed,
   /// downloaded or installed. Releasing does not consume the pending update.
