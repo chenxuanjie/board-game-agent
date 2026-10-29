@@ -37,7 +37,7 @@ class _MemoryPreferences extends PreferencesService {
   }
 }
 
-class _HeldCoordinator implements CoordinatedGameVoteStore {
+class _HeldCoordinator implements RemoteGameVoteStore {
   final entered = Completer<void>(), release = Completer<void>();
   int requests = 0, uploads = 0;
   @override
@@ -56,8 +56,6 @@ class _HeldCoordinator implements CoordinatedGameVoteStore {
     uploads++;
   }
 
-  @override
-  Future<List<GameVoteBallot>> readBallots() async => [];
   @override
   void close() {}
 }

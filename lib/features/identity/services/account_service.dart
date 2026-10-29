@@ -7,12 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_settings/webdav_settings.dart';
 // Use the existing platform proxy policy instead of an ad-hoc HTTP client.
 // ignore: implementation_imports
 import 'package:app_ai_client/src/default_http_client.dart';
 import '../../../app/state/app_controller.dart';
-import '../models/account_configuration.dart';
 import '../models/service_configuration.dart';
 import '../../community/services/game_comments_service.dart';
 import '../../community/services/board_public_sync.dart';
@@ -28,7 +26,6 @@ import '../../games/models/game_vote_record.dart';
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
     required AppController controller,
-    this.webDav,
     IdentitySessionStorage? savedLoginStorage,
     Future<IdentityGateway> Function(ServiceConfiguration)? gatewayFactory,
     RefreshSessionStore Function(ServiceConfiguration)? sessionStoreFactory,
@@ -53,9 +50,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   static const authenticationTimeout = Duration(seconds: 45);
   static const serviceOriginKey = 'board_game_agent.app_service.origin.v1';
-  static const _resourceKey = 'board_game_agent.resource_connections.v1';
   final AppController _controller;
-  final WebDavSettingsController? webDav;
   final bool usesWebAccount, supportsSignIn;
   final Uri? _browserOrigin;
   final Future<IdentityGateway> Function(ServiceConfiguration)? _gatewayFactory;
@@ -65,7 +60,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   final Future<void> Function(String?)? _switchScope;
   final SavedLoginStore _savedLogins;
   ServiceConfiguration? _serviceConfiguration;
-  AccountConfiguration? _configuration;
   IdentityGateway? _gateway;
   IdentityController? _identity;
   Timer? _verificationTimer;
@@ -94,7 +88,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   String? get personalSyncError => _personalStore?.syncError;
 
   AppController get controller => _controller;
-  AccountConfiguration? get configuration => _configuration;
   ServiceConfiguration? get serviceConfiguration => _serviceConfiguration;
   String get serviceAddress => _serviceConfiguration?.origin.origin ?? '';
   IdentityUser? get user => _identity?.user;
@@ -192,19 +185,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Resource configuration cannot prevent independent account recovery.
-      try {
-        final resources = prefs.getString(_resourceKey);
-        _configuration ??= resources == null
-            ? AccountConfiguration.fromResources(
-                sources: _controller.assetSourceConfigs,
-              )
-            : AccountConfiguration.fromJson(
-                jsonDecode(resources) as Map<String, dynamic>,
-              );
-      } catch (_) {
-        _configuration ??= AccountConfiguration.defaults;
-      }
       final address = usesWebAccount
           ? (_browserOrigin ?? Uri.base).origin
           : prefs.getString(serviceOriginKey) ??
@@ -718,21 +698,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  // Resource connection editing has no effect on the selected API or identity.
-  Future<void> saveConfiguration(AccountConfiguration next) async {
-    if (isBusy || _disposed) throw StateError('连接正在处理中');
-    if (!await (await SharedPreferences.getInstance()).setString(
-      _resourceKey,
-      jsonEncode(next.toJson()),
-    )) {
-      throw StateError('资料连接保存失败');
-    }
-    _configuration = next;
-    notifyListeners();
-  }
-
-  Future<void> recoverConnectionConfiguration(AccountConfiguration original) =>
-      saveConfiguration(original);
   Future<void> clearConfiguration() async {
     if (isBusy || isSignedIn) throw StateError('请先退出账号');
     await _disconnect();

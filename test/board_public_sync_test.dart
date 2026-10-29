@@ -90,7 +90,11 @@ void main() {
       expect(requests, 6);
       fail = false;
       sync.requestRefresh(games: ['cabo']);
-      await Future<void>.delayed(const Duration(milliseconds: 350));
+      final recoveryDeadline = DateTime.now().add(const Duration(seconds: 3));
+      while ((requests < 7 || sync.error != null) &&
+          DateTime.now().isBefore(recoveryDeadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
       expect(requests, 7);
       expect(sync.error, isNull);
     },

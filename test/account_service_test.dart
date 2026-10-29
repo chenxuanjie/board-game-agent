@@ -3,13 +3,9 @@ import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/community/services/board_public_sync.dart';
-import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-AccountConfiguration configuration([String host = 'service.example.test']) =>
-    AccountConfiguration.fromFields(nasUrl: 'https://$host');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

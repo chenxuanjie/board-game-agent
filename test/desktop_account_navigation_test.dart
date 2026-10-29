@@ -60,7 +60,6 @@ void main() {
       await tester.runAsync(() async {
         account = AccountService(
           controller: controller,
-          webDav: settings,
           savedLoginStorage: MemoryLoginStorage(),
 
           gatewayFactory: (_) async => gateway,

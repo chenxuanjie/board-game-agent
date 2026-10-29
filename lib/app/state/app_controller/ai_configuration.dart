@@ -265,38 +265,6 @@ extension AppAiConfigurationController on AppController {
     return '${config.clientBaseUrl.trim()}\n${config.apiKey.trim()}\n${config.accountContext}';
   }
 
-  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> next) async {
-    final saved = List<AssetSourceConfig>.from(next);
-    await _preferencesService.saveAssetSourceConfigs(saved);
-    final changedIds = <String>{
-      for (final source in saved)
-        if (!_assetSourceConfigs.any(
-          (old) => old.id == source.id && old.testUrl == source.testUrl,
-        ))
-          source.id,
-    };
-    if (changedIds.isNotEmpty ||
-        _assetSourceConfigs.any(
-          (old) => !saved.any((source) => source.id == old.id),
-        )) {
-      _invalidateAssetAccessStatus();
-      _lastLibraryUpdate = null;
-      _libraryUpdateError = null;
-    }
-    _assetSourceConfigs = saved;
-    _assetSourceStatuses.removeWhere(
-      (id, _) =>
-          !saved.any((source) => source.id == id) || changedIds.contains(id),
-    );
-    for (final source in _assetSourceConfigs) {
-      _assetSourceStatuses.putIfAbsent(
-        source.id,
-        () => ConnectivityStatus.unknown('未检测'),
-      );
-    }
-    _notifyListeners();
-  }
-
   Future<String> testAiApiConfig(AiApiConfig config) async {
     final result = await _aiService.checkConnection(config);
     if (result.success) {

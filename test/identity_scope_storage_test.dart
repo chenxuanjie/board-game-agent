@@ -170,25 +170,17 @@ void main() {
     },
   );
 
-  test(
-    'AI credentials, theme and resource connections remain global',
-    () async {
-      final guest = PreferencesService();
-      final a = guest.forIdentityScope('a');
-      final config = AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6-luna');
-      await guest.saveAiApiConfig(config);
-      await guest.saveAssetSourceConfigs(AssetSourceConfig.defaults);
-      await guest.saveColorScheme(ColorSchemeOption.spatialCinema);
-      expect((await a.loadAiApiConfig()).toJson(), config.toJson());
-      expect(
-        (await a.loadAssetSourceConfigs()).length,
-        AssetSourceConfig.defaults.length,
-      );
-      expect(await a.loadColorScheme(), ColorSchemeOption.spatialCinema);
-      await a.saveColorScheme(ColorSchemeOption.cinema);
-      expect(await guest.loadColorScheme(), ColorSchemeOption.cinema);
-    },
-  );
+  test('AI credentials and theme remain global', () async {
+    final guest = PreferencesService();
+    final a = guest.forIdentityScope('a');
+    final config = AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6-luna');
+    await guest.saveAiApiConfig(config);
+    await guest.saveColorScheme(ColorSchemeOption.spatialCinema);
+    expect((await a.loadAiApiConfig()).toJson(), config.toJson());
+    expect(await a.loadColorScheme(), ColorSchemeOption.spatialCinema);
+    await a.saveColorScheme(ColorSchemeOption.cinema);
+    expect(await guest.loadColorScheme(), ColorSchemeOption.cinema);
+  });
 
   for (final browser in [false, true]) {
     test(

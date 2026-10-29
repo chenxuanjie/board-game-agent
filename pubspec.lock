@@ -1098,7 +1098,7 @@ packages:
     source: path
     version: "0.1.0"
   webdav_storage:
-    dependency: "direct main"
+    dependency: transitive
     description:
       path: "../shared_packages/webdav_storage"
       relative: true

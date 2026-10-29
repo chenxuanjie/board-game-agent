@@ -6,7 +6,6 @@ import '../shared/cinema/cinema_surface.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
-import '../../features/library/models/asset_source_config.dart';
 import '../../core/localization/app_language.dart';
 import '../../core/models/connectivity_status.dart';
 import '../../core/theme/color_scheme_option.dart';
@@ -70,14 +69,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     onApplied: _importApplied,
     enabled: !_isTesting && !_isTestingAssets,
   );
-  Future<void> _editResourceConnection([AssetSourceConfig? source]) async {
+  Future<void> _editResourceConnection() async {
     if (_transfer.webDav == null || _isTestingAssets || _transfer.isBusy) {
       return;
     }
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            ResourceConnectionScreen(service: _transfer, source: source),
+        builder: (_) => ResourceConnectionScreen(service: _transfer),
       ),
     );
     if (mounted) {
@@ -253,83 +251,76 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       ),
                       if (controller.colorScheme == ColorSchemeOption.cinema)
                         CinemaGlassSetting(controller: controller),
-                      if (AccountScope.maybeOf(context) == null)
-                        _SectionCard(
-                          palette: palette,
-                          padding: EdgeInsets.zero,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  16,
-                                  16,
-                                  10,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.storage_rounded,
-                                      color: palette.primary,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        copy.assetPriorityTitle,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleMedium,
-                                      ),
-                                    ),
-                                    if (_transfer.webDav != null)
-                                      _transferMenu(ConfigurationScope.webDav),
-                                  ],
-                                ),
+                      _SectionCard(
+                        palette: palette,
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                10,
                               ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                child: ResourceAccessSummary(
-                                  controller: controller,
-                                  onReorder: _reorderSources,
-                                  onEdit: _transfer.webDav == null
-                                      ? null
-                                      : _editResourceConnection,
-                                ),
-                              ),
-                              if (_transfer.webDav != null)
-                                ListTile(
-                                  key: const ValueKey(
-                                    'mobile-settings-webdav-connection',
-                                  ),
-                                  leading: Icon(
-                                    Icons.cloud_outlined,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.storage_rounded,
                                     color: palette.primary,
+                                    size: 22,
                                   ),
-                                  title: Text(
-                                    copy.localized(
-                                      '账号与连接',
-                                      'Account & connections',
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      copy.localized('公开资料', 'Public library'),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
                                     ),
                                   ),
-                                  trailing: const Icon(
-                                    Icons.chevron_right_rounded,
-                                  ),
-                                  onTap: _editResourceConnection,
-                                ),
-                              TextButton.icon(
-                                onPressed: _isTestingAssets
-                                    ? null
-                                    : _testAssets,
-                                icon: const Icon(Icons.network_check_rounded),
-                                label: Text(copy.assetTest),
+                                  if (_transfer.webDav != null)
+                                    _transferMenu(ConfigurationScope.webDav),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: ResourceAccessSummary(
+                                controller: controller,
+                              ),
+                            ),
+                            if (_transfer.webDav != null)
+                              ListTile(
+                                key: const ValueKey(
+                                  'mobile-settings-webdav-connection',
+                                ),
+                                leading: Icon(
+                                  Icons.cloud_outlined,
+                                  color: palette.primary,
+                                ),
+                                title: Text(
+                                  copy.localized(
+                                    'WebDAV 备用连接',
+                                    'WebDAV backup connection',
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: _editResourceConnection,
+                              ),
+                            TextButton.icon(
+                              onPressed: _isTestingAssets ? null : _testAssets,
+                              icon: const Icon(Icons.network_check_rounded),
+                              label: Text(copy.assetTest),
+                            ),
+                          ],
                         ),
+                      ),
                       const SizedBox(height: 12),
                       SettingsSectionFocus(
                         reveal: widget.focusAiSettings,
@@ -885,48 +876,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       // blocks it if it is outside the allowed catalog.
     });
     return models;
-  }
-
-  Future<void> _reorderSources(int oldIndex, int newIndex) async {
-    if (_isTestingAssets) return;
-    if (newIndex > oldIndex) newIndex--;
-    final next = List<AssetSourceConfig>.from(
-      widget.controller.assetSourceConfigs,
-    );
-    next.insert(newIndex, next.removeAt(oldIndex));
-    setState(() => _isTestingAssets = true);
-    try {
-      final account = AccountScope.maybeOf(context);
-      if (account?.configuration != null) {
-        final config = account!.configuration!;
-        await account.saveConfiguration(
-          config.edited(
-            servers: next
-                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
-                .toList(),
-            folder: config.storageFolder,
-          ),
-        );
-        if (account.error != null) throw StateError('Connection pending');
-      } else {
-        await widget.controller.saveAssetSourceConfigs(next);
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.controller.copy.localized(
-                '顺序保存失败，请重试',
-                'Could not save order. Retry',
-              ),
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isTestingAssets = false);
-    }
   }
 
   Future<void> _testAssets() async {

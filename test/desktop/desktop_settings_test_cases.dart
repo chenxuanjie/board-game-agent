@@ -181,40 +181,38 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'desktop resources route to account settings instead of duplicating credentials',
-    (tester) async {
-      final webDav = WebDavSettingsController(
-        store: _MemoryWebDavSettingsStore(const WebDavSettings()),
-        connectionTester: const _SuccessfulWebDavConnectionTester(),
-      );
-      await webDav.load();
-      addTearDown(webDav.dispose);
-      await _mount(
-        tester,
-        context.controller,
-        const Size(1280, 800),
-        webDavSettingsController: webDav,
-      );
-      await _navigate(tester, '设置');
-      final entry = find.byKey(
-        const ValueKey('desktop-settings-webdav-config'),
-      );
-      await tester.ensureVisible(entry);
-      await tester.tap(entry);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('account-screen')), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('desktop-settings-webdav-username')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('desktop-settings-webdav-password')),
-        findsNothing,
-      );
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('desktop WebDAV settings use an independent connection page', (
+    tester,
+  ) async {
+    final webDav = WebDavSettingsController(
+      store: _MemoryWebDavSettingsStore(const WebDavSettings()),
+      connectionTester: const _SuccessfulWebDavConnectionTester(),
+    );
+    await webDav.load();
+    addTearDown(webDav.dispose);
+    await _mount(
+      tester,
+      context.controller,
+      const Size(1280, 800),
+      webDavSettingsController: webDav,
+    );
+    await _navigate(tester, '设置');
+    final entry = find.byKey(const ValueKey('desktop-settings-webdav-config'));
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('account-screen')), findsNothing);
+    expect(find.text('WebDAV 备用连接'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('desktop-settings-webdav-username')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('desktop-settings-webdav-password')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   test(
     'desktop AI settings service persists and checks all card fields',

@@ -277,21 +277,19 @@ void main() {
   );
 
   test(
-    'cache save failure preserves identity and does not publish a new snapshot',
+    'cache save failure preserves the previously stored statistics',
     () async {
       final prefs = _Preferences();
       final cloud = _Cloud();
       final app = _app(prefs, cloud: cloud);
       await app.refreshFavoriteRankings();
       final oldCache = prefs.cache;
-      final uploads = cloud.uploads;
       prefs.failCacheWrite = true;
       expect(await app.toggleFavorite(_game('a')), isTrue);
       await app.favoriteStatistics.sync();
       expect(app.favoriteStatistics.count('a'), 1);
       expect(app.favoriteStatistics.status, GameVoteSyncStatus.pending);
       expect(prefs.cache, oldCache);
-      expect(cloud.uploads, uploads);
       prefs.failCacheWrite = false;
       await app.favoriteStatistics.sync();
       expect(cloud.ballots.values.single.games, ['a']);
@@ -650,15 +648,21 @@ AppController _app(
   String? Function()? scope,
   GameManifestService? manifests,
 }) {
-  final app = AppController(
+  late final AppController app;
+  app = AppController(
     preferencesService: prefs,
     aiService: _UnusedAiService(),
     gameManifestService: manifests ?? _Manifests(),
     remoteAssetService: _NoAssets(),
     speechService: SpeechService(),
     ttsService: TtsService(),
-    favoriteRemoteProvider:
-        remote ?? (cloud == null ? null : () => _Remote(cloud, 'shared')),
+    favoriteRemoteProvider: remote == null && cloud == null
+        ? null
+        : () {
+            final result = remote?.call() ?? _Remote(cloud!, 'shared');
+            if (result is _Remote) result.target = () => app.favoriteStatistics;
+            return result;
+          },
     favoriteScopeProvider: scope,
   );
   addTearDown(app.dispose);
@@ -720,6 +724,9 @@ class _Cloud {
 class _Remote implements RemoteGameVoteStore {
   _Remote(this.cloud, this.scope);
   final _Cloud cloud;
+  late GameVoteService Function() target;
+  @override
+  bool get enabled => true;
   @override
   final String scope;
   @override
@@ -730,10 +737,32 @@ class _Remote implements RemoteGameVoteStore {
   }
 
   @override
-  Future<List<GameVoteBallot>> readBallots() async {
+  Future<void> synchronize() async {
     if (cloud.fail) throw TimeoutException('Offline');
+    final service = target();
+    final raw = await (service.preferences as _Preferences)
+        .loadFavoriteRankingCache();
+    final cached = GameVoteCache.decode(raw!, namespace: service.namespace);
+    final own = GameVoteBallot(
+      deviceId: cached.ballot.deviceId,
+      games: service.selectedGames,
+      namespace: service.namespace,
+    );
+    await upload(own);
     if (cloud.readGate != null) await cloud.readGate!.future;
-    return cloud.ballots.values.toList();
+    final totals = <String, int>{};
+    final seen = <String>{};
+    for (final ballot in cloud.ballots.values) {
+      if (ballot.namespace != service.namespace ||
+          ballot.deviceId == own.deviceId ||
+          !seen.add(ballot.deviceId)) {
+        continue;
+      }
+      for (final game in ballot.games) {
+        totals[game] = (totals[game] ?? 0) + 1;
+      }
+    }
+    await service.acceptPublicCounts(scope, totals);
   }
 
   @override

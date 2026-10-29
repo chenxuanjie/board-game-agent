@@ -21,10 +21,8 @@ import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
 
-import 'features/settings/services/board_game_update_settings.dart';
 import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/settings/services/public_release_monitor.dart';
-import 'features/library/services/board_game_remote_layout.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
 import 'features/assistant/services/realtime_voice_service.dart';
@@ -56,7 +54,6 @@ Future<void> main() async {
   final initialColorScheme = await _loadInitialColorScheme(preferencesService);
 
   final updateStore = SecureWebDavSettingsStore(appId: 'board_game_agent');
-  await _prepareUpdateSettings(updateStore);
   final updateSettingsController = WebDavSettingsController(
     store: updateStore,
     connectionTester: DefaultWebDavConnectionTester(appId: 'board_game_agent'),
@@ -96,10 +93,7 @@ Future<void> main() async {
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
   );
 
-  accountService = AccountService(
-    controller: controller,
-    webDav: updateSettingsController,
-  );
+  accountService = AccountService(controller: controller);
   runApp(
     BoardGameAgentApp(
       controller: controller,
@@ -137,29 +131,6 @@ Future<ColorSchemeOption> _loadInitialColorScheme(
     // temporarily unavailable. The controller will retry during initialize.
     return defaultColorScheme;
   }
-}
-
-Future<void> _prepareUpdateSettings(
-  SecureWebDavSettingsStore updateStore,
-) async {
-  final stored = await updateStore.load();
-  if (stored != null) {
-    final normalized = BoardGameRemoteLayout.migrateLegacySettings(stored);
-    if (normalized.baseUrl != stored.baseUrl) {
-      await updateStore.save(normalized);
-    }
-    return;
-  }
-
-  final legacy = await BoardGameUpdateSettingsLoader.load(
-    sources: await PreferencesService().loadAssetSourceConfigs(),
-  );
-  if (!legacy.isComplete) return;
-  await updateStore.save(
-    BoardGameRemoteLayout.normalizeSettings(
-      legacy.copyWith(mode: ExternalStorageMode.webDav),
-    ),
-  );
 }
 
 class BoardGameAgentApp extends StatefulWidget {

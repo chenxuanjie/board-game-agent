@@ -6,7 +6,7 @@ import 'game_vote_service.dart';
 import 'remote_game_vote_store.dart';
 
 /// Public aggregates never download other people's private favorites or votes.
-final class ServiceGameStatistics implements CoordinatedGameVoteStore {
+final class ServiceGameStatistics implements RemoteGameVoteStore {
   ServiceGameStatistics({
     required this.client,
     required this.scope,
@@ -89,9 +89,6 @@ final class ServiceGameStatistics implements CoordinatedGameVoteStore {
     );
   }
 
-  @override
-  Future<List<GameVoteBallot>> readBallots() =>
-      throw UnsupportedError('Private ballots are never public');
   @override
   void close() {}
 }

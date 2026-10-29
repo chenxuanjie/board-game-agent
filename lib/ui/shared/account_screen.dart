@@ -42,8 +42,7 @@ class AccountEntry extends StatelessWidget {
 }
 
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key, this.showConnections = false, this.onBack});
-  final bool showConnections;
+  const AccountScreen({super.key, this.onBack});
   final VoidCallback? onBack;
   @override
   State<AccountScreen> createState() => _AccountScreenState();

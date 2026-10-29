@@ -10,7 +10,6 @@ import '../../../core/models/app_activity.dart';
 import '../../assistant/models/ai_api_config.dart';
 import '../../assistant/models/ai_answer_mode.dart';
 import '../../assistant/models/assistant_mode.dart';
-import '../../library/models/asset_source_config.dart';
 import '../../../core/localization/app_language.dart';
 import '../../../core/theme/color_scheme_option.dart';
 import '../../library/models/desktop_library_resource.dart';
@@ -88,7 +87,6 @@ class PreferencesService {
   static const _colorSchemeKey = 'color_scheme';
   static const _aiApiConfigKey = 'ai_api_config';
   static const _aiCustomPresetsKey = 'ai_custom_presets';
-  static const _assetSourceOrderKey = 'asset_source_order';
   static const _gameAnswerModeKey = 'game_answer_mode';
   static const _globalAnswerModeKey = 'global_answer_mode';
   static const _globalUseCurrentGameKnowledgeKey =
@@ -289,20 +287,6 @@ class PreferencesService {
   Future<void> saveAiCustomPresets(Iterable<AiApiConfig> configs) async {
     final prefs = await _prefs;
     await prefs.setString(_aiCustomPresetsKey, AiApiConfig.encodeList(configs));
-  }
-
-  Future<List<AssetSourceConfig>> loadAssetSourceConfigs() async {
-    final prefs = await _prefs;
-    return AssetSourceConfig.decodeList(prefs.getString(_assetSourceOrderKey));
-  }
-
-  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> configs) async {
-    final prefs = await _prefs;
-    final saved = await prefs.setString(
-      _assetSourceOrderKey,
-      AssetSourceConfig.encodeList(configs),
-    );
-    if (!saved) throw StateError('Resource sources could not be saved');
   }
 
   Future<AiAnswerMode> loadGameAnswerMode() async {

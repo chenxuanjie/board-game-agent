@@ -6,19 +6,15 @@ class _SyncBackupCard extends StatelessWidget {
     required this.settingsController,
     required this.checking,
     required this.onCheckSources,
-    this.onEditSource,
     this.onManageConnections,
     this.transferMenu,
-    this.onReorder,
   });
   final AppController controller;
   final WebDavSettingsController? settingsController;
   final bool checking;
   final VoidCallback onCheckSources;
-  final ValueChanged<AssetSourceConfig>? onEditSource;
   final VoidCallback? onManageConnections;
   final Widget? transferMenu;
-  final void Function(int, int)? onReorder;
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
@@ -29,11 +25,7 @@ class _SyncBackupCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ResourceAccessSummary(
-            controller: controller,
-            onEdit: onEditSource,
-            onReorder: onReorder,
-          ),
+          ResourceAccessSummary(controller: controller),
           SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -49,7 +41,9 @@ class _SyncBackupCard extends StatelessWidget {
                   key: ValueKey('desktop-settings-webdav-config'),
                   onPressed: checking ? null : onManageConnections,
                   icon: Icon(Icons.account_circle_outlined, size: 16),
-                  label: Text(copy.localized('账号与连接', 'Account & connections')),
+                  label: Text(
+                    copy.localized('WebDAV 备用连接', 'WebDAV backup connection'),
+                  ),
                 ),
             ],
           ),

@@ -79,7 +79,7 @@ class _MineFixture extends ChangeNotifier implements AppController {
   @override
   Map<String, ConnectivityStatus> get assetSourceStatuses => {};
   @override
-  List<AssetSourceConfig> get assetSourceConfigs => AssetSourceConfig.defaults;
+  List<AssetSourceConfig> get assetSourceConfigs => const [];
   @override
   bool get personalDataIdle => false;
   @override
