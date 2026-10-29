@@ -20,6 +20,8 @@ import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
 import '../shared/library_check_actions.dart';
+import '../../core/platform/android_public_reminders.dart';
+import 'android_public_reminders_tile.dart';
 import '../../features/settings/models/configuration_transfer.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 
@@ -585,6 +587,16 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                             title: Text(copy.checkForUpdatesTitle),
                             subtitle: Text(copy.checkForUpdatesHint),
                             secondary: const Icon(Icons.system_update_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (AndroidPublicReminders.supported) ...[
+                        _SectionCard(
+                          palette: palette,
+                          child: AndroidPublicRemindersTile(
+                            checkUpdates: controller.checkForUpdates,
+                            isChinese: copy.isChinese,
                           ),
                         ),
                         const SizedBox(height: 12),

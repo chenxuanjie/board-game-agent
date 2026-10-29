@@ -23,6 +23,8 @@ import 'features/library/services/remote_asset_service.dart';
 
 import 'features/settings/services/board_game_app_update_service.dart';
 import 'features/settings/services/public_release_monitor.dart';
+import 'features/community/services/android_realtime_reminders.dart';
+import 'core/platform/android_public_reminders.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
 import 'features/assistant/services/realtime_voice_service.dart';
@@ -45,6 +47,9 @@ import 'ui/desktop/workspace.dart';
 import 'ui/desktop/desktop_window_frame.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
+
+@pragma('vm:entry-point')
+Future<void> publicReminderMain() => runAndroidRealtimeReminders();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -420,6 +425,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
       // coordinator publishes signed-in favorites independently.
       unawaited(widget.controller.refreshFavoriteRankings());
       _initializationComplete = true;
+      unawaited(_configurePublicReminders());
     } catch (error, stackTrace) {
       debugPrint('[startup] initialization failed: $error');
       debugPrint('$stackTrace');
@@ -502,8 +508,22 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     },
     onWindowsInstallerLaunched: () => windowManager.destroy(),
   );
+  Future<void> _configurePublicReminders() async {
+    try {
+      await AndroidPublicReminders.configure(
+        _publicOrigin(),
+        widget.controller.checkForUpdates,
+      );
+    } catch (_) {
+      // Optional reminder setup must not block normal startup or account state.
+    }
+  }
+
   void _handleControllerChange() {
     final enabled = widget.controller.checkForUpdates;
+    if (_lastCheckUpdates != enabled && _initializationComplete) {
+      unawaited(_configurePublicReminders());
+    }
     if (!_lastCheckUpdates && enabled) {
       unawaited(widget.accountService?.retryPublicSync());
     }
@@ -543,6 +563,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     final connection = account?.serviceAddress;
     if (connection != null && connection != _lastResourceConnection) {
       _lastResourceConnection = connection;
+      if (_initializationComplete) unawaited(_configurePublicReminders());
       unawaited(widget.controller.retryGameCatalog());
       unawaited(widget.controller.refreshAssetAccessStatus());
       unawaited(widget.controller.refreshLibraryResources(force: true));

@@ -83,12 +83,13 @@ class BoardPublicSync {
     required Future<void> Function(bool statistics, Set<String> games) refresh,
     required Future<void> Function(List<PublicPublication>) refreshPublications,
     void Function()? onStatusChanged,
+    String storageNamespace = 'board-public-v1',
   }) async {
     final namespace = sha256
         .convert(utf8.encode('board_game_agent|${client.origin.origin}'))
         .toString();
     final db = await openBoardSyncDatabase(
-      'board-public-v1-$namespace.sqlite',
+      '$storageNamespace-$namespace.sqlite',
       boardPublicSchema,
     );
     return BoardPublicSync(
