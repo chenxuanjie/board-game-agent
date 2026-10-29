@@ -55,7 +55,7 @@ class DesktopWorkspace extends StatefulWidget {
 }
 
 class _DesktopWorkspaceState extends State<DesktopWorkspace> {
-  static const Duration _favoriteSnackBarDuration = Duration(seconds: 3);
+  static const Duration _favoriteSnackBarDuration = AppMotion.notice;
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _assistantPane = GlobalKey<DesktopAssistantPaneState>();
@@ -76,7 +76,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     _page,
     () => ScrollController(keepScrollOffset: false),
   );
-  Timer? _favoriteSnackBarTimer;
   bool _searchOpen = false;
   bool _clearingSearch = false;
   String _localPage = 'home';
@@ -129,7 +128,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     widget.controller.removeListener(_refresh);
     _search.removeListener(_refreshSearch);
     _searchFocus.removeListener(_handleSearchFocusChanged);
-    _favoriteSnackBarTimer?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     for (final controller in _pageScrolls.values) {
@@ -269,8 +267,6 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
   }
 
   void _dismissFavoriteSnackBar() {
-    _favoriteSnackBarTimer?.cancel();
-    _favoriteSnackBarTimer = null;
     ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
   }
 
@@ -278,23 +274,14 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     required String message,
     SnackBarAction? action,
   }) {
-    _favoriteSnackBarTimer?.cancel();
     final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
-    final controller = messenger.showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         content: Text(message),
         duration: _favoriteSnackBarDuration,
+        persist: false,
         action: action,
       ),
-    );
-    final timer = Timer(_favoriteSnackBarDuration, controller.close);
-    _favoriteSnackBarTimer = timer;
-    unawaited(
-      controller.closed.whenComplete(() {
-        if (identical(_favoriteSnackBarTimer, timer)) {
-          _favoriteSnackBarTimer = null;
-        }
-      }),
     );
   }
 

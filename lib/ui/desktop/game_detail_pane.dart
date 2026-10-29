@@ -90,16 +90,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
             content: Text(
               copy.localized('图片位置未保存', 'Image position was not saved'),
             ),
-            action: SnackBarAction(
-              label: copy.localized('重试', 'Retry'),
-              onPressed: () {
-                if (!mounted) return;
-                final paths = _galleryPaths();
-                if (paths.isNotEmpty) {
-                  _persistGalleryImage(paths[_galleryIndex]);
-                }
-              },
-            ),
           ),
         );
       }),

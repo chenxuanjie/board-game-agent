@@ -767,6 +767,58 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'missing rulebook notice closes automatically and by horizontal swipe',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      await tester.runAsync(controller.reloadGames);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: GameDetailScreen(
+            controller: controller,
+            game: controller.games.first,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final rules = find.byKey(const ValueKey('mobile-detail-rules'));
+      Future<void> showNotice() async {
+        await tester.ensureVisible(rules);
+        await tester.tap(rules);
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(
+          find.descendant(of: find.byType(SnackBar), matching: find.text('重试')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(SnackBar),
+            matching: find.byIcon(Icons.close),
+          ),
+          findsOneWidget,
+        );
+      }
+
+      await showNotice();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing);
+      for (final dx in [-500.0, 500.0]) {
+        await showNotice();
+        await tester.drag(find.byType(SnackBar), Offset(dx, 0));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   _registerCompactComposerTests();
   testWidgets(
     'compact cover uses the same Hero into detail and returns safely',

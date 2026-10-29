@@ -60,6 +60,7 @@ class _FailureNoticeContentState extends State<_FailureNoticeContent>
   late final AnimationController _motion = AnimationController(vsync: this);
   Timer? _expiry;
   bool _started = false;
+  bool _swiped = false;
   int _revision = 0;
   @override
   void initState() {
@@ -82,7 +83,7 @@ class _FailureNoticeContentState extends State<_FailureNoticeContent>
     ++_revision;
     _expiry?.cancel();
     _motion.forward();
-    _expiry = Timer(const Duration(seconds: 4), _dismiss);
+    _expiry = Timer(AppMotion.notice, _dismiss);
     if (mounted) setState(() {});
   }
 
@@ -108,6 +109,7 @@ class _FailureNoticeContentState extends State<_FailureNoticeContent>
 
   @override
   Widget build(BuildContext context) {
+    if (_swiped) return const SizedBox.shrink();
     final palette = Theme.of(context).colorScheme;
     return SafeArea(
       child: Padding(
@@ -124,46 +126,56 @@ class _FailureNoticeContentState extends State<_FailureNoticeContent>
                     end: Offset.zero,
                   ).chain(CurveTween(curve: AppMotion.curve)),
                 ),
-                child: Semantics(
-                  liveRegion: true,
-                  child: Material(
-                    key: const ValueKey('app-failure-notice'),
-                    color: palette.surfaceContainer,
-                    elevation: 6,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: palette.outline),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        left: 14,
-                        top: 4,
-                        bottom: 4,
-                        right: 4,
+                child: Dismissible(
+                  key: ValueKey('app-failure-dismissible-$_revision'),
+                  direction: DismissDirection.horizontal,
+                  movementDuration: AppMotion.duration(context, AppMotion.menu),
+                  resizeDuration: null,
+                  onDismissed: (_) {
+                    setState(() => _swiped = true);
+                    widget.notice.close();
+                  },
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Material(
+                      key: const ValueKey('app-failure-notice'),
+                      color: palette.surfaceContainer,
+                      elevation: 6,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: palette.outline),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.error_outline_rounded,
-                            size: 20,
-                            color: palette.error,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              widget.notice.message.value.text,
-                              style: TextStyle(
-                                color: palette.onSurface,
-                                fontSize: 14,
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          left: 14,
+                          top: 4,
+                          bottom: 4,
+                          right: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.error_outline_rounded,
+                              size: 20,
+                              color: palette.error,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                widget.notice.message.value.text,
+                                style: TextStyle(
+                                  color: palette.onSurface,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip: '关闭提示',
-                            onPressed: _dismiss,
-                            icon: const Icon(Icons.close_rounded, size: 18),
-                          ),
-                        ],
+                            IconButton(
+                              tooltip: '关闭提示',
+                              onPressed: _dismiss,
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

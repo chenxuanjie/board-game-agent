@@ -747,6 +747,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
               'Public library unavailable. Check the service URL.',
             ),
           ),
+          persist: false,
           action: AccountScope.maybeOf(context)?.supportsSignIn == true
               ? SnackBarAction(
                   label: controller.copy.localized(
@@ -769,7 +770,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
           .resolveRulebookDocument(game);
       if (!mounted) return;
       if (document == null) {
-        _documentUnavailable(title, () => _openDocument(game));
+        _documentUnavailable(title);
         return;
       }
       await DocumentViewerLauncher.open(
@@ -780,7 +781,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       );
     } catch (_) {
       if (mounted) {
-        _documentUnavailable(title, () => _openDocument(game));
+        _documentUnavailable(title);
       }
     } finally {
       if (mounted) {
@@ -796,16 +797,12 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     ).hasMatch(value.trim());
   }
 
-  void _documentUnavailable(String title, VoidCallback retry) {
+  void _documentUnavailable(String title) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(widget.controller.copy.documentUnavailable(title)),
-          action: SnackBarAction(
-            label: widget.controller.copy.retry,
-            onPressed: retry,
-          ),
         ),
       );
   }

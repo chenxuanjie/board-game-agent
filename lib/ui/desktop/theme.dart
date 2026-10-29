@@ -104,6 +104,8 @@ ThemeData buildDesktopTheme({
       waitDuration: const Duration(milliseconds: 350),
     ),
     snackBarTheme: SnackBarThemeData(
+      dismissDirection: DismissDirection.horizontal,
+      showCloseIcon: true,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       contentTextStyle: base.textTheme.bodyMedium?.copyWith(

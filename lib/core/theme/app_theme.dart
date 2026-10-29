@@ -236,6 +236,8 @@ class AppTheme {
         ),
       ),
       snackBarTheme: SnackBarThemeData(
+        dismissDirection: DismissDirection.horizontal,
+        showCloseIcon: true,
         backgroundColor: palette.surfaceContainer,
         contentTextStyle: TextStyle(
           fontFamily: 'Noto Sans SC',
