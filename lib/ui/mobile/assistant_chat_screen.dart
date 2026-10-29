@@ -23,12 +23,14 @@ class AssistantChatScreen extends StatefulWidget {
     this.initialDraft,
     this.customTitle,
     this.useGlobalMode = false,
+    this.accountActions,
   });
 
   final AppController controller;
   final String? initialDraft;
   final String? customTitle;
   final bool useGlobalMode;
+  final Widget? accountActions;
 
   @override
   State<AssistantChatScreen> createState() => _AssistantChatScreenState();
@@ -188,6 +190,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
               PopupMenuItem(value: 'clear', child: Text(copy.clearChat)),
             ],
           ),
+          ?widget.accountActions,
           const SizedBox(width: 6),
         ],
       ),

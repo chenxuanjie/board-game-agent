@@ -11,6 +11,7 @@ import '../../features/games/services/game_vote_service.dart';
 import '../desktop/desktop_responsive.dart';
 import '../mobile/game_cover.dart';
 import 'ranking_medal.dart';
+import 'catalog_empty_state.dart';
 
 /// Public favorites ranking, independent from seasonal want-to-play votes.
 class GameRankingScreen extends StatefulWidget {
@@ -229,6 +230,20 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                                 const SizedBox(height: UiTokens.itemGap),
                             itemBuilder: (context, index) {
                               if (entries.isEmpty) {
+                                if (!controller.hasGames &&
+                                    (controller.gameCatalogFailed ||
+                                        controller.gameCatalogLoadState ==
+                                            LibraryLoadState.loading ||
+                                        controller.gameCatalogLoadState ==
+                                            LibraryLoadState.idle)) {
+                                  return CatalogEmptyState(
+                                    controller: controller,
+                                    emptyMessage: copy.localized(
+                                      '暂无桌游',
+                                      'No games yet',
+                                    ),
+                                  );
+                                }
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 48,
@@ -239,7 +254,9 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
                                             '正在读取喜欢统计',
                                             'Loading likes',
                                           )
-                                        : error
+                                        : error ||
+                                              statistics.status ==
+                                                  GameVoteSyncStatus.pending
                                         ? copy.localized(
                                             '重试后查看排名',
                                             'Retry to see the ranking',

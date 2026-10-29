@@ -28,8 +28,20 @@ class LibraryCatalogStatus extends StatelessWidget {
       }
       final copy = controller.copy;
       final colors = Theme.of(context).colorScheme;
-      final message = failure
-          ? controller.gameCatalogFailureMessage
+      final message = loading
+          ? controller.hasGames
+                ? copy.localized(
+                    '正在更新桌游资料，当前显示已有资料。',
+                    'Updating game data; showing available games.',
+                  )
+                : copy.localized('正在加载桌游资料…', 'Loading game data…')
+          : failure
+          ? controller.hasGames
+                ? copy.localized(
+                    '当前显示已有资料，更新未完成。',
+                    'Showing available games; update incomplete.',
+                  )
+                : controller.gameCatalogFailureMessage
           : copy.localized('正在加载桌游资料…', 'Loading game data…');
       final actions = Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,

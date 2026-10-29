@@ -28,6 +28,8 @@ import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_cover_motion.dart';
 import '../shared/account_screen.dart';
+import '../shared/account_menu.dart';
+import '../shared/app_failure_notice.dart';
 import '../shared/assistant/conversation_drawer.dart';
 
 /// Compact app shell. Desktop and wide Web keep their own responsive shell.
@@ -54,6 +56,12 @@ class _HomeScreenState extends State<HomeScreen> {
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
   bool _accountRouteOpen = false;
+
+  Widget _accountMenu() => AccountMenuButton(
+    unreadCount: widget.controller.unreadActivityCount,
+    onOpenAccount: _openAccount,
+    onOpenNotifications: _openActivities,
+  );
 
   @override
   void initState() {
@@ -139,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ).pushNamed(GameRankingScreen.routeName),
                           onFavorites: () => _openSearch(favoritesOnly: true),
                           onActivities: _openActivities,
+                          accountActions: _accountMenu(),
                           onSearch: _openSearch,
                           onTopic: _openNationalDay,
                         )
@@ -163,9 +172,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     onOpenGame: _openGame,
                     onActivities: _openActivities,
                     onProfile: _openAccount,
+                    accountActions: _accountMenu(),
                   )
                 : _tab == 2
-                ? UniversalAiScreen(controller: widget.controller)
+                ? UniversalAiScreen(
+                    controller: widget.controller,
+                    accountActions: _accountMenu(),
+                  )
                 : _tab == 3
                 ? MobileMineContent(
                     controller: widget.controller,
@@ -176,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onExplore: _openSearch,
                     onActivities: _openActivities,
                     onSettings: _openSettings,
+                    accountActions: _accountMenu(),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -362,10 +376,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openActivities() {
+  Future<void> _openActivities() async {
     final activities = widget.controller.activities;
     final copy = widget.controller.copy;
-    showAppBottomSheet<void>(
+    AppActivity? selected;
+    final sheet = showAppBottomSheet<void>(
       context: context,
       sheetAnimationStyle: AppMotion.panelStyle(context),
       showDragHandle: true,
@@ -399,30 +414,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemBuilder: (_, index) => ListTile(
                       title: Text(activities[index].title),
                       subtitle: Text(activities[index].message),
-                      trailing:
-                          activities[index].kind ==
-                                  AppActivityKind.libraryUpdate ||
-                              activities[index].kind ==
-                                  AppActivityKind.appUpdate
+                      trailing: _activityHasAction(activities[index])
                           ? const Icon(Icons.chevron_right_rounded)
                           : null,
-                      onTap:
-                          activities[index].kind ==
-                                  AppActivityKind.libraryUpdate ||
-                              activities[index].kind ==
-                                  AppActivityKind.appUpdate
+                      onTap: _activityHasAction(activities[index])
                           ? () {
+                              selected = activities[index];
                               Navigator.of(sheetContext).pop();
-                              if (activities[index].kind ==
-                                  AppActivityKind.appUpdate) {
-                                (widget.onCheckUpdates ?? widget.onOpenAbout)();
-                                return;
-                              }
-                              unawaited(
-                                _showLibraryUpdateDialog(
-                                  fromNotification: true,
-                                ),
-                              );
                             }
                           : null,
                     ),
@@ -434,7 +432,45 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     unawaited(widget.controller.markActivitiesRead());
+    await sheet;
+    if (!mounted || selected == null) return;
+    final activity = widget.controller.resolveActivityTarget(selected!);
+    if (activity.kind == AppActivityKind.appUpdate) {
+      (widget.onCheckUpdates ?? widget.onOpenAbout)();
+    } else if (activity.kind == AppActivityKind.libraryUpdate) {
+      await _showLibraryUpdateDialog(fromNotification: true);
+    } else if (activity.kind == AppActivityKind.libraryLoadFailed) {
+      setState(() => _tab = 1);
+      widget.controller.browseSession.destination = 'games';
+    } else if (activity.kind == AppActivityKind.aiCompleted ||
+        activity.kind == AppActivityKind.aiFailed) {
+      final conversations = widget.controller.conversations.where(
+        (item) => item.id == activity.conversationId,
+      );
+      if (conversations.isEmpty) {
+        showAppFailureNotice(
+          context,
+          widget.controller.gameCatalogFailed && !widget.controller.hasGames
+              ? copy.localized(
+                  '暂时无法打开该会话，请先重试加载桌游资料。',
+                  'The conversation is unavailable. Retry loading game data first.',
+                )
+              : copy.activityConversationUnavailable,
+        );
+      } else {
+        _openConversation(conversations.first);
+      }
+    }
   }
+
+  bool _activityHasAction(AppActivity activity) => switch (activity.kind) {
+    AppActivityKind.appUpdate ||
+    AppActivityKind.libraryUpdate ||
+    AppActivityKind.libraryLoadFailed ||
+    AppActivityKind.aiCompleted ||
+    AppActivityKind.aiFailed => true,
+    _ => false,
+  };
 
   void _onControllerChanged() {
     if (!mounted) return;

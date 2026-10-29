@@ -16,6 +16,7 @@ import 'game_content_card.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_catalog_status.dart';
+import '../shared/catalog_empty_state.dart';
 import '../shared/account_menu.dart';
 
 class MobileHomeContent extends StatefulWidget {
@@ -562,16 +563,21 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   );
 
   Widget _emptyRecent(AppCopy copy) => Container(
-    height: 102,
+    constraints: const BoxConstraints(minHeight: 102),
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: AppPalette.of(context).surface,
       borderRadius: BorderRadius.circular(UiTokens.cardRadius),
       border: Border.all(color: AppPalette.of(context).outline),
     ),
-    child: TextButton(
-      onPressed: widget.onSearch,
-      child: Text(copy.localized('去发现喜欢的桌游', 'Find a game to play')),
+    child: CatalogEmptyState(
+      controller: widget.controller,
+      emptyMessage: copy.localized('暂无推荐桌游', 'No recommendations yet'),
+      failureMessage: copy.localized(
+        '暂时无法加载推荐桌游',
+        'Recommendations are unavailable',
+      ),
+      onBrowse: widget.onSearch,
     ),
   );
 

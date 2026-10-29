@@ -11,6 +11,7 @@ import '../hover_horizontal_scrollbar.dart';
 import '../hover_carousel_controls.dart';
 import '../content_entrance.dart';
 import '../library_catalog_status.dart';
+import '../catalog_empty_state.dart';
 import 'cinema_surface.dart';
 
 /// A real game catalogue presented with the Cinema composition on both shells.
@@ -26,12 +27,14 @@ class CinemaHomeContent extends StatefulWidget {
     required this.onActivities,
     this.onSearch,
     this.onTopic,
+    this.accountActions,
     this.scrollable = true,
   });
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame, onAskGame;
   final VoidCallback onLibrary, onRankings, onFavorites, onActivities;
   final VoidCallback? onSearch, onTopic;
+  final Widget? accountActions;
   final bool scrollable;
   @override
   State<CinemaHomeContent> createState() => _CinemaHomeContentState();
@@ -79,21 +82,25 @@ class _CinemaHomeContentState extends State<CinemaHomeContent> {
                         tooltip: c.copy.localized('搜索', 'Search'),
                         icon: const Icon(Icons.search_rounded),
                       ),
-                    IconButton(
-                      onPressed: widget.onActivities,
-                      tooltip: c.copy.localized('消息', 'Notifications'),
-                      icon: const Icon(Icons.notifications_none_rounded),
-                    ),
-                    IconButton(
-                      key: const ValueKey('cinema-account-entry'),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const AccountScreen(),
-                        ),
+                    if (widget.accountActions case final actions?)
+                      actions
+                    else ...[
+                      IconButton(
+                        onPressed: widget.onActivities,
+                        tooltip: c.copy.localized('消息', 'Notifications'),
+                        icon: const Icon(Icons.notifications_none_rounded),
                       ),
-                      tooltip: c.copy.localized('账户', 'Account'),
-                      icon: const Icon(Icons.person_outline_rounded),
-                    ),
+                      IconButton(
+                        key: const ValueKey('cinema-account-entry'),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AccountScreen(),
+                          ),
+                        ),
+                        tooltip: c.copy.localized('账户', 'Account'),
+                        icon: const Icon(Icons.person_outline_rounded),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -102,7 +109,10 @@ class _CinemaHomeContentState extends State<CinemaHomeContent> {
         if (game == null)
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(c.copy.localized('暂无桌游资料', 'No games available')),
+            child: CatalogEmptyState(
+              controller: c,
+              emptyMessage: c.copy.localized('暂无桌游资料', 'No games available'),
+            ),
           )
         else
           LayoutBuilder(

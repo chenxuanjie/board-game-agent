@@ -26,6 +26,9 @@ import 'package:board_game_agent/features/library/services/remote_asset_service.
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/main.dart';
 import 'package:board_game_agent/ui/shared/library_catalog_status.dart';
+import 'package:board_game_agent/ui/shared/catalog_empty_state.dart';
+import 'package:board_game_agent/ui/mobile/game_search_screen.dart';
+import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
 import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -47,6 +50,87 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  testWidgets(
+    'empty catalogue distinguishes loading, failure, retry, and successful empty',
+    (tester) async {
+      final manifests = _Manifests()..failure = true;
+      final c = _controller(manifests);
+      addTearDown(c.dispose);
+      await c.retryGameCatalog();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: c,
+              builder: (_, _) =>
+                  CatalogEmptyState(controller: c, emptyMessage: '暂无推荐桌游'),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('暂时无法加载桌游资料'), findsOneWidget);
+      expect(find.text('暂无推荐桌游'), findsNothing);
+      final gate = Completer<void>();
+      manifests
+        ..failure = false
+        ..gate = gate;
+      await tester.tap(find.byKey(const ValueKey('catalog-empty-retry')));
+      await tester.pump();
+      expect(find.text('正在加载桌游资料…'), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('暂无推荐桌游'), findsOneWidget);
+      expect(c.gameCatalogLoadState, LibraryLoadState.empty);
+    },
+  );
+
+  testWidgets(
+    'search and rule materials do not describe catalog failure as no results',
+    (tester) async {
+      final manifests = _Manifests()..failure = true;
+      final c = _controller(manifests);
+      addTearDown(c.dispose);
+      await c.retryGameCatalog();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(c.palette),
+          home: MobileGameSearchScreen(controller: c, onOpenGame: (_) {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('暂时无法加载桌游资料'), findsOneWidget);
+      expect(find.text('没有找到桌游'), findsNothing);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(c.palette),
+          home: MobileRuleMaterialsScreen(controller: c),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('暂时无法加载桌游资料'), findsOneWidget);
+      expect(find.text('没有找到规则资料'), findsNothing);
+    },
+  );
+
+  testWidgets('failed refresh keeps prior catalogue and labels it as saved', (
+    tester,
+  ) async {
+    final manifests = _Manifests()..games = [game];
+    final c = _controller(manifests);
+    addTearDown(c.dispose);
+    await c.retryGameCatalog();
+    manifests.failure = true;
+    await c.retryGameCatalog();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: LibraryCatalogStatus(controller: c)),
+      ),
+    );
+    expect(find.text('当前显示已有资料，更新未完成。'), findsOneWidget);
+    expect(c.games.single.slug, 'cabo');
+    expect(find.byKey(const ValueKey('catalog-retry')), findsOneWidget);
   });
 
   test(

@@ -34,6 +34,7 @@ import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/core/localization/app_copy.dart';
+import 'package:board_game_agent/core/models/app_activity.dart';
 import 'package:board_game_agent/core/theme/color_scheme_option.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
@@ -53,6 +54,126 @@ part 'mobile/mobile_composer_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final width in [320.0, 390.0]) {
+    testWidgets('all four main pages expose a working account menu at $width', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final tab in ['home', 'library', 'ai', 'mine']) {
+        await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('account-menu-button')),
+          findsOneWidget,
+          reason: tab,
+        );
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('account-menu-account')),
+          findsOneWidget,
+          reason: tab,
+        );
+        expect(
+          find.byKey(const ValueKey('account-menu-notifications')),
+          findsOneWidget,
+          reason: tab,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+  testWidgets(
+    'app update notification opens its action after the sheet closes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      var opened = false;
+      controller.recordAppUpdate(version: '9.0.0', build: 900);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(
+            controller: controller,
+            onOpenAbout: () {},
+            onCheckUpdates: () => opened = true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('account-menu-notifications')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('发现新版本'));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
+    'library failure notification opens the library; unavailable AI session explains why',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = _ActivityPreferences();
+      final controller = _controller(
+        preferences: preferences,
+        ttsService: _UnavailableTtsService(),
+      );
+      addTearDown(controller.dispose);
+      await tester.runAsync(controller.initialize);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Future<void> openNotifications() async {
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('account-menu-notifications')),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await openNotifications();
+      await tester.tap(find.text('资料加载失败测试'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileLibraryContent), findsOneWidget);
+      await openNotifications();
+      await tester.tap(find.text('AI 会话测试'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.text(controller.copy.activityConversationUnavailable),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   for (final width in [320.0, 390.0]) {
     testWidgets(
       'default mobile account menu opens notifications and account at $width',
@@ -375,7 +496,9 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('mobile-library-profile')));
+      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('account-menu-account')));
       await tester.pumpAndSettle();
       expect(find.byType(AccountScreen), findsOneWidget);
       expect(find.byType(MobileSettingsScreen), findsNothing);
@@ -931,6 +1054,27 @@ AppController _controller({
 class _UnavailableTtsService extends TtsService {
   @override
   bool get isAvailable => false;
+}
+
+class _ActivityPreferences extends PreferencesService {
+  @override
+  Future<List<AppActivity>> loadActivities() async => [
+    AppActivity(
+      id: 'library',
+      kind: AppActivityKind.libraryLoadFailed,
+      title: '资料加载失败测试',
+      message: '打开资料库可重试。',
+      createdAt: DateTime(2026),
+    ),
+    AppActivity(
+      id: 'ai',
+      kind: AppActivityKind.aiCompleted,
+      title: 'AI 会话测试',
+      message: '打开会话',
+      conversationId: 'missing',
+      createdAt: DateTime(2026),
+    ),
+  ];
 }
 
 class _UnusedAiService extends Fake implements AiService {}
