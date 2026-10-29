@@ -1,6 +1,37 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
+  for (final size in [const Size(720, 700), const Size(1280, 800)]) {
+    testWidgets(
+      'default desktop account menu opens notifications and account at $size',
+      (tester) async {
+        context.controller.recordAppUpdate(version: '9.0.0', build: 900);
+        await _mount(tester, context.controller, size);
+        expect(find.byTooltip('通知'), findsNothing);
+        expect(context.controller.unreadActivityCount, 1);
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        expect(find.text('1'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('account-menu-notifications')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('desktop-activity-popup')),
+          findsOneWidget,
+        );
+        expect(context.controller.unreadActivityCount, 0);
+        await tester.tap(find.byTooltip(context.controller.copy.dialogClose));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('account-menu-account')));
+        await tester.pumpAndSettle();
+        expect(find.byType(AccountScreen), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets(
     'library keeps sorting and game anchor through details and shell changes',
     (tester) async {
@@ -754,7 +785,11 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('资料加载失败，请在资料库重试。'), findsNothing);
       expect(find.text('打开资料库'), findsNothing);
 
-      await tester.tap(find.byTooltip('通知').hitTestable());
+      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('account-menu-notifications')),
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey<String>('desktop-activity-popup')),

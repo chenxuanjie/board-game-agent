@@ -16,6 +16,7 @@ import 'game_content_card.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_catalog_status.dart';
+import '../shared/account_menu.dart';
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -204,39 +205,10 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           color: AppPalette.of(context).textPrimary,
         ),
       ),
-      Stack(
-        children: [
-          IconButton(
-            key: const ValueKey('mobile-home-activities'),
-            tooltip: copy.localized('消息', 'Notifications'),
-            onPressed: widget.onActivities,
-            icon: Icon(
-              Icons.notifications_none_rounded,
-              color: AppPalette.of(context).textPrimary,
-            ),
-          ),
-          if (widget.controller.unreadActivityCount > 0)
-            Positioned(
-              right: 11,
-              top: 8,
-              child: CircleAvatar(
-                radius: 4,
-                backgroundColor: AppPalette.of(context).primary,
-              ),
-            ),
-        ],
-      ),
-      IconButton(
-        key: const ValueKey('mobile-home-profile'),
-        tooltip: copy.localized('账户', 'Account'),
-        onPressed: widget.onAccount,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-        icon: const CircleAvatar(
-          radius: 19,
-          backgroundColor: Color(0xFFFFE6CE),
-          child: Icon(Icons.person_rounded, color: Color(0xFF955B3B)),
-        ),
+      AccountMenuButton(
+        unreadCount: widget.controller.unreadActivityCount,
+        onOpenAccount: widget.onAccount,
+        onOpenNotifications: widget.onActivities,
       ),
     ],
   );

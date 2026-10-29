@@ -53,6 +53,49 @@ part 'mobile/mobile_composer_test_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final width in [320.0, 390.0]) {
+    testWidgets(
+      'default mobile account menu opens notifications and account at $width',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final controller = _controller(ttsService: _UnavailableTtsService());
+        addTearDown(controller.dispose);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        controller.recordAppUpdate(version: '9.0.0', build: 900);
+        await tester.binding.setSurfaceSize(Size(width, 844));
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(controller.palette),
+            home: HomeScreen(controller: controller, onOpenAbout: () {}),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('mobile-home-activities')),
+          findsNothing,
+        );
+        expect(controller.unreadActivityCount, 1);
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        expect(find.text('1'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('account-menu-notifications')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('发现新版本'), findsOneWidget);
+        expect(controller.unreadActivityCount, 0);
+        Navigator.of(tester.element(find.text('发现新版本'))).pop();
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('account-menu-account')));
+        await tester.pumpAndSettle();
+        expect(find.byType(AccountScreen), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
   for (final width in [320.0, 390.0, 720.0]) {
     testWidgets('Cinema compact navigation and details work at $width', (
       tester,
@@ -299,8 +342,9 @@ void main() {
       expect(tester.takeException(), isNull);
 
       if (size.width == 390) {
-        await tester.tap(find.byKey(const ValueKey('mobile-home-profile')));
-        await tester.tap(find.byKey(const ValueKey('mobile-home-profile')));
+        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('account-menu-account')));
         await tester.pumpAndSettle();
         expect(find.byType(AccountScreen, skipOffstage: false), findsOneWidget);
         expect(find.byType(MobileSettingsScreen), findsNothing);

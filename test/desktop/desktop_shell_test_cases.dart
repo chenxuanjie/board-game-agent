@@ -35,7 +35,10 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
             find.byKey(const ValueKey('desktop-home-search-shell')),
             findsNothing,
           );
-          expect(find.byTooltip('通知'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('account-menu-button')),
+            findsOneWidget,
+          );
           expect(
             tester
                 .getSize(find.byKey(const ValueKey('desktop-top-bar')))

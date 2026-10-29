@@ -54,8 +54,16 @@ void main() {
       await tester.pumpWidget(_buildApp(controller));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('通知'), findsOneWidget, reason: 'size=$size');
-      await tester.tap(find.byTooltip('通知'));
+      expect(
+        find.byKey(const ValueKey('account-menu-button')),
+        findsOneWidget,
+        reason: 'size=$size',
+      );
+      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('account-menu-notifications')),
+      );
       await tester.pumpAndSettle();
 
       final Finder panel = find.byKey(

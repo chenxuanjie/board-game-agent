@@ -33,6 +33,8 @@ import '../../core/theme/cinema_theme.dart';
 import '../shared/cinema/cinema_home.dart';
 import '../shared/cinema/cinema_surface.dart';
 import '../shared/app_failure_notice.dart';
+import '../shared/account_menu.dart';
+import '../shared/account_screen.dart';
 
 class DesktopWorkspace extends StatefulWidget {
   const DesktopWorkspace({
@@ -77,6 +79,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     () => ScrollController(keepScrollOffset: false),
   );
   bool _searchOpen = false;
+  bool _accountRouteOpen = false;
   bool _clearingSearch = false;
   String _localPage = 'home';
   String get _page => _localPage;
@@ -327,6 +330,18 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               onPressed: () => unawaited(_toggleFavorite(game)),
             ),
     );
+  }
+
+  Future<void> _openAccount() async {
+    if (_accountRouteOpen) return;
+    _accountRouteOpen = true;
+    try {
+      await Navigator.of(
+        context,
+      ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
+    } finally {
+      _accountRouteOpen = false;
+    }
   }
 
   Future<void> _openActivityCenter() async {
@@ -1022,20 +1037,26 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
               ),
             CompositedTransformTarget(
               link: _activityLink,
-              child: Badge(
-                isLabelVisible: widget.controller.unreadActivityCount > 0,
-                child: IconButton(
-                  tooltip: widget.controller.copy.localized(
-                    '通知',
-                    'Notifications',
-                  ),
-                  icon: Icon(
-                    Icons.notifications_none_rounded,
-                    color: desktopColors(context).brown,
-                  ),
-                  onPressed: _openActivityCenter,
-                ),
-              ),
+              child: isCinema(context)
+                  ? Badge(
+                      isLabelVisible: widget.controller.unreadActivityCount > 0,
+                      child: IconButton(
+                        tooltip: widget.controller.copy.localized(
+                          '通知',
+                          'Notifications',
+                        ),
+                        icon: Icon(
+                          Icons.notifications_none_rounded,
+                          color: desktopColors(context).brown,
+                        ),
+                        onPressed: _openActivityCenter,
+                      ),
+                    )
+                  : AccountMenuButton(
+                      unreadCount: widget.controller.unreadActivityCount,
+                      onOpenAccount: _openAccount,
+                      onOpenNotifications: _openActivityCenter,
+                    ),
             ),
           ],
         ),
