@@ -17,7 +17,7 @@ import '../shared/hover_carousel_controls.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_catalog_status.dart';
 import '../shared/catalog_empty_state.dart';
-import '../shared/account_menu.dart';
+import 'scan_placeholder.dart';
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -29,8 +29,6 @@ class MobileHomeContent extends StatefulWidget {
     required this.onOpenAi,
     required this.onRankings,
     required this.onFavorites,
-    required this.onAccount,
-    required this.onActivities,
     required this.onRules,
     required this.onOpenNationalDay,
   });
@@ -42,8 +40,6 @@ class MobileHomeContent extends StatefulWidget {
   final VoidCallback onOpenAi;
   final VoidCallback onRankings;
   final VoidCallback onFavorites;
-  final VoidCallback onAccount;
-  final VoidCallback onActivities;
   final VoidCallback onRules;
   final VoidCallback onOpenNationalDay;
 
@@ -206,11 +202,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           color: AppPalette.of(context).textPrimary,
         ),
       ),
-      AccountMenuButton(
-        unreadCount: widget.controller.unreadActivityCount,
-        onOpenAccount: widget.onAccount,
-        onOpenNotifications: widget.onActivities,
-      ),
+      MobileScanPlaceholder(copy: copy),
     ],
   );
 

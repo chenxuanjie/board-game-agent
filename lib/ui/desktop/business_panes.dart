@@ -25,6 +25,7 @@ import '../shared/assistant/conversation_search_dialog.dart';
 import '../shared/app_modals.dart';
 import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
+import '../shared/assistant/scroll_to_bottom_button.dart';
 import '../shared/documents/markdown_document_screen.dart';
 import '../shared/documents/pdf_document_screen.dart';
 import '../shared/documents/library_resource_document_screen.dart';

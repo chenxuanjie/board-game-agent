@@ -18,6 +18,7 @@ import '../shared/assistant/message_bubble.dart';
 import '../shared/assistant/conversation_search_dialog.dart';
 import '../shared/assistant/assistant_toolbar_icon.dart';
 import '../shared/assistant/conversation_actions.dart';
+import '../shared/assistant/scroll_to_bottom_button.dart';
 
 class AssistantChatScreen extends StatefulWidget {
   const AssistantChatScreen({
@@ -27,6 +28,7 @@ class AssistantChatScreen extends StatefulWidget {
     this.customTitle,
     this.useGlobalMode = false,
     this.keyboardVisible,
+    this.trailingAction,
   });
 
   final AppController controller;
@@ -34,6 +36,7 @@ class AssistantChatScreen extends StatefulWidget {
   final String? customTitle;
   final bool useGlobalMode;
   final bool? keyboardVisible;
+  final Widget? trailingAction;
 
   @override
   State<AssistantChatScreen> createState() => _AssistantChatScreenState();
@@ -185,7 +188,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         ),
         actions: <Widget>[
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: EdgeInsets.only(
+              right: widget.trailingAction == null ? 16 : 4,
+            ),
             child: AssistantConversationActions(
               copy: copy,
               title:
@@ -207,6 +212,8 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   : () => unawaited(_deleteConversation()),
             ),
           ),
+          if (widget.trailingAction case final action?)
+            Padding(padding: const EdgeInsets.only(right: 8), child: action),
         ],
       ),
       body: SafeArea(
@@ -252,20 +259,20 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                           );
                         },
                       ),
-                      if (_showJumpToBottom)
-                        Positioned(
-                          left: 16,
-                          right: 16,
-                          bottom: 8,
-                          child: Center(
-                            child: _JumpToBottomButton(
-                              label: _hasNewContent
-                                  ? copy.aiNewMessages
-                                  : copy.desktopJumpToBottom,
-                              onPressed: _jumpToBottom,
-                            ),
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                        child: Center(
+                          child: AssistantScrollToBottomButton(
+                            visible: _showJumpToBottom,
+                            tooltip: _hasNewContent
+                                ? '${copy.desktopJumpToBottom} · ${copy.aiNewMessages}'
+                                : copy.desktopJumpToBottom,
+                            onPressed: _jumpToBottom,
                           ),
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -400,13 +407,14 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
     final double target = _scrollController.position.maxScrollExtent;
-    if (!animated) {
+    final duration = AppMotion.duration(context, AppMotion.content);
+    if (!animated || duration == Duration.zero) {
       _scrollController.jumpTo(target);
       return;
     }
     _scrollController.animateTo(
       target,
-      duration: AppMotion.duration(context, AppMotion.content),
+      duration: duration,
       curve: Curves.easeOut,
     );
   }
@@ -884,29 +892,6 @@ class _MessageList extends StatelessWidget {
             onExpandedChanged: onRunExpandedChanged,
           ),
       ],
-    );
-  }
-}
-
-class _JumpToBottomButton extends StatelessWidget {
-  const _JumpToBottomButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppPalette palette = AppPalette.of(context);
-    return FilledButton.tonalIcon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.south_rounded, size: 17),
-      label: Text(label),
-      style: FilledButton.styleFrom(
-        backgroundColor: palette.surfaceContainer,
-        foregroundColor: palette.textPrimary,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      ),
     );
   }
 }

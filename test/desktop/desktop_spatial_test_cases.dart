@@ -89,47 +89,82 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
     });
   }
   for (final size in [const Size(1440, 1000), const Size(390, 844)]) {
-    testWidgets('Spatial account menu stays on home at $size', (tester) async {
-      final c = context.controller;
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await c.setColorScheme(ColorSchemeOption.spatialCinema);
-      await _mountSpatial(tester, c, size);
-      expect(find.byKey(const ValueKey('account-menu-button')), findsOneWidget);
-      expect(find.byIcon(Icons.notifications_none), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('account-menu-notifications')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(DesktopActivityPopup), findsOneWidget);
-      expect(c.unreadActivityCount, 0);
-      await tester.tap(find.byTooltip(c.copy.dialogClose));
-      await tester.pumpAndSettle();
-      if (size.width < 760) {
-        await tester.tap(find.byKey(const ValueKey('spatial-open-navigation')));
+    testWidgets(
+      'Spatial uses scan on compact and account menu on wide at $size',
+      (tester) async {
+        final c = context.controller;
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await c.setColorScheme(ColorSchemeOption.spatialCinema);
+        await _mountSpatial(tester, c, size);
+        expect(find.byIcon(Icons.notifications_none), findsNothing);
+        if (size.width < 760) {
+          expect(
+            find.byKey(const ValueKey('account-menu-button')),
+            findsNothing,
+          );
+          expect(
+            find.byKey(const ValueKey('mobile-scan-placeholder')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('spatial-open-navigation')),
+          );
+          await tester.pumpAndSettle();
+        } else {
+          expect(
+            find.byKey(const ValueKey('account-menu-button')),
+            findsOneWidget,
+          );
+          await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('account-menu-notifications')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(DesktopActivityPopup), findsOneWidget);
+          expect(c.unreadActivityCount, 0);
+          await tester.tap(find.byTooltip(c.copy.dialogClose));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
         await tester.pumpAndSettle();
-      }
-      await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
-      expect(
-        find.byKey(const ValueKey('mobile-library-profile')),
-        findsNothing,
-      );
-      if (size.width < 760) {
-        Navigator.of(tester.element(find.byType(MobileLibraryContent))).pop();
-      } else {
-        await tester.tap(find.byKey(const ValueKey('spatial-menu-home')));
-      }
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('account-menu-account')));
-      await tester.pumpAndSettle();
-      expect(find.byType(AccountScreen), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
+        expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('mobile-library-profile')),
+          findsNothing,
+        );
+        if (size.width < 760) {
+          Navigator.of(tester.element(find.byType(MobileLibraryContent))).pop();
+        } else {
+          await tester.tap(find.byKey(const ValueKey('spatial-menu-home')));
+        }
+        await tester.pumpAndSettle();
+        if (size.width < 760) {
+          await tester.tap(
+            find.byKey(const ValueKey('spatial-open-navigation')),
+          );
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.byKey(const ValueKey('spatial-menu-account')),
+            200,
+            scrollable: find
+                .descendant(
+                  of: find.byType(BottomSheet),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          await tester.tap(find.byKey(const ValueKey('spatial-menu-account')));
+        } else {
+          await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('account-menu-account')));
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(AccountScreen), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
   for (final size in [const Size(1440, 1000), const Size(900, 800)]) {
     testWidgets('Spatial wide business pages use desktop content at $size', (

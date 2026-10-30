@@ -25,7 +25,6 @@ import 'assistant_chat_screen.dart';
 import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_cover_motion.dart';
-import '../shared/account_screen.dart';
 import '../shared/app_failure_notice.dart';
 import '../shared/assistant/conversation_drawer.dart';
 
@@ -52,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
-  bool _accountRouteOpen = false;
 
   @override
   void initState() {
@@ -116,8 +114,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       context,
                     ).pushNamed(GameRankingScreen.routeName),
                     onFavorites: () => _openSearch(favoritesOnly: true),
-                    onAccount: _openAccount,
-                    onActivities: _openActivities,
                     onRules: _openRuleMaterials,
                     onOpenNationalDay: _openNationalDay,
                   )
@@ -125,9 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? MobileLibraryContent(
                     controller: widget.controller,
                     onOpenGame: _openGame,
-                    onActivities: _openActivities,
-                    onProfile: _openAccount,
-                    accountActions: const SizedBox.shrink(),
                   )
                 : _tab == 2
                 ? UniversalAiScreen(
@@ -145,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     onExplore: _openSearch,
                     onActivities: _openActivities,
                     onSettings: _openSettings,
-                    accountActions: const SizedBox.shrink(),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -316,18 +308,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _openAccount() async {
-    if (_accountRouteOpen) return;
-    _accountRouteOpen = true;
-    try {
-      await Navigator.of(
-        context,
-      ).push<void>(MaterialPageRoute(builder: (_) => const AccountScreen()));
-    } finally {
-      _accountRouteOpen = false;
-    }
   }
 
   Future<void> _openActivities() async {

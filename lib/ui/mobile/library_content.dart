@@ -15,24 +15,17 @@ import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import 'game_cover.dart';
 import '../shared/content_cards.dart';
+import 'scan_placeholder.dart';
 
 class MobileLibraryContent extends StatefulWidget {
   const MobileLibraryContent({
     super.key,
     required this.controller,
     required this.onOpenGame,
-    required this.onActivities,
-    required this.onProfile,
-    this.accountActions,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
-  final VoidCallback onActivities;
-  final VoidCallback onProfile;
-
-  /// Optional shared account entry supplied by an alternate presentation shell.
-  final Widget? accountActions;
 
   @override
   State<MobileLibraryContent> createState() => _MobileLibraryContentState();
@@ -128,49 +121,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       ],
                     ),
                   ),
-                  if (widget.accountActions case final actions?)
-                    actions
-                  else ...[
-                    Stack(
-                      children: [
-                        IconButton(
-                          tooltip: copy.localized('消息', 'Notifications'),
-                          onPressed: widget.onActivities,
-                          icon: Icon(
-                            Icons.notifications_none_rounded,
-                            color: AppPalette.of(context).textPrimary,
-                          ),
-                        ),
-                        if (widget.controller.unreadActivityCount > 0)
-                          Positioned(
-                            right: 10,
-                            top: 9,
-                            child: CircleAvatar(
-                              radius: 4,
-                              backgroundColor: AppPalette.of(context).primary,
-                            ),
-                          ),
-                      ],
-                    ),
-                    IconButton(
-                      key: const ValueKey('mobile-library-profile'),
-                      tooltip: copy.localized('账户', 'Account'),
-                      onPressed: widget.onProfile,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 48,
-                        height: 48,
-                      ),
-                      icon: CircleAvatar(
-                        radius: 19,
-                        backgroundColor: const Color(0xFFFFE6CE),
-                        child: Icon(
-                          Icons.person_rounded,
-                          color: const Color(0xFF955B3B),
-                        ),
-                      ),
-                    ),
-                  ],
+                  MobileScanPlaceholder(copy: copy),
                 ],
               ),
             ),

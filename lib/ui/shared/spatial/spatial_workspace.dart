@@ -16,6 +16,7 @@ import '../../mobile/settings_screen.dart';
 import '../../mobile/national_day_screen.dart';
 import '../../mobile/universal_ai_screen.dart';
 import '../../mobile/rule_materials_screen.dart';
+import '../../mobile/scan_placeholder.dart';
 import '../account_screen.dart';
 import '../library_catalog_status.dart';
 import '../account_menu.dart';
@@ -558,7 +559,10 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
                   ),
                 ),
               ),
-              _accountMenu(),
+              if (mobile)
+                MobileScanPlaceholder(copy: c.copy)
+              else
+                _accountMenu(),
             ],
           );
           final top = SizedBox(

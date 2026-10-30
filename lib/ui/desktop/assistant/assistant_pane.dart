@@ -310,32 +310,20 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                           ),
                       ],
                     ),
-                  if (_showJumpToBottom)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 14,
-                      child: Center(
-                        child: FilledButton.tonalIcon(
-                          onPressed: _jumpToBottom,
-                          icon: const Icon(Icons.south_rounded, size: 17),
-                          label: Text(
-                            _hasNewContent
-                                ? controller.copy.aiNewMessages
-                                : controller.copy.desktopJumpToBottom,
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: palette.surfaceContainer,
-                            foregroundColor: palette.textPrimary,
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 9,
-                            ),
-                          ),
-                        ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 14,
+                    child: Center(
+                      child: AssistantScrollToBottomButton(
+                        visible: _showJumpToBottom,
+                        tooltip: _hasNewContent
+                            ? '${controller.copy.desktopJumpToBottom} · ${controller.copy.aiNewMessages}'
+                            : controller.copy.desktopJumpToBottom,
+                        onPressed: _jumpToBottom,
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
@@ -470,13 +458,14 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
     final double target = _scrollController.position.maxScrollExtent;
-    if (!animated) {
+    final duration = AppMotion.duration(context, AppMotion.content);
+    if (!animated || duration == Duration.zero) {
       _scrollController.jumpTo(target);
       return;
     }
     _scrollController.animateTo(
       target,
-      duration: AppMotion.duration(context, AppMotion.content),
+      duration: duration,
       curve: Curves.easeOut,
     );
   }

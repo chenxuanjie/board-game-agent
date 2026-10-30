@@ -45,62 +45,89 @@ import 'package:board_game_agent/features/assistant/models/ai_conversation.dart'
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/shared/content_cards.dart';
-import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_presentation.dart';
 
 part 'mobile/mobile_national_day_test_cases.dart';
 part 'mobile/mobile_content_design_test_cases.dart';
 part 'mobile/mobile_composer_test_cases.dart';
 
+Future<void> _openMobileNotifications(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
+  await tester.pumpAndSettle();
+  final entry = find.byKey(const ValueKey('mobile-mine-service-0'));
+  await tester.scrollUntilVisible(
+    entry,
+    250,
+    scrollable: find
+        .descendant(
+          of: find.byKey(const ValueKey('mobile-mine-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(entry);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openMobileProfile(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
+  await tester.pumpAndSettle();
+  final entry = find.byKey(const ValueKey('mobile-mine-account-entry'));
+  await tester.scrollUntilVisible(
+    entry,
+    -250,
+    scrollable: find
+        .descendant(
+          of: find.byKey(const ValueKey('mobile-mine-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(entry);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   for (final width in [320.0, 390.0]) {
-    testWidgets('account menu appears only on home at $width', (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final controller = _controller(ttsService: _UnavailableTtsService());
-      addTearDown(controller.dispose);
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.binding.setSurfaceSize(Size(width, 844));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.buildTheme(controller.palette),
-          home: HomeScreen(controller: controller, onOpenAbout: () {}),
-        ),
-      );
-      await tester.pumpAndSettle();
-      for (final tab in ['home', 'library', 'ai', 'mine']) {
-        await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
+    testWidgets(
+      'scan placeholder replaces account menus on four tabs at $width',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final controller = _controller(ttsService: _UnavailableTtsService());
+        addTearDown(controller.dispose);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.binding.setSurfaceSize(Size(width, 844));
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(controller.palette),
+            home: HomeScreen(controller: controller, onOpenAbout: () {}),
+          ),
+        );
         await tester.pumpAndSettle();
-        if (tab != 'home') {
+        for (final tab in ['home', 'library', 'ai', 'mine']) {
+          await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
+          await tester.pumpAndSettle();
           expect(
             find.byKey(const ValueKey('account-menu-button')),
             findsNothing,
+            reason: tab,
           );
-          continue;
+          final scan = find.byKey(const ValueKey('mobile-scan-placeholder'));
+          expect(scan, findsOneWidget, reason: tab);
+          expect(
+            tester.widget<IconButton>(scan).onPressed,
+            isNull,
+            reason: tab,
+          );
+          expect(tester.getSize(scan), const Size(48, 48));
         }
-        expect(
-          find.byKey(const ValueKey('account-menu-button')),
-          findsOneWidget,
-          reason: tab,
-        );
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('account-menu-account')),
-          findsOneWidget,
-          reason: tab,
-        );
-        expect(
-          find.byKey(const ValueKey('account-menu-notifications')),
-          findsOneWidget,
-          reason: tab,
-        );
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
-      }
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    });
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
   }
   testWidgets(
     'app update notification opens its action after the sheet closes',
@@ -121,12 +148,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('account-menu-notifications')),
-      );
-      await tester.pumpAndSettle();
+      await _openMobileNotifications(tester);
       await tester.tap(find.text('发现新版本'));
       await tester.pumpAndSettle();
       expect(opened, isTrue);
@@ -155,14 +177,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       Future<void> openNotifications() async {
-        await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('account-menu-notifications')),
-        );
-        await tester.pumpAndSettle();
+        await _openMobileNotifications(tester);
       }
 
       await openNotifications();
@@ -182,47 +197,37 @@ void main() {
     },
   );
   for (final width in [320.0, 390.0]) {
-    testWidgets(
-      'default mobile account menu opens notifications and account at $width',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({});
-        final controller = _controller(ttsService: _UnavailableTtsService());
-        addTearDown(controller.dispose);
-        addTearDown(() => tester.binding.setSurfaceSize(null));
-        controller.recordAppUpdate(version: '9.0.0', build: 900);
-        await tester.binding.setSurfaceSize(Size(width, 844));
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: AppTheme.buildTheme(controller.palette),
-            home: HomeScreen(controller: controller, onOpenAbout: () {}),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('mobile-home-activities')),
-          findsNothing,
-        );
-        expect(controller.unreadActivityCount, 1);
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-        await tester.pumpAndSettle();
-        expect(find.text('1'), findsOneWidget);
-        await tester.tap(
-          find.byKey(const ValueKey('account-menu-notifications')),
-        );
-        await tester.pumpAndSettle();
-        expect(find.text('发现新版本'), findsOneWidget);
-        expect(controller.unreadActivityCount, 0);
-        Navigator.of(tester.element(find.text('发现新版本'))).pop();
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('account-menu-account')));
-        await tester.pumpAndSettle();
-        expect(find.byType(AccountScreen), findsOneWidget);
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox());
-      },
-    );
+    testWidgets('mine keeps notifications and profile accessible at $width', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      controller.recordAppUpdate(version: '9.0.0', build: 900);
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile-home-activities')),
+        findsNothing,
+      );
+      expect(controller.unreadActivityCount, 1);
+      await _openMobileNotifications(tester);
+      expect(find.text('发现新版本'), findsOneWidget);
+      expect(controller.unreadActivityCount, 0);
+      Navigator.of(tester.element(find.text('发现新版本'))).pop();
+      await tester.pumpAndSettle();
+      await _openMobileProfile(tester);
+      expect(find.text('编辑资料'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
   testWidgets(
     'home ranking shortcut opens the shared ranking and returns from game details',
@@ -442,13 +447,12 @@ void main() {
       expect(tester.takeException(), isNull);
 
       if (size.width == 390) {
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('account-menu-account')));
-        await tester.pumpAndSettle();
-        expect(find.byType(AccountScreen, skipOffstage: false), findsOneWidget);
+        await _openMobileProfile(tester);
+        expect(find.text('编辑资料'), findsOneWidget);
         expect(find.byType(MobileSettingsScreen), findsNothing);
-        await tester.pageBack();
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
         await tester.pumpAndSettle();
         await tester.tap(find.text('规则资料库'));
         await tester.pumpAndSettle();
@@ -476,15 +480,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('account-menu-account')));
-      await tester.pumpAndSettle();
-      expect(find.byType(AccountScreen), findsOneWidget);
+      await _openMobileProfile(tester);
+      expect(find.text('编辑资料'), findsOneWidget);
       expect(find.byType(MobileSettingsScreen), findsNothing);
-      await tester.pageBack();
+      await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();

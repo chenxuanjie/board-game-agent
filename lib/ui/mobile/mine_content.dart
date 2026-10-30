@@ -16,6 +16,7 @@ import '../shared/account_screen.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import 'game_cover.dart';
+import 'scan_placeholder.dart';
 
 const _assetRoot = 'assets/mobile/mine';
 
@@ -96,7 +97,6 @@ class MobileMineContent extends StatefulWidget {
     required this.onActivities,
     required this.onSettings,
     this.onConversations,
-    this.accountActions,
   });
 
   final AppController controller;
@@ -107,7 +107,6 @@ class MobileMineContent extends StatefulWidget {
   final VoidCallback onActivities;
   final VoidCallback onSettings;
   final VoidCallback? onConversations;
-  final Widget? accountActions;
 
   @override
   State<MobileMineContent> createState() => _MobileMineContentState();
@@ -552,31 +551,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
             ],
           ),
         ),
-        if (widget.accountActions case final actions?)
-          actions
-        else
-          Stack(
-            children: [
-              IconButton(
-                key: const ValueKey('mobile-mine-notifications'),
-                tooltip: copy.localized('消息通知', 'Notifications'),
-                onPressed: widget.onActivities,
-                icon: Image.asset(
-                  '$_assetRoot/notification_bell_icon.png',
-                  width: 24,
-                ),
-              ),
-              if (widget.controller.unreadActivityCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 7,
-                  child: CircleAvatar(
-                    radius: 4,
-                    backgroundColor: AppPalette.of(context).primary,
-                  ),
-                ),
-            ],
-          ),
+        MobileScanPlaceholder(copy: copy),
       ],
     ),
   );

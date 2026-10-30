@@ -476,73 +476,81 @@ void main() {
     },
   );
 
-  testWidgets(
-    'ranking read error has one retry and does not invent zero counts',
-    (tester) async {
-      final prefs = _Preferences()..failRead = true;
-      final app = _app(prefs);
-      await app.reloadGames();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.buildTheme(app.palette),
-          home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('暂时无法加载喜欢榜'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-refresh')), findsNothing);
-      expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
-      expect(find.byKey(const ValueKey('ranking-game-a')), findsNothing);
-      expect(find.text('0 次喜欢'), findsNothing);
-      expect(find.text('重试'), findsOneWidget);
-      prefs.failRead = false;
-      await tester.tap(find.text('重试'));
-      await tester.pumpAndSettle();
-      expect(find.text('0 次喜欢'), findsNWidgets(3));
-      expect(find.text('暂时无法加载喜欢榜'), findsNothing);
-      for (final badge in tester.widgetList<RankingMedal>(
-        find.byType(RankingMedal),
-      )) {
-        expect(badge.decorated, isFalse);
-      }
-      expect(
-        tester
-            .widget<FractionallySizedBox>(
-              find.byKey(const ValueKey('ranking-fill-a')),
-            )
-            .widthFactor,
-        0,
-      );
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+  for (final width in [320.0, 390.0, 1280.0]) {
+    testWidgets(
+      'ranking read error has one retry and does not invent zero counts at $width',
+      (tester) async {
+        await tester.binding.setSurfaceSize(Size(width, 844));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final prefs = _Preferences()..failRead = true;
+        final app = _app(prefs);
+        await app.reloadGames();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(app.palette),
+            home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('暂时无法加载喜欢榜'), findsOneWidget);
+        expect(find.byKey(const ValueKey('ranking-refresh')), findsNothing);
+        expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
+        expect(find.byKey(const ValueKey('ranking-game-a')), findsNothing);
+        expect(find.text('0 次喜欢'), findsNothing);
+        expect(find.text('重试'), findsOneWidget);
+        prefs.failRead = false;
+        await tester.tap(find.text('重试'));
+        await tester.pumpAndSettle();
+        expect(find.text('0 次喜欢'), findsNWidgets(3));
+        expect(find.text('暂时无法加载喜欢榜'), findsNothing);
+        for (final badge in tester.widgetList<RankingMedal>(
+          find.byType(RankingMedal),
+        )) {
+          expect(badge.decorated, isFalse);
+        }
+        expect(
+          tester
+              .widget<FractionallySizedBox>(
+                find.byKey(const ValueKey('ranking-fill-a')),
+              )
+              .widthFactor,
+          0,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
 
-  testWidgets(
-    'one page retry repairs missing catalog and statistics together',
-    (tester) async {
-      final manifests = _Manifests()..fail = true;
-      final app = _app(_Preferences(), manifests: manifests);
-      await app.retryGameCatalog();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.buildTheme(app.palette),
-          home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('重试'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-refresh')), findsNothing);
-      expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
-      final attempts = manifests.loads;
-      manifests.fail = false;
-      await tester.tap(find.byKey(const ValueKey('ranking-retry')));
-      await tester.pumpAndSettle();
-      expect(manifests.loads, greaterThan(attempts));
-      expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-retry')), findsNothing);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
+    testWidgets(
+      'one page retry repairs missing catalog and statistics together at $width',
+      (tester) async {
+        await tester.binding.setSurfaceSize(Size(width, 844));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final manifests = _Manifests()..fail = true;
+        final app = _app(_Preferences(), manifests: manifests);
+        await app.retryGameCatalog();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(app.palette),
+            home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('重试'), findsOneWidget);
+        expect(find.text('暂时无法加载喜欢榜'), findsOneWidget);
+        expect(find.text('暂时无法加载桌游资料'), findsNothing);
+        expect(find.byKey(const ValueKey('ranking-refresh')), findsNothing);
+        expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
+        final attempts = manifests.loads;
+        manifests.fail = false;
+        await tester.tap(find.byKey(const ValueKey('ranking-retry')));
+        await tester.pumpAndSettle();
+        expect(manifests.loads, greaterThan(attempts));
+        expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
+        expect(find.byKey(const ValueKey('ranking-retry')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
 
   testWidgets(
     'failed refresh preserves a real snapshot and has one refresh action',
