@@ -193,6 +193,8 @@ void main() {
       await controller.refreshAiModels();
       await _mount(tester, controller, size);
       await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('desktop-model-selector')),
       );
@@ -257,6 +259,8 @@ void main() {
   testWidgets('model picker explains an unconfigured service', (tester) async {
     await _mount(tester, controller, const Size(720, 700));
     await _navigate(tester, 'AI助手');
+    await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('desktop-model-selector')),
     );

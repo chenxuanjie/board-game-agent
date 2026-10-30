@@ -2,6 +2,47 @@ part of '../desktop_workspace_test.dart';
 
 void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
   _assistantDesignTest(
+    'service switch does not discard an unsaved built-in provider',
+    (tester) async {
+      final controller = await tester.runAsync(
+        () => _createController(
+          preferencesService: _InMemoryPreferencesService(),
+        ),
+      );
+      addTearDown(controller!.dispose);
+      await controller.saveAiApiConfig(
+        AiApiConfig.defaultCustom.copyWith(
+          name: 'Personal service',
+          baseUrl: 'https://example.test/v1',
+          apiKey: 'custom-key',
+          model: 'gpt-6-sol',
+        ),
+      );
+      await controller.saveAiApiConfig(
+        AiApiConfig.defaultOpenAi.copyWith(
+          apiKey: 'builtin-key',
+          model: 'gpt-6-astra',
+        ),
+      );
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-service-selector')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Personal service · gpt-6-sol'));
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.name, 'OpenAI');
+      expect(controller.aiApiConfig.apiKey, 'builtin-key');
+      expect(find.text('当前服务配置尚未保存为独立方案，请先在 AI 设置中处理，再切换服务。'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  _assistantDesignTest(
     'running reply keeps its model and mode while next-send choices change',
     (tester) async {
       final ai = _NextSendAi();
@@ -29,15 +70,23 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pump();
       expect(ai.configs.single.model, 'gpt-6-astra');
       expect(ai.modes.single, AiAnswerMode.knowledgeThenDirect);
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
       await tester.tap(
-        find.byKey(const ValueKey('desktop-answer-mode-selector')),
+        find.byKey(const ValueKey('assistant-context-knowledge')),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
-      await tester.tap(find.byKey(const ValueKey('assistant-mode-knowledge')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
       expect(controller.allowSmartSupplement(useGlobalMode: true), isFalse);
+      Navigator.of(
+        tester.element(
+          find.byKey(const ValueKey('assistant-context-knowledge')),
+        ),
+      ).pop();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -181,6 +230,8 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         await context.controller.saveAiApiConfig(AiApiConfig.defaultOpenAi);
         await _mount(tester, context.controller, size);
         await _navigate(tester, 'AI助手');
+        await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
         await tester.pumpAndSettle();
         expect(find.text('请先在设置中配置 AI 服务'), findsOneWidget);
@@ -188,7 +239,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
           tester
               .getSize(find.byKey(const ValueKey('desktop-model-picker-panel')))
               .height,
-          lessThan(180),
+          lessThan(230),
         );
         expect(find.text('服务等级'), findsNothing);
         expect(
@@ -226,6 +277,8 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       );
       await _mount(tester, context.controller, const Size(1280, 800));
       await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pumpAndSettle();
       final list = find.byKey(const ValueKey('desktop-model-picker-list'));
@@ -240,7 +293,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         tester
             .getSize(find.byKey(const ValueKey('desktop-model-picker-panel')))
             .height,
-        lessThan(360),
+        lessThan(400),
       );
       await _captureDesktopTypography(tester, 'model-picker-content-height');
       expect(tester.takeException(), isNull);
@@ -288,39 +341,43 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         find.byKey(const ValueKey('assistant-header-new-conversation')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       final model = find.descendant(
         of: find.byKey(const ValueKey('desktop-model-selector')),
-        matching: find.byType(Text),
+        matching: find.byIcon(Icons.tune_rounded),
       );
       expect(model, findsOneWidget);
-      final text = tester.widget<Text>(model);
-      expect(text.data, 'gpt-6-astra');
-      expect(text.style!.fontFamily, 'Noto Sans SC');
-      expect(text.style!.fontWeight, FontWeight.w500);
-      expect(text.style!.fontSize, 14);
       expect(find.text('最高'), findsNothing);
       expect(find.text('极高'), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey('desktop-answer-mode-selector')),
-      );
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
       await tester.pumpAndSettle();
       expect(
-        find.byWidgetPredicate((widget) => widget is PopupMenuItem<bool>),
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is ListTile &&
+              (widget.key == const ValueKey('assistant-context-knowledge') ||
+                  widget.key == const ValueKey('assistant-context-smart')),
+        ),
         findsNWidgets(2),
       );
       expect(
-        find.byKey(const ValueKey('assistant-mode-knowledge')),
+        find.byKey(const ValueKey('assistant-context-knowledge')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('assistant-mode-smart')),
+        find.byKey(const ValueKey('assistant-context-smart')),
         findsOneWidget,
       );
       await _captureDesktopTypography(tester, 'assistant-answer-mode');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('assistant-mode-knowledge')),
+        find.byKey(const ValueKey('assistant-context-knowledge')),
         findsNothing,
       );
       expect(tester.takeException(), isNull);
@@ -339,12 +396,12 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         );
         await _navigate(tester, 'AI助手');
         await tester.tap(
-          find.byKey(const ValueKey('desktop-answer-mode-selector')),
+          find.byKey(const ValueKey('assistant-context-button')),
         );
         await tester.pumpAndSettle();
         for (final key in [
-          'assistant-mode-knowledge',
-          'assistant-mode-smart',
+          'assistant-context-knowledge',
+          'assistant-context-smart',
         ]) {
           final rect = tester.getRect(find.byKey(ValueKey(key)));
           expect(rect.left, greaterThanOrEqualTo(0));
@@ -355,7 +412,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         await tester.tapAt(const Offset(1, 1));
         await tester.pumpAndSettle();
         expect(
-          find.byKey(const ValueKey('assistant-mode-smart')),
+          find.byKey(const ValueKey('assistant-context-smart')),
           findsNothing,
         );
         expect(tester.takeException(), isNull);

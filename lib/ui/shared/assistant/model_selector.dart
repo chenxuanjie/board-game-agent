@@ -19,6 +19,7 @@ class AssistantModelSelector extends StatefulWidget {
     this.onConfigureAi,
     this.useGlobalMode = false,
     this.compact = false,
+    this.iconOnly = false,
   });
 
   final AppController controller;
@@ -26,6 +27,7 @@ class AssistantModelSelector extends StatefulWidget {
   final VoidCallback? onConfigureAi;
   final bool useGlobalMode;
   final bool compact;
+  final bool iconOnly;
 
   @override
   State<AssistantModelSelector> createState() => _AssistantModelSelectorState();
@@ -165,18 +167,20 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
           child: AnimatedContainer(
             duration: AppMotion.duration(context),
             curve: AppMotion.curve,
-            constraints: BoxConstraints(
-              maxWidth: 310,
-              minHeight: widget.compact ? 48 : 36,
-            ),
+            constraints: widget.iconOnly
+                ? const BoxConstraints.tightFor(width: 48, height: 48)
+                : BoxConstraints(
+                    maxWidth: 310,
+                    minHeight: widget.compact ? 48 : 36,
+                  ),
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
-              color: _open || _hovered || _focused
+              color: !widget.iconOnly && (_open || _hovered || _focused)
                   ? palette.primaryContainer.withValues(alpha: 0.45)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(widget.iconOnly ? 24 : 10),
               border: Border.all(
-                color: _open || _focused
+                color: _focused || (!widget.iconOnly && _open)
                     ? palette.primary.withValues(alpha: 0.5)
                     : Colors.transparent,
               ),
@@ -184,30 +188,34 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Flexible(
-                  child: Text(
-                    modelLabel,
-                    maxLines: widget.compact ? 1 : 2,
-                    overflow: widget.compact
-                        ? TextOverflow.ellipsis
-                        : TextOverflow.clip,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
-                      color: palette.textPrimary,
-                      fontWeight: FontWeight.w500,
+                if (widget.iconOnly)
+                  Icon(Icons.tune_rounded, size: 22, color: palette.textPrimary)
+                else ...[
+                  Flexible(
+                    child: Text(
+                      modelLabel,
+                      maxLines: widget.compact ? 1 : 2,
+                      overflow: widget.compact
+                          ? TextOverflow.ellipsis
+                          : TextOverflow.clip,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        color: palette.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 5),
-                AnimatedRotation(
-                  turns: _open ? 0.5 : 0,
-                  duration: AppMotion.duration(context),
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 16,
-                    color: palette.textSecondary,
+                  const SizedBox(width: 5),
+                  AnimatedRotation(
+                    turns: _open ? 0.5 : 0,
+                    duration: AppMotion.duration(context),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: palette.textSecondary,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -304,6 +312,52 @@ class _AssistantModelPickerPanelState
     }
   }
 
+  Future<void> _selectService(AiApiConfig config) async {
+    if (_busy) return;
+    final current = widget.controller.aiApiConfig;
+    final preserved =
+        current.accountService ||
+        !current.isConfigured ||
+        widget.controller.customAiPresets.any(
+          (preset) => preset.toJson() == current.toJson(),
+        );
+    if (!preserved) {
+      setState(
+        () => _error = widget.controller.copy.localized(
+          '当前服务配置尚未保存为独立方案，请先在 AI 设置中处理，再切换服务。',
+          'The current service is not saved separately. Manage it in AI settings before switching.',
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    var switched = false;
+    try {
+      await widget.controller.saveAiApiConfig(config, forNextRun: true);
+      switched = true;
+      if (config.isConfigured) await widget.controller.refreshAiModels();
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = switched
+              ? widget.controller.copy.localized(
+                  '服务已切换，模型列表刷新失败。',
+                  'Service changed; model list refresh failed.',
+                )
+              : widget.controller.copy.localized(
+                  '切换服务失败，请重试。',
+                  'Could not switch services. Try again.',
+                ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _selectEffort(AiReasoningEffort effort) async {
     if (_busy) return;
     setState(() {
@@ -359,6 +413,12 @@ class _AssistantModelPickerPanelState
                     onPressed: _busy || !canRefresh ? null : _refreshModels,
                     icon: const Icon(Icons.refresh_rounded, size: 19),
                   ),
+                  if (widget.onConfigureAi != null)
+                    IconButton(
+                      tooltip: copy.localized('管理 AI 服务', 'Manage AI services'),
+                      onPressed: widget.onConfigureAi,
+                      icon: const Icon(Icons.settings_outlined, size: 19),
+                    ),
                   IconButton(
                     tooltip: copy.localized('关闭', 'Close'),
                     onPressed: () => Navigator.of(context).pop(),
@@ -379,6 +439,63 @@ class _AssistantModelPickerPanelState
                   ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: PopupMenuButton<AiApiConfig>(
+                key: const ValueKey('assistant-service-selector'),
+                enabled: !_busy,
+                tooltip: copy.localized('选择 AI 服务', 'Choose AI service'),
+                onSelected: (config) => unawaited(_selectService(config)),
+                itemBuilder: (_) => [
+                  if (widget.controller.accountAiAvailable)
+                    PopupMenuItem(
+                      value: AiApiConfig.defaultLoomex,
+                      child: Text(
+                        'Loomex · ${AiApiConfig.defaultLoomex.model}',
+                      ),
+                    ),
+                  for (final preset in widget.controller.customAiPresets.where(
+                    (config) => config.isConfigured,
+                  ))
+                    PopupMenuItem(
+                      value: preset,
+                      child: Text(
+                        '${preset.name} · ${preset.model}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (!widget.controller.accountAiAvailable &&
+                      widget.controller.customAiPresets
+                          .where((config) => config.isConfigured)
+                          .isEmpty)
+                    PopupMenuItem(
+                      enabled: false,
+                      child: Text(
+                        copy.localized(
+                          '暂无其他已配置服务',
+                          'No other configured services',
+                        ),
+                      ),
+                    ),
+                ],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        copy.localized(
+                          '服务：${widget.controller.aiApiConfig.name}',
+                          'Service: ${widget.controller.aiApiConfig.name}',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(Icons.expand_more_rounded),
+                  ],
+                ),
+              ),
+            ),
             if (_busy ||
                 widget.controller.aiModelLoadState == AiModelLoadState.loading)
               LinearProgressIndicator(

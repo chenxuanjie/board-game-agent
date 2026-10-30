@@ -31,7 +31,6 @@ import 'package:board_game_agent/ui/mobile/game_search_screen.dart';
 import 'package:board_game_agent/ui/mobile/rule_materials_screen.dart';
 import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -372,19 +371,13 @@ void main() {
         expect(find.byKey(const ValueKey('assistant-draft')), findsOneWidget);
         expect(find.text('AI 助手暂不可用'), findsNothing);
         await tester.tap(
-          find.byKey(const ValueKey('desktop-answer-mode-selector')),
+          find.byKey(const ValueKey('assistant-context-button')),
         );
         await tester.pumpAndSettle();
-        final item = find.byKey(const ValueKey('assistant-mode-knowledge'));
-        expect(tester.widget<PopupMenuItem<bool>>(item).enabled, isFalse);
-        expect(find.text(c.copy.assistantKnowledgeUnavailable), findsNothing);
-        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-        await mouse.addPointer(location: Offset.zero);
-        await mouse.moveTo(tester.getCenter(item));
-        await tester.pump(const Duration(seconds: 1));
+        final item = find.byKey(const ValueKey('assistant-context-knowledge'));
+        expect(tester.widget<ListTile>(item).enabled, isFalse);
         expect(find.text(c.copy.assistantKnowledgeUnavailable), findsOneWidget);
-        await mouse.removePointer();
-        await tester.tap(find.byKey(const ValueKey('assistant-mode-smart')));
+        Navigator.of(tester.element(item)).pop();
         await tester.pumpAndSettle();
         await tester.enterText(
           find.byKey(const ValueKey('assistant-draft')),

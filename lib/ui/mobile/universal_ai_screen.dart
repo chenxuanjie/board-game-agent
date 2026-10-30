@@ -7,11 +7,11 @@ class UniversalAiScreen extends StatelessWidget {
   const UniversalAiScreen({
     super.key,
     required this.controller,
-    this.accountActions,
+    this.keyboardVisible,
   });
 
   final AppController controller;
-  final Widget? accountActions;
+  final bool? keyboardVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +19,7 @@ class UniversalAiScreen extends StatelessWidget {
       controller: controller,
       customTitle: controller.copy.globalAiTitle,
       useGlobalMode: true,
-      accountActions: accountActions,
+      keyboardVisible: keyboardVisible,
     );
   }
 }

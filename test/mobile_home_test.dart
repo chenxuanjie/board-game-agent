@@ -3,7 +3,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -45,7 +46,6 @@ import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/shared/content_cards.dart';
 import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_presentation.dart';
-import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
 import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 
 part 'mobile/mobile_national_day_test_cases.dart';
@@ -55,7 +55,7 @@ part 'mobile/mobile_composer_test_cases.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   for (final width in [320.0, 390.0]) {
-    testWidgets('all four main pages expose a working account menu at $width', (
+    testWidgets('account menu stays on other main pages but not AI at $width', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
@@ -73,6 +73,13 @@ void main() {
       for (final tab in ['home', 'library', 'ai', 'mine']) {
         await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
         await tester.pumpAndSettle();
+        if (tab == 'ai') {
+          expect(
+            find.byKey(const ValueKey('account-menu-button')),
+            findsNothing,
+          );
+          continue;
+        }
         expect(
           find.byKey(const ValueKey('account-menu-button')),
           findsOneWidget,
@@ -304,6 +311,8 @@ void main() {
   testWidgets('empty model opens and highlights expanded mobile AI settings', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final controller = _controller(ttsService: _UnavailableTtsService());
     addTearDown(controller.dispose);
@@ -324,6 +333,8 @@ void main() {
           home: AssistantChatScreen(controller: controller),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pumpAndSettle();
@@ -350,6 +361,7 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     }
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('mobile home and settings fit phone sizes', (tester) async {

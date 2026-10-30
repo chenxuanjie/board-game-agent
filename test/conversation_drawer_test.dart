@@ -564,6 +564,11 @@ void main() {
             .text,
         isNotEmpty,
       );
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 180 * tester.view.devicePixelRatio,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pumpAndSettle();
       final panel = find.byKey(const ValueKey('desktop-model-picker-panel'));

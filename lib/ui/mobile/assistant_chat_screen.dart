@@ -1,4 +1,3 @@
-import '../shared/app_modals.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -23,14 +22,14 @@ class AssistantChatScreen extends StatefulWidget {
     this.initialDraft,
     this.customTitle,
     this.useGlobalMode = false,
-    this.accountActions,
+    this.keyboardVisible,
   });
 
   final AppController controller;
   final String? initialDraft;
   final String? customTitle;
   final bool useGlobalMode;
-  final Widget? accountActions;
+  final bool? keyboardVisible;
 
   @override
   State<AssistantChatScreen> createState() => _AssistantChatScreenState();
@@ -163,13 +162,11 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
               if (value == 'voice') {
                 _selectAssistantMode(AssistantMode.realtimeVoice);
               }
-              if (value == 'context') _openContextSheet();
+              if (value == 'voice-reply') {
+                unawaited(_toggleVoiceReply());
+              }
             },
             itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'context',
-                child: Text(copy.assistantContextTitle),
-              ),
               CheckedPopupMenuItem(
                 value: 'text',
                 checked:
@@ -186,11 +183,16 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   ],
                 ),
               ),
+              CheckedPopupMenuItem(
+                value: 'voice-reply',
+                enabled: controller.voiceReplyAvailable,
+                checked: controller.voiceReplyEnabled,
+                child: Text(copy.voiceReplySwitchLabel),
+              ),
               const PopupMenuDivider(),
               PopupMenuItem(value: 'clear', child: Text(copy.clearChat)),
             ],
           ),
-          ?widget.accountActions,
           const SizedBox(width: 6),
         ],
       ),
@@ -264,6 +266,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     useGlobalMode: _useGlobalMode,
                     onSend: _sendCurrentText,
                     onMicTap: _toggleListening,
+                    keyboardVisible:
+                        widget.keyboardVisible ??
+                        MediaQuery.viewInsetsOf(context).bottom > 0,
                   ),
                 ),
               ],
@@ -571,6 +576,27 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     }
   }
 
+  Future<void> _toggleVoiceReply() async {
+    try {
+      await widget.controller.setVoiceReplyEnabled(
+        !widget.controller.voiceReplyEnabled,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.controller.copy.localized(
+                '设置未保存，请重试',
+                'Could not save the setting. Try again.',
+              ),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _selectAssistantMode(AssistantMode mode) async {
     final controller = widget.controller;
     final bool changed = await controller.setAssistantMode(mode);
@@ -585,128 +611,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(controller.copy.assistantModeChanged)),
-    );
-  }
-
-  Future<void> _openContextSheet() async {
-    final controller = widget.controller;
-    final copy = controller.copy;
-    await showAppBottomSheet<void>(
-      context: context,
-      sheetAnimationStyle: AppMotion.panelStyle(context),
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
-            child: AnimatedBuilder(
-              animation: controller,
-              builder: (context, _) {
-                final palette = AppPalette.of(context);
-                final smartSupplement = controller.allowSmartSupplement(
-                  useGlobalMode: _useGlobalMode,
-                );
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      copy.assistantContextTitle,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    Tooltip(
-                      message: controller.assistantKnowledgeAvailable
-                          ? ''
-                          : copy.assistantKnowledgeUnavailable,
-                      child: SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        secondary: Icon(
-                          Icons.menu_book_rounded,
-                          color: palette.primary,
-                        ),
-                        title: Text(copy.knowledgeOnlyLabel),
-                        value: !smartSupplement,
-                        onChanged: !controller.assistantKnowledgeAvailable
-                            ? null
-                            : (value) {
-                                if (value) {
-                                  controller.setAllowSmartSupplement(
-                                    false,
-                                    useGlobalMode: _useGlobalMode,
-                                  );
-                                }
-                              },
-                      ),
-                    ),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: Tooltip(
-                        message: smartSupplement
-                            ? copy.smartSupplementSwitchHintOn
-                            : copy.smartSupplementSwitchHintOff,
-                        child: Icon(
-                          Icons.auto_awesome_rounded,
-                          color: palette.secondary,
-                        ),
-                      ),
-                      title: Text(copy.smartSupplementLabel),
-                      value: smartSupplement,
-                      onChanged: !controller.assistantKnowledgeAvailable
-                          ? null
-                          : (value) {
-                              controller.setAllowSmartSupplement(
-                                value,
-                                useGlobalMode: _useGlobalMode,
-                              );
-                            },
-                    ),
-                    if (_useGlobalMode)
-                      Tooltip(
-                        message: controller.assistantKnowledgeAvailable
-                            ? ''
-                            : copy.assistantKnowledgeUnavailable,
-                        child: SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          secondary: Tooltip(
-                            message: copy.useCurrentGameKnowledgeHint,
-                            child: Icon(
-                              Icons.menu_book_rounded,
-                              color: palette.primary,
-                            ),
-                          ),
-                          title: Text(copy.useCurrentGameKnowledgeLabel),
-                          value: controller.globalUseCurrentGameKnowledge,
-                          onChanged: controller.assistantKnowledgeAvailable
-                              ? controller.setGlobalUseCurrentGameKnowledge
-                              : null,
-                        ),
-                      ),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: Icon(
-                        Icons.graphic_eq_rounded,
-                        color: palette.primary,
-                      ),
-                      title: Text(copy.voiceReplySwitchLabel),
-                      subtitle: controller.voiceReplyAvailable
-                          ? null
-                          : Text(copy.voiceReplyUnavailable),
-                      value: controller.voiceReplyEnabled,
-                      onChanged: controller.voiceReplyAvailable
-                          ? (value) {
-                              controller.setVoiceReplyEnabled(value);
-                            }
-                          : null,
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -874,6 +778,7 @@ class _Composer extends StatelessWidget {
     required this.useGlobalMode,
     required this.onSend,
     required this.onMicTap,
+    required this.keyboardVisible,
   });
   final AppController controller;
   final TextEditingController textController;
@@ -881,6 +786,7 @@ class _Composer extends StatelessWidget {
   final bool useGlobalMode;
   final Future<void> Function() onSend;
   final Future<void> Function() onMicTap;
+  final bool keyboardVisible;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -899,6 +805,7 @@ class _Composer extends StatelessWidget {
         useGlobalMode: useGlobalMode,
         onSend: onSend,
         onMicTap: onMicTap,
+        keyboardVisible: keyboardVisible,
       ),
     ],
   );

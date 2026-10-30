@@ -177,7 +177,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 : _tab == 2
                 ? UniversalAiScreen(
                     controller: widget.controller,
-                    accountActions: _accountMenu(),
+                    keyboardVisible:
+                        MediaQuery.viewInsetsOf(context).bottom > 0,
                   )
                 : _tab == 3
                 ? MobileMineContent(
@@ -195,67 +196,71 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: CinemaSurface(
-        radius: 0,
-        child: BottomNavigationBar(
-          elevation: 0,
-          currentIndex: _tab,
-          onTap: (index) {
-            if (index == 2 &&
-                widget.controller.selectedConversation?.isGlobal != true) {
-              widget.controller.openGlobalAssistant();
-            }
-            setState(() => _tab = index);
-            widget.controller.browseSession.destination = const [
-              'home',
-              'games',
-              'assistant',
-              'mine',
-            ][index];
-            if (index == 1 && widget.controller.libraryAccessAllowed) {
-              unawaited(widget.controller.checkForLibraryUpdatesQuick());
-            }
-          },
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: isCinema(context)
-              ? Colors.transparent
-              : AppPalette.of(context).surface,
-          selectedItemColor: AppPalette.of(context).primary,
-          unselectedItemColor: AppPalette.of(context).textSecondary,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          items: [
-            BottomNavigationBarItem(
-              icon: const Icon(
-                Icons.home_rounded,
-                key: ValueKey('mobile-tab-home'),
+      bottomNavigationBar:
+          _tab == 2 && MediaQuery.viewInsetsOf(context).bottom > 0
+          ? null
+          : CinemaSurface(
+              radius: 0,
+              child: BottomNavigationBar(
+                elevation: 0,
+                currentIndex: _tab,
+                onTap: (index) {
+                  if (index == 2 &&
+                      widget.controller.selectedConversation?.isGlobal !=
+                          true) {
+                    widget.controller.openGlobalAssistant();
+                  }
+                  setState(() => _tab = index);
+                  widget.controller.browseSession.destination = const [
+                    'home',
+                    'games',
+                    'assistant',
+                    'mine',
+                  ][index];
+                  if (index == 1 && widget.controller.libraryAccessAllowed) {
+                    unawaited(widget.controller.checkForLibraryUpdatesQuick());
+                  }
+                },
+                type: BottomNavigationBarType.fixed,
+                backgroundColor: isCinema(context)
+                    ? Colors.transparent
+                    : AppPalette.of(context).surface,
+                selectedItemColor: AppPalette.of(context).primary,
+                unselectedItemColor: AppPalette.of(context).textSecondary,
+                selectedFontSize: 12,
+                unselectedFontSize: 12,
+                items: [
+                  BottomNavigationBarItem(
+                    icon: const Icon(
+                      Icons.home_rounded,
+                      key: ValueKey('mobile-tab-home'),
+                    ),
+                    label: copy.localized('首页', 'Home'),
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(
+                      Icons.casino_rounded,
+                      key: ValueKey('mobile-tab-library'),
+                    ),
+                    label: copy.localized('桌游库', 'Library'),
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(
+                      Icons.smart_toy_rounded,
+                      key: ValueKey('mobile-tab-ai'),
+                    ),
+                    label: copy.localized('AI助手', 'AI helper'),
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(
+                      Icons.person_rounded,
+                      key: ValueKey('mobile-tab-mine'),
+                    ),
+                    label: copy.localized('我的', 'Me'),
+                  ),
+                ],
               ),
-              label: copy.localized('首页', 'Home'),
             ),
-            BottomNavigationBarItem(
-              icon: const Icon(
-                Icons.casino_rounded,
-                key: ValueKey('mobile-tab-library'),
-              ),
-              label: copy.localized('桌游库', 'Library'),
-            ),
-            BottomNavigationBarItem(
-              icon: const Icon(
-                Icons.smart_toy_rounded,
-                key: ValueKey('mobile-tab-ai'),
-              ),
-              label: copy.localized('AI助手', 'AI helper'),
-            ),
-            BottomNavigationBarItem(
-              icon: const Icon(
-                Icons.person_rounded,
-                key: ValueKey('mobile-tab-mine'),
-              ),
-              label: copy.localized('我的', 'Me'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
