@@ -17,6 +17,7 @@ import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
 import '../shared/assistant/conversation_search_dialog.dart';
 import '../shared/assistant/assistant_toolbar_icon.dart';
+import '../shared/assistant/conversation_actions.dart';
 
 class AssistantChatScreen extends StatefulWidget {
   const AssistantChatScreen({
@@ -167,7 +168,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
           child: Material(
             color: palette.surface.withValues(alpha: .95),
             shape: const CircleBorder(),
-            child: _HeaderPressFeedback(
+            child: AssistantHeaderPressFeedback(
               child: IconButton(
                 key: const ValueKey('assistant-conversations-trigger'),
                 tooltip: copy.openConversations,
@@ -183,120 +184,27 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
           ),
         ),
         actions: <Widget>[
-          Container(
-            margin: const EdgeInsets.only(right: 16),
-            decoration: BoxDecoration(
-              color: palette.surface.withValues(alpha: .95),
-              borderRadius: BorderRadius.circular(32),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _HeaderPressFeedback(
-                  child: IconButton(
-                    key: const ValueKey('assistant-header-new-conversation'),
-                    tooltip: copy.newConversation,
-                    onPressed: _creating ? null : _createConversation,
-                    icon: _creating
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : AssistantToolbarIcon(
-                            asset: 'assets/mobile/assistant/edit.png',
-                            size: 24,
-                            color: palette.textPrimary,
-                          ),
-                  ),
-                ),
-                _HeaderPressFeedback(
-                  child: PopupMenuButton<String>(
-                    key: const ValueKey('assistant-more-menu'),
-                    popUpAnimationStyle: AppMotion.menuStyle(context),
-                    tooltip: copy.desktopMore,
-                    icon: AssistantToolbarIcon(
-                      asset: 'assets/mobile/assistant/more.png',
-                      size: 24,
-                      color: palette.textPrimary,
-                    ),
-                    color: palette.surface,
-                    surfaceTintColor: Colors.transparent,
-                    elevation: 6,
-                    shadowColor: palette.shadow.withValues(alpha: .2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 216,
-                      maxWidth: 288,
-                    ),
-                    position: PopupMenuPosition.under,
-                    onSelected: (value) {
-                      if (value == 'find') unawaited(_findInConversation());
-                      if (value == 'delete') {
-                        unawaited(_deleteConversation());
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      PopupMenuItem(
-                        enabled: false,
-                        height: 40,
-                        child: Text(
-                          controller.selectedConversation?.title ??
-                              widget.customTitle ??
-                              copy.globalAiTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: palette.textSecondary),
-                        ),
-                      ),
-                      PopupMenuItem(
-                        key: const ValueKey('assistant-menu-find'),
-                        value: 'find',
-                        height: 52,
-                        enabled: controller
-                            .messagesForContext(useGlobalMode: _useGlobalMode)
-                            .isNotEmpty,
-                        child: Row(
-                          children: [
-                            AssistantToolbarIcon(
-                              asset: 'assets/mobile/assistant/find.png',
-                              size: 22,
-                              color: palette.textSecondary,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(copy.localized('查找', 'Find')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        key: const ValueKey('assistant-menu-delete'),
-                        value: 'delete',
-                        height: 52,
-                        enabled:
-                            controller.selectedConversation != null &&
-                            !_changingConversation,
-                        child: Row(
-                          children: [
-                            AssistantToolbarIcon(
-                              asset: 'assets/mobile/assistant/delete.png',
-                              size: 22,
-                              color: palette.error,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              copy.localized('删除', 'Delete'),
-                              style: TextStyle(color: palette.error),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: AssistantConversationActions(
+              copy: copy,
+              title:
+                  controller.selectedConversation?.title ??
+                  widget.customTitle ??
+                  copy.globalAiTitle,
+              creating: _creating,
+              onCreate: _createConversation,
+              onFind:
+                  controller
+                      .messagesForContext(useGlobalMode: _useGlobalMode)
+                      .isEmpty
+                  ? null
+                  : () => unawaited(_findInConversation()),
+              onDelete:
+                  controller.selectedConversation == null ||
+                      _changingConversation
+                  ? null
+                  : () => unawaited(_deleteConversation()),
             ),
           ),
         ],
@@ -829,30 +737,6 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       ).showSnackBar(SnackBar(content: Text(controller.speechError!)));
     }
   }
-}
-
-class _HeaderPressFeedback extends StatefulWidget {
-  const _HeaderPressFeedback({required this.child});
-  final Widget child;
-
-  @override
-  State<_HeaderPressFeedback> createState() => _HeaderPressFeedbackState();
-}
-
-class _HeaderPressFeedbackState extends State<_HeaderPressFeedback> {
-  bool _pressed = false;
-  @override
-  Widget build(BuildContext context) => Listener(
-    onPointerDown: (_) => setState(() => _pressed = true),
-    onPointerUp: (_) => setState(() => _pressed = false),
-    onPointerCancel: (_) => setState(() => _pressed = false),
-    child: AnimatedScale(
-      scale: _pressed && !AppMotion.reduced(context) ? .95 : 1,
-      duration: AppMotion.duration(context, AppMotion.feedback),
-      curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
-      child: widget.child,
-    ),
-  );
 }
 
 class _MessageList extends StatelessWidget {
