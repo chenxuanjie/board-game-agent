@@ -18,7 +18,7 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
                 onOpenGame: _openGame,
                 onActivities: _activities,
                 onProfile: () => _select('account'),
-                accountActions: _accountMenu(),
+                accountActions: const SizedBox.shrink(),
               ),
       'rankings' => GameRankingScreen(
         controller: c,
@@ -96,7 +96,6 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
                     ),
                   ),
                 ),
-                _accountMenu(),
               ],
             ),
           ),

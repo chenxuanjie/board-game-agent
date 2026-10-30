@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../../core/localization/app_copy.dart';
@@ -20,6 +21,7 @@ class AssistantModelSelector extends StatefulWidget {
     this.useGlobalMode = false,
     this.compact = false,
     this.iconOnly = false,
+    this.onOpenChanged,
   });
 
   final AppController controller;
@@ -28,6 +30,7 @@ class AssistantModelSelector extends StatefulWidget {
   final bool useGlobalMode;
   final bool compact;
   final bool iconOnly;
+  final ValueChanged<bool>? onOpenChanged;
 
   @override
   State<AssistantModelSelector> createState() => _AssistantModelSelectorState();
@@ -43,10 +46,35 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final Rect trigger = box.localToGlobal(Offset.zero) & box.size;
+    final media = MediaQuery.of(context);
+    final initialAbove = trigger.top - media.padding.top - 16;
+    final initialBelow =
+        media.size.height -
+        math.max(media.viewInsets.bottom, media.padding.bottom) -
+        trigger.bottom -
+        16;
+    // Choose one edge for this opening. Keyboard animation must not flip a
+    // live picker from below its trigger to above it halfway through a tap.
+    final openAbove = initialAbove >= 430 || initialAbove >= initialBelow;
     setState(() => _open = true);
+    widget.onOpenChanged?.call(true);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    // Preserve the draft/IME focus while retaining the modal's Escape action.
+    // If a service submenu is open, maybePop closes that top route first.
+    KeyEventResult escapeHandler(KeyEvent event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        if (navigator.mounted) unawaited(navigator.maybePop());
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    FocusManager.instance.addEarlyKeyEventHandler(escapeHandler);
     try {
       await showGeneralDialog<void>(
         context: context,
+        requestFocus: false,
         barrierDismissible: true,
         barrierLabel: widget.controller.copy.localized(
           '关闭模型选择',
@@ -84,11 +112,10 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
             const desiredHeight = 430.0;
             final above = math.max(0.0, anchor.top - safeTop - 8);
             final below = math.max(0.0, safeBottom - anchor.bottom - 8);
-            final openAbove = above >= desiredHeight || above >= below;
             final available = openAbove ? above : below;
             final height = math.min(
               desiredHeight,
-              math.min(safeBottom - safeTop, math.max(160.0, available)),
+              math.min(safeBottom - safeTop, math.max(1.0, available)),
             );
             final left = (anchor.right - width)
                 .clamp(12.0, math.max(12.0, viewport.width - width - 12))
@@ -131,7 +158,11 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _open = false);
+      FocusManager.instance.removeEarlyKeyEventHandler(escapeHandler);
+      if (mounted) {
+        setState(() => _open = false);
+        widget.onOpenChanged?.call(false);
+      }
     }
   }
 

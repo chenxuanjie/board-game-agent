@@ -5,6 +5,7 @@ import 'dart:ui' show ImageByteFormat;
 
 import 'package:flutter/foundation.dart'
     show kIsWeb, debugDefaultTargetPlatformOverride;
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -55,9 +56,7 @@ part 'mobile/mobile_composer_test_cases.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   for (final width in [320.0, 390.0]) {
-    testWidgets('account menu stays on other main pages but not AI at $width', (
-      tester,
-    ) async {
+    testWidgets('account menu appears only on home at $width', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final controller = _controller(ttsService: _UnavailableTtsService());
       addTearDown(controller.dispose);
@@ -73,7 +72,7 @@ void main() {
       for (final tab in ['home', 'library', 'ai', 'mine']) {
         await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
         await tester.pumpAndSettle();
-        if (tab == 'ai') {
+        if (tab != 'home') {
           expect(
             find.byKey(const ValueKey('account-menu-button')),
             findsNothing,
@@ -157,6 +156,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       Future<void> openNotifications() async {
+        await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('account-menu-button')));
         await tester.pumpAndSettle();
         await tester.tap(
@@ -508,6 +509,9 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('account-menu-button')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('account-menu-account')));
@@ -515,6 +519,8 @@ void main() {
       expect(find.byType(AccountScreen), findsOneWidget);
       expect(find.byType(MobileSettingsScreen), findsNothing);
       await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('mobile-library-grid')), findsOneWidget);
       expect(

@@ -621,7 +621,8 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_page != 'gameDetail')
+        if (_page != 'gameDetail' &&
+            (_page == 'home' || _page == 'games' || narrow))
           if (isCinema(context))
             CinemaSurface(
               radius: 0,
@@ -1035,29 +1036,31 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                   ),
                 ),
               ),
-            CompositedTransformTarget(
-              link: _activityLink,
-              child: isCinema(context)
-                  ? Badge(
-                      isLabelVisible: widget.controller.unreadActivityCount > 0,
-                      child: IconButton(
-                        tooltip: widget.controller.copy.localized(
-                          '通知',
-                          'Notifications',
+            if (_page == 'home')
+              CompositedTransformTarget(
+                link: _activityLink,
+                child: isCinema(context)
+                    ? Badge(
+                        isLabelVisible:
+                            widget.controller.unreadActivityCount > 0,
+                        child: IconButton(
+                          tooltip: widget.controller.copy.localized(
+                            '通知',
+                            'Notifications',
+                          ),
+                          icon: Icon(
+                            Icons.notifications_none_rounded,
+                            color: desktopColors(context).brown,
+                          ),
+                          onPressed: _openActivityCenter,
                         ),
-                        icon: Icon(
-                          Icons.notifications_none_rounded,
-                          color: desktopColors(context).brown,
-                        ),
-                        onPressed: _openActivityCenter,
+                      )
+                    : AccountMenuButton(
+                        unreadCount: widget.controller.unreadActivityCount,
+                        onOpenAccount: _openAccount,
+                        onOpenNotifications: _openActivityCenter,
                       ),
-                    )
-                  : AccountMenuButton(
-                      unreadCount: widget.controller.unreadActivityCount,
-                      onOpenAccount: _openAccount,
-                      onOpenNotifications: _openActivityCenter,
-                    ),
-            ),
+              ),
           ],
         ),
       ),

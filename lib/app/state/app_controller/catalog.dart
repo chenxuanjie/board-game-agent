@@ -9,6 +9,7 @@ extension AppCatalogController on AppController {
   }
 
   LibraryLoadState get gameCatalogLoadState => _gameCatalogLoadState;
+  int get gameCatalogRequestRevision => _gameCatalogGeneration;
   bool get gameCatalogFailed => _gameCatalogFailed;
   bool get showGameCatalogNotice =>
       _gameCatalogFailed && !_gameCatalogNoticeDismissed;
@@ -24,6 +25,7 @@ extension AppCatalogController on AppController {
   /// All entry points join the same catalog request. Failure remains visible in
   /// state; retries never rerun app initialization or reset personal data.
   Future<void> retryGameCatalog() async {
+    _gameCatalogNoticeDismissed = false;
     try {
       await reloadGames();
     } catch (_) {

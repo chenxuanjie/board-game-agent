@@ -244,14 +244,20 @@ class AssistantComposer extends StatefulWidget {
   State<AssistantComposer> createState() => AssistantComposerState();
 }
 
-class AssistantComposerState extends State<AssistantComposer> {
+class AssistantComposerState extends State<AssistantComposer>
+    with WidgetsBindingObserver {
   late final FocusNode _focus;
   final GlobalKey _fieldKey = GlobalKey();
   bool _focused = false;
+  bool _pickerOpen = false;
+  bool _pickerHeldExpanded = false;
+  double _lastKeyboardInset = 0;
+  bool _keyboardClosing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _focus = FocusNode(
       onKeyEvent: (_, event) {
         if (event is KeyDownEvent &&
@@ -270,6 +276,11 @@ class AssistantComposerState extends State<AssistantComposer> {
     if (mounted) setState(() => _focused = _focus.hasFocus);
   }
 
+  @override
+  void didChangeMetrics() {
+    if (mounted) setState(() {});
+  }
+
   void focusDraft() => _focus.requestFocus();
 
   void _send() {
@@ -283,6 +294,7 @@ class AssistantComposerState extends State<AssistantComposer> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _focus.removeListener(_focusChanged);
     _focus.dispose();
     super.dispose();
@@ -316,20 +328,30 @@ class AssistantComposerState extends State<AssistantComposer> {
             ? copy.speechReady
             : copy.send;
         final enabled = sending || listening || canSend || voiceAction;
+        // Scaffold removes viewInsets from its body's MediaQuery. The view
+        // still exposes the IME animation, including its closing frames.
+        final view = View.of(context);
+        final keyboardInset = (view.viewInsets.bottom / view.devicePixelRatio)
+            .clamp(MediaQuery.viewInsetsOf(context).bottom, double.infinity);
         final mobileKeyboard =
             !widget.desktop &&
             !kIsWeb &&
             (defaultTargetPlatform == TargetPlatform.android ||
                 defaultTargetPlatform == TargetPlatform.iOS) &&
-            (widget.keyboardVisible ??
-                MediaQuery.viewInsetsOf(context).bottom > 0);
+            (widget.keyboardVisible ?? keyboardInset > 0);
+        if (keyboardInset != _lastKeyboardInset) {
+          _keyboardClosing =
+              keyboardInset > 0 && keyboardInset < _lastKeyboardInset;
+          _lastKeyboardInset = keyboardInset;
+        }
         final showModel =
-            widget.desktop ||
-                kIsWeb ||
-                (defaultTargetPlatform != TargetPlatform.android &&
-                    defaultTargetPlatform != TargetPlatform.iOS)
-            ? _focused
-            : mobileKeyboard;
+            _pickerOpen ||
+            (widget.desktop ||
+                    kIsWeb ||
+                    (defaultTargetPlatform != TargetPlatform.android &&
+                        defaultTargetPlatform != TargetPlatform.iOS)
+                ? _focused
+                : mobileKeyboard);
         return LayoutBuilder(
           builder: (context, constraints) {
             final textWidth =
@@ -350,10 +372,27 @@ class AssistantComposerState extends State<AssistantComposer> {
               maxLines: 1,
             )..layout(maxWidth: textWidth);
             final expanded =
-                mobileKeyboard ||
+                (mobileKeyboard && !_keyboardClosing) ||
+                (_pickerOpen && _pickerHeldExpanded) ||
                 widget.textController.text.contains('\n') ||
                 painter.didExceedMaxLines;
             painter.dispose();
+            final fieldWidth = expanded ? constraints.maxWidth - 34 : textWidth;
+            final lines = TextPainter(
+              text: TextSpan(
+                text: '${widget.textController.text} ',
+                style: textStyle,
+              ),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              maxLines: 5,
+            )..layout(maxWidth: fieldWidth.clamp(1.0, double.infinity));
+            final fieldHeight = lines.height + 16;
+            lines.dispose();
+            final contentHeight = expanded
+                ? fieldHeight + 48
+                : (fieldHeight > 48 ? fieldHeight : 48.0);
+            final motion = AppMotion.duration(context, AppMotion.content);
 
             final field = KeyedSubtree(
               key: _fieldKey,
@@ -417,18 +456,24 @@ class AssistantComposerState extends State<AssistantComposer> {
                 ),
               ),
             );
-            final model = showModel
-                ? AssistantModelSelector(
-                    controller: widget.controller,
-                    enabled: true,
-                    compact: true,
-                    iconOnly: true,
-                    useGlobalMode: widget.useGlobalMode,
-                    onConfigureAi:
-                        widget.onConfigureAi ??
-                        () => Navigator.of(context).pushNamed('/settings/ai'),
-                  )
-                : null;
+            final model = AssistantModelSelector(
+              controller: widget.controller,
+              enabled: true,
+              compact: true,
+              iconOnly: true,
+              useGlobalMode: widget.useGlobalMode,
+              onOpenChanged: (open) {
+                if (mounted) {
+                  setState(() {
+                    _pickerHeldExpanded = open && expanded;
+                    _pickerOpen = open;
+                  });
+                }
+              },
+              onConfigureAi:
+                  widget.onConfigureAi ??
+                  () => Navigator.of(context).pushNamed('/settings/ai'),
+            );
             final action = TooltipTheme(
               data: TooltipTheme.of(
                 context,
@@ -483,61 +528,92 @@ class AssistantComposerState extends State<AssistantComposer> {
                 ),
               ),
             );
-            final controls = Row(
-              children: [contextButton, const Spacer(), ?model, action],
-            );
-            return AnimatedContainer(
-              key: ValueKey(
-                widget.desktop
-                    ? 'desktop-composer-box'
-                    : 'assistant-composer-box',
-              ),
-              duration: AppMotion.duration(context),
-              curve: AppMotion.curve,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: palette.surface,
-                borderRadius: BorderRadius.circular(expanded ? 25 : 32),
-                border: Border.all(
-                  color: _focused
-                      ? palette.primary.withValues(alpha: .28)
-                      : palette.outline.withValues(alpha: .5),
+            // Keep the input and picker in the same slots during keyboard and
+            // line-count transitions. Reparenting the EditableText between a
+            // Row and Column tears down focus/input state and moves the popup.
+            return TextFieldTapRegion(
+              child: AnimatedContainer(
+                key: ValueKey(
+                  widget.desktop
+                      ? 'desktop-composer-box'
+                      : 'assistant-composer-box',
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: palette.shadow.withValues(
-                      alpha: _focused ? .10 : .065,
-                    ),
-                    blurRadius: _focused ? 24 : 18,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: AnimatedSize(
-                duration: AppMotion.duration(context, AppMotion.content),
+                duration: motion,
                 curve: AppMotion.curve,
-                alignment: Alignment.bottomCenter,
-                child: expanded
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: field,
-                          ),
-                          controls,
-                        ],
-                      )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          contextButton,
-                          Expanded(child: field),
-                          ?model,
-                          action,
-                        ],
+                height: contentHeight + 12,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  borderRadius: BorderRadius.circular(expanded ? 25 : 32),
+                  border: Border.all(
+                    color: _focused
+                        ? palette.primary.withValues(alpha: .28)
+                        : palette.outline.withValues(alpha: .5),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.shadow.withValues(
+                        alpha: _focused ? .10 : .065,
                       ),
+                      blurRadius: _focused ? 24 : 18,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      left: expanded ? 8 : 48,
+                      right: expanded ? 8 : (showModel ? 96 : 48),
+                      top: expanded ? 0 : (contentHeight - fieldHeight) / 2,
+                      height: fieldHeight,
+                      child: field,
+                    ),
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      left: 0,
+                      bottom: expanded ? 0 : (contentHeight - 48) / 2,
+                      child: contextButton,
+                    ),
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      right: 48,
+                      bottom: expanded ? 0 : (contentHeight - 48) / 2,
+                      child: ExcludeFocus(
+                        excluding: !showModel,
+                        child: ExcludeSemantics(
+                          excluding: !showModel,
+                          child: IgnorePointer(
+                            ignoring: !showModel,
+                            child: AnimatedOpacity(
+                              opacity: showModel ? 1 : 0,
+                              duration: AppMotion.duration(
+                                context,
+                                AppMotion.feedback,
+                              ),
+                              child: Offstage(
+                                offstage: !showModel,
+                                child: model,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      right: 0,
+                      bottom: expanded ? 0 : (contentHeight - 48) / 2,
+                      child: action,
+                    ),
+                  ],
+                ),
               ),
             );
           },

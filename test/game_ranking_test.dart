@@ -477,7 +477,7 @@ void main() {
   );
 
   testWidgets(
-    'ranking read error keeps retry and the full zero-count catalog visible',
+    'ranking read error has one retry and does not invent zero counts',
     (tester) async {
       final prefs = _Preferences()..failRead = true;
       final app = _app(prefs);
@@ -489,14 +489,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('喜欢统计读取失败'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
-      expect(find.text('0 次喜欢'), findsNWidgets(3));
+      expect(find.text('暂时无法加载喜欢榜'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ranking-refresh')), findsNothing);
+      expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
+      expect(find.byKey(const ValueKey('ranking-game-a')), findsNothing);
+      expect(find.text('0 次喜欢'), findsNothing);
+      expect(find.text('重试'), findsOneWidget);
       prefs.failRead = false;
       await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();
       expect(find.text('0 次喜欢'), findsNWidgets(3));
-      expect(find.text('喜欢统计读取失败'), findsNothing);
+      expect(find.text('暂时无法加载喜欢榜'), findsNothing);
       for (final badge in tester.widgetList<RankingMedal>(
         find.byType(RankingMedal),
       )) {
@@ -511,6 +514,102 @@ void main() {
         0,
       );
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'one page retry repairs missing catalog and statistics together',
+    (tester) async {
+      final manifests = _Manifests()..fail = true;
+      final app = _app(_Preferences(), manifests: manifests);
+      await app.retryGameCatalog();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(app.palette),
+          home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('重试'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ranking-refresh')), findsNothing);
+      expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
+      final attempts = manifests.loads;
+      manifests.fail = false;
+      await tester.tap(find.byKey(const ValueKey('ranking-retry')));
+      await tester.pumpAndSettle();
+      expect(manifests.loads, greaterThan(attempts));
+      expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ranking-retry')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'failed refresh preserves a real snapshot and has one refresh action',
+    (tester) async {
+      final cloud = _Cloud()..ballots['one'] = _ballot(_otherId, ['a']);
+      final app = _app(_Preferences(), cloud: cloud);
+      await app.reloadGames();
+      await app.refreshFavoriteRankings();
+      cloud.fail = true;
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(app.palette),
+          home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ranking-game-a')), findsOneWidget);
+      expect(find.text('1 人收藏'), findsOneWidget);
+      expect(find.text('更新未完成，显示上次排名'), findsOneWidget);
+      expect(find.text('重试'), findsNothing);
+      expect(find.byKey(const ValueKey('ranking-refresh')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ranking-status-dismiss')));
+      await tester.pumpAndSettle();
+      expect(find.text('更新未完成，显示上次排名'), findsNothing);
+      expect(find.text('1 人收藏'), findsOneWidget);
+      cloud.fail = false;
+      await tester.tap(find.byKey(const ValueKey('ranking-refresh')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ranking-status')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'public stream failure does not invalidate a successful aggregate read',
+    (tester) async {
+      final cloud = _Cloud()..ballots['one'] = _ballot(_otherId, ['a']);
+      final app = _app(_Preferences(), cloud: cloud);
+      var reconnects = 0;
+      app.configureAccountReactions(
+        error: () => 'stream offline',
+        recoverRealtime: () async {
+          ++reconnects;
+        },
+      );
+      await app.reloadGames();
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(app.palette),
+          home: GameRankingScreen(controller: app, onOpenGame: (_) {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 人收藏'), findsOneWidget);
+      expect(find.text('实时更新暂不可用'), findsOneWidget);
+      expect(find.text('暂时无法加载喜欢榜'), findsNothing);
+      expect(reconnects, 1);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('实时更新暂不可用'), findsNothing);
+      expect(find.text('1 人收藏'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
     },
   );
 
@@ -672,12 +771,18 @@ AppController _app(
 class _UnusedAiService extends Fake implements AiService {}
 
 class _Manifests extends GameManifestService {
+  bool fail = false;
+  int loads = 0;
   @override
   Future<List<GameManifest>> loadEnabledGames({
     required RemoteAssetService remoteAssetService,
     List<AssetSourceConfig> sources = const [],
     bool preferRemote = false,
-  }) async => [_manifest('a'), _manifest('b'), _manifest('c')];
+  }) async {
+    ++loads;
+    if (fail) throw StateError('Catalog unavailable');
+    return [_manifest('a'), _manifest('b'), _manifest('c')];
+  }
 }
 
 class _NoAssets extends RemoteAssetService {

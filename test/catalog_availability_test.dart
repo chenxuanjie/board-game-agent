@@ -185,7 +185,7 @@ void main() {
   );
 
   test(
-    'repeated retries coalesce, preserve the last good catalog and incident dismissal',
+    'retries coalesce, preserve the last good catalog and renew the dismissed notice',
     () async {
       final manifests = _Manifests()..games = [game];
       final c = _controller(manifests);
@@ -206,7 +206,7 @@ void main() {
       c.dismissGameCatalogNotice();
       await c.retryGameCatalog();
       expect(c.gameCatalogFailed, isTrue);
-      expect(c.showGameCatalogNotice, isFalse);
+      expect(c.showGameCatalogNotice, isTrue);
       manifests.failure = false;
       await c.retryGameCatalog();
       expect(c.gameCatalogFailed, isFalse);
@@ -396,15 +396,17 @@ void main() {
     );
 
     testWidgets(
-      'notice is dismissible and library retry remains at $width dp',
+      'home and library share dismissal and a fresh attempt can show a notice at $width dp',
       (tester) async {
         tester.view.physicalSize = Size(width, 850);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        final manifests = _Manifests()..failure = true;
+        final manifests = _Manifests()..games = [game];
         final c = _controller(manifests);
         addTearDown(c.dispose);
+        await c.retryGameCatalog();
+        manifests.failure = true;
         await c.retryGameCatalog();
         Widget page(bool home) => MaterialApp(
           theme: AppTheme.buildTheme(c.palette),
@@ -423,9 +425,13 @@ void main() {
         await tester.pumpWidget(page(true));
         expect(find.byIcon(Icons.error_outline_rounded), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('catalog-dismiss')));
-        await tester.pump();
+        await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('catalog-retry')), findsNothing);
         await tester.pumpWidget(page(false));
+        expect(find.byKey(const ValueKey('catalog-retry')), findsNothing);
+        await c.retryGameCatalog();
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('catalog-dismiss')), findsOneWidget);
         expect(find.byKey(const ValueKey('catalog-retry')), findsOneWidget);
         manifests.failure = false;
         await tester.tap(find.byKey(const ValueKey('catalog-retry')));

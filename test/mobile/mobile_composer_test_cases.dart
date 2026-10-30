@@ -13,6 +13,11 @@ class _CompactComposerController extends AppController {
 
   bool listening = false;
   bool sending = false;
+  @override
+  List<AiModel> get availableAiModels => const [
+    AiModel(id: 'gpt-6-sol'),
+    AiModel(id: 'gpt-6-astra'),
+  ];
   // This fixture exercises controls for an available knowledge context.
   @override
   bool get assistantKnowledgeAvailable => true;
@@ -31,6 +36,193 @@ class _CompactComposerController extends AppController {
 }
 
 void _registerCompactComposerTests() {
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'model picker survives focus and keyboard changes and applies selection on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        SharedPreferences.setMockInitialValues({});
+        final controller = _CompactComposerController();
+        final draft = TextEditingController(text: '规则问题');
+        final inset = ValueNotifier(0.0);
+        addTearDown(controller.dispose);
+        addTearDown(draft.dispose);
+        addTearDown(inset.dispose);
+        await controller.saveAiApiConfig(
+          AiApiConfig.defaultCustom.copyWith(
+            name: 'Test',
+            baseUrl: 'https://ai.example.test/v1',
+            apiKey: 'test-key',
+            model: 'gpt-6-sol',
+          ),
+        );
+        await tester.binding.setSurfaceSize(const Size(390, 844));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        String? sentModel;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(controller.palette),
+            builder: (context, child) => ValueListenableBuilder<double>(
+              valueListenable: inset,
+              builder: (context, value, _) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(viewInsets: EdgeInsets.only(bottom: value)),
+                child: child!,
+              ),
+            ),
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.bottomCenter,
+                child: AssistantComposer(
+                  controller: controller,
+                  textController: draft,
+                  useGlobalMode: true,
+                  onSend: () async {
+                    sentModel = controller.aiApiConfig.model;
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+        addTearDown(tester.view.resetViewInsets);
+        if (platform == TargetPlatform.android) {
+          inset.value = 300;
+          tester.view.viewInsets = FakeViewPadding(
+            bottom: 300 * tester.view.devicePixelRatio,
+          );
+        }
+        await tester.pumpAndSettle();
+        final inputState = tester.state<EditableTextState>(
+          find.byType(EditableText),
+        );
+        final trigger = find.byKey(const ValueKey('desktop-model-selector'));
+        await tester.tap(trigger);
+        await tester.pumpAndSettle();
+        final panel = find.byKey(const ValueKey('desktop-model-picker-panel'));
+        expect(panel, findsOneWidget);
+        if (platform == TargetPlatform.android) {
+          for (final value in [260.0, 180.0, 80.0, 0.0]) {
+            inset.value = value;
+            tester.view.viewInsets = FakeViewPadding(
+              bottom: value * tester.view.devicePixelRatio,
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 32));
+            expect(panel, findsOneWidget);
+            expect(
+              tester.getRect(panel).center.dy,
+              lessThan(tester.getRect(trigger).center.dy),
+            );
+          }
+          await tester.pumpAndSettle();
+        }
+        final option = find.byKey(
+          const ValueKey('desktop-model-option-gpt-6-astra'),
+        );
+        await tester.ensureVisible(option);
+        await tester.tap(option);
+        await tester.pumpAndSettle();
+        expect(controller.aiApiConfig.model, 'gpt-6-astra');
+        expect(
+          (await PreferencesService().loadAiApiConfig()).model,
+          'gpt-6-astra',
+        );
+        await tester.tap(
+          find.byTooltip(controller.copy.localized('关闭', 'Close')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.state<EditableTextState>(find.byType(EditableText)),
+          same(inputState),
+        );
+        expect(draft.text, '规则问题');
+        await tester.tap(find.byKey(const ValueKey('assistant-composer-send')));
+        await tester.pumpAndSettle();
+        expect(sentModel, 'gpt-6-astra');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
+  testWidgets(
+    'keyboard closing starts a continuous collapse and keeps the editable state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _CompactComposerController();
+      final draft = TextEditingController(text: '短问题');
+      final inset = ValueNotifier(300.0);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 300 * tester.view.devicePixelRatio,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      addTearDown(controller.dispose);
+      addTearDown(draft.dispose);
+      addTearDown(inset.dispose);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          builder: (context, child) => ValueListenableBuilder<double>(
+            valueListenable: inset,
+            builder: (context, value, _) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(viewInsets: EdgeInsets.only(bottom: value)),
+              child: child!,
+            ),
+          ),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: AssistantComposer(
+                controller: controller,
+                textController: draft,
+                useGlobalMode: true,
+                onSend: () async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
+      final inputState = tester.state<EditableTextState>(
+        find.byType(EditableText),
+      );
+      final box = find.byKey(const ValueKey('assistant-composer-box'));
+      final expandedHeight = tester.getSize(box).height;
+      var previous = expandedHeight;
+      for (final value in [260.0, 200.0, 140.0, 80.0, 0.0]) {
+        inset.value = value;
+        tester.view.viewInsets = FakeViewPadding(
+          bottom: value * tester.view.devicePixelRatio,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 32));
+        final height = tester.getSize(box).height;
+        expect(height, lessThanOrEqualTo(previous + .1));
+        if (value == 260) expect(height, lessThan(expandedHeight));
+        expect((height - previous).abs(), lessThan(30));
+        previous = height;
+      }
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<EditableTextState>(find.byType(EditableText)),
+        same(inputState),
+      );
+      expect(draft.text, '短问题');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets(
     'plus opens an anchored menu that stays in view and can be dismissed',
     (tester) async {

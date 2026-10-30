@@ -231,11 +231,13 @@ class AppController extends ChangeNotifier {
   bool _requirePersonalAccount = false;
   String? Function()? _accountReactionError;
   String? Function()? _accountPublicationError;
+  Future<void> Function()? _recoverPublicReactions;
   void configureAccountReactions({
     RemoteGameVoteStore Function(String)? provider,
     String? scope,
     String? Function()? error,
     String? Function()? publicationError,
+    Future<void> Function()? recoverRealtime,
     bool? requireAccount,
   }) {
     if (requireAccount != null) _requirePersonalAccount = requireAccount;
@@ -243,6 +245,7 @@ class AppController extends ChangeNotifier {
     _accountReactionScope = scope;
     _accountReactionError = error;
     _accountPublicationError = publicationError;
+    _recoverPublicReactions = recoverRealtime;
     _gameVotes.configureRemote(
       provider == null ? null : () => provider(GameVoteBallot.campaign),
       () => _accountReactionScope,

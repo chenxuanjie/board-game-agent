@@ -172,7 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onOpenGame: _openGame,
                     onActivities: _openActivities,
                     onProfile: _openAccount,
-                    accountActions: _accountMenu(),
+                    accountActions: const SizedBox.shrink(),
                   )
                 : _tab == 2
                 ? UniversalAiScreen(
@@ -190,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onExplore: _openSearch,
                     onActivities: _openActivities,
                     onSettings: _openSettings,
-                    accountActions: _accountMenu(),
+                    accountActions: const SizedBox.shrink(),
                   )
                 : const SizedBox.shrink(),
           ),

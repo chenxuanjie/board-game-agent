@@ -417,7 +417,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
           }
           _controller.configureAccountReactions(
             scope: scope,
-            error: () => publicSyncError ?? personalSyncError,
+            error: () => publicSyncError,
+            publicationError: () => personalSyncError,
+            recoverRealtime: retryPublicSync,
             provider: (namespace) => _statisticsReaders[namespace]!,
           );
         }

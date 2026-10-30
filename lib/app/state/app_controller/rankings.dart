@@ -62,4 +62,31 @@ extension AppRankingController on AppController {
   }
 
   bool get favoriteRankingSourceReady => _favoriteRecordsLoaded;
+
+  bool get favoriteRankingHasData =>
+      hasGames &&
+      (favoriteStatistics.hasCachedRemoteCounts ||
+          (favoriteStatistics.ready &&
+              favoriteStatistics.status == GameVoteSyncStatus.localOnly &&
+              _accountReactionProvider == null &&
+              _favoriteRemoteProvider == null));
+
+  String? get favoriteRankingRealtimeError => _accountReactionError?.call();
+
+  /// A page retry repairs missing catalog data, a failed aggregate read and
+  /// the public subscription without making the user choose separate lanes.
+  Future<void> refreshFavoriteRankingPage() async {
+    final epoch = _identityScopeEpoch;
+    if (!hasGames || gameCatalogFailed) await retryGameCatalog();
+    if (_controllerDisposed || epoch != _identityScopeEpoch) return;
+    await refreshFavoriteRankings();
+    if (_controllerDisposed || epoch != _identityScopeEpoch) return;
+    if (favoriteStatistics.publicationStatus ==
+        GameVotePublicationStatus.failed) {
+      await favoriteStatistics.publish();
+    }
+    if (_controllerDisposed || epoch != _identityScopeEpoch) return;
+    if (favoriteRankingRealtimeError != null)
+      await _recoverPublicReactions?.call();
+  }
 }

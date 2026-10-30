@@ -13,6 +13,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
             .height;
         await _navigate(tester, '游戏库');
         expect(search, findsOneWidget);
+        expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
         for (final label in ['我的喜欢', '排行榜', '设置', 'AI助手']) {
           await _navigate(tester, label, settle: false);
           if (label == '排行榜') {
@@ -37,14 +38,18 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
           );
           expect(
             find.byKey(const ValueKey('account-menu-button')),
-            findsOneWidget,
+            findsNothing,
           );
-          expect(
-            tester
-                .getSize(find.byKey(const ValueKey('desktop-top-bar')))
-                .height,
-            lessThan(fullHeaderHeight),
-          );
+          if (width < DesktopResponsive.narrowBreakpoint) {
+            expect(
+              tester
+                  .getSize(find.byKey(const ValueKey('desktop-top-bar')))
+                  .height,
+              lessThan(fullHeaderHeight),
+            );
+          } else {
+            expect(find.byKey(const ValueKey('desktop-top-bar')), findsNothing);
+          }
           if (width < DesktopResponsive.narrowBreakpoint) {
             expect(
               find.byKey(const ValueKey('desktop-open-navigation')),

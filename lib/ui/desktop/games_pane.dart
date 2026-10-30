@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_catalog_status.dart';
+import '../shared/catalog_empty_state.dart';
 import '../shared/library_viewport.dart';
 import '../shared/app_modals.dart';
 import '../../core/theme/cinema_theme.dart';
@@ -97,6 +98,14 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           LibraryCatalogStatus(controller: widget.controller),
+          if (!widget.controller.hasGames)
+            CatalogEmptyState(
+              controller: widget.controller,
+              emptyMessage: widget.controller.copy.localized(
+                '暂无桌游',
+                'No games yet',
+              ),
+            ),
           DesktopContentStatus(controller: widget.controller),
           LibraryViewport(
             state: _browse,
