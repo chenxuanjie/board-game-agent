@@ -10,6 +10,7 @@ import '../cinema/cinema_surface.dart';
 import '../../../app/state/app_controller.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../features/assistant/models/ai_conversation.dart';
+import 'assistant_toolbar_icon.dart';
 
 /// A shared, floating history surface. The controller owns session data;
 /// this route owns only animation, focus and the pending create operation.
@@ -174,25 +175,17 @@ class _ConversationTitleButtonState extends State<ConversationTitleButton> {
         ),
         child: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: palette.primaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.auto_awesome_rounded,
-                size: 20,
-                color: palette.primary,
-              ),
+            AssistantToolbarIcon(
+              asset: 'assets/mobile/assistant/menu.png',
+              size: 24,
+              color: palette.textPrimary,
             ),
             const SizedBox(width: 10),
             Flexible(
               child: Text(
                 widget.title,
-                maxLines: 2,
-                overflow: TextOverflow.clip,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
@@ -536,7 +529,11 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.delete_outline_rounded, size: 18),
+                        : AssistantToolbarIcon(
+                            asset: 'assets/mobile/assistant/delete.png',
+                            size: 22,
+                            color: palette.textSecondary,
+                          ),
                   ),
                 ],
               ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/services.dart';
+import '../shared/app_modals.dart';
 
 import '../../features/assistant/models/ai_run.dart';
 import '../../features/assistant/models/assistant_mode.dart';
@@ -14,6 +15,8 @@ import '../shared/assistant/assistant_presentation.dart';
 import '../shared/assistant/assistant_view_state.dart';
 import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
+import '../shared/assistant/conversation_search_dialog.dart';
+import '../shared/assistant/assistant_toolbar_icon.dart';
 
 class AssistantChatScreen extends StatefulWidget {
   const AssistantChatScreen({
@@ -49,6 +52,10 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   final _composerKey = GlobalKey<AssistantComposerState>();
   bool _creating = false;
   final Set<String> _knownMessages = {};
+  final Map<String, GlobalKey> _messageKeys = {};
+  Timer? _searchHighlightTimer;
+  String? _searchHighlight;
+  bool _changingConversation = false;
   PageStorageBucket? _viewBucket;
   bool _restoredView = false;
 
@@ -111,6 +118,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     _textController.dispose();
     _scrollController.dispose();
     _messageTimeVisibilityTimer?.cancel();
+    _searchHighlightTimer?.cancel();
     super.dispose();
   }
 
@@ -119,84 +127,182 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final controller = widget.controller;
     final copy = controller.copy;
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final palette = AppPalette.of(context);
+    final canGoBack = ModalRoute.of(context)?.canPop ?? false;
+    final headerInset = MediaQuery.paddingOf(context).top + 76;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        toolbarHeight: 68,
-        titleSpacing: 6,
-        title: ConversationTitleButton(
-          title:
-              controller.selectedConversation?.title ??
-              widget.customTitle ??
-              copy.globalAiTitle,
-          tooltip: copy.openConversations,
-          onPressed: () =>
-              showConversationDrawer(context, controller: controller),
-        ),
-        actions: <Widget>[
-          IconButton(
-            key: const ValueKey('assistant-header-new-conversation'),
-            tooltip: copy.newConversation,
-            onPressed: _creating ? null : _createConversation,
-            icon: _creating
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.edit_square, size: 20),
+        toolbarHeight: 64,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        automaticallyImplyLeading: false,
+        leading: canGoBack
+            ? BackButton(
+                key: const ValueKey('assistant-header-back'),
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null,
+        leadingWidth: canGoBack ? 48 : 0,
+        titleSpacing: canGoBack ? 0 : 16,
+        flexibleSpace: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                palette.pageBackground,
+                palette.pageBackground.withValues(alpha: .88),
+                palette.pageBackground.withValues(alpha: 0),
+              ],
+              stops: const [0, .62, 1],
+            ),
           ),
-          PopupMenuButton<String>(
-            popUpAnimationStyle: AppMotion.menuStyle(context),
-            tooltip: copy.desktopMore,
-            icon: const Icon(Icons.more_horiz_rounded),
-            onSelected: (value) {
-              if (value == 'clear') {
-                controller.clearConversationForContext(
-                  useGlobalMode: _useGlobalMode,
-                );
-              }
-              if (value == 'text') {
-                _selectAssistantMode(AssistantMode.textAndDictation);
-              }
-              if (value == 'voice') {
-                _selectAssistantMode(AssistantMode.realtimeVoice);
-              }
-              if (value == 'voice-reply') {
-                unawaited(_toggleVoiceReply());
-              }
-            },
-            itemBuilder: (_) => [
-              CheckedPopupMenuItem(
-                value: 'text',
-                checked:
-                    controller.assistantMode == AssistantMode.textAndDictation,
-                child: Text(copy.assistantTextModeLabel),
-              ),
-              PopupMenuItem(
-                value: 'voice',
-                child: Row(
-                  children: [
-                    Expanded(child: Text(copy.assistantRealtimeModeLabel)),
-                    if (!controller.realtimeVoiceAvailable)
-                      const Icon(Icons.lock_outline_rounded, size: 16),
-                  ],
+        ),
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: Material(
+            color: palette.surface.withValues(alpha: .95),
+            shape: const CircleBorder(),
+            child: _HeaderPressFeedback(
+              child: IconButton(
+                key: const ValueKey('assistant-conversations-trigger'),
+                tooltip: copy.openConversations,
+                onPressed: () =>
+                    showConversationDrawer(context, controller: controller),
+                icon: AssistantToolbarIcon(
+                  asset: 'assets/mobile/assistant/menu.png',
+                  size: 24,
+                  color: palette.textPrimary,
                 ),
               ),
-              CheckedPopupMenuItem(
-                value: 'voice-reply',
-                enabled: controller.voiceReplyAvailable,
-                checked: controller.voiceReplyEnabled,
-                child: Text(copy.voiceReplySwitchLabel),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem(value: 'clear', child: Text(copy.clearChat)),
-            ],
+            ),
           ),
-          const SizedBox(width: 6),
+        ),
+        actions: <Widget>[
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              color: palette.surface.withValues(alpha: .95),
+              borderRadius: BorderRadius.circular(32),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _HeaderPressFeedback(
+                  child: IconButton(
+                    key: const ValueKey('assistant-header-new-conversation'),
+                    tooltip: copy.newConversation,
+                    onPressed: _creating ? null : _createConversation,
+                    icon: _creating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : AssistantToolbarIcon(
+                            asset: 'assets/mobile/assistant/edit.png',
+                            size: 24,
+                            color: palette.textPrimary,
+                          ),
+                  ),
+                ),
+                _HeaderPressFeedback(
+                  child: PopupMenuButton<String>(
+                    key: const ValueKey('assistant-more-menu'),
+                    popUpAnimationStyle: AppMotion.menuStyle(context),
+                    tooltip: copy.desktopMore,
+                    icon: AssistantToolbarIcon(
+                      asset: 'assets/mobile/assistant/more.png',
+                      size: 24,
+                      color: palette.textPrimary,
+                    ),
+                    color: palette.surface,
+                    surfaceTintColor: Colors.transparent,
+                    elevation: 6,
+                    shadowColor: palette.shadow.withValues(alpha: .2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 216,
+                      maxWidth: 288,
+                    ),
+                    position: PopupMenuPosition.under,
+                    onSelected: (value) {
+                      if (value == 'find') unawaited(_findInConversation());
+                      if (value == 'delete') {
+                        unawaited(_deleteConversation());
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        enabled: false,
+                        height: 40,
+                        child: Text(
+                          controller.selectedConversation?.title ??
+                              widget.customTitle ??
+                              copy.globalAiTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: palette.textSecondary),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        key: const ValueKey('assistant-menu-find'),
+                        value: 'find',
+                        height: 52,
+                        enabled: controller
+                            .messagesForContext(useGlobalMode: _useGlobalMode)
+                            .isNotEmpty,
+                        child: Row(
+                          children: [
+                            AssistantToolbarIcon(
+                              asset: 'assets/mobile/assistant/find.png',
+                              size: 22,
+                              color: palette.textSecondary,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(copy.localized('查找', 'Find')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        key: const ValueKey('assistant-menu-delete'),
+                        value: 'delete',
+                        height: 52,
+                        enabled:
+                            controller.selectedConversation != null &&
+                            !_changingConversation,
+                        child: Row(
+                          children: [
+                            AssistantToolbarIcon(
+                              asset: 'assets/mobile/assistant/delete.png',
+                              size: 22,
+                              color: palette.error,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              copy.localized('删除', 'Delete'),
+                              style: TextStyle(color: palette.error),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
       body: SafeArea(
+        top: false,
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(
@@ -232,6 +338,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                                   expanded: expanded,
                                 ),
                             animateMessage: _knownMessages.add,
+                            messageKeys: _messageKeys,
+                            highlightedId: _searchHighlight,
+                            headerInset: headerInset,
                           );
                         },
                       ),
@@ -257,7 +366,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     screenWidth >= 720 ? 28 : 16,
                     8,
                     screenWidth >= 720 ? 28 : 16,
-                    18,
+                    12,
                   ),
                   child: _Composer(
                     controller: controller,
@@ -292,6 +401,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     final bool contextChanged =
         _lastScrollContextKey != null && _lastScrollContextKey != contextKey;
     if (contextChanged) {
+      _searchHighlightTimer?.cancel();
+      _searchHighlight = null;
+      _messageKeys.clear();
       _rememberCurrentMessages();
       if (retainedIds.contains(_lastScrollContextKey)) {
         _saveScrollPosition();
@@ -420,6 +532,148 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   void _onDraftChanged() {
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  Future<void> _findInConversation() async {
+    final controller = widget.controller;
+    final id = controller.selectedConversationId;
+    final identity = controller.identityUserId;
+    final messages = controller.messagesForContext(
+      useGlobalMode: _useGlobalMode,
+    );
+    if (id == null || messages.isEmpty) return;
+    final target = await showAppDialog<String>(
+      context: context,
+      builder: (_) => ConversationSearchDialog(
+        messages: List.of(messages),
+        copy: controller.copy,
+      ),
+    );
+    if (!mounted ||
+        target == null ||
+        id != controller.selectedConversationId ||
+        identity != controller.identityUserId) {
+      return;
+    }
+    await _revealSearchResult(target, id, identity);
+  }
+
+  Future<void> _revealSearchResult(
+    String messageId,
+    String conversationId,
+    String? identity,
+  ) async {
+    if (!_scrollController.hasClients) return;
+    _searchHighlightTimer?.cancel();
+    setState(() {
+      _followNewMessages = false;
+      _searchHighlight = messageId;
+    });
+    _scrollController.jumpTo(0);
+    await WidgetsBinding.instance.endOfFrame;
+    for (var step = 0; step < 500; step++) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          widget.controller.selectedConversationId != conversationId ||
+          widget.controller.identityUserId != identity) {
+        return;
+      }
+      final targetContext = _messageKeys[messageId]?.currentContext;
+      if (targetContext != null && targetContext.mounted && mounted) {
+        await Scrollable.ensureVisible(
+          targetContext,
+          alignment: .2,
+          duration: AppMotion.duration(context, AppMotion.content),
+          curve: AppMotion.curve,
+        );
+        if (!mounted) return;
+        _searchHighlightTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _searchHighlight = null);
+        });
+        return;
+      }
+      final position = _scrollController.position;
+      final next = (position.pixels + position.viewportDimension * .8).clamp(
+        0.0,
+        position.maxScrollExtent,
+      );
+      if (next <= position.pixels) break;
+      _scrollController.jumpTo(next);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    if (mounted) {
+      setState(() => _searchHighlight = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.controller.copy.localized(
+              '暂时无法定位消息',
+              'Could not locate this message',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteConversation() async {
+    if (_changingConversation) return;
+    final controller = widget.controller;
+    final conversation = controller.selectedConversation;
+    if (conversation == null) return;
+    final identity = controller.identityUserId;
+    final copy = controller.copy;
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(copy.localized('删除对话？', 'Delete conversation?')),
+        content: Text(
+          copy.localized(
+            '将删除“${conversation.title}”及其消息，此操作无法撤销。',
+            'This conversation and its messages will be deleted.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(copy.localized('取消', 'Cancel')),
+          ),
+          TextButton(
+            key: const ValueKey('assistant-confirm-change'),
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.of(context).error,
+            ),
+            child: Text(copy.localized('删除', 'Delete')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        controller.selectedConversationId != conversation.id ||
+        controller.identityUserId != identity) {
+      return;
+    }
+    setState(() => _changingConversation = true);
+    try {
+      await controller.deleteConversation(conversation.id);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              copy.localized(
+                '操作未完成，请重试',
+                'Could not complete the action. Try again.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingConversation = false);
     }
   }
 
@@ -575,44 +829,30 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       ).showSnackBar(SnackBar(content: Text(controller.speechError!)));
     }
   }
+}
 
-  Future<void> _toggleVoiceReply() async {
-    try {
-      await widget.controller.setVoiceReplyEnabled(
-        !widget.controller.voiceReplyEnabled,
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.controller.copy.localized(
-                '设置未保存，请重试',
-                'Could not save the setting. Try again.',
-              ),
-            ),
-          ),
-        );
-      }
-    }
-  }
+class _HeaderPressFeedback extends StatefulWidget {
+  const _HeaderPressFeedback({required this.child});
+  final Widget child;
 
-  Future<void> _selectAssistantMode(AssistantMode mode) async {
-    final controller = widget.controller;
-    final bool changed = await controller.setAssistantMode(mode);
-    if (!mounted) {
-      return;
-    }
-    if (!changed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(controller.copy.assistantRealtimeUnavailable)),
-      );
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(controller.copy.assistantModeChanged)),
-    );
-  }
+  @override
+  State<_HeaderPressFeedback> createState() => _HeaderPressFeedbackState();
+}
+
+class _HeaderPressFeedbackState extends State<_HeaderPressFeedback> {
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => setState(() => _pressed = true),
+    onPointerUp: (_) => setState(() => _pressed = false),
+    onPointerCancel: (_) => setState(() => _pressed = false),
+    child: AnimatedScale(
+      scale: _pressed && !AppMotion.reduced(context) ? .95 : 1,
+      duration: AppMotion.duration(context, AppMotion.feedback),
+      curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+      child: widget.child,
+    ),
+  );
 }
 
 class _MessageList extends StatelessWidget {
@@ -629,6 +869,9 @@ class _MessageList extends StatelessWidget {
     required this.runExpanded,
     required this.onRunExpandedChanged,
     required this.animateMessage,
+    required this.messageKeys,
+    required this.highlightedId,
+    required this.headerInset,
   });
 
   final AppController controller;
@@ -643,6 +886,9 @@ class _MessageList extends StatelessWidget {
   final bool? runExpanded;
   final ValueChanged<bool> onRunExpandedChanged;
   final bool Function(String id) animateMessage;
+  final Map<String, GlobalKey> messageKeys;
+  final String? highlightedId;
+  final double headerInset;
 
   @override
   Widget build(BuildContext context) {
@@ -662,9 +908,10 @@ class _MessageList extends StatelessWidget {
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+              padding: EdgeInsets.fromLTRB(20, headerInset + 12, 20, 28),
               child: AssistantWelcome(
                 copy: copy,
+                compact: constraints.maxHeight - headerInset < 320,
                 gameTitle:
                     !useGlobalMode || controller.globalUseCurrentGameKnowledge
                     ? controller.selectedGame.title
@@ -679,7 +926,7 @@ class _MessageList extends StatelessWidget {
 
     return ListView(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, headerInset + 6, 16, 16),
       children: <Widget>[
         for (int index = 0; index < messages.length; index++) ...<Widget>[
           if (showRun && index == lastAssistantIndex)
@@ -701,32 +948,42 @@ class _MessageList extends StatelessWidget {
             AssistantMessageEntrance(
               key: ValueKey('$runContextKey:${messages[index].id}'),
               animate: animateMessage(messages[index].id),
-              child: MessageBubble(
-                message: messages[index],
-                palette: AppPalette.of(context),
-                copy: copy,
-                onSpeak:
-                    messages[index].role == ChatRole.assistant &&
-                        controller.voiceReplyAvailable
-                    ? () => controller.speakMessage(messages[index].text)
-                    : null,
-                speakTooltip: copy.speakAgain,
-                onCopy:
-                    messages[index].role == ChatRole.assistant &&
-                        !messages[index].isStreaming &&
-                        !messages[index].isFailed
-                    ? () => onCopy(messages[index].text)
-                    : null,
-                copyTooltip: copy.copyAnswer,
-                onRetry: messages[index].canRetry
-                    ? () => controller.retryMessage(
-                        messages[index],
-                        useGlobalMode: useGlobalMode,
-                      )
-                    : null,
-                retryTooltip: copy.retry,
-                showTimestamp: showMessageTimes,
-                onTap: onMessageTap,
+              child: AnimatedContainer(
+                key: messageKeys.putIfAbsent(messages[index].id, GlobalKey.new),
+                duration: AppMotion.duration(context),
+                decoration: BoxDecoration(
+                  color: highlightedId == messages[index].id
+                      ? AppPalette.of(context).primary.withValues(alpha: .10)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: MessageBubble(
+                  message: messages[index],
+                  palette: AppPalette.of(context),
+                  copy: copy,
+                  onSpeak:
+                      messages[index].role == ChatRole.assistant &&
+                          controller.voiceReplyAvailable
+                      ? () => controller.speakMessage(messages[index].text)
+                      : null,
+                  speakTooltip: copy.speakAgain,
+                  onCopy:
+                      messages[index].role == ChatRole.assistant &&
+                          !messages[index].isStreaming &&
+                          !messages[index].isFailed
+                      ? () => onCopy(messages[index].text)
+                      : null,
+                  copyTooltip: copy.copyAnswer,
+                  onRetry: messages[index].canRetry
+                      ? () => controller.retryMessage(
+                          messages[index],
+                          useGlobalMode: useGlobalMode,
+                        )
+                      : null,
+                  retryTooltip: copy.retry,
+                  showTimestamp: showMessageTimes,
+                  onTap: onMessageTap,
+                ),
               ),
             ),
         ],

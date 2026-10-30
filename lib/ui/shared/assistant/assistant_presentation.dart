@@ -19,10 +19,12 @@ class AssistantWelcome extends StatelessWidget {
     required this.copy,
     required this.onPrompt,
     this.gameTitle,
+    this.compact = false,
   });
 
   final AppCopy copy;
   final String? gameTitle;
+  final bool compact;
   final ValueChanged<String> onPrompt;
 
   @override
@@ -31,21 +33,22 @@ class AssistantWelcome extends StatelessWidget {
     final prompts = [
       (
         Icons.format_list_numbered_rounded,
-        copy.localized('梳理回合流程', 'Review turn order'),
+        copy.localized('回合流程', 'Turn order'),
         copy.localized('帮我梳理一遍回合流程', 'Walk me through the turn order'),
       ),
       (
         Icons.menu_book_outlined,
-        copy.localized('解释一个术语', 'Explain a term'),
+        copy.localized('术语解释', 'Terms'),
         copy.quickPromptTerm,
       ),
       (
         Icons.forum_outlined,
-        copy.localized('讨论规则争议', 'Discuss a ruling'),
+        copy.localized('规则争议', 'Rulings'),
         copy.localized('我有一个规则争议，帮我看看', 'Help me resolve a rules question'),
       ),
     ];
-    return Center(
+    return Align(
+      alignment: const Alignment(0, -.2),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 580),
         child: Column(
@@ -55,10 +58,11 @@ class AssistantWelcome extends StatelessWidget {
           children: [
             if (gameTitle != null) ...[
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.casino_outlined, color: palette.primary, size: 17),
                   const SizedBox(width: 8),
-                  Expanded(
+                  Flexible(
                     child: Text(
                       gameTitle!,
                       style: Theme.of(
@@ -70,50 +74,71 @@ class AssistantWelcome extends StatelessWidget {
               ),
               const SizedBox(height: 18),
             ],
-            Text(
-              copy.localized('有什么规则疑问？', 'What would you like to ask?'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: palette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              copy.localized(
-                '可以从回合流程、术语或具体情境开始。',
-                'Start with turn order, a term, or a situation at the table.',
-              ),
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: palette.textSecondary),
-            ),
-            const SizedBox(height: 24),
             LayoutBuilder(
               builder: (context, constraints) {
-                final columns = constraints.maxWidth >= 520 ? 3 : 1;
-                final width =
-                    (constraints.maxWidth - (columns - 1) * 10) / columns;
-                return Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (var index = 0; index < prompts.length; index++)
-                      SizedBox(
-                        width: width,
-                        child: _PromptCard(
-                          key: ValueKey('assistant-prompt-$index'),
-                          icon: prompts[index].$1,
-                          label: prompts[index].$2,
-                          compact: columns == 1,
-                          onPressed: () => onPrompt(prompts[index].$3),
-                        ),
-                      ),
-                  ],
+                final style = Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: palette.textPrimary,
+                    );
+                var heading = copy.localized(
+                  '有什么规则疑问？',
+                  'What would you like to ask?',
                 );
+                if (copy.isChinese) {
+                  final measure = TextPainter(
+                    text: TextSpan(text: heading, style: style),
+                    textDirection: Directionality.of(context),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  )..layout();
+                  if (measure.width > constraints.maxWidth) {
+                    heading = '有什么\n规则疑问？';
+                  }
+                  measure.dispose();
+                }
+                return Text(heading, textAlign: TextAlign.center, style: style);
               },
             ),
+            if (!compact) ...[
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Text(
+                  copy.localized(
+                    '可以从回合流程、术语或具体情境开始。',
+                    'Start with turn order, a term, or a situation at the table.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (var index = 0; index < prompts.length; index++)
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: constraints.maxWidth,
+                          ),
+                          child: _PromptCard(
+                            key: ValueKey('assistant-prompt-$index'),
+                            icon: prompts[index].$1,
+                            label: prompts[index].$2,
+                            onPressed: () => onPrompt(prompts[index].$3),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -126,12 +151,10 @@ class _PromptCard extends StatefulWidget {
     super.key,
     required this.icon,
     required this.label,
-    required this.compact,
     required this.onPressed,
   });
   final IconData icon;
   final String label;
-  final bool compact;
   final VoidCallback onPressed;
 
   @override
@@ -147,53 +170,46 @@ class _PromptCardState extends State<_PromptCard> {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final contents = [
       Icon(widget.icon, size: 19, color: palette.primary),
-      SizedBox(width: widget.compact ? 10 : 0, height: widget.compact ? 0 : 13),
-      if (widget.compact)
-        Expanded(child: Text(widget.label))
-      else
-        Text(widget.label),
+      const SizedBox(width: 8),
+      Flexible(
+        child: Text(
+          widget.label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: palette.textSecondary),
+        ),
+      ),
     ];
     return AnimatedContainer(
       duration: AppMotion.duration(context),
       curve: AppMotion.curve,
       transform: Matrix4.translationValues(
         0,
-        _highlighted && !reduceMotion ? -3 : 0,
+        _highlighted && !reduceMotion ? -2 : 0,
         0,
       ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadow.withValues(alpha: _highlighted ? .10 : .035),
-            blurRadius: _highlighted ? 18 : 7,
-            offset: Offset(0, _highlighted ? 6 : 2),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(18)),
       child: Material(
         color: palette.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           side: BorderSide(
             color: _highlighted
                 ? palette.primary.withValues(alpha: .35)
-                : palette.outline,
+                : palette.outline.withValues(alpha: .6),
           ),
         ),
         child: InkWell(
           onTap: widget.onPressed,
           onHover: (value) => setState(() => _highlighted = value),
           onFocusChange: (value) => setState(() => _highlighted = value),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: EdgeInsets.all(widget.compact ? 14 : 17),
-            child: widget.compact
-                ? Row(children: contents)
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: contents,
-                  ),
+          borderRadius: BorderRadius.circular(18),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(mainAxisSize: MainAxisSize.min, children: contents),
+            ),
           ),
         ),
       ),
@@ -320,8 +336,8 @@ class AssistantComposerState extends State<AssistantComposer> {
                 (constraints.maxWidth - 24 - 48 - 48 - (showModel ? 48 : 0))
                     .clamp(32.0, double.infinity);
             final textStyle =
-                Theme.of(context).textTheme.titleMedium ??
-                const TextStyle(fontSize: 16);
+                (Theme.of(context).textTheme.bodyLarge ?? const TextStyle())
+                    .copyWith(fontSize: 16, height: 1.45);
             final painter = TextPainter(
               text: TextSpan(
                 text: widget.textController.text.isEmpty
@@ -345,6 +361,7 @@ class AssistantComposerState extends State<AssistantComposer> {
                 key: const ValueKey('assistant-draft'),
                 focusNode: _focus,
                 controller: widget.textController,
+                style: textStyle,
                 minLines: 1,
                 maxLines: 5,
                 keyboardType: TextInputType.multiline,
@@ -483,16 +500,16 @@ class AssistantComposerState extends State<AssistantComposer> {
                 borderRadius: BorderRadius.circular(expanded ? 25 : 32),
                 border: Border.all(
                   color: _focused
-                      ? palette.primary.withValues(alpha: .42)
-                      : palette.outline.withValues(alpha: .65),
+                      ? palette.primary.withValues(alpha: .28)
+                      : palette.outline.withValues(alpha: .5),
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: palette.shadow.withValues(
-                      alpha: _focused ? .14 : .10,
+                      alpha: _focused ? .10 : .065,
                     ),
-                    blurRadius: _focused ? 28 : 20,
-                    offset: const Offset(0, 7),
+                    blurRadius: _focused ? 24 : 18,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),

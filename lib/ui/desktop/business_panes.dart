@@ -20,6 +20,7 @@ import '../../core/localization/app_copy.dart';
 import '../shared/assistant/ai_run_activity.dart';
 import '../shared/assistant/assistant_presentation.dart';
 import '../shared/assistant/assistant_view_state.dart';
+import '../shared/assistant/assistant_toolbar_icon.dart';
 import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
 import '../shared/documents/markdown_document_screen.dart';

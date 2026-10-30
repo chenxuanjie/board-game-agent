@@ -644,7 +644,11 @@ void main() {
         find.byKey(const ValueKey('assistant-conversations-trigger')),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
+      expect(find.byKey(const ValueKey('assistant-more-menu')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('assistant-header-share')),
+        findsNothing,
+      );
       expect(find.byIcon(Icons.delete_sweep_rounded), findsNothing);
       expect(find.text('语音已准备好'), findsNothing);
       expect(controller.selectedConversation?.isGlobal, isTrue);

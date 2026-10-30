@@ -193,8 +193,12 @@ class _ContextOptions extends StatelessWidget {
                 if (useGlobalMode)
                   SwitchListTile.adaptive(
                     key: const ValueKey('assistant-context-current-game'),
-                    title: Text(copy.useCurrentGameKnowledgeLabel),
-                    subtitle: Text(copy.useCurrentGameKnowledgeHint),
+                    title: Text(
+                      copy.localized('当前桌游资料', 'Current game context'),
+                    ),
+                    subtitle: Text(
+                      copy.localized('参考所选桌游', 'Use the selected game'),
+                    ),
                     value: controller.globalUseCurrentGameKnowledge,
                     onChanged: available
                         ? (value) => unawaited(

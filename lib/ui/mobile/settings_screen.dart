@@ -5,6 +5,7 @@ import '../../core/theme/ui_tokens.dart';
 import '../shared/cinema/cinema_surface.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
+import '../../features/assistant/models/assistant_mode.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
 import '../../core/localization/app_language.dart';
 import '../../core/models/connectivity_status.dart';
@@ -559,6 +560,97 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _SectionTitle(
+                        title: copy.assistantModeTitle,
+                        icon: Icons.record_voice_over_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            SwitchListTile.adaptive(
+                              key: const ValueKey(
+                                'mobile-settings-voice-output',
+                              ),
+                              title: Text(copy.voiceReplySwitchLabel),
+                              subtitle: controller.voiceReplyAvailable
+                                  ? null
+                                  : Text(
+                                      copy.localized(
+                                        '当前设备暂不支持语音朗读',
+                                        'Voice output is unavailable on this device',
+                                      ),
+                                    ),
+                              value: controller.voiceReplyEnabled,
+                              onChanged: controller.voiceReplyAvailable
+                                  ? (value) async {
+                                      try {
+                                        await controller.setVoiceReplyEnabled(
+                                          value,
+                                        );
+                                      } catch (_) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                copy.localized(
+                                                  '设置未保存，请重试',
+                                                  'Could not save the setting. Try again.',
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  : null,
+                            ),
+                            SwitchListTile.adaptive(
+                              key: const ValueKey(
+                                'mobile-settings-realtime-voice',
+                              ),
+                              title: Text(copy.assistantRealtimeModeLabel),
+                              subtitle: controller.realtimeVoiceAvailable
+                                  ? null
+                                  : Text(copy.assistantRealtimeModeHint),
+                              value:
+                                  controller.assistantMode ==
+                                  AssistantMode.realtimeVoice,
+                              onChanged: controller.realtimeVoiceAvailable
+                                  ? (value) async {
+                                      try {
+                                        await controller.setAssistantMode(
+                                          value
+                                              ? AssistantMode.realtimeVoice
+                                              : AssistantMode.textAndDictation,
+                                        );
+                                      } catch (_) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                copy.localized(
+                                                  '设置未保存，请重试',
+                                                  'Could not save the setting. Try again.',
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  : null,
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 24),

@@ -127,9 +127,9 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
               constraints: const BoxConstraints(minHeight: 68),
               padding: EdgeInsets.fromLTRB(
                 narrow ? 12 : 24,
-                16,
+                8,
                 narrow ? 12 : 24,
-                16,
+                8,
               ),
               decoration: BoxDecoration(
                 border: Border(bottom: BorderSide(color: palette.outline)),
@@ -162,7 +162,11 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                             height: 17,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.edit_square, size: 20),
+                        : AssistantToolbarIcon(
+                            asset: 'assets/mobile/assistant/edit.png',
+                            size: 24,
+                            color: palette.textSecondary,
+                          ),
                   ),
                 ],
               ),
@@ -184,6 +188,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                             ),
                             child: AssistantWelcome(
                               copy: controller.copy,
+                              compact: box.maxHeight < 320,
                               gameTitle:
                                   !useGlobalMode ||
                                       controller.globalUseCurrentGameKnowledge

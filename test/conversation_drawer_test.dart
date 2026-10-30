@@ -16,6 +16,7 @@ import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/ai_conversation.dart';
 import 'package:board_game_agent/features/assistant/models/answer_source.dart';
 import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
@@ -32,6 +33,8 @@ import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_motion.dart';
+import 'package:board_game_agent/ui/shared/assistant/conversation_search_dialog.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
 
 void _uiTest(String name, WidgetTesterCallback body, {Timeout? timeout}) {
   testWidgets(name, (tester) async {
@@ -58,6 +61,242 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     rootBundle.clear();
+  });
+
+  _uiTest('conversation search remains usable with keyboard and large text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.viewInsets = FakeViewPadding(
+      bottom: 250 * tester.view.devicePixelRatio,
+    );
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.5)),
+          child: child!,
+        ),
+        home: ConversationSearchDialog(
+          messages: [
+            ChatMessage(
+              id: 'one',
+              role: ChatRole.user,
+              text: '战争之匣的规则',
+              timestamp: DateTime.utc(2026),
+            ),
+          ],
+          copy: AppCopy(AppLanguage.zhHans),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('assistant-search-query')),
+      '战争',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('assistant-search-result-one')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  _uiTest('compact header searches and deletes without a clear action', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026);
+    final conversation = AiConversation(
+      id: 'global',
+      title: '测试对话',
+      scope: AiConversationScope.global,
+      createdAt: now,
+      updatedAt: now,
+      messages: List.generate(
+        70,
+        (i) => ChatMessage(
+          id: 'msg-$i',
+          role: ChatRole.user,
+          text: i == 2 ? '目标规则在哪里' : '普通消息 $i',
+          timestamp: now,
+        ),
+      ),
+    );
+    final store = _MemoryStore()
+      ..value = jsonEncode({
+        'version': 4,
+        'selectedConversationId': 'global',
+        'conversations': {'global': conversation.toMap()},
+      });
+    final controller = _buildController(store);
+    addTearDown(controller.dispose);
+    await tester.runAsync(controller.initialize);
+    await _mount(tester, controller, const Size(390, 844));
+    expect(find.byKey(const ValueKey('assistant-header-back')), findsNothing);
+    expect(find.byKey(const ValueKey('assistant-header-share')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('assistant-conversations-trigger')),
+      findsOneWidget,
+    );
+    Future<void> openMenu() async {
+      await tester.tap(find.byKey(const ValueKey('assistant-more-menu')));
+      await tester.pumpAndSettle();
+      expect(find.text('查找'), findsOneWidget);
+      expect(find.text('清空'), findsNothing);
+      expect(find.byKey(const ValueKey('assistant-menu-clear')), findsNothing);
+      expect(find.text('删除'), findsOneWidget);
+      expect(find.text('语音朗读'), findsNothing);
+    }
+
+    await openMenu();
+    await _capture(tester, 'assistant-actions');
+    await tester.tap(find.byKey(const ValueKey('assistant-menu-find')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('assistant-search-query')),
+      '目标规则',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('assistant-search-result-msg-2')),
+    );
+    for (
+      var i = 0;
+      i < 100 && find.text('目标规则在哪里').hitTestable().evaluate().isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text('目标规则在哪里').hitTestable(), findsOneWidget);
+    await openMenu();
+    await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(controller.selectedConversation!.messages, hasLength(70));
+    await openMenu();
+    await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('assistant-confirm-change')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('操作未完成，请重试'), findsNothing);
+    expect(controller.selectedConversationId, isNot('global'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  _uiTest('game assistant opened as a page has a working back button', (
+    tester,
+  ) async {
+    final controller = await _controller(_MemoryStore());
+    addTearDown(controller.dispose);
+    controller.openGameAssistant('puerto-rico');
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AssistantChatScreen(controller: controller),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('assistant-header-back')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('assistant-header-back')));
+    await tester.pumpAndSettle();
+    expect(find.text('打开'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  _uiTest(
+    'compact assistant remains usable with large text and a short viewport',
+    (tester) async {
+      final controller = await _controller(_MemoryStore());
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await _mount(tester, controller, const Size(320, 600), textScale: 1.5);
+      await _capture(tester, 'assistant-small-large-text');
+      for (final key in [
+        'assistant-conversations-trigger',
+        'assistant-header-new-conversation',
+        'assistant-more-menu',
+      ]) {
+        final rect = tester.getRect(find.byKey(ValueKey(key)));
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(320));
+        expect(rect.height, greaterThanOrEqualTo(48));
+      }
+      final composer = find.byKey(const ValueKey('assistant-composer-box'));
+      final collapsedHeight = tester.getSize(composer).height;
+      await tester.enterText(
+        find.byKey(const ValueKey('assistant-draft')),
+        '战争之匣的回合流程是什么？\n请按行动顺序详细解释，并列出需要注意的规则。',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(composer).height, greaterThan(collapsedHeight));
+      expect(find.byKey(const ValueKey('assistant-prompt-0')), findsNothing);
+      await _capture(tester, 'assistant-small-multiline');
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
+      await tester.pumpAndSettle();
+      final contextMenu = tester.getRect(
+        find.byKey(const ValueKey('assistant-context-menu')),
+      );
+      expect(contextMenu.left, greaterThanOrEqualTo(0));
+      expect(contextMenu.right, lessThanOrEqualTo(320));
+      expect(contextMenu.top, greaterThanOrEqualTo(64));
+      await _capture(tester, 'assistant-small-context');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('assistant-more-menu')));
+      await tester.pumpAndSettle();
+      expect(find.text('清空'), findsNothing);
+      await _capture(tester, 'assistant-small-actions');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  _uiTest('header buttons respond to press and return to their original size', (
+    tester,
+  ) async {
+    final controller = await _controller(_MemoryStore());
+    addTearDown(controller.dispose);
+    controller.openGlobalAssistant();
+    await _mount(tester, controller, const Size(320, 700));
+    final button = find.byKey(
+      const ValueKey('assistant-conversations-trigger'),
+    );
+    final scale = find
+        .ancestor(of: button, matching: find.byType(AnimatedScale))
+        .first;
+    final gesture = await tester.startGesture(tester.getCenter(button));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.widget<AnimatedScale>(scale).scale, lessThan(1));
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedScale>(scale).scale, 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets(
@@ -520,6 +759,11 @@ void main() {
       controller.openGameAssistant('puerto-rico');
       await controller.setLanguage(AppLanguage.en);
       await _mount(tester, controller, size, desktop: true);
+      expect(
+        find.byKey(const ValueKey('assistant-header-share')),
+        findsNothing,
+      );
+      if (size.width == 1280) await _capture(tester, 'assistant-desktop');
       await tester.tap(
         find.byKey(const ValueKey('assistant-conversations-trigger')),
       );
@@ -554,7 +798,12 @@ void main() {
       );
       await _mount(tester, controller, const Size(390, 844));
       await _capture(tester, 'assistant-compact-${language.name}');
-      await tester.tap(find.byKey(const ValueKey('assistant-prompt-0')));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('assistant-prompt-0')),
+          matching: find.byType(InkWell),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(controller.selectedConversation!.messages, isEmpty);
       expect(
@@ -656,6 +905,7 @@ Future<void> _mount(
   AppController controller,
   Size size, {
   bool desktop = false,
+  double textScale = 1.25,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -670,7 +920,7 @@ Future<void> _mount(
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
-          ).copyWith(textScaler: const TextScaler.linear(1.25)),
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
         home: desktop
@@ -685,6 +935,17 @@ Future<void> _mount(
 Future<void> _capture(WidgetTester tester, String name) async {
   final output = Platform.environment['CONVERSATION_UI_CAPTURE_DIR'];
   if (output == null) return;
+  final context = tester.element(find.byType(Scaffold).first);
+  final providers = tester
+      .widgetList<Image>(find.byType(Image))
+      .map((image) => image.image)
+      .toList();
+  await tester.runAsync(() async {
+    await Future.wait(
+      providers.map((provider) => precacheImage(provider, context)),
+    );
+  });
+  await tester.pump();
   final boundary = tester.renderObject<RenderRepaintBoundary>(
     find.byKey(const ValueKey('conversation-capture')),
   );
