@@ -5,9 +5,7 @@ import '../shared/library_catalog_status.dart';
 import '../shared/catalog_empty_state.dart';
 import '../shared/library_viewport.dart';
 import '../shared/app_modals.dart';
-import '../../core/theme/cinema_theme.dart';
-import '../../core/theme/app_palette.dart';
-import '../shared/cinema/cinema_home.dart';
+
 import '../../app/state/browse_session.dart';
 import '../../core/theme/app_motion.dart';
 import '../../features/games/models/game_info.dart';
@@ -113,7 +111,6 @@ class _DesktopGamesPaneState extends State<DesktopGamesPane> {
             controller: widget.scrollController,
             layout: (
               MediaQuery.sizeOf(context),
-              isCinema(context),
               MediaQuery.textScalerOf(context).scale(16),
             ),
             builder: (keys) => _LibraryMain(
@@ -366,7 +363,7 @@ class _LibraryMain extends StatelessWidget {
             }
 
             return SizedBox(
-              height: isCinema(context) ? 40 : 38,
+              height: 38,
               child: Row(
                 children: [
                   Expanded(
@@ -385,17 +382,11 @@ class _LibraryMain extends StatelessWidget {
         SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            final cinema = isCinema(context);
-            final gap = cinema ? 16.0 : 20.0;
+            final gap = 20.0;
             final columns = posterAspectRatio != null
                 ? ((constraints.maxWidth + gap) / (190 + gap)).floor().clamp(
                     1,
                     12,
-                  )
-                : cinema
-                ? ((constraints.maxWidth + gap) / (192 + gap)).floor().clamp(
-                    1,
-                    6,
                   )
                 : constraints.maxWidth >= 1130
                 ? 5
@@ -437,15 +428,6 @@ class _LibraryMain extends StatelessWidget {
                         width: posterWidth,
                         height: posterAspectRatio != null
                             ? posterWidth / posterAspectRatio!
-                            : cinema
-                            ? posterWidth * 4 / 3 +
-                                  MediaQuery.textScalerOf(context).scale(16) *
-                                      2.6 +
-                                  MediaQuery.textScalerOf(context).scale(14) *
-                                      1.55 +
-                                  MediaQuery.textScalerOf(context).scale(12) *
-                                      2.9 +
-                                  48
                             : posterWidth * 1.49,
                         child:
                             posterBuilder?.call(
@@ -513,7 +495,7 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
         child: AnimatedContainer(
           duration: AppMotion.duration(context, AppMotion.menu),
           curve: AppMotion.curve,
-          height: isCinema(context) ? 40 : 38,
+          height: 38,
           padding: EdgeInsets.symmetric(horizontal: 20),
           alignment: Alignment.center,
           decoration: BoxDecoration(
@@ -550,9 +532,7 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
             style: _libraryToolbarTextStyle(
               active: selected,
               foreground: selected
-                  ? (isCinema(context)
-                        ? AppPalette.of(context).onPrimary
-                        : Colors.white)
+                  ? Colors.white
                   : desktopTone(
                       context,
                       Color(0xFF5E493B),
@@ -592,7 +572,7 @@ class _OutlineActionState extends State<_OutlineAction> {
   @override
   Widget build(BuildContext context) {
     final foreground = widget.active
-        ? (isCinema(context) ? AppPalette.of(context).onPrimary : Colors.white)
+        ? Colors.white
         : desktopTone(context, Color(0xFF5E493B), DesktopToneRole.text);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -604,7 +584,7 @@ class _OutlineActionState extends State<_OutlineAction> {
         child: AnimatedContainer(
           duration: AppMotion.duration(context, AppMotion.menu),
           curve: AppMotion.curve,
-          height: isCinema(context) ? 40 : 38,
+          height: 38,
           constraints: BoxConstraints(minWidth: 104),
           padding: EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
@@ -1083,7 +1063,7 @@ class _OptionChip extends StatelessWidget {
     borderRadius: BorderRadius.circular(12),
     child: AnimatedContainer(
       duration: AppMotion.duration(context, AppMotion.feedback),
-      height: isCinema(context) ? 40 : 38,
+      height: 38,
       width: expand ? double.infinity : null,
       padding: EdgeInsets.symmetric(horizontal: 15),
       alignment: Alignment.center,
@@ -1101,12 +1081,10 @@ class _OptionChip extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontSize: isCinema(context) ? 14 : 11.5,
+          fontSize: 11.5,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           color: selected
-              ? (isCinema(context)
-                    ? AppPalette.of(context).onPrimary
-                    : Colors.white)
+              ? Colors.white
               : desktopTone(context, Color(0xFF5F554E), DesktopToneRole.text),
         ),
       ),
@@ -1127,15 +1105,6 @@ class _LibraryGameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isCinema(context)) {
-      return CinemaPoster(
-        key: ValueKey('desktop-game-card-${game.data.id}'),
-        controller: game.controller,
-        game: game.data,
-        onOpen: onTap,
-        details: true,
-      );
-    }
     return DesktopLibraryPosterCard(
       key: ValueKey<String>('desktop-game-card-${game.data.id}'),
       controller: game.controller,

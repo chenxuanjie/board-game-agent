@@ -45,7 +45,7 @@ Future<void> _mount(
     AccountScope(
       service: service,
       child: MaterialApp(
-        theme: theme ?? AppTheme.buildTheme(PaletteRegistry.cinema),
+        theme: theme ?? AppTheme.buildTheme(PaletteRegistry.spatialCinema),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,

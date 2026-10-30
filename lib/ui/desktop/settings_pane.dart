@@ -15,7 +15,7 @@ import '../../core/models/connectivity_status.dart';
 import '../../features/settings/services/desktop_ai_settings_service.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/cinema_theme.dart';
+
 import '../shared/resource_access_summary.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
@@ -30,7 +30,6 @@ import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
-import '../shared/cinema/cinema_surface.dart';
 
 part 'settings/preferences_cards.dart';
 part 'settings/ai_service_card.dart';

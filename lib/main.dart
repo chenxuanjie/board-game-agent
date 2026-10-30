@@ -242,12 +242,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
         final bool desktopLayout =
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) ||
             (kIsWeb &&
-                (widget.controller.colorScheme == ColorSchemeOption.cinema
-                    ? constraints.maxWidth >=
-                          DesktopResponsive.desktopWindowMinimumWidth
-                    : DesktopResponsive.supportsDesktopViewport(
-                        constraints.biggest,
-                      )));
+                (DesktopResponsive.supportsDesktopViewport(
+                  constraints.biggest,
+                )));
         return NativeWindowSurface(
           enabled:
               widget.controller.colorScheme == ColorSchemeOption.spatialCinema,
@@ -348,14 +345,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
             ],
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
             theme: desktopLayout
-                ? buildDesktopTheme(
-                    activePalette: widget.controller.palette,
-                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
-                  )
-                : AppTheme.buildTheme(
-                    widget.controller.palette,
-                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
-                  ),
+                ? buildDesktopTheme(activePalette: widget.controller.palette)
+                : AppTheme.buildTheme(widget.controller.palette),
             home: FutureBuilder<void>(
               future: _initialization,
               builder: (context, snapshot) {

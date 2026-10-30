@@ -16,9 +16,6 @@ import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/mobile/settings_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
-import 'package:board_game_agent/core/theme/cinema_theme.dart';
-import 'package:board_game_agent/core/theme/palette_registry.dart';
-import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_workspace.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_material.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_primitives.dart';
@@ -76,8 +73,8 @@ part 'desktop/desktop_home_test_cases.dart';
 part 'desktop/desktop_typography_test_cases.dart';
 part 'desktop/desktop_assistant_design_test_cases.dart';
 part 'desktop/desktop_national_day_test_cases.dart';
-part 'desktop/desktop_cinema_test_cases.dart';
 part 'desktop/desktop_spatial_test_cases.dart';
+part 'desktop/spatial_artwork_fixture.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -136,7 +133,6 @@ void main() {
   _registerDesktopTypographyTests(workspaceContext);
   _registerAssistantDesignTests(workspaceContext);
   _registerDesktopNationalDayTests(workspaceContext);
-  _registerCinemaTests(workspaceContext);
   _registerSpatialTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {

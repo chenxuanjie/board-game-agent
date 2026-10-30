@@ -178,8 +178,8 @@ void main() {
     await guest.saveColorScheme(ColorSchemeOption.spatialCinema);
     expect((await a.loadAiApiConfig()).toJson(), config.toJson());
     expect(await a.loadColorScheme(), ColorSchemeOption.spatialCinema);
-    await a.saveColorScheme(ColorSchemeOption.cinema);
-    expect(await guest.loadColorScheme(), ColorSchemeOption.cinema);
+    await a.saveColorScheme(ColorSchemeOption.spatialCinema);
+    expect(await guest.loadColorScheme(), ColorSchemeOption.spatialCinema);
   });
 
   for (final browser in [false, true]) {

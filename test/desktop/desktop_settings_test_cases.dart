@@ -115,14 +115,18 @@ void _registerDesktopSettingsTests(_DesktopSettingsTestContext context) {
         find.byKey(const ValueKey<String>('desktop-settings-theme-classic')),
         findsNothing,
       );
-      final Finder cinemaTheme = find.byKey(
+      expect(
+        find.byKey(const ValueKey('desktop-settings-theme-cinema')),
+        findsNothing,
+      );
+      final Finder spatialTheme = find.byKey(
         ValueKey<String>(
-          'desktop-settings-theme-${ColorSchemeOption.cinema.code}',
+          'desktop-settings-theme-${ColorSchemeOption.spatialCinema.code}',
         ),
       );
-      await tester.tap(cinemaTheme);
+      await tester.tap(spatialTheme);
       await tester.pumpAndSettle();
-      expect(context.preferences._colorScheme, ColorSchemeOption.cinema);
+      expect(context.preferences._colorScheme, ColorSchemeOption.spatialCinema);
 
       final Finder warmwoodTheme = find.byKey(
         ValueKey<String>(

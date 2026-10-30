@@ -415,7 +415,6 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
       await c.setColorScheme(ColorSchemeOption.spatialCinema);
       await _mountSpatial(tester, c, size);
       expect(find.byType(DesktopWorkspace), findsNothing);
-      expect(find.byType(CinemaHomeContent), findsNothing);
       expect(find.byType(SpatialGlass), findsOneWidget);
       expect(find.byType(SpatialPoster), findsWidgets);
       if (size.width >= 1020) {
@@ -563,7 +562,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
     },
   );
   testWidgets(
-    'Spatial source material and searchable real catalog are independent of Cinema',
+    'Spatial source material and searchable real catalog use independent layouts',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = context.controller;
@@ -612,7 +611,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
         final c = await tester.runAsync(
           () => _createController(
             ttsService: _UnavailableTtsService(),
-            remoteAssetService: _LocalCinemaAssets(),
+            remoteAssetService: _LocalSpatialAssets(),
           ),
         );
         addTearDown(c!.dispose);
@@ -624,7 +623,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
         addTearDown(
           () => PaintingBinding.instance.imageCache.maximumSizeBytes = cache,
         );
-        await _warmCinemaPictures(tester, c);
+        await _warmSpatialPictures(tester, c);
         await _mountSpatial(tester, c, const Size(1440, 1000));
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 300)),

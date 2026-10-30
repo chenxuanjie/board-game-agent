@@ -29,9 +29,7 @@ import '../shared/app_page_transition.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/game_cover_motion.dart';
 import 'desktop_resolved_image.dart';
-import '../../core/theme/cinema_theme.dart';
-import '../shared/cinema/cinema_home.dart';
-import '../shared/cinema/cinema_surface.dart';
+
 import '../shared/app_failure_notice.dart';
 import '../shared/account_menu.dart';
 import '../shared/account_screen.dart';
@@ -594,13 +592,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                 : null,
             body: GameCoverMotionScope(
               onCapture: (origin) => _coverOrigin = origin,
-              child: isCinema(context)
-                  ? CinemaAmbient(
-                      controller: widget.controller,
-                      path: widget.controller.selectedGame.bannerAssetPath,
-                      child: body,
-                    )
-                  : body,
+              child: body,
             ),
           ),
         );
@@ -623,13 +615,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
       children: [
         if (_page != 'gameDetail' &&
             (_page == 'home' || _page == 'games' || narrow))
-          if (isCinema(context))
-            CinemaSurface(
-              radius: 0,
-              child: _topBar(compact: compact, narrow: narrow),
-            )
-          else
-            _topBar(compact: compact, narrow: narrow),
+          _topBar(compact: compact, narrow: narrow),
         if (_page == 'games')
           LibraryCheckProgress(controller: widget.controller),
         Expanded(
@@ -696,26 +682,12 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                     14,
                                   ),
                             child: switch (_page) {
-                              'home' =>
-                                isCinema(context)
-                                    ? CinemaHomeContent(
-                                        controller: widget.controller,
-                                        scrollable: false,
-                                        onOpenGame: _game,
-                                        onAskGame: _askAi,
-                                        onLibrary: () => _navigate('games'),
-                                        onRankings: () => _navigate('rankings'),
-                                        onFavorites: () =>
-                                            _navigate('favorites'),
-                                        onActivities: _openActivityCenter,
-                                        onTopic: _openNationalDay,
-                                      )
-                                    : DesktopHomePane(
-                                        controller: widget.controller,
-                                        onNavigate: _navigate,
-                                        onOpenGame: _game,
-                                        onOpenNationalDay: _openNationalDay,
-                                      ),
+                              'home' => DesktopHomePane(
+                                controller: widget.controller,
+                                onNavigate: _navigate,
+                                onOpenGame: _game,
+                                onOpenNationalDay: _openNationalDay,
+                              ),
                               'games' => DesktopGamesPane(
                                 scrollController: _scroll,
                                 controller: widget.controller,
@@ -951,7 +923,7 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
                                   DesktopToneRole.soft,
                                 ),
                           borderRadius: BorderRadius.circular(
-                            metrics.radius(isCinema(context) ? 12 : 26),
+                            metrics.radius(26),
                           ),
                           border: Border.all(
                             color: _searchFocus.hasFocus
@@ -1039,27 +1011,11 @@ class _DesktopWorkspaceState extends State<DesktopWorkspace> {
             if (_page == 'home')
               CompositedTransformTarget(
                 link: _activityLink,
-                child: isCinema(context)
-                    ? Badge(
-                        isLabelVisible:
-                            widget.controller.unreadActivityCount > 0,
-                        child: IconButton(
-                          tooltip: widget.controller.copy.localized(
-                            '通知',
-                            'Notifications',
-                          ),
-                          icon: Icon(
-                            Icons.notifications_none_rounded,
-                            color: desktopColors(context).brown,
-                          ),
-                          onPressed: _openActivityCenter,
-                        ),
-                      )
-                    : AccountMenuButton(
-                        unreadCount: widget.controller.unreadActivityCount,
-                        onOpenAccount: _openAccount,
-                        onOpenNotifications: _openActivityCenter,
-                      ),
+                child: AccountMenuButton(
+                  unreadCount: widget.controller.unreadActivityCount,
+                  onOpenAccount: _openAccount,
+                  onOpenNotifications: _openActivityCenter,
+                ),
               ),
           ],
         ),

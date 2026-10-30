@@ -18,7 +18,7 @@ import '../../features/library/models/resolved_document.dart';
 import '../shared/documents/document_viewer_launcher.dart';
 import 'assistant_chat_screen.dart';
 import 'game_cover.dart';
-import '../../core/theme/cinema_theme.dart';
+
 import '../desktop/desktop_resolved_image.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_cards.dart';
@@ -164,12 +164,10 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                     padding: const EdgeInsets.only(bottom: 18),
                     children: [
                       SizedBox(
-                        height: isCinema(context)
-                            ? (MediaQuery.sizeOf(context).width - 32) * 9 / 16
-                            : (MediaQuery.sizeOf(context).width * 0.92).clamp(
-                                270.0,
-                                480.0,
-                              ),
+                        height: (MediaQuery.sizeOf(context).width * 0.92).clamp(
+                          270.0,
+                          480.0,
+                        ),
                         child: HoverCarouselControls(
                           enabled: kIsWeb && gallery.length > 1,
                           showControls:

@@ -86,7 +86,8 @@ extension AppRankingController on AppController {
       await favoriteStatistics.publish();
     }
     if (_controllerDisposed || epoch != _identityScopeEpoch) return;
-    if (favoriteRankingRealtimeError != null)
+    if (favoriteRankingRealtimeError != null) {
       await _recoverPublicReactions?.call();
+    }
   }
 }

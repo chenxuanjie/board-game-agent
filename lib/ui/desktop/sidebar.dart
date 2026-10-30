@@ -4,9 +4,6 @@ import '../../core/localization/app_copy.dart';
 import '../../core/theme/app_motion.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
-import '../../core/theme/cinema_theme.dart';
-import '../../core/theme/app_palette.dart';
-import '../shared/cinema/cinema_surface.dart';
 
 class DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
@@ -48,14 +45,12 @@ class DesktopSidebar extends StatelessWidget {
               : metrics.px(DesktopResponsive.fullSidebarWidth)),
       height: double.infinity,
       decoration: BoxDecoration(
-        color: isCinema(context)
-            ? Colors.transparent
-            : desktopColors(context).sidebar,
+        color: desktopColors(context).sidebar,
         border: Border(right: BorderSide(color: desktopColors(context).line)),
       ),
       child: Stack(
         children: [
-          if (!compact && !isCinema(context))
+          if (!compact)
             Positioned(
               left: 0,
               right: 0,
@@ -156,17 +151,10 @@ class DesktopSidebar extends StatelessWidget {
                           borderRadius: BorderRadius.circular(
                             metrics.radius(11),
                           ),
-                          color: isCinema(context)
-                              ? AppPalette.of(context).primary
-                              : null,
-                          gradient: isCinema(context)
-                              ? null
-                              : const LinearGradient(
-                                  colors: [
-                                    Color(0xFFFF5D45),
-                                    Color(0xFFFF9D58),
-                                  ],
-                                ),
+                          color: null,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF5D45), Color(0xFFFF9D58)],
+                          ),
                         ),
                       ),
                     ),
@@ -196,7 +184,7 @@ class DesktopSidebar extends StatelessWidget {
         ],
       ),
     );
-    return isCinema(context) ? CinemaSurface(radius: 0, child: body) : body;
+    return body;
   }
 }
 
@@ -252,9 +240,7 @@ class _NavTileState extends State<_NavTile> {
             borderRadius: BorderRadius.circular(metrics.radius(11)),
             border: Border.all(
               color: focused
-                  ? (isCinema(context)
-                        ? AppPalette.of(context).focusRing
-                        : desktopColors(context).brown)
+                  ? (desktopColors(context).brown)
                   : Colors.transparent,
               width: 2,
             ),
@@ -265,14 +251,7 @@ class _NavTileState extends State<_NavTile> {
                 : MainAxisAlignment.start,
             children: [
               ColorFiltered(
-                colorFilter: isCinema(context)
-                    ? ColorFilter.mode(
-                        active
-                            ? AppPalette.of(context).onPrimary
-                            : AppPalette.of(context).textSecondary,
-                        BlendMode.srcIn,
-                      )
-                    : active
+                colorFilter: active
                     ? ColorFilter.mode(Colors.white, BlendMode.srcIn)
                     : ColorFilter.mode(Colors.transparent, BlendMode.dst),
                 child: Image.asset(
@@ -293,13 +272,7 @@ class _NavTileState extends State<_NavTile> {
                     style: DefaultTextStyle.of(context).style.copyWith(
                       fontSize: metrics.font(17),
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                      color: isCinema(context)
-                          ? (active
-                                ? AppPalette.of(context).onPrimary
-                                : AppPalette.of(context).textPrimary)
-                          : active
-                          ? Colors.white
-                          : Color(0xFF4B4038),
+                      color: active ? Colors.white : Color(0xFF4B4038),
                     ),
                     child: Text(widget.label, maxLines: 2),
                   ),

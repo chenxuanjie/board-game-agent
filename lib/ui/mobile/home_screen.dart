@@ -1,7 +1,5 @@
 import '../shared/app_modals.dart';
-import '../../core/theme/cinema_theme.dart';
-import '../shared/cinema/cinema_home.dart';
-import '../shared/cinema/cinema_surface.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -28,7 +26,6 @@ import 'national_day_screen.dart';
 import '../shared/app_page_transition.dart';
 import '../shared/game_cover_motion.dart';
 import '../shared/account_screen.dart';
-import '../shared/account_menu.dart';
 import '../shared/app_failure_notice.dart';
 import '../shared/assistant/conversation_drawer.dart';
 
@@ -56,12 +53,6 @@ class _HomeScreenState extends State<HomeScreen> {
   CoverOrigin? _coverOrigin;
   bool _showingLibraryUpdateDialog = false;
   bool _accountRouteOpen = false;
-
-  Widget _accountMenu() => AccountMenuButton(
-    unreadCount: widget.controller.unreadActivityCount,
-    onOpenAccount: _openAccount,
-    onOpenNotifications: _openActivities,
-  );
 
   @override
   void initState() {
@@ -115,57 +106,21 @@ class _HomeScreenState extends State<HomeScreen> {
             key: const ValueKey('mobile-page-transition'),
             identity: _tab,
             child: _tab == 0
-                ? isCinema(context)
-                      ? CinemaHomeContent(
-                          controller: widget.controller,
-                          onOpenGame: _openGame,
-                          onAskGame: (game) {
-                            if (!widget.controller.openGameAssistant(game.id)) {
-                              return;
-                            }
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => AssistantChatScreen(
-                                  controller: widget.controller,
-                                  useGlobalMode: false,
-                                ),
-                              ),
-                            );
-                          },
-                          onLibrary: () => setState(() {
-                            _tab = 1;
-                            widget.controller.browseSession.destination =
-                                'games';
-                            if (widget.controller.libraryAccessAllowed) {
-                              unawaited(
-                                widget.controller.checkForLibraryUpdatesQuick(),
-                              );
-                            }
-                          }),
-                          onRankings: () => Navigator.of(
-                            context,
-                          ).pushNamed(GameRankingScreen.routeName),
-                          onFavorites: () => _openSearch(favoritesOnly: true),
-                          onActivities: _openActivities,
-                          accountActions: _accountMenu(),
-                          onSearch: _openSearch,
-                          onTopic: _openNationalDay,
-                        )
-                      : MobileHomeContent(
-                          controller: widget.controller,
-                          onSearch: () => _openSearch(),
-                          onOpenGame: _openGame,
-                          onOpenConversation: _openConversation,
-                          onOpenAi: _openAi,
-                          onRankings: () => Navigator.of(
-                            context,
-                          ).pushNamed(GameRankingScreen.routeName),
-                          onFavorites: () => _openSearch(favoritesOnly: true),
-                          onAccount: _openAccount,
-                          onActivities: _openActivities,
-                          onRules: _openRuleMaterials,
-                          onOpenNationalDay: _openNationalDay,
-                        )
+                ? MobileHomeContent(
+                    controller: widget.controller,
+                    onSearch: () => _openSearch(),
+                    onOpenGame: _openGame,
+                    onOpenConversation: _openConversation,
+                    onOpenAi: _openAi,
+                    onRankings: () => Navigator.of(
+                      context,
+                    ).pushNamed(GameRankingScreen.routeName),
+                    onFavorites: () => _openSearch(favoritesOnly: true),
+                    onAccount: _openAccount,
+                    onActivities: _openActivities,
+                    onRules: _openRuleMaterials,
+                    onOpenNationalDay: _openNationalDay,
+                  )
                 : _tab == 1
                 ? MobileLibraryContent(
                     controller: widget.controller,
@@ -199,67 +154,61 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar:
           _tab == 2 && MediaQuery.viewInsetsOf(context).bottom > 0
           ? null
-          : CinemaSurface(
-              radius: 0,
-              child: BottomNavigationBar(
-                elevation: 0,
-                currentIndex: _tab,
-                onTap: (index) {
-                  if (index == 2 &&
-                      widget.controller.selectedConversation?.isGlobal !=
-                          true) {
-                    widget.controller.openGlobalAssistant();
-                  }
-                  setState(() => _tab = index);
-                  widget.controller.browseSession.destination = const [
-                    'home',
-                    'games',
-                    'assistant',
-                    'mine',
-                  ][index];
-                  if (index == 1 && widget.controller.libraryAccessAllowed) {
-                    unawaited(widget.controller.checkForLibraryUpdatesQuick());
-                  }
-                },
-                type: BottomNavigationBarType.fixed,
-                backgroundColor: isCinema(context)
-                    ? Colors.transparent
-                    : AppPalette.of(context).surface,
-                selectedItemColor: AppPalette.of(context).primary,
-                unselectedItemColor: AppPalette.of(context).textSecondary,
-                selectedFontSize: 12,
-                unselectedFontSize: 12,
-                items: [
-                  BottomNavigationBarItem(
-                    icon: const Icon(
-                      Icons.home_rounded,
-                      key: ValueKey('mobile-tab-home'),
-                    ),
-                    label: copy.localized('首页', 'Home'),
+          : BottomNavigationBar(
+              elevation: 0,
+              currentIndex: _tab,
+              onTap: (index) {
+                if (index == 2 &&
+                    widget.controller.selectedConversation?.isGlobal != true) {
+                  widget.controller.openGlobalAssistant();
+                }
+                setState(() => _tab = index);
+                widget.controller.browseSession.destination = const [
+                  'home',
+                  'games',
+                  'assistant',
+                  'mine',
+                ][index];
+                if (index == 1 && widget.controller.libraryAccessAllowed) {
+                  unawaited(widget.controller.checkForLibraryUpdatesQuick());
+                }
+              },
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: AppPalette.of(context).surface,
+              selectedItemColor: AppPalette.of(context).primary,
+              unselectedItemColor: AppPalette.of(context).textSecondary,
+              selectedFontSize: 12,
+              unselectedFontSize: 12,
+              items: [
+                BottomNavigationBarItem(
+                  icon: const Icon(
+                    Icons.home_rounded,
+                    key: ValueKey('mobile-tab-home'),
                   ),
-                  BottomNavigationBarItem(
-                    icon: const Icon(
-                      Icons.casino_rounded,
-                      key: ValueKey('mobile-tab-library'),
-                    ),
-                    label: copy.localized('桌游库', 'Library'),
+                  label: copy.localized('首页', 'Home'),
+                ),
+                BottomNavigationBarItem(
+                  icon: const Icon(
+                    Icons.casino_rounded,
+                    key: ValueKey('mobile-tab-library'),
                   ),
-                  BottomNavigationBarItem(
-                    icon: const Icon(
-                      Icons.smart_toy_rounded,
-                      key: ValueKey('mobile-tab-ai'),
-                    ),
-                    label: copy.localized('AI助手', 'AI helper'),
+                  label: copy.localized('桌游库', 'Library'),
+                ),
+                BottomNavigationBarItem(
+                  icon: const Icon(
+                    Icons.smart_toy_rounded,
+                    key: ValueKey('mobile-tab-ai'),
                   ),
-                  BottomNavigationBarItem(
-                    icon: const Icon(
-                      Icons.person_rounded,
-                      key: ValueKey('mobile-tab-mine'),
-                    ),
-                    label: copy.localized('我的', 'Me'),
+                  label: copy.localized('AI助手', 'AI helper'),
+                ),
+                BottomNavigationBarItem(
+                  icon: const Icon(
+                    Icons.person_rounded,
+                    key: ValueKey('mobile-tab-mine'),
                   ),
-                ],
-              ),
+                  label: copy.localized('我的', 'Me'),
+                ),
+              ],
             ),
     );
   }

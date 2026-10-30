@@ -2,14 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'app_palette.dart';
 import 'ui_tokens.dart';
-import 'cinema_theme.dart';
-import 'color_scheme_option.dart';
 
 class AppTheme {
-  static ThemeData buildTheme(
-    AppPalette palette, {
-    bool cinemaGlassEnabled = true,
-  }) {
+  static ThemeData buildTheme(AppPalette palette) {
     final Brightness brightness = ThemeData.estimateBrightnessForColor(
       palette.pageBackground,
     );
@@ -303,8 +298,6 @@ class AppTheme {
       iconTheme: IconThemeData(color: palette.textPrimary),
     );
     final normalized = ThemeData.localize(theme, theme.typography.englishLike);
-    return palette.scheme == ColorSchemeOption.cinema
-        ? cinemaTheme(normalized, glassEnabled: cinemaGlassEnabled)
-        : normalized;
+    return normalized;
   }
 }

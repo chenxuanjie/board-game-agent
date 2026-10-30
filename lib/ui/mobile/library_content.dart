@@ -7,7 +7,7 @@ import '../shared/library_viewport.dart';
 import '../../app/state/browse_session.dart';
 
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/cinema_theme.dart';
+
 import '../../core/theme/ui_tokens.dart';
 
 import '../../app/state/app_controller.dart';
@@ -163,14 +163,10 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       ),
                       icon: CircleAvatar(
                         radius: 19,
-                        backgroundColor: isCinema(context)
-                            ? AppPalette.of(context).surfaceContainer
-                            : const Color(0xFFFFE6CE),
+                        backgroundColor: const Color(0xFFFFE6CE),
                         child: Icon(
                           Icons.person_rounded,
-                          color: isCinema(context)
-                              ? AppPalette.of(context).textPrimary
-                              : const Color(0xFF955B3B),
+                          color: const Color(0xFF955B3B),
                         ),
                       ),
                     ),
@@ -207,9 +203,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                   filled: true,
                   fillColor: AppPalette.of(context).inputSurface,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(
-                      isCinema(context) ? 12 : 28,
-                    ),
+                    borderRadius: BorderRadius.circular(28),
                     borderSide: BorderSide.none,
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -296,14 +290,9 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = isCinema(context)
-                            ? ((constraints.maxWidth - 32 + 12) / (136 + 12))
-                                  .floor()
-                                  .clamp(1, 4)
-                            : ((constraints.maxWidth - 20) / 172).floor().clamp(
-                                2,
-                                4,
-                              );
+                        final columns = ((constraints.maxWidth - 20) / 172)
+                            .floor()
+                            .clamp(2, 4);
                         final width =
                             (constraints.maxWidth - 32 - (columns - 1) * 12) /
                             columns;

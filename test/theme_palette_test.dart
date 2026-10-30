@@ -12,23 +12,28 @@ import 'package:board_game_agent/core/theme/palette_registry.dart';
 
 void main() {
   test(
-    'Cinema is independent of removed theme codes and glass saves locally',
+    'only the two supported themes are persisted and unknown codes use the default',
     () async {
       for (final code in [
         'sunset_coast',
         'classic',
         '夜幕棋局',
         'Midnight Table',
+        'cinema',
+        '影院',
       ]) {
         expect(ColorSchemeOptionX.fromCode(code), defaultColorScheme);
       }
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();
-      expect(await prefs.loadCinemaGlassEnabled(), isTrue);
-      await prefs.saveCinemaGlassEnabled(false);
-      expect(await PreferencesService().loadCinemaGlassEnabled(), isFalse);
-      await prefs.saveCinemaGlassEnabled(true);
-      expect(await PreferencesService().loadCinemaGlassEnabled(), isTrue);
+      expect(ColorSchemeOption.values, [
+        ColorSchemeOption.warmwoodStudy,
+        ColorSchemeOption.spatialCinema,
+      ]);
+      for (final scheme in ColorSchemeOption.values) {
+        await prefs.saveColorScheme(scheme);
+        expect(await PreferencesService().loadColorScheme(), scheme);
+      }
     },
   );
 
@@ -119,13 +124,15 @@ void main() {
   test('color scheme codes expose the supported themes', () {
     expect(defaultColorScheme, ColorSchemeOption.warmwoodStudy);
     expect(ColorSchemeOption.values, [
-      ColorSchemeOption.cinema,
       ColorSchemeOption.warmwoodStudy,
       ColorSchemeOption.spatialCinema,
     ]);
-    expect(ColorSchemeOption.cinema.code, 'cinema');
+    expect(ColorSchemeOption.spatialCinema.code, 'spatial_cinema');
     expect(ColorSchemeOption.warmwoodStudy.code, 'warmwood_study');
-    expect(ColorSchemeOptionX.fromCode('cinema'), ColorSchemeOption.cinema);
+    expect(
+      ColorSchemeOptionX.fromCode('spatial_cinema'),
+      ColorSchemeOption.spatialCinema,
+    );
     expect(
       ColorSchemeOptionX.fromCode('warmwood_study'),
       ColorSchemeOption.warmwoodStudy,
@@ -134,18 +141,23 @@ void main() {
       ColorSchemeOptionX.fromCode('removed_theme'),
       ColorSchemeOption.warmwoodStudy,
     );
-    expect(PaletteRegistry.cinema.nameZh, '影院');
-    expect(PaletteRegistry.cinema.nameEn, 'Cinema');
-    for (final code in ['cinema', '影院']) {
-      expect(ColorSchemeOptionX.fromCode(code), ColorSchemeOption.cinema);
+    expect(PaletteRegistry.spatialCinema.nameZh, '空间影院');
+    expect(PaletteRegistry.spatialCinema.nameEn, 'Spatial Cinema');
+    for (final code in ['spatial_cinema', '空间影院']) {
+      expect(
+        ColorSchemeOptionX.fromCode(code),
+        ColorSchemeOption.spatialCinema,
+      );
     }
     expect(
-      AppCopy(AppLanguage.zhHans).colorSchemeName(ColorSchemeOption.cinema),
-      '影院',
+      AppCopy(
+        AppLanguage.zhHans,
+      ).colorSchemeName(ColorSchemeOption.spatialCinema),
+      '空间影院',
     );
     expect(
-      AppCopy(AppLanguage.en).colorSchemeName(ColorSchemeOption.cinema),
-      'Cinema',
+      AppCopy(AppLanguage.en).colorSchemeName(ColorSchemeOption.spatialCinema),
+      'Spatial Cinema',
     );
   });
 
@@ -174,14 +186,13 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'color_scheme': 'cinema',
       });
-      expect(
-        await PreferencesService().loadColorScheme(),
-        ColorSchemeOption.cinema,
+      expect(await PreferencesService().loadColorScheme(), defaultColorScheme);
+      await PreferencesService().saveColorScheme(
+        ColorSchemeOption.spatialCinema,
       );
-      await PreferencesService().saveColorScheme(ColorSchemeOption.cinema);
       expect(
         (await SharedPreferences.getInstance()).getString('color_scheme'),
-        'cinema',
+        'spatial_cinema',
       );
     },
   );
@@ -230,7 +241,7 @@ void main() {
       PaletteRegistry.spatialCinema.surface,
     );
 
-    activePalette.value = PaletteRegistry.cinema;
+    activePalette.value = PaletteRegistry.spatialCinema;
     await tester.pumpAndSettle();
 
     expect(
@@ -239,13 +250,13 @@ void main() {
             find.byKey(const ValueKey<String>('theme-background')),
           )
           .color,
-      PaletteRegistry.cinema.pageBackground,
+      PaletteRegistry.spatialCinema.pageBackground,
     );
     expect(
       AppTheme.buildTheme(
-        PaletteRegistry.cinema,
+        PaletteRegistry.spatialCinema,
       ).bottomSheetTheme.backgroundColor,
-      PaletteRegistry.cinema.surface,
+      PaletteRegistry.spatialCinema.surface,
     );
 
     activePalette.value = PaletteRegistry.warmwoodStudy;

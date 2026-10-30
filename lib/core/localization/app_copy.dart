@@ -566,8 +566,6 @@ class AppCopy {
 
   String colorSchemeName(ColorSchemeOption scheme) {
     switch (scheme) {
-      case ColorSchemeOption.cinema:
-        return isChinese ? '影院' : 'Cinema';
       case ColorSchemeOption.spatialCinema:
         return isChinese ? '空间影院' : 'Spatial Cinema';
       case ColorSchemeOption.warmwoodStudy:

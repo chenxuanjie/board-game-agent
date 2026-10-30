@@ -127,9 +127,7 @@ class _AboutUpdatesCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     minimumSize: Size(0, _px(context, 39)),
                     backgroundColor: desktopColors(context).orange,
-                    foregroundColor: isCinema(context)
-                        ? AppPalette.of(context).onPrimary
-                        : Colors.white,
+                    foregroundColor: Colors.white,
                     padding: EdgeInsets.symmetric(horizontal: _px(context, 8)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(_px(context, 9)),

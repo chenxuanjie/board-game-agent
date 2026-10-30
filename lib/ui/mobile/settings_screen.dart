@@ -2,7 +2,6 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
-import '../shared/cinema/cinema_surface.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/assistant_mode.dart';
@@ -218,14 +217,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         palette: palette,
                         child: LayoutBuilder(
                           builder: (context, box) {
-                            final columns = box.maxWidth < 500 ? 2 : 3;
+                            const columns = 2;
                             return Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: [
                                 for (final scheme in const [
                                   ColorSchemeOption.warmwoodStudy,
-                                  ColorSchemeOption.cinema,
                                   ColorSchemeOption.spatialCinema,
                                 ])
                                   SizedBox(
@@ -252,8 +250,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                           },
                         ),
                       ),
-                      if (controller.colorScheme == ColorSchemeOption.cinema)
-                        CinemaGlassSetting(controller: controller),
+
                       _SectionCard(
                         palette: palette,
                         padding: EdgeInsets.zero,

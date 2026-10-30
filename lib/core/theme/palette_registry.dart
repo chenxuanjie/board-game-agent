@@ -4,39 +4,6 @@ import 'color_scheme_option.dart';
 import 'app_palette.dart';
 
 class PaletteRegistry {
-  /// V5 Cinema foundation. Materials and composition use the separate design spec.
-  static const AppPalette cinema = AppPalette(
-    scheme: ColorSchemeOption.cinema,
-    nameZh: '影院',
-    nameEn: 'Cinema',
-    pageBackground: Color(0xFF0E1015),
-    surface: Color(0xFF171A21),
-    surfaceContainer: Color(0xFF20242D),
-    surfaceVariant: Color(0xFF262B35),
-    inputSurface: Color(0xFF1B2029),
-    textPrimary: Color(0xFFF6F2EC),
-    textSecondary: Color(0xFFB7B8C2),
-    outline: Color(0xFF737B8A),
-    primary: Color(0xFFFF6B5D),
-    primaryContainer: Color(0xFF422725),
-    onPrimary: Color(0xFF191111),
-    onPrimaryContainer: Color(0xFFFFE4DF),
-    secondary: Color(0xFFB7B8C2),
-    secondaryContainer: Color(0xFF262B35),
-    onSecondary: Color(0xFF171A21),
-    onSecondaryContainer: Color(0xFFF6F2EC),
-    success: Color(0xFF73D5A3),
-    onSuccess: Color(0xFF092219),
-    warning: Color(0xFFF2C46D),
-    onWarning: Color(0xFF2B1E09),
-    error: Color(0xFFFF8B9A),
-    onError: Color(0xFF310F18),
-    focusRing: Color(0xFFFFF1CA),
-    disabledForeground: Color(0xFF717786),
-    disabledBackground: Color(0xFF252932),
-    shadow: Color(0xFF000000),
-  );
-
   /// The prototype's warm grey/green surfaces; its layout is a separate shell.
   static const AppPalette spatialCinema = AppPalette(
     scheme: ColorSchemeOption.spatialCinema,
@@ -105,8 +72,6 @@ class PaletteRegistry {
 
   static AppPalette of(ColorSchemeOption scheme) {
     switch (scheme) {
-      case ColorSchemeOption.cinema:
-        return cinema;
       case ColorSchemeOption.spatialCinema:
         return spatialCinema;
       case ColorSchemeOption.warmwoodStudy:

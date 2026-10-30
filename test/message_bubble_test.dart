@@ -24,7 +24,7 @@ void main() {
               text: '完整回答',
               timestamp: DateTime(2026, 10, 2),
             ),
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: null,
             onCopy: () => copied = true,
@@ -65,7 +65,7 @@ void main() {
         home: Scaffold(
           body: MessageBubble(
             message: message,
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: () {},
             onRetry: () => retried = true,
@@ -99,7 +99,7 @@ void main() {
         home: Scaffold(
           body: MessageBubble(
             message: message,
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: () {},
           ),
@@ -137,7 +137,7 @@ void main() {
           home: Scaffold(
             body: MessageBubble(
               message: message,
-              palette: PaletteRegistry.cinema,
+              palette: PaletteRegistry.spatialCinema,
               copy: AppCopy(AppLanguage.zhHans),
               onSpeak: () {},
               onCopy: () => copied = true,
@@ -181,7 +181,7 @@ void main() {
         home: Scaffold(
           body: MessageBubble(
             message: message,
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: () {},
             showTimestamp: showTimestamp,

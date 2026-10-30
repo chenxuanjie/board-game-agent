@@ -150,8 +150,7 @@ Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段
 
 ## 相关文档
 
-- 新影院主题的设计标准、实现范围与验收边界见 [影院主题 v1](docs/cinema-theme-v1.md)
-- 当前主题：暖木书房（默认）、影院、空间影院。夜幕棋局已删除，旧主题代码按默认规则回退。空间影院使用独立悬浮玻璃外壳；第一阶段实现、原生圆角及待评审页面见 [空间影院](docs/spatial-cinema-theme.md)
+- 当前主题：暖木书房（默认）、空间影院。空间影院使用独立外壳；实现范围、原生窗口及验收记录见 [空间影院](docs/spatial-cinema-theme.md)。
 - 浏览位置、图片加载、局部反馈与浮层动效见 [浏览位置与交互反馈](docs/interaction-continuity.md)
 - 环境安装与 APK 打包步骤见 [BUILD_APK.md](BUILD_APK.md)
 - 启动流程、资源更新与运行逻辑概览见 [DEVELOPER_FLOW_OVERVIEW.md](DEVELOPER_FLOW_OVERVIEW.md)

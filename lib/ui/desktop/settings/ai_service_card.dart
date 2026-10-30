@@ -198,9 +198,7 @@ class _AiServiceCard extends StatelessWidget {
                       dimension: _px(context, 15),
                       child: CircularProgressIndicator(
                         strokeWidth: _px(context, 1.8),
-                        color: isCinema(context)
-                            ? AppPalette.of(context).onPrimary
-                            : Colors.white,
+                        color: Colors.white,
                       ),
                     )
                   : Icon(Icons.sync_rounded, size: _px(context, 17)),
@@ -213,9 +211,7 @@ class _AiServiceCard extends StatelessWidget {
                 minimumSize: Size(0, _px(context, 38)),
                 padding: EdgeInsets.symmetric(horizontal: _px(context, 11)),
                 backgroundColor: desktopColors(context).orange,
-                foregroundColor: isCinema(context)
-                    ? AppPalette.of(context).onPrimary
-                    : Colors.white,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(_px(context, 9)),
                 ),
