@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../app/state/app_controller.dart';
 import 'assistant_chat_screen.dart';
-import 'scan_placeholder.dart';
 
 class UniversalAiScreen extends StatelessWidget {
   const UniversalAiScreen({
@@ -21,7 +20,6 @@ class UniversalAiScreen extends StatelessWidget {
       customTitle: controller.copy.globalAiTitle,
       useGlobalMode: true,
       keyboardVisible: keyboardVisible,
-      trailingAction: MobileScanPlaceholder(copy: controller.copy),
     );
   }
 }

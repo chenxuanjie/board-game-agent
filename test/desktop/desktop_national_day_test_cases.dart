@@ -58,6 +58,54 @@ void _registerDesktopNationalDayTests(_DesktopWorkspaceTestContext context) {
     });
   }
 
+  testWidgets(
+    'National Day ranking reorders visible cards after votes and remote updates',
+    (tester) async {
+      await open(tester, const Size(1448, 1086));
+      final controller = context.controller;
+      final original = List<String>.of(controller.nationalDayList.slugs);
+      final target = original.last;
+      final vote = find.byKey(ValueKey('national-day-vote-$target'));
+      await tester.tap(vote);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(controller.nationalDayGames.first.slug, target);
+      expect(
+        tester.getTopLeft(find.byKey(ValueKey('national-day-game-$target'))).dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(ValueKey('national-day-game-${original.first}')),
+              )
+              .dx,
+        ),
+      );
+      await tester.tap(vote);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(controller.nationalDayGames.map((game) => game.slug), original);
+      controller.configureAccountReactions(
+        provider: (_) => throw StateError('Unexpected network request'),
+        scope: 'seasonal-ranking-test',
+      );
+      await tester.runAsync(
+        () => controller.gameVotes.acceptPublicCounts('seasonal-ranking-test', {
+          original.first: 1,
+          original[1]: 3,
+          target: 9,
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.nationalDayGames.map((game) => game.slug), [
+        target,
+        original[1],
+        original.first,
+      ]);
+      expect(controller.nationalDayList.slugs, original);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('National Day supports enlarged text', (tester) async {
     await open(
       tester,

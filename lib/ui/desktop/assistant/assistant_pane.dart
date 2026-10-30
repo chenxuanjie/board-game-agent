@@ -163,7 +163,8 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                     onFind: messages.isEmpty
                         ? null
                         : () => unawaited(_findInConversation()),
-                    onDelete: _changingConversation
+                    onDelete:
+                        _changingConversation || selectedConversation.isDraft
                         ? null
                         : () => unawaited(_deleteConversation()),
                   ),
@@ -173,8 +174,14 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
             Expanded(
               child: Stack(
                 children: <Widget>[
-                  if (messages.isEmpty && !showRun)
-                    LayoutBuilder(
+                  AssistantConversationTransition(
+                    identity: selectedConversation.id,
+                    onMetricsChanged: () {
+                      if (_followNewMessages) _scrollToBottom(animated: false);
+                    },
+                    compact: narrow,
+                    showWelcome: messages.isEmpty && !showRun,
+                    welcome: LayoutBuilder(
                       builder: (context, box) => SingleChildScrollView(
                         child: ConstrainedBox(
                           constraints: BoxConstraints(minHeight: box.maxHeight),
@@ -198,9 +205,8 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                           ),
                         ),
                       ),
-                    )
-                  else
-                    ListView(
+                    ),
+                    messages: ListView(
                       key: const ValueKey('assistant-message-list'),
                       controller: _scrollController,
                       padding: EdgeInsets.fromLTRB(
@@ -310,6 +316,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                           ),
                       ],
                     ),
+                  ),
                   Positioned(
                     left: 0,
                     right: 0,
@@ -365,7 +372,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
 
   void _handleControllerChanged() {
     if (!mounted) return;
-    final retainedIds = controller.conversations.map((item) => item.id).toSet();
+    final retainedIds = controller.conversationContextIds;
     _drafts.removeWhere((id, _) => !retainedIds.contains(id));
     _scrollOffsets.removeWhere((id, _) => !retainedIds.contains(id));
     final String? conversationId = controller.selectedConversationId;

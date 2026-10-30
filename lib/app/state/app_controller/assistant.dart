@@ -28,6 +28,17 @@ extension AppAssistantController on AppController {
           .toList();
       AiConversation? replacement;
       if (remaining.isEmpty) {
+        replacement = _conversations.values
+            .where(
+              (item) =>
+                  item.id != id &&
+                  item.isDraft &&
+                  item.scope == deleted.scope &&
+                  item.gameId == deleted.gameId,
+            )
+            .firstOrNull;
+      }
+      if (remaining.isEmpty && replacement == null) {
         final now = DateTime.now();
         final freshId = 'conversation:${const Uuid().v4()}';
         replacement = AiConversation(
@@ -70,14 +81,26 @@ extension AppAssistantController on AppController {
     await write;
   }
 
-  /// Creates an independent topic. Existing v4 records keep their original IDs.
-  /// Selection changes only after the new record has been written successfully.
+  /// Opens one unsent workspace per assistant context. Only a submitted user
+  /// message turns it into a durable topic.
   Future<String> createConversation({required bool useGlobalMode}) async {
     if (_switchingIdentityScope) {
       throw StateError('Account transition in progress');
     }
     final gameId = useGlobalMode ? null : selectedGame.id;
     if (!useGlobalMode && !hasGames) throw StateError('No game selected');
+    final pending = _conversations.values
+        .where(
+          (item) =>
+              item.isDraft &&
+              item.isGlobal == useGlobalMode &&
+              item.gameId == gameId,
+        )
+        .firstOrNull;
+    if (pending != null) {
+      selectConversation(pending.id);
+      return pending.id;
+    }
     final now = DateTime.now();
     final id = 'conversation:${const Uuid().v4()}';
     _conversations[id] = AiConversation(
@@ -90,17 +113,6 @@ extension AppAssistantController on AppController {
       createdAt: now,
       updatedAt: now,
     );
-    final write = _conversationSaveQueue.then(
-      (_) => _persistConversations(throwOnError: true),
-    );
-    // Keep later writes usable even if this operation fails.
-    _conversationSaveQueue = write.catchError((Object _) {});
-    try {
-      await write;
-    } catch (_) {
-      _conversations.remove(id);
-      rethrow;
-    }
     selectConversation(id);
     return id;
   }
@@ -117,8 +129,7 @@ extension AppAssistantController on AppController {
     }
   }
 
-  /// Opens the game-scoped assistant for [gameId], creating its session only
-  /// when the user explicitly enters that assistant context.
+  /// Opens the game-scoped assistant, using an unsent workspace when needed.
   bool openGameAssistant(String gameId) {
     if (_switchingIdentityScope) return false;
     final GameInfo? game = _games
@@ -144,7 +155,7 @@ extension AppAssistantController on AppController {
     return true;
   }
 
-  /// Opens the cross-game assistant, creating its session on first entry.
+  /// Opens the cross-game assistant without persisting an empty conversation.
   void openGlobalAssistant() {
     if (_switchingIdentityScope) return;
     final String previousConversationId = _selectedConversationId ?? '';
@@ -159,7 +170,7 @@ extension AppAssistantController on AppController {
     _notifyListeners();
   }
 
-  /// Selects a persisted assistant conversation by its stable ID.
+  /// Selects a saved conversation or transient workspace by its stable ID.
   ///
   /// Legacy sessions retain `game:<gameId>` and `global`; new topics use
   /// independent IDs. Unknown IDs are ignored so stale preferences cannot point
@@ -476,7 +487,11 @@ extension AppAssistantController on AppController {
       timestamp: DateTime.now(),
     );
 
+    final firstSubmission = !messages.any((item) => item.role == ChatRole.user);
     messages.add(userMessage);
+    if (firstSubmission && _selectedConversationId == conversationId) {
+      _queueSelectedConversationSave(conversationId);
+    }
     _trimConversationMessages(messages);
     _queueConversationSave(conversationId: conversationId);
     generation.isSending = true;

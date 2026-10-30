@@ -17,7 +17,6 @@ import '../shared/hover_carousel_controls.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_catalog_status.dart';
 import '../shared/catalog_empty_state.dart';
-import 'scan_placeholder.dart';
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -202,7 +201,6 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           color: AppPalette.of(context).textPrimary,
         ),
       ),
-      MobileScanPlaceholder(copy: copy),
     ],
   );
 

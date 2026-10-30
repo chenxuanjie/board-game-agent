@@ -9,9 +9,22 @@ extension AppCollectionController on AppController {
     return {...preferred, ...games}.take(3).toList();
   }
 
-  List<GameInfo> get nationalDayGames => nationalDayList.slugs
-      .expand((slug) => games.where((game) => game.slug == slug))
-      .toList();
+  List<GameInfo> get nationalDayGames {
+    final slugs = nationalDayList.slugs;
+    final order = {for (final (index, slug) in slugs.indexed) slug: index};
+    final result = slugs
+        .expand((slug) => games.where((game) => game.slug == slug))
+        .toList();
+    result.sort((left, right) {
+      final votes = gameVotes
+          .count(right.slug)
+          .compareTo(gameVotes.count(left.slug));
+      return votes != 0
+          ? votes
+          : order[left.slug]!.compareTo(order[right.slug]!);
+    });
+    return result;
+  }
 
   String get nationalDayShareText =>
       '${copy.localized('国庆聚会 · 桌游清单', 'National Day · Games to play')}\n'

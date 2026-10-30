@@ -90,7 +90,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
   }
   for (final size in [const Size(1440, 1000), const Size(390, 844)]) {
     testWidgets(
-      'Spatial uses scan on compact and account menu on wide at $size',
+      'Spatial hides compact home actions and keeps wide account menu at $size',
       (tester) async {
         final c = context.controller;
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -104,7 +104,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
           );
           expect(
             find.byKey(const ValueKey('mobile-scan-placeholder')),
-            findsOneWidget,
+            findsNothing,
           );
           await tester.tap(
             find.byKey(const ValueKey('spatial-open-navigation')),

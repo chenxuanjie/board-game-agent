@@ -92,42 +92,45 @@ Future<void> _openMobileProfile(WidgetTester tester) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   for (final width in [320.0, 390.0]) {
-    testWidgets(
-      'scan placeholder replaces account menus on four tabs at $width',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({});
-        final controller = _controller(ttsService: _UnavailableTtsService());
-        addTearDown(controller.dispose);
-        addTearDown(() => tester.binding.setSurfaceSize(null));
-        await tester.binding.setSurfaceSize(Size(width, 844));
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: AppTheme.buildTheme(controller.palette),
-            home: HomeScreen(controller: controller, onOpenAbout: () {}),
-          ),
-        );
+    testWidgets('scan placeholder appears only on mine at $width', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final tab in ['home', 'library', 'ai', 'mine']) {
+        await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
         await tester.pumpAndSettle();
-        for (final tab in ['home', 'library', 'ai', 'mine']) {
-          await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(const ValueKey('account-menu-button')),
-            findsNothing,
-            reason: tab,
-          );
-          final scan = find.byKey(const ValueKey('mobile-scan-placeholder'));
-          expect(scan, findsOneWidget, reason: tab);
-          expect(
-            tester.widget<IconButton>(scan).onPressed,
-            isNull,
-            reason: tab,
-          );
-          expect(tester.getSize(scan), const Size(48, 48));
+        expect(
+          find.byKey(const ValueKey('account-menu-button')),
+          findsNothing,
+          reason: tab,
+        );
+        final scan = find.byKey(const ValueKey('mobile-scan-placeholder'));
+        if (tab != 'mine') {
+          expect(scan, findsNothing, reason: tab);
+          continue;
         }
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox());
-      },
-    );
+        expect(scan, findsOneWidget, reason: tab);
+        expect(
+          find.descendant(of: scan, matching: find.byType(Image)),
+          findsOneWidget,
+        );
+        expect(tester.widget<IconButton>(scan).onPressed, isNull, reason: tab);
+        expect(tester.getSize(scan), const Size(48, 48));
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
   testWidgets(
     'app update notification opens its action after the sheet closes',
@@ -432,7 +435,10 @@ void main() {
       expect(find.text('桌游伙伴'), findsOneWidget);
       expect(find.text('最近AI对话'), findsOneWidget);
       expect(find.text('查看更多'), findsNothing);
-      expect(find.text('向 AI 提一个问题'), findsOneWidget);
+      expect(
+        find.text('向 AI 提一个问题'),
+        controller.conversations.isEmpty ? findsOneWidget : findsNothing,
+      );
       if (size.width == 390) {
         expect(find.text('推荐桌游'), findsOneWidget);
         expect(find.text('快速找到心仪桌游'), findsNothing);
@@ -630,6 +636,13 @@ void main() {
       expect(find.byKey(const ValueKey('mobile-mine-profile')), findsOneWidget);
       expect(find.text('${controller.favoriteCount}'), findsOneWidget);
       expect(find.text('好桌游，让平凡的日子闪闪发光！'), findsNothing);
+      await tester.runAsync(() async {
+        await controller.saveAiApiConfig(
+          controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+        );
+        await controller.sendPrompt('已有对话用于历史导航', useGlobalMode: true);
+      });
+      await tester.pumpAndSettle();
       final conversationCount = controller.conversations.length;
       final conversation = controller.conversations.first;
       await tester.tap(

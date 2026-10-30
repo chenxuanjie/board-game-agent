@@ -4,7 +4,7 @@ import 'ai_run.dart';
 /// The context used by an assistant conversation.
 enum AiConversationScope { global, game }
 
-/// A durable assistant session.
+/// A conversation workspace. Empty workspaces are transient until first send.
 ///
 /// The controller owns the mutable message list. Consumers receive copies of
 /// this model, so UI code can render and select sessions without reaching into
@@ -30,6 +30,7 @@ class AiConversation {
   /// Whether the user explicitly entered this assistant context.
   ///
   /// New sessions are marked opened immediately, including empty sessions.
+  /// This entry marker does not make an empty workspace eligible for storage.
   /// Older stores without this field derive the value from the presence of a
   /// user message during migration.
   final bool opened;
@@ -42,6 +43,7 @@ class AiConversation {
 
   bool get isGlobal => scope == AiConversationScope.global;
   int get messageCount => messages.length;
+  bool get isDraft => messages.isEmpty;
   bool get hasUserMessages =>
       messages.any((ChatMessage message) => message.role == ChatRole.user);
 

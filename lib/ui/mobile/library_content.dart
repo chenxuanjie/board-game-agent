@@ -15,7 +15,6 @@ import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import 'game_cover.dart';
 import '../shared/content_cards.dart';
-import 'scan_placeholder.dart';
 
 class MobileLibraryContent extends StatefulWidget {
   const MobileLibraryContent({
@@ -121,7 +120,6 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       ],
                     ),
                   ),
-                  MobileScanPlaceholder(copy: copy),
                 ],
               ),
             ),

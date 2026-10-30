@@ -727,6 +727,13 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
     addTearDown(controller.dispose);
     await _mount(tester, controller, const Size(1280, 800));
     await _navigate(tester, 'AI助手');
+    await tester.runAsync(() async {
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await controller.sendPrompt('已有对话用于草稿恢复', useGlobalMode: true);
+    });
+    await tester.pumpAndSettle();
     final original = controller.selectedConversationId!;
     await tester.enterText(
       find.byKey(const ValueKey('assistant-draft')),

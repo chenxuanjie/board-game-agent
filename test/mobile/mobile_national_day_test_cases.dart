@@ -77,6 +77,66 @@ void _registerMobileNationalDayTests() {
   }
 
   testWidgets(
+    'mobile National Day ranking follows votes, cancellations and public count updates',
+    (tester) async {
+      final value = await controller(tester);
+      await mount(tester, value, const Size(390, 844));
+      final original = List<String>.of(value.nationalDayList.slugs);
+      final target = original.last;
+      final vote = find.byKey(ValueKey('mobile-national-day-vote-$target'));
+      await tester.ensureVisible(vote);
+      await tester.tap(vote);
+      await tester.pumpAndSettle();
+      expect(value.nationalDayGames.first.slug, target);
+      expect(value.nationalDayList.slugs, original);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(ValueKey('mobile-national-day-open-$target')),
+            )
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(
+                  ValueKey('mobile-national-day-open-${original.first}'),
+                ),
+              )
+              .dy,
+        ),
+      );
+      final rankedTitles = value.nationalDayGames
+          .map((game) => game.title)
+          .toList();
+      expect(
+        value.nationalDayShareText.indexOf(rankedTitles.first),
+        lessThan(value.nationalDayShareText.indexOf(rankedTitles.last)),
+      );
+      await tester.ensureVisible(vote);
+      await tester.tap(vote);
+      await tester.pumpAndSettle();
+      expect(value.nationalDayGames.map((game) => game.slug), original);
+      value.configureAccountReactions(
+        provider: (_) => throw StateError('Unexpected network request'),
+        scope: 'seasonal-ranking-test',
+      );
+      await value.gameVotes.acceptPublicCounts('seasonal-ranking-test', {
+        original.first: 1,
+        original[1]: 5,
+        target: 5,
+      });
+      await tester.pumpAndSettle();
+      expect(value.nationalDayGames.map((game) => game.slug), [
+        original[1],
+        target,
+        original.first,
+      ]);
+      expect(value.nationalDayList.slugs, original);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'mobile seasonal voting and list changes are shared with desktop and survive restart',
     (tester) async {
       final value = await controller(tester);

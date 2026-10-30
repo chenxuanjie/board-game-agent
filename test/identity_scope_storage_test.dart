@@ -241,8 +241,12 @@ void main() {
   test(
     'controller switches guest A B guest without adopting personal data',
     () async {
-      final app = await _app();
+      final app = await _app(ai: _RecordingAi());
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
       app.openGlobalAssistant();
+      await app.sendPrompt('guest question', useGlobalMode: true);
       await app.recordSearch('guest search');
       await app.recordRecentlyViewed(app.games.first);
       await app.toggleFavorite(app.games.first);
@@ -260,6 +264,7 @@ void main() {
       expect(app.aiRunEventsForContext(useGlobalMode: true), isEmpty);
       await app.recordSearch('a search');
       await app.createConversation(useGlobalMode: true);
+      await app.sendPrompt('account A question', useGlobalMode: true);
       final aConversation = app.selectedConversationId;
       await app.switchIdentityScope('b');
       expect(app.searchHistory, isEmpty);
@@ -453,8 +458,12 @@ void main() {
     'failed conversation drain keeps old scope locked and supports retry',
     () async {
       final faults = _StoreFaults()..failWrites = true;
-      final app = await _app(store: _FaultStore(faults));
+      final app = await _app(store: _FaultStore(faults), ai: _RecordingAi());
       app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await app.sendPrompt('必须保存的真实提问', useGlobalMode: true);
       await expectLater(app.switchIdentityScope('a'), throwsStateError);
       expect(app.identityUserId, isNull);
       expect(app.isSwitchingIdentityScope, isTrue);

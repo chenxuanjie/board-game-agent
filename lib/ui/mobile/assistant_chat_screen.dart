@@ -28,7 +28,6 @@ class AssistantChatScreen extends StatefulWidget {
     this.customTitle,
     this.useGlobalMode = false,
     this.keyboardVisible,
-    this.trailingAction,
   });
 
   final AppController controller;
@@ -36,7 +35,6 @@ class AssistantChatScreen extends StatefulWidget {
   final String? customTitle;
   final bool useGlobalMode;
   final bool? keyboardVisible;
-  final Widget? trailingAction;
 
   @override
   State<AssistantChatScreen> createState() => _AssistantChatScreenState();
@@ -188,9 +186,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         ),
         actions: <Widget>[
           Padding(
-            padding: EdgeInsets.only(
-              right: widget.trailingAction == null ? 16 : 4,
-            ),
+            padding: const EdgeInsets.only(right: 16),
             child: AssistantConversationActions(
               copy: copy,
               title:
@@ -206,14 +202,12 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   ? null
                   : () => unawaited(_findInConversation()),
               onDelete:
-                  controller.selectedConversation == null ||
+                  controller.selectedConversation?.isDraft != false ||
                       _changingConversation
                   ? null
                   : () => unawaited(_deleteConversation()),
             ),
           ),
-          if (widget.trailingAction case final action?)
-            Padding(padding: const EdgeInsets.only(right: 8), child: action),
         ],
       ),
       body: SafeArea(
@@ -256,6 +250,11 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                             messageKeys: _messageKeys,
                             highlightedId: _searchHighlight,
                             headerInset: headerInset,
+                            onMetricsChanged: () {
+                              if (_followNewMessages) {
+                                _scrollToBottom(animated: false);
+                              }
+                            },
                           );
                         },
                       ),
@@ -307,9 +306,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     if (!mounted) {
       return;
     }
-    final retainedIds = widget.controller.conversations
-        .map((item) => item.id)
-        .toSet();
+    final retainedIds = widget.controller.conversationContextIds;
     _drafts.removeWhere((id, _) => !retainedIds.contains(id));
     _scrollOffsets.removeWhere((id, _) => !retainedIds.contains(id));
     final String contextKey = _conversationContextKey;
@@ -764,6 +761,7 @@ class _MessageList extends StatelessWidget {
     required this.messageKeys,
     required this.highlightedId,
     required this.headerInset,
+    required this.onMetricsChanged,
   });
 
   final AppController controller;
@@ -781,6 +779,7 @@ class _MessageList extends StatelessWidget {
   final Map<String, GlobalKey> messageKeys;
   final String? highlightedId;
   final double headerInset;
+  final VoidCallback onMetricsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -794,8 +793,12 @@ class _MessageList extends StatelessWidget {
     final int lastAssistantIndex = messages.lastIndexWhere(
       (ChatMessage message) => message.role == ChatRole.assistant,
     );
-    if (messages.isEmpty && !showRun) {
-      return LayoutBuilder(
+    return AssistantConversationTransition(
+      identity: runContextKey,
+      onMetricsChanged: onMetricsChanged,
+      compact: MediaQuery.sizeOf(context).width < 760,
+      showWelcome: messages.isEmpty && !showRun,
+      welcome: LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
@@ -813,15 +816,74 @@ class _MessageList extends StatelessWidget {
             ),
           ),
         ),
-      );
-    }
-
-    return ListView(
-      controller: scrollController,
-      padding: EdgeInsets.fromLTRB(16, headerInset + 6, 16, 16),
-      children: <Widget>[
-        for (int index = 0; index < messages.length; index++) ...<Widget>[
-          if (showRun && index == lastAssistantIndex)
+      ),
+      messages: ListView(
+        controller: scrollController,
+        padding: EdgeInsets.fromLTRB(16, headerInset + 6, 16, 16),
+        children: <Widget>[
+          for (int index = 0; index < messages.length; index++) ...<Widget>[
+            if (showRun && index == lastAssistantIndex)
+              AiRunActivity(
+                events: runEvents,
+                isRunning: controller.isSendingForContext(
+                  useGlobalMode: useGlobalMode,
+                ),
+                palette: AppPalette.of(context),
+                copy: copy,
+                contextKey: runContextKey,
+                initialExpanded: runExpanded,
+                onExpandedChanged: onRunExpandedChanged,
+              ),
+            if (!(messages[index].role == ChatRole.assistant &&
+                messages[index].isStreaming &&
+                messages[index].text.trim().isEmpty &&
+                showRun))
+              AssistantMessageEntrance(
+                key: ValueKey('$runContextKey:${messages[index].id}'),
+                animate: animateMessage(messages[index].id),
+                child: AnimatedContainer(
+                  key: messageKeys.putIfAbsent(
+                    messages[index].id,
+                    GlobalKey.new,
+                  ),
+                  duration: AppMotion.duration(context),
+                  decoration: BoxDecoration(
+                    color: highlightedId == messages[index].id
+                        ? AppPalette.of(context).primary.withValues(alpha: .10)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: MessageBubble(
+                    message: messages[index],
+                    palette: AppPalette.of(context),
+                    copy: copy,
+                    onSpeak:
+                        messages[index].role == ChatRole.assistant &&
+                            controller.voiceReplyAvailable
+                        ? () => controller.speakMessage(messages[index].text)
+                        : null,
+                    speakTooltip: copy.speakAgain,
+                    onCopy:
+                        messages[index].role == ChatRole.assistant &&
+                            !messages[index].isStreaming &&
+                            !messages[index].isFailed
+                        ? () => onCopy(messages[index].text)
+                        : null,
+                    copyTooltip: copy.copyAnswer,
+                    onRetry: messages[index].canRetry
+                        ? () => controller.retryMessage(
+                            messages[index],
+                            useGlobalMode: useGlobalMode,
+                          )
+                        : null,
+                    retryTooltip: copy.retry,
+                    showTimestamp: showMessageTimes,
+                    onTap: onMessageTap,
+                  ),
+                ),
+              ),
+          ],
+          if (showRun && lastAssistantIndex < 0)
             AiRunActivity(
               events: runEvents,
               isRunning: controller.isSendingForContext(
@@ -833,65 +895,8 @@ class _MessageList extends StatelessWidget {
               initialExpanded: runExpanded,
               onExpandedChanged: onRunExpandedChanged,
             ),
-          if (!(messages[index].role == ChatRole.assistant &&
-              messages[index].isStreaming &&
-              messages[index].text.trim().isEmpty &&
-              showRun))
-            AssistantMessageEntrance(
-              key: ValueKey('$runContextKey:${messages[index].id}'),
-              animate: animateMessage(messages[index].id),
-              child: AnimatedContainer(
-                key: messageKeys.putIfAbsent(messages[index].id, GlobalKey.new),
-                duration: AppMotion.duration(context),
-                decoration: BoxDecoration(
-                  color: highlightedId == messages[index].id
-                      ? AppPalette.of(context).primary.withValues(alpha: .10)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: MessageBubble(
-                  message: messages[index],
-                  palette: AppPalette.of(context),
-                  copy: copy,
-                  onSpeak:
-                      messages[index].role == ChatRole.assistant &&
-                          controller.voiceReplyAvailable
-                      ? () => controller.speakMessage(messages[index].text)
-                      : null,
-                  speakTooltip: copy.speakAgain,
-                  onCopy:
-                      messages[index].role == ChatRole.assistant &&
-                          !messages[index].isStreaming &&
-                          !messages[index].isFailed
-                      ? () => onCopy(messages[index].text)
-                      : null,
-                  copyTooltip: copy.copyAnswer,
-                  onRetry: messages[index].canRetry
-                      ? () => controller.retryMessage(
-                          messages[index],
-                          useGlobalMode: useGlobalMode,
-                        )
-                      : null,
-                  retryTooltip: copy.retry,
-                  showTimestamp: showMessageTimes,
-                  onTap: onMessageTap,
-                ),
-              ),
-            ),
         ],
-        if (showRun && lastAssistantIndex < 0)
-          AiRunActivity(
-            events: runEvents,
-            isRunning: controller.isSendingForContext(
-              useGlobalMode: useGlobalMode,
-            ),
-            palette: AppPalette.of(context),
-            copy: copy,
-            contextKey: runContextKey,
-            initialExpanded: runExpanded,
-            onExpandedChanged: onRunExpandedChanged,
-          ),
-      ],
+      ),
     );
   }
 }

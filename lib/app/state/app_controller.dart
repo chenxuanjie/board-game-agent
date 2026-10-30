@@ -470,6 +470,10 @@ class AppController extends ChangeNotifier {
   bool get isRefreshingLibrary => _libraryRefreshFuture != null;
   bool get isRefreshingServiceStatuses => _serviceStatusRefreshFuture != null;
   String? get selectedConversationId => _selectedConversationId;
+
+  /// Includes unsent workspaces so route-local drafts survive history changes.
+  Set<String> get conversationContextIds =>
+      Set.unmodifiable(_conversations.keys);
   List<AppActivity> get activities =>
       List<AppActivity>.unmodifiable(_activities);
   int get unreadActivityCount =>
@@ -483,7 +487,7 @@ class AppController extends ChangeNotifier {
 
   List<AiConversation> get conversations {
     final List<AiConversation> result = _conversations.values
-        .where(_isConversationAvailable)
+        .where((item) => !item.isDraft && _isConversationAvailable(item))
         .map((AiConversation conversation) => conversation.copyWith())
         .toList();
     result.sort((AiConversation left, AiConversation right) {
