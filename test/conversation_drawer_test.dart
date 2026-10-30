@@ -106,92 +106,111 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  _uiTest('compact header searches and deletes without a clear action', (
-    tester,
-  ) async {
-    final now = DateTime.utc(2026);
-    final conversation = AiConversation(
-      id: 'global',
-      title: '测试对话',
-      scope: AiConversationScope.global,
-      createdAt: now,
-      updatedAt: now,
-      messages: List.generate(
-        70,
-        (i) => ChatMessage(
-          id: 'msg-$i',
-          role: ChatRole.user,
-          text: i == 2 ? '目标规则在哪里' : '普通消息 $i',
-          timestamp: now,
-        ),
-      ),
-    );
-    final store = _MemoryStore()
-      ..value = jsonEncode({
-        'version': 4,
-        'selectedConversationId': 'global',
-        'conversations': {'global': conversation.toMap()},
-      });
-    final controller = _buildController(store);
-    addTearDown(controller.dispose);
-    await tester.runAsync(controller.initialize);
-    await _mount(tester, controller, const Size(390, 844));
-    expect(find.byKey(const ValueKey('assistant-header-back')), findsNothing);
-    expect(find.byKey(const ValueKey('assistant-header-share')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('assistant-conversations-trigger')),
-      findsOneWidget,
-    );
-    Future<void> openMenu() async {
-      await tester.tap(find.byKey(const ValueKey('assistant-more-menu')));
-      await tester.pumpAndSettle();
-      expect(find.text('查找'), findsOneWidget);
-      expect(find.text('清空'), findsNothing);
-      expect(find.byKey(const ValueKey('assistant-menu-clear')), findsNothing);
-      expect(find.text('删除'), findsOneWidget);
-      expect(find.text('语音朗读'), findsNothing);
-    }
+  for (final desktop in [false, true]) {
+    _uiTest(
+      'shared header searches and deletes without a clear action desktop=$desktop',
+      (tester) async {
+        final now = DateTime.utc(2026);
+        final conversation = AiConversation(
+          id: 'global',
+          title: '测试对话',
+          scope: AiConversationScope.global,
+          createdAt: now,
+          updatedAt: now,
+          messages: List.generate(
+            70,
+            (i) => ChatMessage(
+              id: 'msg-$i',
+              role: ChatRole.user,
+              text: i == 2 ? '目标规则在哪里' : '普通消息 $i',
+              timestamp: now,
+            ),
+          ),
+        );
+        final store = _MemoryStore()
+          ..value = jsonEncode({
+            'version': 4,
+            'selectedConversationId': 'global',
+            'conversations': {'global': conversation.toMap()},
+          });
+        final controller = _buildController(store);
+        addTearDown(controller.dispose);
+        await tester.runAsync(controller.initialize);
+        await _mount(
+          tester,
+          controller,
+          desktop ? const Size(1280, 800) : const Size(390, 844),
+          desktop: desktop,
+        );
+        expect(
+          find.byKey(const ValueKey('assistant-header-back')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('assistant-header-share')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('assistant-conversations-trigger')),
+          findsOneWidget,
+        );
+        Future<void> openMenu() async {
+          await tester.tap(find.byKey(const ValueKey('assistant-more-menu')));
+          await tester.pumpAndSettle();
+          expect(find.text('查找'), findsOneWidget);
+          expect(find.text('清空'), findsNothing);
+          expect(
+            find.byKey(const ValueKey('assistant-menu-clear')),
+            findsNothing,
+          );
+          expect(find.text('删除'), findsOneWidget);
+          expect(find.text('语音朗读'), findsNothing);
+        }
 
-    await openMenu();
-    await _capture(tester, 'assistant-actions');
-    await tester.tap(find.byKey(const ValueKey('assistant-menu-find')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('assistant-search-query')),
-      '目标规则',
+        await openMenu();
+        await _capture(tester, 'assistant-actions-desktop-$desktop');
+        await tester.tap(find.byKey(const ValueKey('assistant-menu-find')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('assistant-search-query')),
+          '目标规则',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-search-result-msg-2')),
+        );
+        for (
+          var i = 0;
+          i < 100 && find.text('目标规则在哪里').hitTestable().evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(find.text('目标规则在哪里').hitTestable(), findsOneWidget);
+        await openMenu();
+        await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(controller.selectedConversation!.messages, hasLength(70));
+        await openMenu();
+        await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-confirm-change')),
+        );
+        await tester.pumpAndSettle();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('操作未完成，请重试'), findsNothing);
+        expect(controller.selectedConversationId, isNot('global'));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
     );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('assistant-search-result-msg-2')),
-    );
-    for (
-      var i = 0;
-      i < 100 && find.text('目标规则在哪里').hitTestable().evaluate().isEmpty;
-      i++
-    ) {
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    expect(find.text('目标规则在哪里').hitTestable(), findsOneWidget);
-    await openMenu();
-    await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-    expect(controller.selectedConversation!.messages, hasLength(70));
-    await openMenu();
-    await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('assistant-confirm-change')));
-    await tester.pumpAndSettle();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 100)),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('操作未完成，请重试'), findsNothing);
-    expect(controller.selectedConversationId, isNot('global'));
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }
 
   _uiTest('game assistant opened as a page has a working back button', (
     tester,

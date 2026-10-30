@@ -27,6 +27,9 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   final Map<String, GlobalKey> _messageKeys = <String, GlobalKey>{};
   Timer? _messageTimesTimer;
   bool _creating = false;
+  bool _changingConversation = false;
+  String? _searchHighlight;
+  Timer? _searchHighlightTimer;
   final _composerKey = GlobalKey<AssistantComposerState>();
   final Set<String> _knownMessages = {};
   PageStorageBucket? _viewBucket;
@@ -81,6 +84,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     _draftController.dispose();
     _scrollController.dispose();
     _messageTimesTimer?.cancel();
+    _searchHighlightTimer?.cancel();
     super.dispose();
   }
 
@@ -151,22 +155,17 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    key: const ValueKey('assistant-header-new-conversation'),
-                    tooltip: controller.copy.newConversation,
-                    onPressed: _creating ? null : _createConversation,
-                    style: _desktopIconButtonStyle(palette),
-                    icon: _creating
-                        ? const SizedBox(
-                            width: 17,
-                            height: 17,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : AssistantToolbarIcon(
-                            asset: 'assets/mobile/assistant/edit.png',
-                            size: 24,
-                            color: palette.textSecondary,
-                          ),
+                  AssistantConversationActions(
+                    copy: controller.copy,
+                    title: assistantTitle,
+                    creating: _creating,
+                    onCreate: _createConversation,
+                    onFind: messages.isEmpty
+                        ? null
+                        : () => unawaited(_findInConversation()),
+                    onDelete: _changingConversation
+                        ? null
+                        : () => unawaited(_deleteConversation()),
                   ),
                 ],
               ),
@@ -244,38 +243,50 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                                 '${selectedConversation.id}:${messages[index].id}',
                               ),
                               animate: _knownMessages.add(messages[index].id),
-                              child: MessageBubble(
-                                key: _messageKeys.putIfAbsent(
-                                  messages[index].id,
-                                  GlobalKey.new,
+                              child: AnimatedContainer(
+                                duration: AppMotion.duration(context),
+                                decoration: BoxDecoration(
+                                  color: _searchHighlight == messages[index].id
+                                      ? palette.primaryContainer.withValues(
+                                          alpha: .35,
+                                        )
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
-                                message: messages[index],
-                                palette: palette,
-                                copy: controller.copy,
-                                showAssistantAvatar: false,
-                                showAssistantActionLabels: true,
-                                maxWidth: 780,
-                                desktopLayout: true,
-                                onSpeak:
-                                    messages[index].role ==
-                                            ChatRole.assistant &&
-                                        controller.voiceReplyAvailable
-                                    ? () => controller.speakMessage(
-                                        messages[index].text,
-                                      )
-                                    : null,
-                                speakTooltip: controller.copy.speakAgain,
-                                onCopy: () => _copyAnswer(messages[index].text),
-                                copyTooltip: controller.copy.copyAnswer,
-                                onRetry: messages[index].canRetry
-                                    ? () => controller.retryMessage(
-                                        messages[index],
-                                        useGlobalMode: useGlobalMode,
-                                      )
-                                    : null,
-                                retryTooltip: controller.copy.retry,
-                                showTimestamp: _showMessageTimes,
-                                onTap: _toggleMessageTimes,
+                                child: MessageBubble(
+                                  key: _messageKeys.putIfAbsent(
+                                    messages[index].id,
+                                    GlobalKey.new,
+                                  ),
+                                  message: messages[index],
+                                  palette: palette,
+                                  copy: controller.copy,
+                                  showAssistantAvatar: false,
+                                  showAssistantActionLabels: true,
+                                  maxWidth: 780,
+                                  desktopLayout: true,
+                                  onSpeak:
+                                      messages[index].role ==
+                                              ChatRole.assistant &&
+                                          controller.voiceReplyAvailable
+                                      ? () => controller.speakMessage(
+                                          messages[index].text,
+                                        )
+                                      : null,
+                                  speakTooltip: controller.copy.speakAgain,
+                                  onCopy: () =>
+                                      _copyAnswer(messages[index].text),
+                                  copyTooltip: controller.copy.copyAnswer,
+                                  onRetry: messages[index].canRetry
+                                      ? () => controller.retryMessage(
+                                          messages[index],
+                                          useGlobalMode: useGlobalMode,
+                                        )
+                                      : null,
+                                  retryTooltip: controller.copy.retry,
+                                  showTimestamp: _showMessageTimes,
+                                  onTap: _toggleMessageTimes,
+                                ),
                               ),
                             ),
                         ],
@@ -372,6 +383,8 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     final String? conversationId = controller.selectedConversationId;
     final bool contextChanged = conversationId != _lastConversationId;
     if (contextChanged) {
+      _searchHighlightTimer?.cancel();
+      _searchHighlight = null;
       if (_lastConversationId != null &&
           retainedIds.contains(_lastConversationId)) {
         _saveScrollPosition();
@@ -505,6 +518,148 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     _messageTimesTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showMessageTimes = false);
     });
+  }
+
+  Future<void> _findInConversation() async {
+    final controller = this.controller;
+    final id = controller.selectedConversationId;
+    final identity = controller.identityUserId;
+    final messages = controller.messagesForContext(
+      useGlobalMode: controller.selectedConversationIsGlobal,
+    );
+    if (id == null || messages.isEmpty) return;
+    final target = await showAppDialog<String>(
+      context: context,
+      builder: (_) => ConversationSearchDialog(
+        messages: List.of(messages),
+        copy: controller.copy,
+      ),
+    );
+    if (!mounted ||
+        target == null ||
+        id != controller.selectedConversationId ||
+        identity != controller.identityUserId) {
+      return;
+    }
+    await _revealSearchResult(target, id, identity);
+  }
+
+  Future<void> _revealSearchResult(
+    String messageId,
+    String conversationId,
+    String? identity,
+  ) async {
+    if (!_scrollController.hasClients) return;
+    _searchHighlightTimer?.cancel();
+    setState(() {
+      _followNewMessages = false;
+      _searchHighlight = messageId;
+    });
+    _scrollController.jumpTo(0);
+    await WidgetsBinding.instance.endOfFrame;
+    for (var step = 0; step < 500; step++) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          controller.selectedConversationId != conversationId ||
+          controller.identityUserId != identity) {
+        return;
+      }
+      final targetContext = _messageKeys[messageId]?.currentContext;
+      if (targetContext != null && targetContext.mounted && mounted) {
+        await Scrollable.ensureVisible(
+          targetContext,
+          alignment: .2,
+          duration: AppMotion.duration(context, AppMotion.content),
+          curve: AppMotion.curve,
+        );
+        if (!mounted) return;
+        _searchHighlightTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _searchHighlight = null);
+        });
+        return;
+      }
+      final position = _scrollController.position;
+      final next = (position.pixels + position.viewportDimension * .8).clamp(
+        0.0,
+        position.maxScrollExtent,
+      );
+      if (next <= position.pixels) break;
+      _scrollController.jumpTo(next);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    if (mounted) {
+      setState(() => _searchHighlight = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            controller.copy.localized(
+              '暂时无法定位消息',
+              'Could not locate this message',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteConversation() async {
+    if (_changingConversation) return;
+    final controller = this.controller;
+    final conversation = controller.selectedConversation;
+    if (conversation == null) return;
+    final identity = controller.identityUserId;
+    final copy = controller.copy;
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(copy.localized('删除对话？', 'Delete conversation?')),
+        content: Text(
+          copy.localized(
+            '将删除“${conversation.title}”及其消息，此操作无法撤销。',
+            'This conversation and its messages will be deleted.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(copy.localized('取消', 'Cancel')),
+          ),
+          TextButton(
+            key: const ValueKey('assistant-confirm-change'),
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.of(context).error,
+            ),
+            child: Text(copy.localized('删除', 'Delete')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        controller.selectedConversationId != conversation.id ||
+        controller.identityUserId != identity) {
+      return;
+    }
+    setState(() => _changingConversation = true);
+    try {
+      await controller.deleteConversation(conversation.id);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              copy.localized(
+                '操作未完成，请重试',
+                'Could not complete the action. Try again.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingConversation = false);
+    }
   }
 
   Future<void> _copyAnswer(String text) async {
