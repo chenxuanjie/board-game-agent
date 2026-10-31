@@ -1,3 +1,9 @@
+# 当前 GHCR 部署入口
+
+当前 Web 的新账号、SQL 资料和 PowerSync 部署请使用 [Web GHCR 交付](web-ghcr.md)。HTTP/HTTPS 固定为 8083/8084，工作流生成匹配镜像 digest 的 Compose。以下旧 TAR/账号网关内容仅用于历史交付追溯，不作为新 Web 的部署配置。
+
+---
+
 > 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
 
 # Docker 部署

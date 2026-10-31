@@ -1,0 +1,98 @@
+name: Build and publish Web images
+
+on:
+  push:
+    branches: [main, develop, 'codex/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-images-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare pinned sources
+        id: meta
+        run: |
+          python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+          python3 scripts/ghcr_web_release.py metadata --repository "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" --branch "$GITHUB_REF_NAME" --github-output "$GITHUB_OUTPUT"
+          python3 scripts/ghcr_web_release.py prepare --destination "$RUNNER_TEMP/bga-context"
+          test -z "$(git status --porcelain)"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build Web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ runner.temp }}/bga-context
+          file: ${{ runner.temp }}/bga-context/board-game-agent/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.webImage }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.applicationVersion }}
+          cache-from: type=gha,scope=bga-web-amd64
+          cache-to: type=gha,mode=max,scope=bga-web-amd64
+      - name: Build BYOK relay image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ runner.temp }}/bga-context/board-game-agent
+          file: ${{ runner.temp }}/bga-context/board-game-agent/packaging/docker/Dockerfile.ai
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.aiImage }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.applicationVersion }}
+          cache-from: type=gha,scope=bga-web-ai-amd64
+          cache-to: type=gha,mode=max,scope=bga-web-ai-amd64
+      - name: Check the built images before publishing
+        env:
+          WEB_IMAGE: ${{ steps.meta.outputs.webImage }}
+          AI_IMAGE: ${{ steps.meta.outputs.aiImage }}
+        run: |
+          python3 scripts/verify-ghcr-web.py --web-image "$WEB_IMAGE" --ai-image "$AI_IMAGE" --output release/ghcr/validation.json
+          test -z "$(git status --porcelain)"
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the validated images
+        if: github.event_name != 'pull_request'
+        env:
+          WEB_IMAGE: ${{ steps.meta.outputs.webImage }}
+          AI_IMAGE: ${{ steps.meta.outputs.aiImage }}
+          BRANCH_TAG: ${{ steps.meta.outputs.branchTag }}
+        run: |
+          for image in "$WEB_IMAGE" "$AI_IMAGE"; do
+            docker push "$image"
+            repository="${image%:*}"
+            docker tag "$image" "$repository:$BRANCH_TAG"
+            docker push "$repository:$BRANCH_TAG"
+          done
+          python3 scripts/write-ghcr-delivery.py --web-image "$WEB_IMAGE" --ai-image "$AI_IMAGE" --output release/ghcr
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: web-ghcr-deployment
+          path: release/ghcr/
+          if-no-files-found: ignore
+          retention-days: 30

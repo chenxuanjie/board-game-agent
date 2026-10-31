@@ -1,6 +1,6 @@
 # 桌游助手开发规范与标准
 
-更新：2026-10-30。适用于本仓库的开发、审查、测试和交付。
+更新：2026-10-31。适用于本仓库的开发、审查、测试和交付。
 
 本文件是长期开发标准的唯一维护位置。`AGENTS.md` 只负责引导到这里；后续新增或调整标准，直接修改本文件对应章节，不再另建平行的规范文件。用户明确要求优先于项目默认规则。
 
@@ -58,7 +58,7 @@
 | `lib/features/assistant/` | AI 配置、会话、Run、语音和规则问答 |
 | `lib/features/identity/`、`settings/` | 应用服务账号、独立会话存储、个人数据切换；资料配置与身份分开 |
 | `lib/ui/desktop/`、`mobile/`、`shared/` | 平台布局与共用 UI；共用业务状态与动作 |
-| `services/web_account/` | 当前 Web 网关与同源传输，属于待替换链路，禁止发展成第二套新后台 |
+| `services/web_account/` | `ai_app.py` 为独立 BYOK 模型代理；账号与资料统一转发共用后台，旧网关源码不进入新运行镜像，禁止发展第二套业务后台 |
 | `test/`、`integration_test/`、`scripts/tests/` | 行为与布局、实际平台集成、打包部署工具测试 |
 | `../apps/app_data_service`、`../shared_packages/app_client` | 独立仓库的共用后台与公共客户端；修改时读取各自规则 |
 
@@ -355,6 +355,8 @@ Flutter 交互优先复用现有 SDK/组件。既有动效参考 Fluent 2 Motion
 
 Native 构建复用共享 `flutter-release-publisher`，本地已有结果的打包使用以下项目入口；默认只打包，不上传：
 
+本应用 Web 固定预留 HTTP 8083、HTTPS 8084；每个本地应用登记相邻两端口，HTTP 为奇数、HTTPS 为下一偶数，冲突按两位递增并检查两种端口，不能抢占其他程序。发布 profile 是机器端口登记来源；HTTPS 预留不表示证书或 TLS 服务已启用。NAS Web 使用 8083:8080，HTTPS 反代监听 8084，配套说明见 [Web GHCR 交付](web-ghcr.md)。
+
 ```powershell
 ./scripts/package-app-release.ps1 -Target android
 ./scripts/package-app-release.ps1 -Target windows
@@ -376,7 +378,7 @@ Docker 使用 `scripts/build-docker-release.ps1` 的 plan/build/verify 入口，
 | 报告与配套文件 | `release/reports/`，Docker 使用 `docker-linux-amd64/` 中 Compose、版本、摘要与验证报告，同名更新 |
 | 开发源码包 | `build/docker-source/`，不与可导入镜像混放 |
 
-当前 Docker TAR 包含网页与账号网关两个真实镜像；Compose 固定匹配标签、架构和 NAS 配置，不依赖 `.env` 或本机变量。根目录参数化 Compose 仅供开发。构建电脑完成编译/依赖安装，NAS 只导入运行；源码压缩包不能改名冒充镜像 TAR。
+当前 Web GHCR 流程交付网页与独立 BYOK 模型代理两张镜像，新账号、资料和同步复用共用 API；生成的 Compose 固定镜像 digest，不依赖 `.env` 或本机变量。旧 TAR/账号网关配置仅用于历史交付追溯，不能代替新 Web 部署。构建在电脑/CI 完成，NAS 只拉取运行；是否已推送或部署按实际结果确认。
 
 本机构建入口区分 WSL 启动与 Docker API 就绪，等待实际服务可用；已安装 Docker 或已登记的本机代理停止时只尝试启动对应服务，不重启整台 WSL。后台检查入口另等待现有开发 PostgreSQL 健康，Windows 原生转发失效且本机端口空闲时使用任务持有的 stdio 转发到同一数据库，结束清理；端口占用、权限不足或 WSL 无响应时报告对应故障层。恢复不创建数据库卷、不改生产配置，也不扩大普通构建的测试范围。
 

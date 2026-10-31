@@ -93,6 +93,9 @@ def stage_build_context(root, destination):
     for name in ("Dockerfile", "Dockerfile.dockerignore", "pubspec.yaml", "pubspec.lock", "lib", "web",
                  "scripts/prepare-web-assets.py", "services/web_account", "packaging/docker/nginx.conf", "packaging/docker/nginx-main.conf"):
         copy(root / name, project / name)
+    for name in ("packaging/docker/start-web.sh", "packaging/docker/Dockerfile.ai"):
+        if (root / name).is_file():
+            copy(root / name, project / name)
     spec = importlib.util.spec_from_file_location("web_asset_plan", root / "scripts/prepare-web-assets.py")
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)

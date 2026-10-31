@@ -9,12 +9,13 @@ spec.loader.exec_module(module)
 
 
 class WebAssetsTests(unittest.TestCase):
-    def test_current_manifest_preserves_fonts_and_images_without_game_docs(self):
+    def test_current_manifest_preserves_ui_assets_without_legacy_catalog_or_game_docs(self):
         text = (ROOT / "pubspec.yaml").read_text(encoding="utf-8-sig")
         plan = module.plan(text)
         self.assertTrue(any(path.endswith(".ttf") for path in plan["paths"]))
         self.assertIn("branding/app_icon.png", plan["paths"])
-        self.assertTrue(any("/images/" in path for path in plan["paths"]))
+        self.assertIn("assets/mobile/assistant/", plan["paths"])
+        self.assertNotIn("assets/catalog.json", plan["paths"])
         self.assertNotIn("/docs/", plan["manifest"])
         self.assertNotIn(".pdf", plan["manifest"])
         self.assertEqual(module.plan(plan["manifest"]), plan)
