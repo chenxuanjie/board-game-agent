@@ -11,12 +11,57 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
+import urllib.error
+import urllib.request
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = Path("packaging/ci/shared-packages.tar.gz")
 LOCK = Path("packaging/ci/shared-packages.lock.json")
+AI_INPUTS = ("packaging/docker/Dockerfile.ai", "packaging/docker/ai-requirements.lock", "services/web_account/requirements.txt",
+             "services/web_account/ai_app.py", "services/web_account/ai_proxy.py")
+
+
+def ai_input_digest(root=ROOT):
+    locked = (root / "packaging/docker/ai-requirements.lock").read_text(encoding="utf-8")
+    for requirement in (root / "services/web_account/requirements.txt").read_text(encoding="utf-8-sig").splitlines():
+        if requirement.strip() and not requirement.startswith("#") and not any(
+                line.split(" ", 1)[0] == requirement.strip() for line in locked.splitlines()):
+            raise ValueError("Update the relay dependency lock before publishing")
+    value = hashlib.sha256(b"linux/amd64\0")
+    for name in AI_INPUTS:
+        value.update(name.encode() + b"\0")
+        value.update((root / name).read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return value.hexdigest()
+
+
+def ai_image_exists(image):
+    match = re.fullmatch(r"ghcr\.io/([a-z0-9_./-]+):(inputs-[a-f0-9]{64})", image)
+    if not match:
+        raise ValueError("Expected the input-addressed GHCR relay image")
+    repository, tag = match.groups()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(
+                    "https://ghcr.io/token?service=ghcr.io&scope=repository:" + repository + ":pull",
+                    timeout=15) as response:
+                token = json.load(response)["token"]
+            request = urllib.request.Request("https://ghcr.io/v2/" + repository + "/manifests/" + tag,
+                method="HEAD", headers={"Authorization": "Bearer " + token,
+                "Accept": "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json"})
+            with urllib.request.urlopen(request, timeout=15) as response:
+                return response.status == 200
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return False
+            if error.code < 500 or attempt == 2:
+                raise RuntimeError("Cannot check relay registry access (HTTP " + str(error.code) + ")") from None
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise RuntimeError("Cannot check relay registry connectivity") from None
+        time.sleep(attempt + 1)
 
 
 def git(folder, *args, binary=False):
@@ -142,9 +187,11 @@ def metadata(repository, commit, branch, root=ROOT):
     tag = version.replace("+", "-") + "-" + commit[:12]
     branch_tag = "branch-" + re.sub(r"[^a-z0-9_.-]+", "-", branch.lower()).strip(".-")[:100]
     owner = repository.split("/")[0].lower()
+    ai_digest = ai_input_digest(root)
     return {"applicationVersion": version, "sourceRevision": commit, "imageTag": tag,
             "branchTag": branch_tag, "webImage": f"ghcr.io/{repository.lower()}:{tag}",
-            "aiImage": f"ghcr.io/{owner}/board-game-agent-web-ai:{tag}"}
+            "aiInputDigest": ai_digest,
+            "aiImage": f"ghcr.io/{owner}/board-game-agent-web-ai:inputs-{ai_digest}"}
 
 
 def compose(web_image, ai_image):
@@ -172,6 +219,13 @@ def compose(web_image, ai_image):
             + yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
 
 
+def nas_compose():
+    return ("# Reusable NAS deployment: reapply the project to pull the published NAS channel.\n"
+            "# Restarting an existing container alone does not update its image.\n"
+            + compose("ghcr.io/chenxuanjie/board-game-agent:nas",
+                      "ghcr.io/chenxuanjie/board-game-agent-web-ai:nas"))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -183,10 +237,15 @@ def main():
     meta_parser.add_argument("--commit", required=True)
     meta_parser.add_argument("--branch", required=True)
     meta_parser.add_argument("--github-output", type=Path)
+    relay_parser = commands.add_parser("resolve-ai")
+    relay_parser.add_argument("--image", required=True)
+    relay_parser.add_argument("--github-output", type=Path, required=True)
     compose_parser = commands.add_parser("compose")
     compose_parser.add_argument("--web-image", required=True)
     compose_parser.add_argument("--ai-image", required=True)
     compose_parser.add_argument("--output", type=Path, required=True)
+    nas_parser = commands.add_parser("nas-compose")
+    nas_parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "snapshot":
         snapshot()
@@ -199,6 +258,14 @@ def main():
             with args.github_output.open("a", encoding="utf-8") as output:
                 for key, value in record.items():
                     output.write(f"{key}={value}\n")
+    elif args.command == "resolve-ai":
+        exists = ai_image_exists(args.image)
+        with args.github_output.open("a", encoding="utf-8") as output:
+            output.write("build=" + ("false" if exists else "true") + "\n")
+        print("Reuse published relay inputs" if exists else "Relay inputs are new; build once")
+    elif args.command == "nas-compose":
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(nas_compose(), encoding="utf-8")
     else:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(compose(args.web_image, args.ai_image), encoding="utf-8")

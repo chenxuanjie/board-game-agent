@@ -43,7 +43,7 @@ def run(*args):
     return subprocess.run(["docker", *args], check=True, text=True, capture_output=True, timeout=120).stdout.strip()
 
 
-def verify(web_image, ai_image, output):
+def verify(web_image, ai_image, output, ai_input_digest=None, expected_version=None, previous_web_image=None):
     prefix = "bga-web-check-" + uuid4().hex[:10]
     created = []
     checks = []
@@ -76,7 +76,11 @@ def verify(web_image, ai_image, output):
                 container = prefix + "-" + name
                 run("run", "-d", "--name", container, "--network", prefix, "--pull", "never", *options, image, *command)
                 created.append(container)
-            port = json.loads(run("inspect", created[-1]))[0]["NetworkSettings"]["Ports"]["8080/tcp"][0]["HostPort"]
+            info = json.loads(run("inspect", created[-1]))[0]
+            ports = info.get("NetworkSettings", {}).get("Ports", {}).get("8080/tcp")
+            if not ports:
+                raise RuntimeError("Web container exited before exposing port 8080; inspect the validation failure report")
+            port = ports[0]["HostPort"]
             base = "http://127.0.0.1:" + port
             deadline = time.monotonic() + 60
             while True:
@@ -89,12 +93,42 @@ def verify(web_image, ai_image, output):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Web did not start")
                 time.sleep(.5)
-            for path in ["/", "/main.dart.js", "/powersync/sqlite3.wasm", "/powersync/powersync_db.worker.js", "/settings/ai"]:
+            for path in ["/", "/main.dart.js", "/powersync/sqlite3.wasm", "/powersync/powersync_db.worker.js", "/settings/ai",
+                         "/canvaskit/canvaskit.wasm", "/assets/assets/fonts/NotoSansSC-Variable.ttf",
+                         "/assets/packages/pdfrx/assets/pdfium.wasm", "/assets/AssetManifest.bin"]:
                 with request(path) as response:
                     check("static " + path, response.status == 200 and bool(response.read(16)))
                     check("isolation " + path, response.headers.get("Cross-Origin-Opener-Policy") == "same-origin" and response.headers.get("Cross-Origin-Embedder-Policy") == "require-corp")
                     if path.endswith(".wasm"):
                         check("WASM MIME", response.headers.get_content_type() == "application/wasm")
+            if expected_version is not None:
+                version, build = expected_version.split("+", 1)
+                with request("/version.json") as response:
+                    installed = json.load(response)
+                    check("compiled application version", installed.get("version") == version
+                          and str(installed.get("build_number")) == build)
+            with request("/version.json") as response:
+                body = response.read()
+                etag = response.headers.get("ETag")
+                modified = response.headers.get("Last-Modified")
+                check("content-based static ETag", etag == '"sha256:' + hashlib.sha256(body).hexdigest() + '"')
+            for value in (etag, "W/" + etag, '"other", ' + etag, "*"):
+                with request("/version.json", headers={"If-None-Match": value}) as response:
+                    check("static ETag revalidation " + value, response.status == 304 and response.headers.get("ETag") == etag)
+            with request("/version.json", headers={"If-None-Match": '"sha256:' + "0" * 64 + '"',
+                         "If-Modified-Since": modified}) as response:
+                check("stale static validators do not hide updates", response.status == 200 and response.read() == body)
+            with request("/VERSION.JSON", headers={"If-None-Match": etag}) as response:
+                check("static cache lookup keeps URL case", response.status == 404)
+            if previous_web_image is not None:
+                previous = run("run", "--rm", "--entrypoint", "/bin/sh", previous_web_image, "-c",
+                    "sha256sum /usr/share/nginx/html/version.json; wc -c < /usr/share/nginx/html/version.json").splitlines()
+                previous_etag = '"sha256:' + previous[0].split()[0] + '"'
+                check("update fixture keeps version file size", int(previous[1].strip()) == len(body))
+                with request("/version.json", headers={"If-None-Match": previous_etag,
+                             "If-Modified-Since": modified}) as response:
+                    check("same-size version update invalidates old cache", response.status == 200
+                          and response.read() == body and previous_etag != etag)
             with request("/missing-file.js") as response:
                 check("missing assets stay 404", response.status == 404)
             with request("/api/v1/apps/board_game_agent/probe", headers={"Origin": "https://games.example.test", "Cookie": "fixture=1", "X-CSRF-Token": "fixture-csrf"}) as response:
@@ -106,6 +140,7 @@ def verify(web_image, ai_image, output):
                 check("PowerSync same-origin path", json.load(response)["path"] == "/powersync/probe")
             with request("/api/v1/apps/board_game_agent/pdf", headers={"Range": "bytes=100-199"}) as response:
                 check("PDF range bytes", response.status == 206 and len(response.read()) == 100 and response.headers.get("ETag") == '"fixture"')
+                check("proxy ETag is not duplicated", response.headers.get_all("ETag") == ['"fixture"'])
             with request("/api/v1/apps/board_game_agent/pdf", method="HEAD") as response:
                 check("PDF HEAD", response.status == 200 and response.read() == b"")
             start = time.monotonic()
@@ -125,10 +160,22 @@ def verify(web_image, ai_image, output):
             for image in (web_image, ai_image):
                 info = json.loads(run("image", "inspect", image))[0]
                 check("non-root " + image, info["Config"]["User"] == "65532:65532")
+                if image == ai_image and ai_input_digest is not None:
+                    check("relay source inputs", (info["Config"].get("Labels") or {}).get(
+                        "io.board-game-agent.build-inputs") == ai_input_digest)
             record = {"passed": True, "checks": checks, "realNasDeployed": False, "businessSuite": "not_run"}
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
             print(json.dumps(record, indent=2))
+    except Exception as error:
+        states = []
+        for container in created:
+            result = subprocess.run(["docker", "logs", "--tail", "30", container], capture_output=True, text=True, timeout=30)
+            states.append({"container": container, "log": (result.stdout + result.stderr)[-6000:]})
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({"passed": False, "checks": checks, "errorType": type(error).__name__,
+                                      "containers": states}, indent=2) + "\n", encoding="utf-8")
+        raise
     finally:
         for container in reversed(created):
             subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=30)
@@ -140,5 +187,8 @@ if __name__ == "__main__":
     parser.add_argument("--web-image", required=True)
     parser.add_argument("--ai-image", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--ai-input-digest")
+    parser.add_argument("--expected-version")
+    parser.add_argument("--previous-web-image")
     args = parser.parse_args()
-    verify(args.web_image, args.ai_image, args.output)
+    verify(args.web_image, args.ai_image, args.output, args.ai_input_digest, args.expected_version, args.previous_web_image)
