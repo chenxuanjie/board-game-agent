@@ -52,6 +52,8 @@ void _registerDesktopTypographyTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
 
       await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       final triggerRect = tester.getRect(
         find.byKey(const ValueKey<String>('desktop-model-selector')),
       );

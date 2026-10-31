@@ -10,6 +10,63 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'completed answer reveals actions and references without moving the text',
+    (tester) async {
+      final message = ValueNotifier(
+        ChatMessage(
+          id: 'completion',
+          role: ChatRole.assistant,
+          text: '答案正文',
+          timestamp: DateTime(2026),
+          state: ChatMessageState.streaming,
+        ),
+      );
+      addTearDown(message.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ValueListenableBuilder(
+                valueListenable: message,
+                builder: (context, value, _) => MessageBubble(
+                  message: value,
+                  palette: PaletteRegistry.spatialCinema,
+                  copy: AppCopy(AppLanguage.zhHans),
+                  onSpeak: () {},
+                  onCopy: () {},
+                  copyTooltip: '复制回答',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final details = find.byKey(
+        const ValueKey('assistant-actions-completion'),
+      );
+      expect(tester.getSize(details).height, 0);
+      final textTop = tester.getTopLeft(find.text('答案正文')).dy;
+      message.value = message.value.copyWith(
+        state: ChatMessageState.complete,
+        source: AnswerSource.generalAdvice,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final during = tester.getSize(details).height;
+      expect(during, greaterThan(0));
+      expect(tester.getTopLeft(find.text('答案正文')).dy, textTop);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(details).height, greaterThan(during));
+      expect(find.byTooltip('复制回答'), findsOneWidget);
+      expect(
+        find.text(AppCopy(AppLanguage.zhHans).answerSourceGeneral),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('unavailable speech is hidden while copy remains usable', (
     tester,
   ) async {
@@ -24,7 +81,7 @@ void main() {
               text: '完整回答',
               timestamp: DateTime(2026, 10, 2),
             ),
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: null,
             onCopy: () => copied = true,
@@ -65,7 +122,7 @@ void main() {
         home: Scaffold(
           body: MessageBubble(
             message: message,
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: () {},
             onRetry: () => retried = true,
@@ -99,7 +156,7 @@ void main() {
         home: Scaffold(
           body: MessageBubble(
             message: message,
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: () {},
           ),
@@ -137,7 +194,7 @@ void main() {
           home: Scaffold(
             body: MessageBubble(
               message: message,
-              palette: PaletteRegistry.cinema,
+              palette: PaletteRegistry.spatialCinema,
               copy: AppCopy(AppLanguage.zhHans),
               onSpeak: () {},
               onCopy: () => copied = true,
@@ -181,7 +238,7 @@ void main() {
         home: Scaffold(
           body: MessageBubble(
             message: message,
-            palette: PaletteRegistry.cinema,
+            palette: PaletteRegistry.spatialCinema,
             copy: AppCopy(AppLanguage.zhHans),
             onSpeak: () {},
             showTimestamp: showTimestamp,

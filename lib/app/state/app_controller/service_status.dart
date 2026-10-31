@@ -94,12 +94,12 @@ extension AppServiceStatusController on AppController {
     await Future.wait(
       sources.map((source) async {
         ConnectivityStatus status;
-        String? checkedCatalog;
+        int? checkedRevision;
         try {
           status = await _remoteAssetService.checkAccess(
             source,
             abort: abort,
-            onCatalog: (text) => checkedCatalog = text,
+            onRevision: (value) => checkedRevision = value,
           );
         } catch (_) {
           status = ConnectivityStatus(
@@ -116,12 +116,12 @@ extension AppServiceStatusController on AppController {
         _notifyListeners();
         if (!quickStarted &&
             status.state == ConnectivityState.success &&
-            checkedCatalog != null) {
+            checkedRevision != null) {
           quickStarted = true;
           unawaited(
             _initialLibraryFullPending
-                ? checkForLibraryUpdates(catalogSource: checkedCatalog)
-                : checkForLibraryUpdatesQuick(catalogSource: checkedCatalog),
+                ? checkForLibraryUpdates(knownRevision: checkedRevision)
+                : checkForLibraryUpdatesQuick(knownRevision: checkedRevision),
           );
         }
       }),
@@ -228,13 +228,14 @@ extension AppServiceStatusController on AppController {
     void Function(AiServiceCheckStage stage)? onStage,
   }) async {
     final AiApiConfig config = _aiApiConfig;
-    if (config.baseUrl.trim().isEmpty || config.apiKey.trim().isEmpty) {
+    if (!config.isConfigured ||
+        (config.accountService && !accountAiAvailable)) {
       _availableAiModels = <AiModel>[];
       _aiModelLoadState = AiModelLoadState.idle;
       _aiModelLoadError = null;
       _aiConnectivityStatus = ConnectivityStatus(
         state: ConnectivityState.failure,
-        message: '未配置 AI 服务',
+        message: config.accountService ? '请登录后使用 Loomex' : '未配置 AI 服务',
         checkedAt: DateTime.now(),
       );
       _notifyListeners();

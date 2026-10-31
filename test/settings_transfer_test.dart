@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,8 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_settings/webdav_settings.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_copy.dart';
@@ -18,8 +17,6 @@ import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/conversation_store.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
-import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/models/configuration_transfer.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
@@ -82,9 +79,7 @@ class _Journal implements ConfigurationTransferJournal {
 
 class _Preferences extends PreferencesService {
   AiApiConfig ai = _oldAi;
-  List<AssetSourceConfig> sources = AssetSourceConfig.defaults.toList();
   bool failAi = false;
-  bool failSources = false;
   @override
   Future<void> saveAiApiConfig(AiApiConfig value) async {
     if (failAi) {
@@ -92,15 +87,6 @@ class _Preferences extends PreferencesService {
       throw StateError('simulated AI write failure');
     }
     ai = value;
-  }
-
-  @override
-  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> value) async {
-    if (failSources) {
-      failSources = false;
-      throw StateError('simulated source write failure');
-    }
-    sources = value.toList();
   }
 
   @override
@@ -162,7 +148,7 @@ class _Fixture {
   late final app = AppController(
     preferencesService: preferences,
     aiService: _NoAi(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: _NoNetwork(),
     speechService: SpeechService(),
     ttsService: _NoTts(),
@@ -175,6 +161,7 @@ class _Fixture {
   );
   Future<void> setup() async {
     await dav.load();
+    app.configureApplicationLibrary(Uri.parse('https://service.example.test'));
     await app.saveAiApiConfig(_oldAi);
   }
 
@@ -195,157 +182,56 @@ void main() {
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
   });
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
-  test(
-    'connection save activates WebDAV, prioritizes edited source and rolls back failed source writes',
-    () async {
-      final f = _Fixture();
-      addTearDown(f.dispose);
-      await f.setup();
-      final selected = f.app.assetSourceConfigs.last;
-      f.preferences.failSources = true;
-      await expectLater(
-        f.service.apply(
-          dav: _newDav,
-          activateWebDav: true,
-          resourceSource: selected,
+  test('WebDAV configuration is independent from the catalog source', () async {
+    final f = _Fixture();
+    addTearDown(f.dispose);
+    await f.setup();
+    final previous = f.app.assetSourceConfigs.map((e) => e.toMap()).toList();
+    await f.service.apply(dav: _newDav, activateWebDav: true);
+    expect(f.dav.saved.mode, ExternalStorageMode.webDav);
+    expect(f.dav.saved.baseUrl, _newDav.baseUrl);
+    expect(f.app.assetSourceConfigs.map((e) => e.toMap()).toList(), previous);
+    final reloaded = WebDavSettingsController(
+      store: f.store,
+      connectionTester: f.tester,
+    );
+    addTearDown(reloaded.dispose);
+    await reloaded.load();
+    expect(reloaded.saved.password, _newDav.password);
+  });
+  testWidgets('WebDAV entry opens an independent settings form', (
+    tester,
+  ) async {
+    final f = _Fixture();
+    addTearDown(f.dispose);
+    await f.setup();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(f.app.palette),
+        home: MobileSettingsScreen(
+          controller: f.app,
+          transferService: f.service,
+          onOpenAbout: () {},
         ),
-        throwsA(isA<ConfigurationTransferException>()),
-      );
-      expect(f.dav.saved.baseUrl, _oldDav.baseUrl);
-      await f.service.apply(
-        dav: _newDav,
-        activateWebDav: true,
-        resourceSource: selected,
-      );
-      expect(f.dav.saved.mode, ExternalStorageMode.webDav);
-      expect(f.app.assetSourceConfigs.first.id, selected.id);
-      expect(f.app.assetSourceConfigs.first.testUrl, _newDav.baseUrl);
-      expect(
-        f.app.assetSourceConfigs.where((s) => s.id == selected.id),
-        hasLength(1),
-      );
-      expect(f.tester.calls, 0);
-      final reloaded = WebDavSettingsController(
-        store: f.store,
-        connectionTester: f.tester,
-      );
-      addTearDown(reloaded.dispose);
-      await reloaded.load();
-      expect(reloaded.saved.baseUrl, _newDav.baseUrl);
-      expect(reloaded.saved.password, _newDav.password);
-      final requests = <http.Request>[];
-      final remote = RemoteAssetService(
-        settingsProvider: () => reloaded.saved,
-        client: MockClient((request) async {
-          requests.add(request);
-          return http.Response('rule', 200);
-        }),
-      );
-      expect(
-        await remote.fetchRemoteText(
-          sources: f.app.assetSourceConfigs,
-          remotePath: 'assets/catalog.json',
-        ),
-        'rule',
-      );
-      final authenticated = requests.singleWhere(
-        (r) => r.url.host == 'dav.example',
-      );
-      expect(
-        authenticated.headers['Authorization'],
-        'Basic ${base64Encode(utf8.encode('${_newDav.username}:${_newDav.password}'))}',
-      );
-      expect(
-        requests
-            .where((r) => r.url.host != 'dav.example')
-            .every((r) => !r.headers.containsKey('Authorization')),
-        isTrue,
-      );
-    },
-  );
-  testWidgets(
-    'resource connection entry opens the shared account page without a separate password form',
-    (tester) async {
-      final f = _Fixture();
-      addTearDown(f.dispose);
-      await f.setup();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.buildTheme(f.app.palette),
-          home: MobileSettingsScreen(
-            controller: f.app,
-            transferService: f.service,
-            onOpenAbout: () {},
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final entry = find.byKey(
-        const ValueKey('mobile-settings-webdav-connection'),
-      );
-      await tester.ensureVisible(entry);
-      await tester.tap(entry);
-      await tester.pumpAndSettle();
-      expect(find.byType(ResourceConnectionScreen), findsOneWidget);
-      expect(find.byKey(const ValueKey('account-screen')), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('resource-connection-password')),
-        findsNothing,
-      );
-      expect(find.text('调整优先级'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
-  test(
-    'imported WebDAV credentials stay within the configured origin and root',
-    () async {
-      final requests = <http.Request>[];
-      final service = RemoteAssetService(
-        settingsProvider: () => _newDav,
-        client: MockClient((request) async {
-          requests.add(request);
-          return http.Response('missing', 404);
-        }),
-      );
-      await service.fetchRemoteBytes(
-        sources: [
-          const AssetSourceConfig(
-            id: 'own',
-            name: 'Own',
-            address: '',
-            testUrl: 'https://dav.example/friend/',
-          ),
-          const AssetSourceConfig(
-            id: 'other',
-            name: 'Other',
-            address: '',
-            testUrl: 'https://other.example/friend/',
-          ),
-          const AssetSourceConfig(
-            id: 'sibling',
-            name: 'Sibling',
-            address: '',
-            testUrl: 'https://dav.example/another/',
-          ),
-          const AssetSourceConfig(
-            id: 'insecure',
-            name: 'Insecure',
-            address: '',
-            testUrl: 'http://dav.example/friend/',
-          ),
-        ],
-        remotePath: 'games/demo/rule.pdf',
-      );
-      expect(requests, hasLength(4));
-      expect(
-        requests.first.headers['Authorization'],
-        'Basic ${base64Encode(utf8.encode('${_newDav.username}:${_newDav.password}'))}',
-      );
-      for (final request in requests.skip(1)) {
-        expect(request.headers.containsKey('Authorization'), isFalse);
-      }
-    },
-  );
+      ),
+    );
+    await tester.pumpAndSettle();
+    final entry = find.byKey(
+      const ValueKey('mobile-settings-webdav-connection'),
+    );
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceConnectionScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('account-screen')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('resource-connection-password')),
+      findsNothing,
+    );
+    expect(find.text('调整优先级'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   test('a failed optional WebDAV check remains retryable', () async {
     final f = _Fixture();
     addTearDown(f.dispose);
@@ -513,30 +399,18 @@ void main() {
         );
         expect(f.tester.calls, 0);
         expect(f.journal.value, isNull);
-        if (scope != ConfigurationScope.ai) {
-          expect(f.dav.saved.mode, ExternalStorageMode.localOnly);
-          expect(
-            f.app.assetSourceConfigs.skip(1).map((item) => item.id),
-            AssetSourceConfig.defaults.map((item) => item.id),
-          );
-          await f.service.apply(dav: _newDav);
-          expect(
-            f.app.assetSourceConfigs.where(
-              (item) => item.id == 'configured_webdav',
-            ),
-            hasLength(1),
-          );
-        }
+        expect(f.app.assetSourceConfigs.map((item) => item.id), [
+          'application_service',
+        ]);
       },
     );
   }
-  for (final failure in ['ai', 'dav', 'sources', 'commit']) {
+  for (final failure in ['ai', 'dav', 'commit']) {
     test('rolls back both stores on $failure failure', () async {
       final f = _Fixture();
       addTearDown(f.dispose);
       await f.setup();
       f.preferences.failAi = failure == 'ai';
-      f.preferences.failSources = failure == 'sources';
       f.store.failSave = failure == 'dav';
       f.journal.failCommit = failure == 'commit';
       await expectLater(
@@ -547,10 +421,9 @@ void main() {
       expect(f.preferences.ai.toMap(), _oldAi.toMap());
       expect(f.dav.saved.mode, _oldDav.mode);
       expect(f.store.value.baseUrl, _oldDav.baseUrl);
-      expect(
-        f.app.assetSourceConfigs.map((item) => item.id),
-        AssetSourceConfig.defaults.map((item) => item.id),
-      );
+      expect(f.app.assetSourceConfigs.map((item) => item.id), [
+        'application_service',
+      ]);
       expect(f.journal.value, isNull);
       expect(f.tester.calls, 0);
     });
@@ -587,7 +460,6 @@ void main() {
           'username': _oldDav.username,
           'password': _oldDav.password,
         },
-        'sources': AssetSourceConfig.defaults.map((e) => e.toMap()).toList(),
       };
       await f.app.saveAiApiConfig(_newAi);
       await f.dav.saveConfiguration(_newDav);

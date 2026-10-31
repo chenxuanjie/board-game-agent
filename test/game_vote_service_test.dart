@@ -143,7 +143,7 @@ void main() {
     },
   );
 
-  test('different WebDAV endpoints do not share cached counts', () async {
+  test('different service scopes do not share cached counts', () async {
     final firstCloud = _Cloud()
       ..ballots['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'] = GameVoteBallot(
         deviceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -242,7 +242,17 @@ GameVoteService _service(
   _Preferences prefs, [
   RemoteGameVoteStore? Function()? remote,
 ]) {
-  final service = GameVoteService(preferences: prefs, remoteProvider: remote);
+  late final GameVoteService service;
+  service = GameVoteService(
+    preferences: prefs,
+    remoteProvider: remote == null
+        ? null
+        : () {
+            final result = remote();
+            if (result is _Remote) result.target = () => service;
+            return result;
+          },
+  );
   addTearDown(service.dispose);
   return service;
 }
@@ -270,6 +280,9 @@ class _Cloud {
 class _Remote implements RemoteGameVoteStore {
   _Remote(this.cloud, {this.scope = 'test'});
   final _Cloud cloud;
+  late GameVoteService Function() target;
+  @override
+  bool get enabled => true;
   @override
   final String scope;
   @override
@@ -280,10 +293,31 @@ class _Remote implements RemoteGameVoteStore {
   }
 
   @override
-  Future<List<GameVoteBallot>> readBallots() async {
+  Future<void> synchronize() async {
     if (cloud.fail) throw TimeoutException('Offline');
+    final service = target();
+    final raw = await service.preferences.loadGameVoteCache();
+    final cached = GameVoteCache.decode(raw!, namespace: service.namespace);
+    final own = GameVoteBallot(
+      deviceId: cached.ballot.deviceId,
+      games: service.selectedGames,
+      namespace: service.namespace,
+    );
+    await upload(own);
     if (cloud.gate != null) await cloud.gate!.future;
-    return cloud.ballots.values.toList();
+    final totals = <String, int>{};
+    final seen = <String>{};
+    for (final ballot in cloud.ballots.values) {
+      if (ballot.namespace != service.namespace ||
+          ballot.deviceId == own.deviceId ||
+          !seen.add(ballot.deviceId)) {
+        continue;
+      }
+      for (final game in ballot.games) {
+        totals[game] = (totals[game] ?? 0) + 1;
+      }
+    }
+    await service.acceptPublicCounts(scope, totals);
   }
 
   @override

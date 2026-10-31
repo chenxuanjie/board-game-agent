@@ -21,16 +21,9 @@ abstract final class DesktopColors {
 }
 
 /// Desktop presentation for the persisted Warmwood Study theme.
-ThemeData buildDesktopTheme({
-  AppPalette? activePalette,
-  bool cinemaGlassEnabled = true,
-}) {
-  if ((activePalette?.scheme == ColorSchemeOption.cinema ||
-      activePalette?.scheme == ColorSchemeOption.spatialCinema)) {
-    return AppTheme.buildTheme(
-      activePalette!,
-      cinemaGlassEnabled: cinemaGlassEnabled,
-    );
+ThemeData buildDesktopTheme({AppPalette? activePalette}) {
+  if (activePalette?.scheme == ColorSchemeOption.spatialCinema) {
+    return AppTheme.buildTheme(activePalette!);
   }
   final colorScheme = ColorScheme.fromSeed(
     seedColor: DesktopColors.orange,
@@ -104,6 +97,8 @@ ThemeData buildDesktopTheme({
       waitDuration: const Duration(milliseconds: 350),
     ),
     snackBarTheme: SnackBarThemeData(
+      dismissDirection: DismissDirection.horizontal,
+      showCloseIcon: true,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       contentTextStyle: base.textTheme.bodyMedium?.copyWith(
@@ -120,17 +115,14 @@ ThemeData buildDesktopTheme({
   return ThemeData.localize(theme, theme.typography.englishLike);
 }
 
-/// Legacy desktop pages use the same semantic roles when Cinema is selected.
-/// Other themes retain their current V4 presentation until explicitly changed.
+/// Shared desktop panes adapt semantic colors to Spatial Cinema while the
+/// Warmwood Study shell keeps its own visual tokens.
 DesktopRoleColors desktopColors(BuildContext context) {
   final palette = Theme.of(
     context,
   ).extension<AppPaletteThemeExtension>()?.palette;
   return DesktopRoleColors(
-    (palette?.scheme == ColorSchemeOption.cinema ||
-            palette?.scheme == ColorSchemeOption.spatialCinema)
-        ? palette
-        : null,
+    (palette?.scheme == ColorSchemeOption.spatialCinema) ? palette : null,
   );
 }
 
@@ -166,14 +158,12 @@ enum DesktopToneRole {
   line,
 }
 
-Color desktopTone(BuildContext context, Color legacy, DesktopToneRole role) {
+Color desktopTone(BuildContext context, Color warmwood, DesktopToneRole role) {
   final palette = Theme.of(
     context,
   ).extension<AppPaletteThemeExtension>()?.palette;
-  if (palette == null ||
-      (palette.scheme != ColorSchemeOption.cinema &&
-          palette.scheme != ColorSchemeOption.spatialCinema)) {
-    return legacy;
+  if (palette == null || palette.scheme != ColorSchemeOption.spatialCinema) {
+    return warmwood;
   }
   return switch (role) {
     DesktopToneRole.card => palette.surface,
@@ -186,10 +176,7 @@ Color desktopTone(BuildContext context, Color legacy, DesktopToneRole role) {
     DesktopToneRole.warning => palette.warning,
     DesktopToneRole.success => palette.success,
     DesktopToneRole.error => palette.error,
-    DesktopToneRole.shadow => palette.shadow.withValues(alpha: legacy.a),
-    DesktopToneRole.line =>
-      palette.scheme == ColorSchemeOption.spatialCinema
-          ? palette.outline.withValues(alpha: .28)
-          : const Color(0xFF353B47),
+    DesktopToneRole.shadow => palette.shadow.withValues(alpha: warmwood.a),
+    DesktopToneRole.line => palette.outline.withValues(alpha: .28),
   };
 }

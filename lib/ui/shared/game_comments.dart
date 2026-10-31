@@ -56,17 +56,29 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
       _limit = 20;
       _freshId = null;
     }
-    _bind(widget.service ?? AccountScope.maybeOf(context)?.comments);
+    final next = widget.service ?? AccountScope.maybeOf(context)?.comments;
+    if (oldWidget.gameSlug != widget.gameSlug && identical(next, _service)) {
+      _service?.unwatchGame(oldWidget.gameSlug);
+      _service?.watchGame(widget.gameSlug);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && identical(_service, next)) {
+          unawaited(next?.synchronize());
+        }
+      });
+    }
+    _bind(next, previousGame: oldWidget.gameSlug);
     if (oldWidget.recentCommentId != widget.recentCommentId) {
       _freshId = widget.recentCommentId;
     }
   }
 
-  void _bind(GameCommentsService? service) {
+  void _bind(GameCommentsService? service, {String? previousGame}) {
     if (identical(service, _service)) return;
     ++_actionEpoch;
     _service?.removeListener(_changed);
+    _service?.unwatchGame(previousGame ?? widget.gameSlug);
     _service = service;
+    service?.watchGame(widget.gameSlug);
     _freshId = null;
     _liking.clear();
     _likeErrors.clear();
@@ -89,6 +101,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
   @override
   void dispose() {
     _service?.removeListener(_changed);
+    _service?.unwatchGame(widget.gameSlug);
     super.dispose();
   }
 

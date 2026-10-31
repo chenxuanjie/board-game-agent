@@ -9,6 +9,15 @@ import 'remote_game_vote_store.dart';
 
 enum GameVoteSyncStatus { localOnly, syncing, synced, pending, paused }
 
+enum GameVotePublicationStatus {
+  localOnly,
+  pending,
+  publishing,
+  published,
+  failed,
+  paused,
+}
+
 /// Durable local votes are independent from favorites and remote availability.
 class GameVoteService extends ChangeNotifier {
   GameVoteService({
@@ -37,6 +46,7 @@ class GameVoteService extends ChangeNotifier {
   GameVoteCache? _cache;
   Future<void>? _loadFuture;
   Future<void>? _syncFuture;
+  Future<void>? _publicationFuture;
   Future<void> _writes = Future.value();
   RemoteGameVoteStore? _activeRemote;
   Timer? _retry;
@@ -46,16 +56,27 @@ class GameVoteService extends ChangeNotifier {
   VoidCallback? onSaved;
   String? loadError;
   String? Function()? accountSyncError;
+  String? Function()? accountPublicationError;
+  GameVotePublicationStatus publicationStatus =
+      GameVotePublicationStatus.localOnly;
+  int _publishedRevision = -1;
+  int get publishedRevision => _publishedRevision;
+  String? get publicationError =>
+      publicationStatus == GameVotePublicationStatus.failed
+      ? accountPublicationError?.call() ?? '已保存在本机，发布失败，请重试'
+      : null;
   bool Function()? cachedCountVisibility;
+  bool Function()? localSelectionVisibility;
   String? get syncError => accountSyncError?.call();
   String? _scope;
   int _revision = 0;
-  int _retryCount = 0;
   int _confirmation = 0;
   int _confirmedRevision = -1;
   int get selectionRevision => _revision;
   List<String> get selectedGames => List.unmodifiable(
-    externalGames?.call() ?? _cache?.ballot.games ?? const <String>[],
+    localSelectionVisibility?.call() == false
+        ? const <String>[]
+        : externalGames?.call() ?? _cache?.ballot.games ?? const <String>[],
   );
   GameVoteSyncStatus status = GameVoteSyncStatus.localOnly;
   bool get ready => _cache != null && loadError == null;
@@ -65,8 +86,7 @@ class GameVoteService extends ChangeNotifier {
             accountScopeProvider?.call() ?? scopeProvider?.call() ?? _scope,
           ) ??
           false);
-  bool hasVoted(String slug) =>
-      (externalGames?.call() ?? _cache?.ballot.games)?.contains(slug) ?? false;
+  bool hasVoted(String slug) => selectedGames.contains(slug);
   int count(String slug) =>
       (cachedCountVisibility?.call() == false
           ? 0
@@ -79,13 +99,11 @@ class GameVoteService extends ChangeNotifier {
   void externalSelectionChanged() {
     if (_disposed || externalGames == null) return;
     _revision++;
-    _retryCount = 0;
-    if ((accountRemoteProvider != null || accountSyncError != null) &&
-        status != GameVoteSyncStatus.paused) {
-      status = GameVoteSyncStatus.syncing;
+    if (status != GameVoteSyncStatus.paused) {
+      publicationStatus = GameVotePublicationStatus.pending;
     }
     _notify();
-    unawaited(sync());
+    unawaited(publish());
   }
 
   Future<void> load() => _loadFuture ??= _load();
@@ -216,26 +234,115 @@ class GameVoteService extends ChangeNotifier {
     }
     if (saved) {
       onSaved?.call();
-      _retryCount = 0;
-      if ((accountRemoteProvider != null || accountSyncError != null) &&
-          status != GameVoteSyncStatus.paused) {
-        status = GameVoteSyncStatus.syncing;
+      if (status != GameVoteSyncStatus.paused) {
+        publicationStatus = GameVotePublicationStatus.pending;
       }
-      unawaited(sync());
+      unawaited(publish());
     }
     return saved;
   }
 
   /// Coalesce refreshes; a newer local vote gets another upload after this run.
-  Future<void> sync() {
+  Future<void> sync({bool fresh = false}) {
     if (_disposed) return Future.value();
     _retry?.cancel();
-    if (_syncFuture != null) return _syncFuture!;
+    if (_syncFuture != null) {
+      // Forward a new user refresh to the coordinator. Merely returning the old
+      // future would swallow its cache-bypass/follow-up request.
+      final remote = fresh
+          ? accountRemoteProvider?.call() ?? remoteProvider?.call()
+          : null;
+      if (remote != null && remote.enabled) {
+        return remote.synchronize().whenComplete(remote.close);
+      }
+      remote?.close();
+      return _syncFuture!;
+    }
     final future = _sync();
     _syncFuture = future;
     return future.whenComplete(() {
       _syncFuture = null;
     });
+  }
+
+  /// Publication has its own future: a slow/failed ranking read cannot hold a
+  /// newly saved cancellation behind it. The coordinator owns bounded retries.
+  Future<void> publish() {
+    if (_disposed) return Future.value();
+    if (_publicationFuture != null) return _publicationFuture!;
+    final revision = _revision;
+    final future = (() async {
+      RemoteGameVoteStore? remote;
+      try {
+        await load();
+        if (_disposed || !ready) return;
+        final selection = externalGames?.call();
+        if (externalGames != null && selection == null) return;
+        remote = accountRemoteProvider?.call() ?? remoteProvider?.call();
+        if (remote == null) {
+          publicationStatus = GameVotePublicationStatus.localOnly;
+          return;
+        }
+        if (!remote.enabled) {
+          publicationStatus = GameVotePublicationStatus.paused;
+          return;
+        }
+        beginPublication();
+        final ballot = externalGames == null
+            ? _cache!.ballot
+            : GameVoteBallot(
+                deviceId: _cache!.ballot.deviceId,
+                games: selection!,
+                namespace: namespace,
+              );
+        await remote.upload(ballot);
+        if (!_disposed &&
+            remote.enabled &&
+            publicationStatus != GameVotePublicationStatus.paused &&
+            revision == _revision) {
+          confirmPublication();
+        }
+      } catch (_) {
+        if (!_disposed) {
+          if (remote != null && !remote.enabled) {
+            publicationStatus = GameVotePublicationStatus.paused;
+          } else {
+            failPublication();
+          }
+        }
+      } finally {
+        remote?.close();
+        _notify();
+      }
+    })();
+    _publicationFuture = future;
+    return future.whenComplete(() {
+      _publicationFuture = null;
+      if (!_disposed &&
+          revision != _revision &&
+          publicationStatus != GameVotePublicationStatus.paused) {
+        unawaited(publish());
+      }
+    });
+  }
+
+  void beginPublication() {
+    if (_disposed) return;
+    publicationStatus = GameVotePublicationStatus.publishing;
+    _notify();
+  }
+
+  void confirmPublication() {
+    if (_disposed) return;
+    _publishedRevision = _revision;
+    publicationStatus = GameVotePublicationStatus.published;
+    _notify();
+  }
+
+  void failPublication() {
+    if (_disposed) return;
+    publicationStatus = GameVotePublicationStatus.failed;
+    _notify();
   }
 
   void markPublicFailure() {
@@ -254,6 +361,7 @@ class GameVoteService extends ChangeNotifier {
     if (_disposed) return;
     _retry?.cancel();
     status = GameVoteSyncStatus.paused;
+    publicationStatus = GameVotePublicationStatus.paused;
     _notify();
   }
 
@@ -263,7 +371,6 @@ class GameVoteService extends ChangeNotifier {
     RemoteGameVoteStore? remote;
     final revision = _revision;
     final confirmation = _confirmation;
-    var changedEndpoint = false;
     try {
       final selection = externalGames?.call();
       if (externalGames != null && selection == null) {
@@ -308,82 +415,29 @@ class GameVoteService extends ChangeNotifier {
         return;
       }
       _activeRemote = remote;
-      if (remote is CoordinatedGameVoteStore) {
-        if (!remote.enabled) {
-          pausePublicSync();
-          return;
-        }
-        // The coordinator saves and confirms totals for both namespaces.
-        // Do not independently overwrite its result with a stale ballot read.
-        await remote.synchronize();
+      if (!remote.enabled) {
+        pausePublicSync();
         return;
       }
-      status = GameVoteSyncStatus.syncing;
-      _notify();
-      final ballots = await (() async {
-        await remote!.upload(own);
-        return remote.readBallots();
-      })().timeout(const Duration(seconds: 25));
-      if (_disposed) return;
-      final currentRemote =
-          accountRemoteProvider?.call() ?? remoteProvider?.call();
-      changedEndpoint = currentRemote?.scope != remote.scope;
-      currentRemote?.close();
-      if (changedEndpoint) return;
-      if (_confirmation != confirmation) return;
-      final totals = <String, int>{};
-      final seen = <String>{};
-      for (final ballot in ballots) {
-        if (ballot.namespace != namespace ||
-            ballot.deviceId == own.deviceId ||
-            !seen.add(ballot.deviceId)) {
-          continue;
-        }
-        for (final slug in ballot.games) {
-          totals[slug] = (totals[slug] ?? 0) + 1;
-          if (totals.length > 32768) {
-            throw StateError('Reaction count limit exceeded');
-          }
-        }
-      }
-      final scope = remote.scope;
-      await _serialize(() async {
-        if (_disposed) return;
-        final next = GameVoteCache(
-          ballot: _cache!.ballot,
-          remoteCounts: {..._cache!.remoteCounts, scope: totals},
-          lastScope: scope,
-        );
-        await _saveCache(next.encode());
-        if (!_disposed) _cache = next;
-      });
-      if (_disposed) return;
-      status = revision == _revision
-          ? GameVoteSyncStatus.synced
-          : GameVoteSyncStatus.syncing;
-      _retryCount = 0;
+      // The coordinator reads the public aggregate and owns its retries.
+      await remote.synchronize();
     } catch (_) {
       if (_disposed) return;
-      if (remote is CoordinatedGameVoteStore && !remote.enabled) {
+      if (remote != null && !remote.enabled) {
         pausePublicSync();
         return;
       }
       if (_confirmation != confirmation && syncError == null) return;
       status = GameVoteSyncStatus.pending;
-      if (remote is! CoordinatedGameVoteStore && _retryCount < 2) {
-        _retry = Timer(
-          Duration(seconds: _retryCount++ == 0 ? 3 : 10),
-          () => unawaited(sync()),
-        );
-      }
     } finally {
       remote?.close();
       _activeRemote = null;
       _notify();
       if (!_disposed &&
-          (remote is! CoordinatedGameVoteStore ||
-              (remote.enabled && _confirmedRevision < _revision)) &&
-          (revision != _revision || changedEndpoint)) {
+          remote != null &&
+          remote.enabled &&
+          _confirmedRevision < _revision &&
+          revision != _revision) {
         // Run only after the coalescing future has cleared.
         _retry?.cancel();
         _retry = Timer(Duration.zero, () => unawaited(sync()));

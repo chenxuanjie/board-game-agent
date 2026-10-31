@@ -15,6 +15,7 @@ class LibraryCheckProgress extends StatelessWidget {
       final checking = controller.checkingLibraryUpdate;
       final failed =
           !checking &&
+          !controller.gameCatalogFailed &&
           controller.libraryAccessAllowed &&
           controller.libraryUpdateError != null;
       final copy = controller.copy;
@@ -37,8 +38,10 @@ class LibraryCheckProgress extends StatelessWidget {
                   Expanded(
                     child: Text(
                       copy.localized(
-                        '检查未完成，已有资料仍可浏览',
-                        'Check incomplete. Saved games are still available.',
+                        controller.hasGames ? '检查未完成，已有资料仍可浏览' : '资料检查未完成',
+                        controller.hasGames
+                            ? 'Check incomplete. Saved games are still available.'
+                            : 'Library check incomplete.',
                       ),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),

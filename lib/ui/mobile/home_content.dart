@@ -15,6 +15,8 @@ import '../shared/content_cards.dart';
 import 'game_content_card.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_entrance.dart';
+import '../shared/library_catalog_status.dart';
+import '../shared/catalog_empty_state.dart';
 
 class MobileHomeContent extends StatefulWidget {
   const MobileHomeContent({
@@ -26,8 +28,6 @@ class MobileHomeContent extends StatefulWidget {
     required this.onOpenAi,
     required this.onRankings,
     required this.onFavorites,
-    required this.onAccount,
-    required this.onActivities,
     required this.onRules,
     required this.onOpenNationalDay,
   });
@@ -39,8 +39,6 @@ class MobileHomeContent extends StatefulWidget {
   final VoidCallback onOpenAi;
   final VoidCallback onRankings;
   final VoidCallback onFavorites;
-  final VoidCallback onAccount;
-  final VoidCallback onActivities;
   final VoidCallback onRules;
   final VoidCallback onOpenNationalDay;
 
@@ -100,6 +98,7 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
           children: [
             _header(copy),
             const SizedBox(height: 18),
+            LibraryCatalogStatus(controller: widget.controller, home: true),
             _carousel(copy),
             const SizedBox(height: 22),
             _shortcuts(copy),
@@ -200,40 +199,6 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
         icon: Icon(
           Icons.search_rounded,
           color: AppPalette.of(context).textPrimary,
-        ),
-      ),
-      Stack(
-        children: [
-          IconButton(
-            key: const ValueKey('mobile-home-activities'),
-            tooltip: copy.localized('消息', 'Notifications'),
-            onPressed: widget.onActivities,
-            icon: Icon(
-              Icons.notifications_none_rounded,
-              color: AppPalette.of(context).textPrimary,
-            ),
-          ),
-          if (widget.controller.unreadActivityCount > 0)
-            Positioned(
-              right: 11,
-              top: 8,
-              child: CircleAvatar(
-                radius: 4,
-                backgroundColor: AppPalette.of(context).primary,
-              ),
-            ),
-        ],
-      ),
-      IconButton(
-        key: const ValueKey('mobile-home-profile'),
-        tooltip: copy.localized('账户', 'Account'),
-        onPressed: widget.onAccount,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-        icon: const CircleAvatar(
-          radius: 19,
-          backgroundColor: Color(0xFFFFE6CE),
-          child: Icon(Icons.person_rounded, color: Color(0xFF955B3B)),
         ),
       ),
     ],
@@ -588,16 +553,21 @@ class _MobileHomeContentState extends State<MobileHomeContent> {
   );
 
   Widget _emptyRecent(AppCopy copy) => Container(
-    height: 102,
+    constraints: const BoxConstraints(minHeight: 102),
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: AppPalette.of(context).surface,
       borderRadius: BorderRadius.circular(UiTokens.cardRadius),
       border: Border.all(color: AppPalette.of(context).outline),
     ),
-    child: TextButton(
-      onPressed: widget.onSearch,
-      child: Text(copy.localized('去发现喜欢的桌游', 'Find a game to play')),
+    child: CatalogEmptyState(
+      controller: widget.controller,
+      emptyMessage: copy.localized('暂无推荐桌游', 'No recommendations yet'),
+      failureMessage: copy.localized(
+        '暂时无法加载推荐桌游',
+        'Recommendations are unavailable',
+      ),
+      onBrowse: widget.onSearch,
     ),
   );
 

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('provider presets keep model and authentication settings together', () {
     expect(AiProviderPreset.values, <AiProviderPreset>[
+      AiProviderPreset.loomex,
       AiProviderPreset.openAi,
       AiProviderPreset.deepSeek,
       AiProviderPreset.custom,
@@ -142,7 +143,7 @@ void main() {
       AiApiConfig.isBuiltInProviderName('Custom OpenAI-compatible'),
       isTrue,
     );
-    expect(AiApiConfig.isBuiltInProviderName('Loomex'), isFalse);
+    expect(AiApiConfig.isBuiltInProviderName('Loomex'), isTrue);
   });
 
   test(

@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat, PointerDeviceKind;
@@ -15,9 +16,6 @@ import 'package:board_game_agent/ui/mobile/home_screen.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/mobile/settings_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
-import 'package:board_game_agent/core/theme/cinema_theme.dart';
-import 'package:board_game_agent/core/theme/palette_registry.dart';
-import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_workspace.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_material.dart';
 import 'package:board_game_agent/ui/shared/spatial/spatial_primitives.dart';
@@ -45,7 +43,6 @@ import 'package:board_game_agent/features/games/models/search_history_record.dar
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/conversation_store.dart';
 import 'package:board_game_agent/features/settings/services/desktop_ai_settings_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
@@ -58,6 +55,7 @@ import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/home_pane.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
+import 'package:board_game_agent/ui/shared/assistant/model_selector.dart';
 import 'package:board_game_agent/ui/desktop/games_pane.dart';
 import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';
@@ -76,8 +74,8 @@ part 'desktop/desktop_home_test_cases.dart';
 part 'desktop/desktop_typography_test_cases.dart';
 part 'desktop/desktop_assistant_design_test_cases.dart';
 part 'desktop/desktop_national_day_test_cases.dart';
-part 'desktop/desktop_cinema_test_cases.dart';
 part 'desktop/desktop_spatial_test_cases.dart';
+part 'desktop/spatial_artwork_fixture.dart';
 
 class _DesktopWorkspaceTestContext {
   const _DesktopWorkspaceTestContext({
@@ -136,7 +134,6 @@ void main() {
   _registerDesktopTypographyTests(workspaceContext);
   _registerAssistantDesignTests(workspaceContext);
   _registerDesktopNationalDayTests(workspaceContext);
-  _registerCinemaTests(workspaceContext);
   _registerSpatialTests(workspaceContext);
 
   test('opening a new assistant does not create a fake reply', () {
@@ -193,6 +190,8 @@ void main() {
       await controller.refreshAiModels();
       await _mount(tester, controller, size);
       await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('desktop-model-selector')),
       );
@@ -257,6 +256,8 @@ void main() {
   testWidgets('model picker explains an unconfigured service', (tester) async {
     await _mount(tester, controller, const Size(720, 700));
     await _navigate(tester, 'AI助手');
+    await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('desktop-model-selector')),
     );
@@ -385,7 +386,7 @@ Future<AppController> _createController({
     preferencesService: preferencesService ?? PreferencesService(),
     aiService: aiService ?? _FakeAiService(),
     conversationStore: _WorkspaceConversationStore(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: remoteAssetService ?? _NoNetworkAssetService(),
     speechService: SpeechService(),
     ttsService: ttsService ?? TtsService(),
@@ -562,12 +563,6 @@ class _NoNetworkAssetService extends RemoteAssetService {
     int maxDepth = 6,
     int maxEntries = 1000,
   }) async => const <RemoteAssetFile>[];
-
-  @override
-  Future<bool> hasRemoteChanged({
-    required List<AssetSourceConfig> sources,
-    required String remotePath,
-  }) async => false;
 }
 
 class _NoopHttpClient extends http.BaseClient {

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import '../shared/library_catalog_status.dart';
+import '../shared/catalog_empty_state.dart';
 import '../shared/content_entrance.dart';
 import '../shared/library_check_progress.dart';
 import '../shared/library_viewport.dart';
 import '../../app/state/browse_session.dart';
 
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/cinema_theme.dart';
+
 import '../../core/theme/ui_tokens.dart';
 
 import '../../app/state/app_controller.dart';
@@ -19,18 +21,10 @@ class MobileLibraryContent extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenGame,
-    required this.onActivities,
-    required this.onProfile,
-    this.accountActions,
   });
 
   final AppController controller;
   final ValueChanged<GameInfo> onOpenGame;
-  final VoidCallback onActivities;
-  final VoidCallback onProfile;
-
-  /// Optional shared account entry supplied by an alternate presentation shell.
-  final Widget? accountActions;
 
   @override
   State<MobileLibraryContent> createState() => _MobileLibraryContentState();
@@ -126,53 +120,6 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                       ],
                     ),
                   ),
-                  if (widget.accountActions case final actions?)
-                    actions
-                  else ...[
-                    Stack(
-                      children: [
-                        IconButton(
-                          tooltip: copy.localized('消息', 'Notifications'),
-                          onPressed: widget.onActivities,
-                          icon: Icon(
-                            Icons.notifications_none_rounded,
-                            color: AppPalette.of(context).textPrimary,
-                          ),
-                        ),
-                        if (widget.controller.unreadActivityCount > 0)
-                          Positioned(
-                            right: 10,
-                            top: 9,
-                            child: CircleAvatar(
-                              radius: 4,
-                              backgroundColor: AppPalette.of(context).primary,
-                            ),
-                          ),
-                      ],
-                    ),
-                    IconButton(
-                      key: const ValueKey('mobile-library-profile'),
-                      tooltip: copy.localized('账户', 'Account'),
-                      onPressed: widget.onProfile,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 48,
-                        height: 48,
-                      ),
-                      icon: CircleAvatar(
-                        radius: 19,
-                        backgroundColor: isCinema(context)
-                            ? AppPalette.of(context).surfaceContainer
-                            : const Color(0xFFFFE6CE),
-                        child: Icon(
-                          Icons.person_rounded,
-                          color: isCinema(context)
-                              ? AppPalette.of(context).textPrimary
-                              : const Color(0xFF955B3B),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -205,9 +152,7 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
                   filled: true,
                   fillColor: AppPalette.of(context).inputSurface,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(
-                      isCinema(context) ? 12 : 28,
-                    ),
+                    borderRadius: BorderRadius.circular(28),
                     borderSide: BorderSide.none,
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -215,6 +160,11 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
               ),
             ),
             LibraryCheckProgress(controller: widget.controller),
+            if (widget.controller.hasGames)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: LibraryCatalogStatus(controller: widget.controller),
+              ),
             SizedBox(
               height: 44,
               child: ListView.separated(
@@ -269,18 +219,29 @@ class _MobileLibraryContentState extends State<MobileLibraryContent> {
             Expanded(
               child: games.isEmpty
                   ? Center(
-                      child: Text(copy.localized('没有找到桌游', 'No games found')),
+                      child: CatalogEmptyState(
+                        controller: widget.controller,
+                        emptyMessage: copy.localized(
+                          '没有找到桌游',
+                          'No games found',
+                        ),
+                        onClear: _browse.hasFilters || query.isNotEmpty
+                            ? () => setState(() {
+                                _search.clear();
+                                _browse.clearFilters();
+                              })
+                            : null,
+                        clearLabel: copy.localized(
+                          '清除搜索和筛选',
+                          'Clear search and filters',
+                        ),
+                      ),
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = isCinema(context)
-                            ? ((constraints.maxWidth - 32 + 12) / (136 + 12))
-                                  .floor()
-                                  .clamp(1, 4)
-                            : ((constraints.maxWidth - 20) / 172).floor().clamp(
-                                2,
-                                4,
-                              );
+                        final columns = ((constraints.maxWidth - 20) / 172)
+                            .floor()
+                            .clamp(2, 4);
                         final width =
                             (constraints.maxWidth - 32 - (columns - 1) * 12) /
                             columns;

@@ -5,8 +5,7 @@ import 'package:board_game_agent/features/identity/services/account_service.dart
 import 'package:board_game_agent/features/identity/services/saved_login_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'account_service_test.dart'
-    show FixtureApp, FixtureGateway, configuration;
+import 'account_service_test.dart' show FixtureApp, FixtureGateway;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -162,7 +161,7 @@ void main() {
         switchScope: (_) async {},
       );
       var service = create();
-      await service.saveConfiguration(configuration());
+      await service.configureService('https://service.example.test');
       await service.signIn(
         account: 'reader',
         password: 'synthetic',
@@ -170,7 +169,7 @@ void main() {
       );
       expect(service.savedLogins.single.password, 'synthetic');
       await service.signOut();
-      expect(service.resourceCredentialsReady, isFalse);
+
       expect(service.savedLogins.single.username, 'reader');
       service.dispose();
       service = create();
@@ -178,7 +177,7 @@ void main() {
       await service.loadSavedLogins();
       expect(service.isSignedIn, isFalse);
       expect(service.savedLogins.single.password, 'synthetic');
-      await service.saveConfiguration(configuration('separate.example.test'));
+      await service.configureService('https://separate.example.test');
       expect(service.savedLogins, isEmpty);
       service.dispose();
       app.dispose();
@@ -194,7 +193,7 @@ void main() {
       gatewayFactory: (_) async => gateway,
       switchScope: (_) async {},
     );
-    await service.saveConfiguration(configuration());
+    await service.configureService('https://service.example.test');
     await service.signIn(
       account: 'reader',
       password: 'synthetic',
@@ -218,7 +217,7 @@ void main() {
         gatewayFactory: (_) async => FixtureGateway(),
         switchScope: (_) async {},
       );
-      await service.saveConfiguration(configuration());
+      await service.configureService('https://service.example.test');
       await service.signIn(
         account: 'reader',
         password: 'synthetic',

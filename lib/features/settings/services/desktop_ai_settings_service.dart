@@ -11,6 +11,7 @@ class DesktopAiSettingsDraft {
     required this.baseUrl,
     this.reasoningEffort = AiReasoningEffort.automatic,
     this.responseSpeed = AiResponseSpeed.standard,
+    this.accountService = false,
   });
 
   final String provider;
@@ -19,6 +20,7 @@ class DesktopAiSettingsDraft {
   final String baseUrl;
   final AiReasoningEffort reasoningEffort;
   final AiResponseSpeed responseSpeed;
+  final bool accountService;
 
   AiApiConfig mergeWith(AiApiConfig current) => current.copyWith(
     name: provider.trim(),
@@ -27,6 +29,8 @@ class DesktopAiSettingsDraft {
     baseUrl: baseUrl.trim(),
     reasoningEffort: reasoningEffort,
     responseSpeed: responseSpeed,
+    accountService: accountService,
+    accountContext: accountService ? current.accountContext : '',
   );
 }
 
@@ -85,7 +89,7 @@ class DesktopAiSettingsService {
         ),
       );
     }
-    if (apiKey.isEmpty) {
+    if (!draft.accountService && apiKey.isEmpty) {
       throw DesktopAiSettingsException(
         copy.localized('请输入 API Key。', 'Enter an API key.'),
       );

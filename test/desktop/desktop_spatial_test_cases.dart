@@ -90,46 +90,76 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
   }
   for (final size in [const Size(1440, 1000), const Size(390, 844)]) {
     testWidgets(
-      'Spatial account menu unifies notifications and library entry at $size',
+      'Spatial hides compact home actions and keeps wide account menu at $size',
       (tester) async {
         final c = context.controller;
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await c.setColorScheme(ColorSchemeOption.spatialCinema);
         await _mountSpatial(tester, c, size);
-        expect(
-          find.byKey(const ValueKey('account-menu-button')),
-          findsOneWidget,
-        );
         expect(find.byIcon(Icons.notifications_none), findsNothing);
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+        if (size.width < 760) {
+          expect(
+            find.byKey(const ValueKey('account-menu-button')),
+            findsNothing,
+          );
+          expect(
+            find.byKey(const ValueKey('mobile-scan-placeholder')),
+            findsNothing,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('spatial-open-navigation')),
+          );
+          await tester.pumpAndSettle();
+        } else {
+          expect(
+            find.byKey(const ValueKey('account-menu-button')),
+            findsOneWidget,
+          );
+          await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('account-menu-notifications')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(DesktopActivityPopup), findsOneWidget);
+          expect(c.unreadActivityCount, 0);
+          await tester.tap(find.byTooltip(c.copy.dialogClose));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('account-menu-notifications')),
+        expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('mobile-library-profile')),
+          findsNothing,
         );
-        await tester.pumpAndSettle();
-        expect(find.byType(DesktopActivityPopup), findsOneWidget);
-        expect(c.unreadActivityCount, 0);
-        await tester.tap(find.byTooltip(c.copy.dialogClose));
+        if (size.width < 760) {
+          Navigator.of(tester.element(find.byType(MobileLibraryContent))).pop();
+        } else {
+          await tester.tap(find.byKey(const ValueKey('spatial-menu-home')));
+        }
         await tester.pumpAndSettle();
         if (size.width < 760) {
           await tester.tap(
             find.byKey(const ValueKey('spatial-open-navigation')),
           );
           await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.byKey(const ValueKey('spatial-menu-account')),
+            200,
+            scrollable: find
+                .descendant(
+                  of: find.byType(BottomSheet),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          await tester.tap(find.byKey(const ValueKey('spatial-menu-account')));
+        } else {
+          await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('account-menu-account')));
         }
-        await tester.tap(find.byKey(const ValueKey('spatial-menu-games')));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('account-menu-button')),
-          findsOneWidget,
-        );
-        expect(
-          find.byKey(const ValueKey('mobile-library-profile')),
-          findsNothing,
-        );
-        await tester.tap(find.byKey(const ValueKey('account-menu-button')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('account-menu-account')));
         await tester.pumpAndSettle();
         expect(find.byType(AccountScreen), findsOneWidget);
         expect(tester.takeException(), isNull);
@@ -420,7 +450,6 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
       await c.setColorScheme(ColorSchemeOption.spatialCinema);
       await _mountSpatial(tester, c, size);
       expect(find.byType(DesktopWorkspace), findsNothing);
-      expect(find.byType(CinemaHomeContent), findsNothing);
       expect(find.byType(SpatialGlass), findsOneWidget);
       expect(find.byType(SpatialPoster), findsWidgets);
       if (size.width >= 1020) {
@@ -568,7 +597,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
     },
   );
   testWidgets(
-    'Spatial source material and searchable real catalog are independent of Cinema',
+    'Spatial source material and searchable real catalog use independent layouts',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = context.controller;
@@ -617,7 +646,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
         final c = await tester.runAsync(
           () => _createController(
             ttsService: _UnavailableTtsService(),
-            remoteAssetService: _LocalCinemaAssets(),
+            remoteAssetService: _LocalSpatialAssets(),
           ),
         );
         addTearDown(c!.dispose);
@@ -629,7 +658,7 @@ void _registerSpatialTests(_DesktopWorkspaceTestContext context) {
         addTearDown(
           () => PaintingBinding.instance.imageCache.maximumSizeBytes = cache,
         );
-        await _warmCinemaPictures(tester, c);
+        await _warmSpatialPictures(tester, c);
         await _mountSpatial(tester, c, const Size(1440, 1000));
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 300)),

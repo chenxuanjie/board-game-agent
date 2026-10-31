@@ -1,157 +1,154 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
-import 'package:app_identity/app_identity.dart';
+import 'package:app_client/app_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../models/game_comment.dart';
 
-/// Independent public namespace; never shares reaction files or sync status.
+/// Public reads and authenticated, durable idempotent commands are independent.
+/// Each instance is pinned to its service/account; late work cannot cross it.
 final class GameCommentsService extends ChangeNotifier {
   GameCommentsService({
-    required this.files,
+    required this.client,
     required this.scope,
     required this.isActive,
     required this.displayName,
-    this.readOnly = false,
+    this.token,
+    this.uid = '',
   });
-  final AccountPublicFiles files;
-  final String scope;
+  final AppJsonClient client;
+  final String scope, uid;
   final bool Function() isActive;
   final String Function() displayName;
-  final bool readOnly;
-  final Map<String, CommentOperation> _events = {}, _own = {};
-  final Set<String> _pending = {};
-  final Set<String> _confirmedLikes = {};
-  final Map<String, bool> _optimisticLikes = {};
-  final Map<String, Future<void>> _likeTasks = {};
-  Future<void> _localQueue = Future.value();
-  Future<void>? _syncTask;
-  Future<void>? _ready;
+  final Future<String> Function()? token;
+  bool get readOnly => token == null;
+  bool get canWrite => !readOnly && !_disposed && isActive();
+  final _games = <String>{};
+  final _watchCounts = <String, int>{};
+  final _requestedGames = <String>{};
+  final _rows = <String, Map<String, dynamic>>{};
+  final _commands = <Map<String, dynamic>>[];
+  final _optimistic = <String, Map<String, dynamic>>{};
+  final _likes = <String, bool>{};
+  Future<void>? _ready, _sync;
+  Future<void>? _writes;
   SharedPreferences? _prefs;
-  String? _device;
   bool _disposed = false, loading = false;
-  int _generation = 0;
+  String? error;
   Timer? _retry;
   int _attempts = 0;
-  String? error;
-  late final int uid = files.uid;
-  bool get canWrite => !readOnly && !_disposed && isActive();
-  bool get pending => _pending.isNotEmpty;
-  Set<String> get pendingIds => Set.unmodifiable(_pending);
-  bool likePending(String commentId) => _pending.any(
-    (id) =>
-        _own[id]?.action == CommentAction.like && _own[id]?.target == commentId,
-  );
-  // Pending reactions are an intention, not a confirmed remote vote. The UI
-  // temporarily overlays the intention while its actual request is in flight.
-  CommentProjection get projection => CommentProjection(
-    _events.values.where(
-      (op) =>
-          op.action != CommentAction.like ||
-          !_pending.contains(op.id) ||
-          _confirmedLikes.contains(op.id),
-    ),
-    uid,
-  );
-  bool? optimisticLike(String commentId) => _optimisticLikes[commentId];
-  bool likeInFlight(String commentId) => _likeTasks.containsKey(commentId);
+  String get _key => 'board.community.api.v1.$scope';
+  bool get pending => _commands.isNotEmpty;
+  Set<String> get pendingIds => {
+    for (final c in _commands)
+      if (c['action'] == 'publish') c['comment_id'] as String,
+  };
   bool get onlyLikesPending =>
-      _pending.isNotEmpty &&
-      _pending.every((id) => _own[id]?.action == CommentAction.like);
-  String get _key => 'game_comments.v1.$scope';
-  static String newId([String prefix = 'c']) {
-    final random = Random.secure();
-    return '$prefix${List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
+      pending && _commands.every((c) => c['action'] == 'like');
+  bool likePending(String id) =>
+      _commands.any((c) => c['action'] == 'like' && c['comment_id'] == id);
+  bool? optimisticLike(String id) => _likes[id];
+  bool likeInFlight(String id) => loading && likePending(id);
+  CommentProjection get projection =>
+      CommentProjection({..._rows, ..._optimistic}.values);
+  static String newId([String prefix = 'c']) =>
+      '$prefix${const Uuid().v4().replaceAll('-', '')}';
+  void watchGame(String slug) {
+    if (!CommentOperation.gamePattern.hasMatch(slug)) return;
+    _watchCounts[slug] = (_watchCounts[slug] ?? 0) + 1;
+    _games.add(slug);
   }
 
-  Future<void> initialize() =>
-      _ready ??= _initialize().catchError((Object failure) {
-        _ready = null;
-        throw failure;
-      });
-  Future<void> _initialize() async {
-    _prefs = await SharedPreferences.getInstance();
-    if (_disposed) return;
-    _device = _prefs!.getString('$_key.device') ?? newId('d');
-    if (!RegExp(r'^d[0-9a-f]{32}$').hasMatch(_device!)) {
-      throw const FormatException('评论设备标识无效');
+  void unwatchGame(String slug) {
+    final count = _watchCounts[slug] ?? 0;
+    if (count > 1) {
+      _watchCounts[slug] = count - 1;
+      return;
     }
-    if (!await _prefs!.setString('$_key.device', _device!)) {
-      throw StateError('评论存储不可用');
+    _watchCounts.remove(slug);
+    if (!_commands.any((command) => command['game_slug'] == slug)) {
+      _games.remove(slug);
+      _requestedGames.remove(slug);
     }
-    final text = _prefs!.getString(_key);
-    if (text != null) {
-      final data = jsonDecode(text) as Map<String, dynamic>;
-      for (final raw in data['own'] as List) {
-        final op = CommentOperation.fromJson(
-          Map<String, dynamic>.from(raw as Map),
-          uid,
-        );
-        _own[op.id] = op;
-      }
-      for (final raw in data['events'] as List) {
-        final map = Map<String, dynamic>.from(raw as Map);
-        final op = CommentOperation.fromJson(map, map['uid'] as int);
-        _events[op.id] = op;
-      }
-      _events.addAll(_own);
-      _pending.addAll((data['pending'] as List).cast<String>());
-      if (!_pending.every(_own.containsKey)) {
-        throw const FormatException('待发评论记录无效');
-      }
-      final confirmed = data['confirmedLikes'];
-      if (confirmed != null && confirmed is! List) {
-        throw const FormatException('点赞确认记录无效');
-      }
-      _confirmedLikes.addAll(
-        confirmed == null
-            ? _own.values
-                  .where(
-                    (op) =>
-                        op.action == CommentAction.like &&
-                        !_pending.contains(op.id),
-                  )
-                  .map((op) => op.id)
-            : (confirmed as List).cast<String>(),
-      );
-      if (!_confirmedLikes.every(
-        (id) => _own[id]?.action == CommentAction.like,
-      )) {
-        throw const FormatException('点赞确认记录无效');
-      }
-    }
-    _notify();
+  }
+
+  Set<String> get watchedGames => Set.unmodifiable(_watchCounts.keys);
+
+  Future<void> refreshGames(Iterable<String> changed) {
+    _requestedGames.addAll(changed.where(_watchCounts.containsKey));
+    return _requestedGames.isEmpty ? Future.value() : _startSync();
+  }
+
+  void _check() {
+    if (_disposed || !isActive()) throw StateError('账号已切换');
   }
 
   void _notify() {
     if (!_disposed) notifyListeners();
   }
 
-  void _check(int generation) {
-    if (_disposed || generation != _generation || !isActive()) {
-      throw const PrivateFileException(PrivateFileFailure.cancelled);
+  Future<void> initialize() => _ready ??= (() async {
+    _prefs = await SharedPreferences.getInstance();
+    final raw = _prefs!.getString(_key);
+    if (raw == null) return;
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    _commands.addAll((data['commands'] as List).cast<Map<String, dynamic>>());
+    _games.addAll(_commands.map((command) => command['game_slug'] as String));
+    for (final r in (data['optimistic'] as List).cast<Map<String, dynamic>>()) {
+      _optimistic[r['id'] as String] = r;
     }
-  }
-
-  Future<T> _local<T>(Future<T> Function() work) {
-    final task = _localQueue.then((_) => work());
-    _localQueue = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return task;
+  })();
+  Future<void> _local(Future<void> Function() work) {
+    final next = (_writes ?? Future<void>.value())
+        .catchError((Object _) {})
+        .then((_) async {
+          _check();
+          await work();
+        });
+    _writes = next;
+    return next;
   }
 
   Future<void> _save() async {
-    final content = jsonEncode({
-      'own': _own.values.map((v) => v.toJson()).toList(),
-      'events': _events.values.map((v) => v.toJson()).toList(),
-      'pending': _pending.toList(),
-      'confirmedLikes': _confirmedLikes.toList(),
+    final raw = jsonEncode({
+      'commands': _commands,
+      'optimistic': _optimistic.values.toList(),
     });
-    if (!await _prefs!.setString(_key, content)) throw StateError('评论未保存到本机');
+    if (utf8.encode(raw).length > 512 * 1024 ||
+        !await _prefs!.setString(_key, raw)) {
+      throw StateError('待发送内容未保存，请重试');
+    }
   }
 
-  int get _nextRevision =>
-      _events.values.fold(0, (int value, op) => max(value, op.revision)) + 1;
+  Future<void> _enqueue(
+    Map<String, dynamic> command, {
+    Map<String, dynamic>? optimistic,
+  }) async {
+    await initialize();
+    await _local(() async {
+      if (!canWrite) throw StateError('请先登录');
+      final old = _commands.where((c) => c['id'] == command['id']).firstOrNull;
+      if (old != null) {
+        if (jsonEncode(old) != jsonEncode(command)) throw StateError('请先重试原内容');
+        return;
+      }
+      _commands.add(command);
+      if (optimistic != null) {
+        _optimistic[optimistic['id'] as String] = optimistic;
+      }
+      try {
+        await _save();
+      } catch (_) {
+        _commands.remove(command);
+        if (optimistic != null) _optimistic.remove(optimistic['id']);
+        rethrow;
+      }
+      _games.add(command['game_slug'] as String);
+      _notify();
+    });
+  }
+
   Future<String> publish({
     required String game,
     required String text,
@@ -159,328 +156,194 @@ final class GameCommentsService extends ChangeNotifier {
     String? parent,
     String? operationId,
   }) async {
-    await initialize();
-    return _local(() async {
-      if (!canWrite) throw StateError('请联网登录后重试');
-      final id = operationId ?? newId();
-      final existing = _own[id];
-      if (existing != null) {
-        if (existing.game != game ||
-            existing.text != text.trim() ||
-            existing.rating != rating ||
-            existing.replyTo != parent) {
-          throw StateError('待发送内容已保存，请先重试原评论');
-        }
-        return id;
-      }
-      final target = parent == null ? null : projection.comments[parent];
-      if (parent != null &&
-          (target == null ||
-              target.game != game ||
-              projection.deleted.contains(parent))) {
-        throw StateError('该评论已删除，请刷新后重试');
-      }
-      final op = CommentOperation(
-        id: id,
-        uid: uid,
-        game: game,
-        action: CommentAction.publish,
-        revision: _nextRevision,
-        at: DateTime.now().toUtc(),
-        author: displayName().trim(),
-        text: text.trim(),
-        rating: rating,
-        root: target == null ? null : target.root ?? target.id,
-        replyTo: parent,
-      );
-      await _append(op);
-      return id;
-    });
+    final id = operationId ?? newId();
+    if (!CommentOperation.gamePattern.hasMatch(game) ||
+        !CommentOperation.idPattern.hasMatch(id) ||
+        text.trim().isEmpty ||
+        text.contains('\u0000') ||
+        text.length > 1000 ||
+        (rating != null && (rating < 1 || rating > 10))) {
+      throw StateError('评论内容无效');
+    }
+    final root = parent == null ? null : projection.comments[parent];
+    await _enqueue(
+      {
+        'id': id,
+        'action': 'publish',
+        'game_slug': game,
+        'comment_id': id,
+        'body': text.trim(),
+        'rating': rating,
+        'parent_id': parent,
+      },
+      optimistic: {
+        'id': id,
+        'author_id': uid,
+        'game_slug': game,
+        'author': displayName(),
+        'text': text.trim(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'parent_id': parent,
+        'root_id': root == null ? null : root.root ?? root.id,
+        'rating': rating,
+        'deleted': false,
+        'likes': 0,
+        'liked_by_me': false,
+      },
+    );
+    return id;
   }
 
   Future<void> delete(GameComment comment) async {
-    await initialize();
-    await _local(() async {
-      if (!canWrite || comment.operation.uid != uid) {
-        throw StateError('只能删除自己的评论');
-      }
-      await _append(
-        CommentOperation(
-          id: newId(),
-          uid: uid,
-          game: comment.operation.game,
-          action: CommentAction.delete,
-          revision: _nextRevision,
-          at: DateTime.now().toUtc(),
-          target: comment.id,
-        ),
-      );
+    if (comment.operation.uid != uid) throw StateError('只能删除自己的评论');
+    await _enqueue({
+      'id': const Uuid().v4(),
+      'action': 'delete',
+      'game_slug': comment.operation.game,
+      'comment_id': comment.id,
     });
     await synchronize();
   }
 
-  Future<void> toggleLike(GameComment comment) {
-    final existing = _likeTasks[comment.id];
-    if (existing != null) return existing;
-    if (!canWrite || comment.deleted) return Future.error(StateError('请刷新后重试'));
-    final desired = !comment.likedByMe;
-    _optimisticLikes[comment.id] = desired;
-    late final Future<void> task;
-    task = _setLike(comment, desired).whenComplete(() {
-      if (identical(_likeTasks[comment.id], task)) {
-        _likeTasks.remove(comment.id);
-        _optimisticLikes.remove(comment.id);
-        _notify();
-      }
-    });
-    _likeTasks[comment.id] = task;
-    _notify();
-    return task;
-  }
-
-  Future<void> _setLike(GameComment comment, bool desired) async {
-    await initialize();
-    await _local(() async {
-      if (!canWrite ||
-          !projection.comments.containsKey(comment.id) ||
-          projection.deleted.contains(comment.id)) {
-        throw StateError('请刷新后重试');
-      }
-      final reactions =
-          _events.values
-              .where(
-                (op) =>
-                    op.uid == uid &&
-                    op.action == CommentAction.like &&
-                    op.target == comment.id,
-              )
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
-      // A failed click retries the same durable intention, rather than
-      // accidentally turning the vote off or adding a duplicate event.
-      if (reactions.isNotEmpty &&
-          reactions.first.liked == desired &&
-          _pending.contains(reactions.first.id)) {
-        return;
-      }
-      await _append(
-        CommentOperation(
-          id: newId(),
-          uid: uid,
-          game: comment.operation.game,
-          action: CommentAction.like,
-          revision: _nextRevision,
-          at: DateTime.now().toUtc(),
-          target: comment.id,
-          liked: desired,
-        ),
-      );
-    });
-    await synchronize();
-  }
-
-  Future<void> _append(CommentOperation op) async {
-    CommentOperation.fromJson(op.toJson(), uid);
-    final candidate = {..._own, op.id: op};
-    if (utf8.encode(_snapshot(candidate)).length > 512 * 1024) {
-      throw StateError('本机评论记录已满，请联系管理员');
-    }
-    _own[op.id] = op;
-    _events[op.id] = op;
-    _pending.add(op.id);
+  Future<void> toggleLike(GameComment comment) async {
+    if (likeInFlight(comment.id)) return;
+    final desired = !(_likes[comment.id] ?? comment.likedByMe);
+    _likes[comment.id] = desired;
     try {
-      await _save();
-    } catch (_) {
-      _own.remove(op.id);
-      _events.remove(op.id);
-      _pending.remove(op.id);
-      rethrow;
+      await _enqueue({
+        'id': const Uuid().v4(),
+        'action': 'like',
+        'game_slug': comment.operation.game,
+        'comment_id': comment.id,
+        'active': desired,
+      });
+      await synchronize();
+    } finally {
+      _likes.remove(comment.id);
+      _notify();
     }
-    _notify();
-  }
-
-  String _snapshot(Map<String, CommentOperation> events) {
-    final list = events.values.toList()..sort((a, b) => a.id.compareTo(b.id));
-    return jsonEncode({
-      'version': 1,
-      'uid': uid,
-      'device': _device,
-      'operations': list.map((v) => v.toJson()).toList(),
-    });
   }
 
   Future<void> synchronize() {
-    if (_disposed) return Future.value();
-    if (_syncTask != null) return _syncTask!;
-    final task = _synchronize().timeout(
-      const Duration(minutes: 2),
-      onTimeout: () {
-        _generation++;
-        files.cancelRequests();
-        loading = false;
-        error = pending ? '发送超时，本机内容已保留，请重试' : '评论刷新超时，请重试';
-        _notify();
-        if (pending) _scheduleRetry();
-      },
-    );
-    _syncTask = task;
-    return task.whenComplete(() {
-      if (identical(_syncTask, task)) _syncTask = null;
-    });
+    _requestedGames.addAll(_games);
+    return _startSync();
   }
 
-  Future<void> _synchronize() async {
-    final generation = _generation;
+  Future<void> _startSync() {
+    if (_disposed) return Future.value();
+    return _sync ??=
+        (() async {
+          // Drain changes received during a read as a fresh follow-up snapshot.
+          // Keep one in-flight request set, bounded even for a continuously busy feed.
+          for (var pass = 0; pass < 8; pass++) {
+            final games = Set<String>.of(_requestedGames);
+            _requestedGames.clear();
+            await _synchronize(games);
+            if (error != null ||
+                _disposed ||
+                !isActive() ||
+                _requestedGames.isEmpty) {
+              break;
+            }
+          }
+        })().whenComplete(() {
+          _sync = null;
+          if (!_disposed &&
+              isActive() &&
+              error == null &&
+              _requestedGames.isNotEmpty) {
+            _retry = Timer(
+              const Duration(milliseconds: 250),
+              () => unawaited(_startSync()),
+            );
+          }
+        });
+  }
+
+  Future<void> _synchronize(Set<String> games) async {
     loading = true;
     error = null;
     _retry?.cancel();
     _notify();
     try {
       await initialize();
-      _check(generation);
-      await _readAll(generation);
-      // Local clicks during an upload are included before this task completes.
-      for (var round = 0; round < 3; round++) {
-        final upload = await _local(
-          () async => Map<String, CommentOperation>.from(_own),
+      _check();
+      for (var n = 0; n < 100 && _commands.isNotEmpty; n++) {
+        final command = _commands.first;
+        final response = await client.request(
+          '/v1/community/commands',
+          token: await token!(),
+          body: command,
         );
-        if (_pending.isEmpty) break;
-        final text = _snapshot(upload);
-        final path = 'u$uid/$_device.json';
-        _check(generation);
-        await files.replaceOwn(path, text);
-        _check(generation);
-        if (await files.read(path) != text) throw StateError('评论写入核对未完成');
-        _check(generation);
+        _check();
+        if (response['id'] != command['id'] ||
+            response['status'] != 'applied') {
+          throw StateError('Invalid acknowledgement');
+        }
         await _local(() async {
-          _check(generation);
-          _pending.removeAll(upload.keys);
-          _confirmedLikes.addAll(
-            upload.values
-                .where((op) => op.action == CommentAction.like)
-                .map((op) => op.id),
-          );
-          await _save();
-          _notify();
+          _commands.removeAt(0);
+          try {
+            await _save();
+          } catch (_) {
+            _commands.insert(0, command);
+            rethrow;
+          }
         });
-        await _readAll(generation);
       }
-      _attempts = 0;
-      if (_pending.isNotEmpty) _scheduleRetry();
-    } catch (failure) {
-      if (_disposed || generation != _generation) return;
-      error = switch (failure) {
-        PrivateFileException(failure: PrivateFileFailure.session) =>
-          '登录已过期，请重新登录',
-        PrivateFileException(failure: PrivateFileFailure.missing) =>
-          '评论目录尚未准备，请联系管理员',
-        PrivateFileException(failure: PrivateFileFailure.denied) =>
-          '无法访问评论，请检查账号权限',
-        FormatException() || TypeError() => '评论数据需要检查，已保留本机记录',
-        _ => pending ? '发送未完成，本机内容已保留，请重试' : '评论刷新未完成，请重试',
-      };
-      if (pending) _scheduleRetry();
-    } finally {
-      if (!_disposed && generation == _generation) {
-        loading = false;
-        _notify();
-      }
-    }
-  }
-
-  void _scheduleRetry() {
-    if (_disposed || _attempts >= 3 || !isActive()) return;
-    _retry = Timer(
-      Duration(seconds: 3 * (1 << _attempts++)),
-      () => unawaited(synchronize()),
-    );
-  }
-
-  Future<void> _readAll(int generation) async {
-    final next = <String, CommentOperation>{};
-    final remoteOwn = <String, CommentOperation>{};
-    final accounts = await files.entries('');
-    _check(generation);
-    if (accounts.length > 1000) throw const FormatException('评论账号数量超过上限');
-    var snapshots = 0;
-    for (final account in accounts) {
-      if (!account.directory ||
-          !RegExp(r'^u[1-9][0-9]*$').hasMatch(account.name)) {
-        throw const FormatException('评论目录无效');
-      }
-      final owner = int.parse(account.name.substring(1));
-      final records = await files.entries(account.name);
-      _check(generation);
-      if (records.length > 128 || (snapshots += records.length) > 2000) {
-        throw const FormatException('评论设备数量超过上限');
-      }
-      for (final record in records) {
-        if (record.directory ||
-            record.ownerUid != owner ||
-            !RegExp(r'^d[0-9a-f]{32}\.json$').hasMatch(record.name)) {
-          throw const FormatException('评论文件身份无效');
-        }
-        final text = await files.read('${account.name}/${record.name}');
-        _check(generation);
-        if (utf8.encode(text).length > 512 * 1024) {
-          throw const FormatException('评论文件过大');
-        }
-        final data = jsonDecode(text) as Map<String, dynamic>;
-        if (data['version'] != 1 ||
-            data['uid'] != owner ||
-            '${data['device']}.json' != record.name) {
-          throw const FormatException('评论文件格式无效');
-        }
-        final operations = data['operations'] as List;
-        for (final raw in operations) {
-          final op = CommentOperation.fromJson(
-            Map<String, dynamic>.from(raw as Map),
-            owner,
+      for (final game in games) {
+        final next = <String, Map<String, dynamic>>{};
+        String? cursor;
+        for (var page = 0; page < 100; page++) {
+          final response = await client.request(
+            '/v1/community/comments/$game?limit=200${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
+            get: true,
+            token: token == null ? null : await token!(),
           );
-          if (next[op.id] != null && !next[op.id]!.sameAs(op)) {
-            throw const FormatException('重复评论标识不一致');
+          _check();
+          for (final r
+              in (response['comments'] as List).cast<Map<String, dynamic>>()) {
+            next[r['id'] as String] = r;
           }
-          next[op.id] = op;
-          if (owner == uid && record.name == '$_device.json') {
-            remoteOwn[op.id] = op;
-          }
-          if (next.length > 20000) throw const FormatException('评论数量超过上限');
+          cursor = response['next_cursor'] as String?;
+          if (cursor == null) break;
+          if (page == 99) throw StateError('评论数量超过单次刷新上限');
+        }
+        _rows.removeWhere((_, r) => r['game_slug'] == game);
+        _rows.addAll(next);
+        _optimistic.removeWhere(
+          (id, r) => r['game_slug'] == game && !pendingIds.contains(id),
+        );
+      }
+      await _local(_save);
+      _games.removeWhere(
+        (game) =>
+            !_watchCounts.containsKey(game) &&
+            !_commands.any((command) => command['game_slug'] == game),
+      );
+      _attempts = 0;
+    } catch (_) {
+      if (!_disposed && isActive()) {
+        error = pending ? '发送未完成，本机内容已保留，请重试' : '评论刷新未完成，请重试';
+        if (pending && _attempts < 4) {
+          _retry = Timer(
+            Duration(seconds: 2 << _attempts++),
+            () => unawaited(synchronize()),
+          );
         }
       }
-    }
-    await _local(() async {
-      _check(generation);
-      // Keep only this device's own journal; other devices have their own files.
-      for (final op in remoteOwn.values) {
-        if (_own[op.id] != null && !_own[op.id]!.sameAs(op)) {
-          throw const FormatException('本机评论标识冲突');
-        }
-        _own[op.id] = op;
-      }
-      // Own IDs already retained in the journal are merged with the fresh read.
-      for (final op in _own.values) {
-        if (next[op.id] != null && !next[op.id]!.sameAs(op)) {
-          throw const FormatException('本机评论核对失败');
-        }
-        next[op.id] = op;
-        // Another process on this installation can share the device file.
-        // A late/stale upload must not silently remove acknowledged events.
-        if (!remoteOwn.containsKey(op.id)) _pending.add(op.id);
-      }
-      _events
-        ..clear()
-        ..addAll(next);
-      await _save();
+    } finally {
+      loading = false;
       _notify();
-    });
+    }
   }
 
-  String _draftKey(String game, String? parent) =>
+  String _draft(String game, String? parent) =>
       '$_key.draft.$game.${parent ?? 'root'}';
   Future<Map<String, dynamic>?> readDraft(String game, String? parent) async {
     await initialize();
-    final text = _prefs!.getString(_draftKey(game, parent));
-    return text == null ? null : jsonDecode(text) as Map<String, dynamic>;
+    _check();
+    final value = _prefs!.getString(_draft(game, parent));
+    return value == null ? null : jsonDecode(value) as Map<String, dynamic>;
   }
 
   Future<void> saveDraft(
@@ -490,21 +353,18 @@ final class GameCommentsService extends ChangeNotifier {
   ) async {
     await initialize();
     await _local(() async {
-      final key = _draftKey(game, parent);
-      final success = draft == null
-          ? await _prefs!.remove(key)
-          : await _prefs!.setString(key, jsonEncode(draft));
-      if (!success) throw StateError('草稿未保存');
+      final saved = draft == null
+          ? await _prefs!.remove(_draft(game, parent))
+          : await _prefs!.setString(_draft(game, parent), jsonEncode(draft));
+      if (!saved) throw StateError('草稿未保存');
     });
   }
 
+  Future<void> drain() => _writes ?? Future.value();
   @override
   void dispose() {
-    if (_disposed) return;
     _disposed = true;
-    _generation++;
     _retry?.cancel();
-    files.cancelRequests();
     super.dispose();
   }
 }

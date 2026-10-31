@@ -11,6 +11,70 @@ import sys
 import threading
 
 
+def loopback_forward(listen_port, proxy_port):
+    """Compatibility listener; no LAN binding and at most 32 active tunnels."""
+    if listen_port == proxy_port:
+        raise ValueError("Proxy listener and upstream must differ")
+
+    class Relay(socketserver.BaseRequestHandler):
+        def handle(self):
+            try:
+                upstream = socket.create_connection(("127.0.0.1", proxy_port), timeout=3)
+            except OSError:
+                return
+            with upstream:
+                self.request.settimeout(180)
+                upstream.settimeout(180)
+
+                def pump(source, destination):
+                    try:
+                        while chunk := source.recv(65536):
+                            destination.sendall(chunk)
+                    except OSError:
+                        pass
+                    finally:
+                        try:
+                            destination.shutdown(socket.SHUT_WR)
+                        except OSError:
+                            pass
+
+                worker = threading.Thread(target=pump, args=(self.request, upstream), daemon=True)
+                worker.start()
+                pump(upstream, self.request)
+                # Unblock the other direction before closing its sockets.
+                try:
+                    self.request.shutdown(socket.SHUT_RD)
+                except OSError:
+                    pass
+                worker.join(timeout=2)
+
+    class Server(socketserver.ThreadingTCPServer):
+        # Do not permit another Windows process to share the listening port.
+        allow_reuse_address = os.name != "nt"
+        daemon_threads = True
+        slots = threading.BoundedSemaphore(32)
+
+        def process_request(self, request, client_address):
+            if not self.slots.acquire(blocking=False):
+                self.shutdown_request(request)
+                return
+            try:
+                super().process_request(request, client_address)
+            except BaseException:
+                self.slots.release()
+                raise
+
+        def process_request_thread(self, request, client_address):
+            try:
+                super().process_request_thread(request, client_address)
+            finally:
+                self.slots.release()
+
+    with Server(("127.0.0.1", listen_port), Relay) as server:
+        print(f"Loopback proxy: 127.0.0.1:{listen_port} -> 127.0.0.1:{proxy_port}", flush=True)
+        server.serve_forever()
+
+
 def windows_stdio(port):
     import msvcrt
     for stream in (sys.stdin, sys.stdout):
@@ -89,7 +153,7 @@ def linux_relay(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("stdio", "relay"))
+    parser.add_argument("mode", choices=("stdio", "relay", "forward"))
     parser.add_argument("--proxy-port", type=int, default=7890)
     parser.add_argument("--listen-port", type=int, default=18080)
     parser.add_argument("--windows-python")
@@ -100,6 +164,10 @@ if __name__ == "__main__":
         if os.name != "nt":
             parser.error("stdio mode requires Windows")
         windows_stdio(arguments.proxy_port)
+    elif arguments.mode == "forward":
+        if not (1 <= arguments.proxy_port <= 65535 and 1 <= arguments.listen_port <= 65535):
+            parser.error("Ports must be in 1..65535")
+        loopback_forward(arguments.listen_port, arguments.proxy_port)
     else:
         if os.name != "posix" or not arguments.windows_python or not arguments.windows_script:
             parser.error("relay mode requires WSL and Windows helper paths")

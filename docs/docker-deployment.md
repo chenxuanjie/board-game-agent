@@ -1,3 +1,11 @@
+# 当前 GHCR 部署入口
+
+当前 Web 的新账号、SQL 资料和 PowerSync 部署请使用 [Web GHCR 交付](web-ghcr.md)。HTTP/HTTPS 固定为 8083/8084，工作流生成匹配镜像 digest 的 Compose。以下旧 TAR/账号网关内容仅用于历史交付追溯，不作为新 Web 的部署配置。
+
+---
+
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # Docker 部署
 
 2026-10-16 起，默认交付预构建的两个 Linux 运行镜像。Flutter 编译、Python 依赖安装在开发电脑或构建环境完成，NAS 只导入并运行。外部端口保持 **8887**，账号协议与只读资料挂载不变，见 [Web 账号](web-account.md) 和 [Web 同源资料](web-library.md)。
@@ -34,7 +42,7 @@ python3 /path/to/flutter-release-publisher/scripts/flutter_docker_release.py --p
 
 唯一交付文件为 `release/board-game-agent-linux-amd64-images.tar`。每次成功构建、导出并校验后原子替换同名文件，不生成部署 ZIP，不累积版本或时间戳文件。镜像内部标签记录应用版本、Git 修订、dirty 状态与构建时间；显式使用已存在镜像标签仍拒绝覆盖，默认自动生成新的内部标签，不影响固定 TAR 覆盖。构建失败、空导出或无效 TAR 时保留旧文件。不自动安装 Docker、不连接 NAS、不上传。
 
-配套小文件位于 `release/reports/docker-linux-amd64/`：群晖专用 Compose、部署脚本、`release.json`、`checksums.sha256`、`timings.json` 和实际验证后生成的 `validation.json`。交付 YAML 已固定匹配 TAR 的两个镜像引用和架构，所有 NAS 设置直接写在 YAML 中，不依赖 `.env`。目录不打成另一份压缩包，同名更新；新构建清除旧验证结果。首次下载和缓存命中影响实测时间，见 [本地交付产物](release-artifacts.md)。
+配套小文件位于 `release/reports/docker-linux-amd64/`：群晖专用 Compose、部署脚本、`release.json`、`checksums.sha256`、`timings.json` 和实际验证后生成的 `validation.json`。交付 YAML 已固定匹配 TAR 的两个镜像引用和架构，所有 NAS 设置直接写在 YAML 中，不依赖 `.env`。目录不打成另一份压缩包，同名更新；新构建清除旧验证结果。首次下载和缓存命中影响实测时间，见 [开发规范：构建与交付](development-standards.md#delivery)。
 
 镜像版不包含完整 Flutter 工程、共享包源码、Flutter SDK、真实 `.env` 或 NAS 正文资料；界面图片、字体和轻量元数据仍属于运行资源。Python 网关的运行代码与依赖位于其镜像中，不是转换为二进制程序。大小以真实构建结果为准，不承诺比源码版更小。
 
@@ -52,7 +60,9 @@ python3 /path/to/flutter-release-publisher/scripts/flutter_docker_release.py --p
 | `WEB_PUBLIC_ORIGIN` | 浏览器实际网站 origin；HTTPS 反向代理转到 8887 |
 | `WEB_ALLOW_INSECURE_HTTP` | 仅局域网 HTTP 测试填字符串 `"true"`；HTTPS 网站填 `"false"` |
 
-当前交付已预填 FileStation `getinfo` 真实确认的 `/volume2/friend/apps/board_game_agent/board-game-lib`、用户确认并通过证书校验的 DSM 地址 `https://cznas.pp.ua:5001`，网站入口按直接 HTTP 访问 `http://cznas.pp.ua:8887` 配置，HTTP 会话选项为 `"true"`。旧域名只保留在 `SYNOLOGY_IDENTITY_ORIGIN` 中作为原生端历史账号 ID 命名空间，不作为请求地址。8887 从开发电脑目前连接被拒绝，外网转发和容器监听状态尚未确认。更换网站入口时同步修改 origin 和 HTTP 选项。YAML 不填写用户账号密码。根目录 `docker-compose.yml` 的 `.env` 仅用于后面的开发构建入口。
+当前交付已预填 FileStation `getinfo` 真实确认的 `/volume2/friend/apps/board_game_agent/board-game-lib`、用户确认并通过证书校验的 DSM 地址 `https://cznas.pp.ua:5001`。2026-10-18 按当前截图与只读请求确认的反代入口修正为 `WEB_PUBLIC_ORIGIN=https://cznas.pp.ua:18887`、HTTP 会话选项 `"false"`；容器映射继续 8887:8080。HTTPS 请求带旧 HTTP origin 时返回 200、带新 HTTPS origin 时返回 403，说明部署仍认旧地址；更换 YAML 环境后须重新创建账号网关容器，不能仅重启。旧域名只保留在 `SYNOLOGY_IDENTITY_ORIGIN` 中作为原生端历史账号 ID 命名空间，不作为请求地址。YAML 不填写用户账号密码。根目录 `docker-compose.yml` 的 `.env` 仅用于后面的开发构建入口。
+
+Web AI 同源转发及允许的提供商通过 `AI_ALLOWED_ORIGINS` 配置；模型 Key 不进入 YAML。新路由需要重新构建 Web、Nginx 和账号网关两个镜像，旧 TAR 不包含本次 AI 修改；仅登录 origin 修正可使用旧镜像更新环境。见 [Web AI](web-ai.md)。
 
 资料根内须有 `assets/catalog.json`。两个服务均只读挂载，缺失目录不会自动创建，不调整 NAS 权限。账号网关 8000 端口不向宿主机发布。证书与 HTTP 测试选项见账号文档。
 
@@ -109,10 +119,10 @@ USV Compose 含 `build: .`，Dockerfile 编译 C++ 和前端，在 NAS 执行时
 2026-10-16：脚本与故障测试 15 项通过；真实镜像包部署测试 16 项通过，包括包内 `deploy.sh` 导入启动、网页与编译后 JS、匿名访问拦截、只读挂载、HTTPS 模拟 DSM 登录与会话恢复、PDF Range 206 / ETag 304 / HEAD、缺失文件与注销。验证脚本使用临时资料和独立 Compose 项目，完成后清理测试容器，不操作 NAS。
 
 ```sh
-python3 scripts/verify-docker-release.py --archive /path/to/board-game-agent-linux-amd64-images.tar
+python3 scripts/verify-docker-release.py --archive /path/to/board-game-agent-linux-amd64-images.tar --full-validation
 ```
 
-需要 Linux Docker、Python 3 和 OpenSSL。脚本先在无 `.env` 的目录解析实际交付 YAML 并核对 TAR 中两个镜像引用，再替换临时资料路径、随机回环端口和模拟 DSM 地址做运行验证；真实 NAS 配置不会被测试值覆盖。结果在配套目录生成 `validation.json`。验证使用既有镜像缓存，真实 NAS 首次导入可能更慢。实测与交付文件见 [本地 Docker 验证记录](docker-validation-2026-10-16.md)。这只证明本地配置解析和模拟环境运行通过，不能等同真实 NAS、真实 DSM 账号或完整浏览器操作验收。
+默认构建/verify 只校验归档、配套 YAML、镜像导入身份与架构，记录 `businessTests: not_run`；不要求全套业务测试通过。以上 `--full-validation` 显式选择完整容器业务验收，需要 Linux Docker、Python 3 和 OpenSSL。完整验收先在无 `.env` 的目录解析实际交付 YAML 并核对 TAR 中两个镜像引用，再替换临时资料路径、随机回环端口和模拟 DSM 地址做运行验证；真实 NAS 配置不会被测试值覆盖。结果在配套目录生成 `validation.json`。验证使用既有镜像缓存，真实 NAS 首次导入可能更慢。实测与交付文件见 [本地 Docker 验证记录](docker-validation-2026-10-16.md)。这只证明本地配置解析和模拟环境运行通过，不能等同真实 NAS、真实 DSM 账号或完整浏览器操作验收。
 
 ## 本机 WSL 使用说明
 

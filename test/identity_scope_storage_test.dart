@@ -1,26 +1,13 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_ai_client/app_ai_client.dart';
-import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:board_game_agent/core/theme/app_theme.dart';
-import 'package:board_game_agent/core/theme/palette_registry.dart';
-import 'package:board_game_agent/ui/shared/account_scope.dart';
-import 'package:board_game_agent/ui/shared/account_screen.dart';
-import 'package:board_game_agent/ui/shared/game_ranking_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:board_game_agent/features/identity/services/account_sync_store.dart';
-import 'support/account_sync_fixture.dart';
-import 'support/account_public_fixture.dart';
 import 'package:board_game_agent/features/games/models/game_vote_record.dart';
-import 'package:webdav_sync/webdav_sync.dart' show sha256Json;
-import 'account_service_test.dart' show FixtureGateway;
-import 'package:board_game_agent/features/identity/services/account_service.dart';
-import 'package:board_game_agent/features/identity/services/account_cloud_sync.dart';
 
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
@@ -39,13 +26,13 @@ import 'package:board_game_agent/features/games/models/daily_recommendation_reco
 import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/games/models/recent_game_record.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/game_vote_service.dart';
 import 'package:board_game_agent/features/games/services/remote_game_vote_store.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
+import 'package:board_game_agent/features/identity/services/board_personal_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -183,25 +170,17 @@ void main() {
     },
   );
 
-  test(
-    'AI credentials, theme and resource connections remain global',
-    () async {
-      final guest = PreferencesService();
-      final a = guest.forIdentityScope('a');
-      final config = AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6-luna');
-      await guest.saveAiApiConfig(config);
-      await guest.saveAssetSourceConfigs(AssetSourceConfig.defaults);
-      await guest.saveColorScheme(ColorSchemeOption.spatialCinema);
-      expect((await a.loadAiApiConfig()).toJson(), config.toJson());
-      expect(
-        (await a.loadAssetSourceConfigs()).length,
-        AssetSourceConfig.defaults.length,
-      );
-      expect(await a.loadColorScheme(), ColorSchemeOption.spatialCinema);
-      await a.saveColorScheme(ColorSchemeOption.cinema);
-      expect(await guest.loadColorScheme(), ColorSchemeOption.cinema);
-    },
-  );
+  test('AI credentials and theme remain global', () async {
+    final guest = PreferencesService();
+    final a = guest.forIdentityScope('a');
+    final config = AiApiConfig.defaultOpenAi.copyWith(model: 'gpt-5.6-luna');
+    await guest.saveAiApiConfig(config);
+    await guest.saveColorScheme(ColorSchemeOption.spatialCinema);
+    expect((await a.loadAiApiConfig()).toJson(), config.toJson());
+    expect(await a.loadColorScheme(), ColorSchemeOption.spatialCinema);
+    await a.saveColorScheme(ColorSchemeOption.spatialCinema);
+    expect(await guest.loadColorScheme(), ColorSchemeOption.spatialCinema);
+  });
 
   for (final browser in [false, true]) {
     test(
@@ -262,8 +241,12 @@ void main() {
   test(
     'controller switches guest A B guest without adopting personal data',
     () async {
-      final app = await _app();
+      final app = await _app(ai: _RecordingAi());
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
       app.openGlobalAssistant();
+      await app.sendPrompt('guest question', useGlobalMode: true);
       await app.recordSearch('guest search');
       await app.recordRecentlyViewed(app.games.first);
       await app.toggleFavorite(app.games.first);
@@ -281,6 +264,7 @@ void main() {
       expect(app.aiRunEventsForContext(useGlobalMode: true), isEmpty);
       await app.recordSearch('a search');
       await app.createConversation(useGlobalMode: true);
+      await app.sendPrompt('account A question', useGlobalMode: true);
       final aConversation = app.selectedConversationId;
       await app.switchIdentityScope('b');
       expect(app.searchHistory, isEmpty);
@@ -474,8 +458,12 @@ void main() {
     'failed conversation drain keeps old scope locked and supports retry',
     () async {
       final faults = _StoreFaults()..failWrites = true;
-      final app = await _app(store: _FaultStore(faults));
+      final app = await _app(store: _FaultStore(faults), ai: _RecordingAi());
       app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await app.sendPrompt('必须保存的真实提问', useGlobalMode: true);
       await expectLater(app.switchIdentityScope('a'), throwsStateError);
       expect(app.identityUserId, isNull);
       expect(app.isSwitchingIdentityScope, isTrue);
@@ -614,654 +602,6 @@ void main() {
       expect(app.nationalDayList.slugs, [app.games.first.slug]);
     },
   );
-  test(
-    'account lifecycle wires automatic cloud sync, pause, resume and logout',
-    () async {
-      final app = await _app(), files = MemoryPrivateFiles();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => files,
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      expect(cloud.status, AccountCloudStatus.synced);
-      expect(await app.toggleFavorite(app.games.first), isTrue);
-      await cloud.synchronize();
-      expect(files.objects, isNotEmpty);
-      await cloud.setEnabled(false);
-      final count = files.objects.length;
-      expect(await app.toggleFavorite(app.games.last), isTrue);
-      expect(
-        await PreferencesService(
-          identityUserId: app.identityUserId,
-        ).loadFavoriteGames(),
-        hasLength(2),
-      );
-      await cloud.synchronize();
-      expect(files.objects.length, count);
-      await cloud.setEnabled(true);
-      await cloud.synchronize();
-      expect(cloud.status, AccountCloudStatus.synced, reason: cloud.error);
-      expect(files.objects.length, greaterThan(count));
-      expect(cloud.status, AccountCloudStatus.synced);
-      await service.signOut();
-      expect(service.cloud, isNull);
-      expect(app.identityUserId, isNull);
-      expect(await PreferencesService().loadFavoriteGames(), isEmpty);
-    },
-  );
-  test(
-    'master pause retains local changes without private or public traffic and resume publishes',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      expect(cloud.publicSynced, isTrue, reason: cloud.publicReactions?.error);
-      await cloud.setEnabled(false);
-      final privateCount = private.objects.length;
-      final publicWrites = hub.writes;
-      final publicCalls = hub.calls;
-      expect(await app.gameVotes.toggle(app.games.first.slug), isTrue);
-      await app.gameVotes.sync();
-      await cloud.synchronize();
-      expect(private.objects.length, privateCount);
-      expect(hub.writes, publicWrites);
-      expect(hub.calls, publicCalls);
-      expect(app.gameVotes.status, GameVoteSyncStatus.paused);
-      await cloud.setEnabled(true);
-      await cloud.synchronize();
-      expect(
-        hub.objects.values.map((v) => v.text).join(),
-        contains('"entityType":"vote"'),
-      );
-      expect(cloud.publicReactions?.error, isNull);
-      await service.signOut();
-      expect(app.gameVotes.hasVoted(app.games.first.slug), isFalse);
-      expect(service.cloud, isNull);
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      await service.cloud!.synchronize();
-      expect(app.gameVotes.hasVoted(app.games.first.slug), isTrue);
-    },
-  );
-  test(
-    'ranking refresh and a saved favorite finish while private network is blocked',
-    () async {
-      final app = await _app(),
-          private = _HeldPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      await private.started.future;
-      final cloud = service.cloud!;
-      await cloud.refreshPublic();
-      expect(cloud.status, AccountCloudStatus.syncing);
-      expect(await app.toggleFavorite(app.games.first), isTrue);
-      await app.refreshFavoriteRankings();
-      expect(app.favoriteStatistics.count(app.games.first.slug), 1);
-      expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-      expect(cloud.publicError, isNull);
-      expect(
-        hub.objects.values.map((v) => v.text).join(),
-        contains('"entityType":"favorite"'),
-      );
-      expect(private.objects, isEmpty);
-      private.release.complete();
-      await cloud.synchronize();
-      expect(cloud.overallStatus, AccountCloudStatus.synced);
-      expect(private.objects, isNotEmpty);
-    },
-  );
-
-  test(
-    'private failure cannot report a confirmed ranking as failed; retry skips completed public lane',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      private.failure = PrivateFileFailure.denied;
-      await cloud.synchronize();
-      expect(cloud.error, isNotNull);
-      expect(cloud.publicError, isNull);
-      expect(cloud.overallStatus, AccountCloudStatus.pending);
-      await app.refreshFavoriteRankings();
-      expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-      expect(app.favoriteStatistics.syncError, isNull);
-      private.failure = null;
-      final calls = hub.calls;
-      await cloud.retry();
-      expect(cloud.overallStatus, AccountCloudStatus.synced);
-      expect(hub.calls, calls);
-    },
-  );
-
-  test(
-    'an in-flight public refresh includes subsequent cancellation and coalesces requests',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      expect(await app.toggleFavorite(app.games.first), isTrue);
-      await app.refreshFavoriteRankings();
-      await cloud.synchronize();
-      hub.readGate = Completer<void>();
-      final first = cloud.refreshPublic();
-      final second = cloud.refreshPublic();
-      await Future<void>.delayed(Duration.zero);
-      expect(await app.toggleFavorite(app.games.first), isTrue);
-      expect(app.favoriteStatistics.count(app.games.first.slug), 0);
-      hub.readGate!.complete();
-      await Future.wait([first, second, app.refreshFavoriteRankings()]);
-      expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-      expect(app.isFavorite(app.games.first), isFalse);
-      expect(
-        hub.objects.values.map((v) => v.text).join(),
-        contains('"operation":"delete"'),
-      );
-      await cloud.synchronize();
-    },
-  );
-
-  test(
-    'pause rejects late public responses and retains queued choices for resume',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      hub.readGate = Completer<void>();
-      final pending = cloud.refreshPublic();
-      await Future<void>.delayed(Duration.zero);
-      await cloud.setEnabled(false);
-      final writes = hub.writes;
-      expect(await app.gameVotes.toggle(app.games.first.slug), isTrue);
-      hub.readGate!.complete();
-      await pending;
-      await app.gameVotes.sync();
-      expect(hub.writes, writes);
-      expect(app.gameVotes.status, GameVoteSyncStatus.paused);
-      expect(cloud.publicError, isNull);
-      await cloud.setEnabled(true);
-      await cloud.synchronize();
-      expect(app.gameVotes.hasVoted(app.games.first.slug), isTrue);
-      expect(cloud.overallStatus, AccountCloudStatus.synced);
-    },
-  );
-
-  test(
-    'favorites publish while AI is streaming and reaction commits preserve every delta',
-    () async {
-      final ai = _StreamingAi();
-      final app = await _app(ai: ai),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      await app.saveAiApiConfig(
-        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
-      );
-      app.openGlobalAssistant();
-      final send = app.sendPrompt('streaming question', useGlobalMode: true);
-      await ai.started.future;
-      expect(await app.toggleFavorite(app.games.first), isTrue);
-      await app.refreshFavoriteRankings();
-      expect(cloud.publicError, isNull);
-      expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-      expect(app.isSendingForContext(useGlobalMode: true), isTrue);
-      await app.accountCloudReactionTransaction<void>(app.identityUserId!, (
-        current,
-        project,
-      ) async {
-        ai.events.add(const BoardGameAiStreamEvent(delta: 'during commit '));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        expect(app.isSwitchingIdentityScope, isFalse);
-        expect(app.isSendingForContext(useGlobalMode: true), isTrue);
-      });
-      ai.events.add(const BoardGameAiStreamEvent(delta: 'after commit'));
-      await ai.events.close();
-      await send;
-      expect(ai.aborted, isFalse);
-      expect(
-        app.messagesForContext(useGlobalMode: true).last.text,
-        contains('during commit after commit'),
-      );
-      await cloud.synchronize();
-      expect(cloud.overallStatus, AccountCloudStatus.synced);
-    },
-  );
-
-  test(
-    'private nickname import does not schedule a second public scan',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      final other = SyncDeviceFixture(scope: app.identityUserId!);
-      await other.start();
-      other.entities['nickname|profile'] = {'value': 'remote nickname'};
-      await other.sync(private);
-      hub.calls = 0;
-      await cloud.synchronize();
-      final calls = hub.calls;
-      await Future<void>.delayed(Duration.zero);
-      expect(hub.calls, calls);
-      // Unchanged public snapshots need one list + own directory + own read.
-      expect(calls, 3);
-      expect(service.displayName, 'remote nickname');
-    },
-  );
-
-  test(
-    'verified public upload reports refresh failure distinctly and retry does not reupload',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final public = _FailingRefreshFiles(hub, 101);
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => public,
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      final cloud = service.cloud!;
-      await cloud.synchronize();
-      public.failAfterWrite = true;
-      expect(await app.toggleFavorite(app.games.first), isTrue);
-      await app.refreshFavoriteRankings();
-      await cloud.synchronize();
-      expect(cloud.publicError, contains('已提交'));
-      expect(cloud.publicError, contains('排行刷新失败'));
-      expect(cloud.error, isNull);
-      expect(app.favoriteStatistics.count(app.games.first.slug), 1);
-      final writes = hub.writes, privateCalls = private.calls;
-      public.failRoot = public.failAfterWrite = false;
-      await cloud.retry();
-      expect(hub.writes, writes);
-      expect(private.calls, privateCalls);
-      expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-      expect(cloud.publicError, isNull);
-      expect(cloud.overallStatus, AccountCloudStatus.synced);
-    },
-  );
-
-  test(
-    'pause stops late private listing before it can start any upload',
-    () async {
-      final app = await _app(),
-          private = _HeldPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      await private.started.future;
-      final cloud = service.cloud!;
-      await cloud.setEnabled(false);
-      private.release.complete();
-      await Future<void>.delayed(Duration.zero);
-      expect(private.calls, 1);
-      expect(private.objects, isEmpty);
-      expect(cloud.overallStatus, AccountCloudStatus.paused);
-      expect(cloud.error, isNull);
-    },
-  );
-
-  test(
-    'ranking entry queues behind a local journal commit instead of dropping its request',
-    () async {
-      final app = await _app(),
-          private = MemoryPrivateFiles(),
-          hub = PublicFixtureHub();
-      final service = AccountService(
-        controller: app,
-        gatewayFactory: (_) async => FixtureGateway(),
-        privateFilesFactory: (_) => private,
-        publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-      );
-      addTearDown(service.dispose);
-      await service.initialize();
-      await service.signIn(account: 'fixture-user', password: 'fixture');
-      await service.cloud!.synchronize();
-      final entered = Completer<void>(), release = Completer<void>();
-      final commit = app.accountCloudTransaction<void>(app.identityUserId!, (
-        current,
-        project,
-      ) async {
-        entered.complete();
-        await release.future;
-      });
-      await entered.future;
-      final calls = hub.calls;
-      final refresh = app.refreshFavoriteRankings();
-      await Future<void>.delayed(Duration.zero);
-      expect(hub.calls, calls);
-      release.complete();
-      await Future.wait([commit, refresh]);
-      expect(hub.calls, greaterThan(calls));
-      expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-    },
-  );
-
-  for (final width in [320.0, 1440.0]) {
-    testWidgets(
-      'partial account status and a healthy ranking remain separate at $width',
-      (tester) async {
-        final fixture = await tester.runAsync(() async {
-          final app = await _app(),
-              private = MemoryPrivateFiles(),
-              hub = PublicFixtureHub();
-          final service = AccountService(
-            controller: app,
-            gatewayFactory: (_) async => FixtureGateway(),
-            privateFilesFactory: (_) => private,
-            publicFilesFactory: (_) => MemoryPublicFiles(hub, 101),
-          );
-          addTearDown(service.dispose);
-          await service.initialize();
-          await service.signIn(account: 'fixture-user', password: 'fixture');
-          await service.cloud!.synchronize();
-          private.failure = PrivateFileFailure.denied;
-          await service.cloud!.synchronize();
-          return (app, service);
-        });
-        final (app, service) = fixture!;
-        debugDefaultTargetPlatformOverride = width < 500
-            ? TargetPlatform.android
-            : TargetPlatform.windows;
-        addTearDown(() => debugDefaultTargetPlatformOverride = null);
-        await tester.binding.setSurfaceSize(Size(width, 900));
-        addTearDown(() => tester.binding.setSurfaceSize(null));
-        Widget page(Widget child) => AccountScope(
-          service: service,
-          child: MaterialApp(
-            theme: AppTheme.buildTheme(PaletteRegistry.cinema),
-            builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(textScaler: TextScaler.linear(1.5)),
-              child: child!,
-            ),
-            home: child,
-          ),
-        );
-        await tester.pumpWidget(page(const AccountScreen()));
-        await tester.pumpAndSettle();
-        expect(find.text('Some data needs retry'), findsOneWidget);
-        expect(
-          find.byKey(const ValueKey('account-cloud-sync')),
-          findsOneWidget,
-        );
-        expect(find.byKey(const ValueKey('account-public-sync')), findsNothing);
-        await tester.ensureVisible(
-          find.byKey(const ValueKey('account-sync-details')),
-        );
-        await tester.tap(find.byKey(const ValueKey('account-sync-details')));
-        await tester.pumpAndSettle();
-        expect(find.text('Public likes and votes'), findsOneWidget);
-        expect(find.text(service.cloud!.error!), findsOneWidget);
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(
-          page(GameRankingScreen(controller: app, onOpenGame: (_) {})),
-        );
-        for (var frame = 0; frame < 10; frame++) {
-          await tester.pump(const Duration(milliseconds: 100));
-          // The fixture's storage queues originated in runAsync. Let their
-          // real event loop advance, without awaiting a fake-zone sync future.
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 20)),
-          );
-        }
-        await tester.pumpAndSettle();
-        expect(service.cloud!.error, isNotNull);
-        expect(app.favoriteStatistics.status, GameVoteSyncStatus.synced);
-        expect(find.text('重试'), findsNothing);
-        expect(find.text('喜欢统计读取失败'), findsNothing);
-        expect(find.textContaining('已保存在本机'), findsNothing);
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
-        debugDefaultTargetPlatformOverride = null;
-      },
-    );
-  }
-
-  test(
-    'cloud projection persists personal stores and excludes credentials',
-    () async {
-      final app = await _app();
-      await app.switchIdentityScope('a');
-      await app.toggleFavorite(app.games.first);
-      final prefs = PreferencesService(identityUserId: 'a');
-      await prefs.saveVoiceReplyEnabled(true);
-      final local = AccountSyncLocalStore(
-        datasetId: 'a',
-        transaction: <T>(work) => app.accountCloudTransaction<T>('a', work),
-      );
-      await local.initialize();
-      await local.capture();
-      final outbox = await local.pendingOperations(afterSequence: 0);
-      expect(outbox.any((op) => op.entityType == 'favorite'), isTrue);
-      expect(outbox.any((op) => op.entityType == 'preference'), isTrue);
-      expect(
-        outbox.every(
-          (op) =>
-              !op.canonicalJson.contains('apiKey') &&
-              !op.canonicalJson.contains('lastRun'),
-        ),
-        isTrue,
-      );
-      await app.accountCloudTransaction<void>('a', (current, project) async {
-        final projected = cloneEntities(current);
-        projected['nickname|profile'] = {'value': 'cloud nickname'};
-        projected['vote|${app.games.last.slug}'] = {
-          'slug': app.games.last.slug,
-          'campaign': GameVoteBallot.campaign,
-        };
-        projected['seasonalList|${GameVoteBallot.campaign}'] = {
-          'slugs': [app.games.last.slug],
-        };
-        projected['search|${sha256Json('cabo')}'] = {
-          'query': 'Cabo',
-          'searchedAt': '2026-10-08T01:00:00Z',
-        };
-        projected['recommendation|2026-10-08'] = {
-          'date': '2026-10-08',
-          'gameIds': [app.games.last.id],
-        };
-        projected['recent|${app.games.last.slug}'] = RecentGameRecord(
-          gameSlug: app.games.last.slug,
-          viewedAt: DateTime.utc(2026, 10, 5),
-        ).toMap();
-        projected['conversation|conversation:cloud-chat'] = {
-          'id': 'conversation:cloud-chat',
-          'title': 'From cloud',
-          'scope': 'global',
-          'opened': true,
-          'createdAt': '2026-10-05T00:00:00Z',
-          'updatedAt': '2026-10-05T00:00:00Z',
-          'messages': [
-            {
-              'role': 'user',
-              'text': 'Question',
-              'timestamp': '2026-10-05T00:00:00Z',
-            },
-          ],
-        };
-        await project(projected);
-      });
-      expect(
-        (await prefs.loadRecentGames()).single.gameSlug,
-        app.games.last.slug,
-      );
-      expect(app.gameVotes.hasVoted(app.games.last.slug), isTrue);
-      expect(await prefs.loadNationalDayGameSlugs(), [app.games.last.slug]);
-      expect((await prefs.loadSearchHistory()).single.query, 'Cabo');
-      expect(
-        (await prefs.loadDailyRecommendations()).single.date,
-        '2026-10-08',
-      );
-      expect(
-        (await SharedPreferences.getInstance()).getString(
-          'identity.profile.a.nickname',
-        ),
-        'cloud nickname',
-      );
-      expect(
-        jsonDecode(
-          (await const ConversationStore(
-            browserStorage: true,
-            identityUserId: 'a',
-          ).load())!,
-        )['conversations']['conversation:cloud-chat']['title'],
-        'From cloud',
-      );
-      expect(
-        app.conversations
-            .singleWhere((chat) => chat.id == 'conversation:cloud-chat')
-            .title,
-        'From cloud',
-      );
-      await app.switchIdentityScope('b');
-      expect(
-        await PreferencesService(identityUserId: 'b').loadFavoriteGames(),
-        isEmpty,
-      );
-    },
-  );
-  test(
-    'invalid cloud preferences fail before any business store is changed',
-    () async {
-      final app = await _app();
-      await app.switchIdentityScope('a');
-      await app.toggleFavorite(app.games.first);
-      await expectLater(
-        app.accountCloudTransaction<void>('a', (current, project) async {
-          await project({
-            'preference|voice_reply_enabled': {'value': 'wrong type'},
-          });
-        }),
-        throwsFormatException,
-      );
-      expect(
-        await PreferencesService(identityUserId: 'a').loadFavoriteGames(),
-        hasLength(1),
-      );
-      expect(app.accountCloudIdle, isTrue);
-    },
-  );
-  test(
-    'account transition cancels a pending projection before adopting another scope',
-    () async {
-      final app = await _app();
-      await app.switchIdentityScope('a');
-      final entered = Completer<void>(), release = Completer<void>();
-      final transaction = app.accountCloudTransaction<void>('a', (
-        current,
-        project,
-      ) async {
-        entered.complete();
-        await release.future;
-        await project({
-          'nickname|profile': {'value': 'late value'},
-        });
-      });
-      await entered.future;
-      final rejected = expectLater(transaction, throwsStateError);
-      final transition = app.switchIdentityScope('b');
-      release.complete();
-      await rejected;
-      await transition;
-      expect(app.identityUserId, 'b');
-      expect(
-        (await SharedPreferences.getInstance()).getString(
-          'identity.profile.b.nickname',
-        ),
-        isNull,
-      );
-      expect(app.accountCloudIdle, isTrue);
-    },
-  );
 }
 
 Future<AppController> _app({
@@ -1275,7 +615,7 @@ Future<AppController> _app({
   final app = AppController(
     preferencesService: preferences ?? PreferencesService(),
     aiService: ai ?? _UnusedAi(),
-    gameManifestService: GameManifestService(),
+    gameManifestService: FixtureGameManifestService(),
     remoteAssetService: _NoNetwork(),
     speechService: speech ?? _Speech(),
     ttsService: _Tts(),
@@ -1434,8 +774,10 @@ class _FaultStore extends ConversationStore {
   _FaultStore(this.faults, {super.identityUserId});
   final _StoreFaults faults;
   @override
-  ConversationStore forIdentityScope(String? userId) =>
-      _FaultStore(faults, identityUserId: userId);
+  ConversationStore forIdentityScope(
+    String? userId, {
+    BoardPersonalStore? store,
+  }) => _FaultStore(faults, identityUserId: userId);
   @override
   Future<String?> load() async {
     if (identityUserId != null && identityUserId == faults.failReadScope) {
@@ -1497,34 +839,4 @@ class _NoNetwork extends RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async => null;
-}
-
-class _HeldPrivateFiles extends MemoryPrivateFiles {
-  final started = Completer<void>(), release = Completer<void>();
-  @override
-  Future<List<({String name, bool directory})>> list(
-    String relativePath,
-  ) async {
-    if (!started.isCompleted) started.complete();
-    await release.future;
-    return super.list(relativePath);
-  }
-}
-
-class _FailingRefreshFiles extends MemoryPublicFiles {
-  _FailingRefreshFiles(super.hub, super.uid);
-  bool failAfterWrite = false, failRoot = false;
-  @override
-  Future<List<AccountPublicEntry>> entries(String path) {
-    if (path.isEmpty && failRoot) {
-      throw const PrivateFileException(PrivateFileFailure.network);
-    }
-    return super.entries(path);
-  }
-
-  @override
-  Future<void> replaceOwn(String path, String content) async {
-    await super.replaceOwn(path, content);
-    if (failAfterWrite) failRoot = true;
-  }
 }

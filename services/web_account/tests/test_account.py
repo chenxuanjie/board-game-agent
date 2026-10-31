@@ -98,6 +98,20 @@ class AccountTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value, {"version": 1, "nasOrigin": self.settings.nas_origin, "identityOrigin": self.settings.identity_origin,
                                  "storageFolder": self.settings.shared_folder})
 
+    async def test_https_reverse_proxy_custom_port_can_login_with_secure_cookie(self):
+        site = "https://games.example:18887"
+        app = create_app(Settings(self.settings.nas_origin, self.settings.identity_origin, site), self.upstream)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=site,
+                headers={"X-Board-Game-Request": "1", "Origin": site}) as client:
+            initial = await client.get("/api/account/session")
+            self.assertIn("Secure", initial.headers["set-cookie"])
+            response = await client.post("/api/account/login", json={"account": "Shane", "password": "fixture-password"})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["user"]["uid"], 1001)
+            mismatch = await client.post("/api/account/logout", headers={"Origin": "https://games.example:1887"})
+            self.assertEqual(mismatch.status_code, 403)
+            self.assertEqual((await client.get("/api/account/session")).json(), response.json())
+
     async def test_otp_failure_mapping_and_retry(self):
         for code, name in ((400, "invalidCredentials"), (403, "otpRequired"), (404, "invalidOtp"),
                            (407, "rateLimited"), (408, "passwordChangeRequired")):

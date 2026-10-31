@@ -3,6 +3,7 @@
 NGINX_BIN=/path/to/nginx python -m unittest discover -s services/web_account/tests
 No Docker build, live NAS credentials or product assets are used.
 """
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -74,7 +75,21 @@ class NginxTransportTests(unittest.TestCase):
             settings = Settings("https://nas.example:5001", "https://nas.example:5001", f"http://127.0.0.1:{web_port}",
                                 insecure_http=True, library_root=str(library), comments_root=str(comments))
             upstream = httpx.AsyncClient(transport=httpx.MockTransport(dsm))
-            app = create_app(settings, upstream)
+            release_ai = threading.Event()
+            class AiStream(httpx.AsyncByteStream):
+                async def __aiter__(self):
+                    yield b'data: first\n\n'
+                    for _ in range(200):
+                        if release_ai.is_set():
+                            break
+                        await asyncio.sleep(.01)
+                    yield b'data: [DONE]\n\n'
+            async def ai_provider(request):
+                self.assertEqual(request.headers.get('cookie', ''), '')
+                self.assertEqual(request.headers['authorization'], 'Bearer fixture-key')
+                return httpx.Response(200, headers={'content-type':'text/event-stream'}, stream=AiStream())
+            ai_upstream = httpx.AsyncClient(transport=httpx.MockTransport(ai_provider))
+            app = create_app(settings, upstream, ai_upstream)
             server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=api_port, log_level="error", loop="asyncio"))
             thread = threading.Thread(target=server.run, daemon=True)
             thread.start()
@@ -114,6 +129,14 @@ class NginxTransportTests(unittest.TestCase):
                     self.assertEqual(client.post('/api/comments/file?path=u1001/d' + 'a' * 32 + '.json',
                                                  json={'content': 'x' * 16000}).status_code, 401)
                     client.get("/api/account/session")
+                    with client.stream('POST', '/api/ai/request',
+                        headers={'Authorization':'Bearer fixture-key', 'X-BGA-AI-Target':'https://www.loomex.lol/v1/responses'},
+                        json={'model':'test-model', 'stream':True}) as ai_response:
+                        self.assertEqual(ai_response.status_code, 200)
+                        chunks = ai_response.iter_bytes()
+                        self.assertEqual(next(chunks), b'data: first\n\n')
+                        release_ai.set()
+                        self.assertEqual(b''.join(chunks), b'data: [DONE]\n\n')
                     self.assertEqual(client.post("/api/account/login", json={"account": "test", "password": "test"}).status_code, 200)
                     partial = client.get(uri, headers={"Range": "bytes=100-199"})
                     self.assertEqual(partial.status_code, 206)

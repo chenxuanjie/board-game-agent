@@ -16,6 +16,7 @@ import '../shared/account_screen.dart';
 import '../shared/game_ranking_screen.dart';
 import '../shared/hover_horizontal_scrollbar.dart';
 import 'game_cover.dart';
+import 'scan_placeholder.dart';
 
 const _assetRoot = 'assets/mobile/mine';
 
@@ -297,8 +298,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             children: [
               _integratedHeaderSection(copy),
-              const SizedBox(height: 16),
-              _shortcuts(copy),
               const SizedBox(height: UiTokens.sectionGap),
               _sectionTitle(
                 '$_assetRoot/recent_play_gamepad_icon.png',
@@ -550,28 +549,7 @@ class _MobileMineContentState extends State<MobileMineContent> {
             ],
           ),
         ),
-        Stack(
-          children: [
-            IconButton(
-              key: const ValueKey('mobile-mine-notifications'),
-              tooltip: copy.localized('消息通知', 'Notifications'),
-              onPressed: widget.onActivities,
-              icon: Image.asset(
-                '$_assetRoot/notification_bell_icon.png',
-                width: 24,
-              ),
-            ),
-            if (widget.controller.unreadActivityCount > 0)
-              Positioned(
-                right: 8,
-                top: 7,
-                child: CircleAvatar(
-                  radius: 4,
-                  backgroundColor: AppPalette.of(context).primary,
-                ),
-              ),
-          ],
-        ),
+        MobileScanPlaceholder(copy: copy),
       ],
     ),
   );
@@ -777,78 +755,6 @@ class _MobileMineContentState extends State<MobileMineContent> {
           ),
         ),
       );
-
-  Widget _shortcuts(AppCopy copy) {
-    final palette = AppPalette.of(context);
-    final entries = <(IconData, String, VoidCallback)>[
-      (
-        Icons.favorite_rounded,
-        copy.localized('我的喜欢', 'My likes'),
-        widget.onFavorites,
-      ),
-      (
-        Icons.history_rounded,
-        copy.localized('最近浏览', 'Recent'),
-        widget.onRecentAll,
-      ),
-    ];
-    return Row(
-      children: [
-        for (var index = 0; index < entries.length; index++) ...[
-          if (index > 0) const SizedBox(width: UiTokens.itemGap),
-          Expanded(
-            child: Material(
-              color: Color.lerp(
-                palette.surface,
-                index == 0
-                    ? palette.primaryContainer
-                    : palette.secondaryContainer,
-                .65,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(ContentCardStyle.radius),
-                side: BorderSide(color: palette.outline.withValues(alpha: .45)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                key: ValueKey('mobile-mine-shortcut-$index'),
-                onTap: entries[index].$3,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 22,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        entries[index].$1,
-                        size: 24,
-                        color: index == 0
-                            ? palette.onPrimaryContainer
-                            : palette.onSecondaryContainer,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          entries[index].$2,
-                          maxLines: 2,
-                          style: ContentCardStyle.title(context).copyWith(
-                            color: index == 0
-                                ? palette.onPrimaryContainer
-                                : palette.onSecondaryContainer,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 
   Widget _sectionTitle(
     String? asset,

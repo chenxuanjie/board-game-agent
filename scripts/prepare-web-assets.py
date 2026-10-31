@@ -14,11 +14,13 @@ def plan(text):
     lines = text.splitlines(keepends=True)
     result, paths = [], []
     in_assets = False
+    saw_assets = False
     index = 0
     while index < len(lines):
         line = lines[index]
         if line.rstrip() == "  assets:":
             in_assets = True
+            saw_assets = True
             result.append(line)
             index += 1
             continue
@@ -55,8 +57,10 @@ def plan(text):
             paths.append(font[1])
         result.append(line)
         index += 1
-    if not paths or "assets/catalog.json" not in paths:
-        raise ValueError("Missing Web catalog/assets")
+    # The catalog and game resources now come from the application service.
+    # A bundled legacy catalog is no longer a prerequisite for a Web build.
+    if not saw_assets or not paths:
+        raise ValueError("Missing Web UI assets")
     return {"manifest": "".join(result), "paths": list(dict.fromkeys(paths))}
 
 

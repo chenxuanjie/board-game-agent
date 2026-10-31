@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../features/games/models/game_info.dart';
 import '../../app/state/app_controller.dart';
+import '../shared/catalog_empty_state.dart';
+import '../shared/library_catalog_status.dart';
 import 'game_cover.dart';
 
 class MobileGameSearchScreen extends StatefulWidget {
@@ -119,22 +121,36 @@ class _MobileGameSearchScreenState extends State<MobileGameSearchScreen> {
                 ),
               ),
             ),
+            if (widget.controller.gameCatalogFailed &&
+                widget.controller.hasGames)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: LibraryCatalogStatus(controller: widget.controller),
+              ),
             Expanded(
               child: games.isEmpty
                   ? Center(
-                      child: Text(
-                        copy.localized(
+                      child: CatalogEmptyState(
+                        controller: widget.controller,
+                        emptyMessage: copy.localized(
                           widget.favoritesOnly && query.isEmpty
                               ? '还没有喜欢的桌游'
                               : widget.recentOnly && query.isEmpty
                               ? '还没有浏览记录'
+                              : query.isEmpty && !widget.controller.hasGames
+                              ? '暂无桌游资料'
                               : '没有找到桌游',
                           widget.favoritesOnly && query.isEmpty
                               ? 'No liked games yet'
                               : widget.recentOnly && query.isEmpty
                               ? 'No recently viewed games'
+                              : query.isEmpty && !widget.controller.hasGames
+                              ? 'No games yet'
                               : 'No games found',
                         ),
+                        onClear: query.isEmpty
+                            ? null
+                            : () => setState(_queryController.clear),
                       ),
                     )
                   : ListView.separated(

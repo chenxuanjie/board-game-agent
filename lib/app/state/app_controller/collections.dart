@@ -9,32 +9,62 @@ extension AppCollectionController on AppController {
     return {...preferred, ...games}.take(3).toList();
   }
 
-  List<GameInfo> get nationalDayGames => nationalDayList.slugs
-      .expand((slug) => games.where((game) => game.slug == slug))
-      .toList();
+  List<GameInfo> get nationalDayGames {
+    return nationalDayList
+        .rankByVotes(gameVotes.count)
+        .expand((slug) => games.where((game) => game.slug == slug))
+        .toList();
+  }
 
   String get nationalDayShareText =>
       '${copy.localized('国庆聚会 · 桌游清单', 'National Day · Games to play')}\n'
       '${nationalDayGames.map((game) => '• ${game.title}｜${game.playerCount}｜${game.playTime}').join('\n')}';
 
-  Future<bool> toggleFavorite(GameInfo game) {
-    if (_switchingIdentityScope || _accountReactionCommit) {
-      return Future<bool>.value(false);
+  Future<bool> toggleFavorite(GameInfo game) async {
+    if (_requirePersonalAccount && identityUserId == null) return false;
+    if (_identityScopeRequests > 0 ||
+        (_switchingIdentityScope && _personalReloadWork == null)) {
+      return false;
+    }
+    final epoch = _identityScopeEpoch;
+    bool? desired;
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    // Wait before joining the mutation queue. Joining first would deadlock a
+    // projection that is draining that queue. Keep the user's intended state.
+    while (_personalReloadWork != null) {
+      desired ??= !isFavorite(game);
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) return false;
+      try {
+        await _personalReloadWork!.timeout(remaining);
+      } catch (_) {
+        return false;
+      }
+      if (_controllerDisposed ||
+          epoch != _identityScopeEpoch ||
+          _identityScopeRequests > 0) {
+        return false;
+      }
     }
     final Future<bool> operation = _favoriteMutationQueue
         .catchError((Object _) {})
-        .then<bool>((_) => _toggleFavoriteNow(game));
+        .then<bool>(
+          (_) => epoch == _identityScopeEpoch && !_controllerDisposed
+              ? _toggleFavoriteNow(game, desired: desired)
+              : false,
+        );
     _favoriteMutationQueue = operation.then<void>((_) {});
     return operation;
   }
 
-  Future<bool> _toggleFavoriteNow(GameInfo game) async {
+  Future<bool> _toggleFavoriteNow(GameInfo game, {bool? desired}) async {
     final slug = game.slug.trim();
     if (slug.isEmpty) return false;
     if (!await _ensureFavoriteRecords()) return false;
 
     final previous = Map<String, DateTime>.of(_favoriteCreatedAtBySlug);
-    if (_favoriteCreatedAtBySlug.containsKey(slug)) {
+    final selected = desired ?? !_favoriteCreatedAtBySlug.containsKey(slug);
+    if (!selected) {
       _favoriteCreatedAtBySlug.remove(slug);
     } else {
       _favoriteCreatedAtBySlug[slug] = DateTime.now().toUtc();

@@ -6,6 +6,8 @@ import '../../features/games/models/game_info.dart';
 import '../../features/library/models/game_resource.dart';
 import '../../features/library/models/resolved_document.dart';
 import '../shared/documents/document_viewer_launcher.dart';
+import '../shared/catalog_empty_state.dart';
+import '../shared/library_catalog_status.dart';
 import 'game_cover.dart';
 
 /// A document index, rather than another filtered game search.
@@ -142,11 +144,26 @@ class _MobileRuleMaterialsScreenState extends State<MobileRuleMaterialsScreen> {
                   ),
                 ),
               ),
+              if (widget.controller.gameCatalogFailed &&
+                  widget.controller.hasGames)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: LibraryCatalogStatus(controller: widget.controller),
+                ),
               Expanded(
                 child: entries.isEmpty
                     ? Center(
-                        child: Text(
-                          copy.localized('没有找到规则资料', 'No rule materials found'),
+                        child: CatalogEmptyState(
+                          controller: widget.controller,
+                          emptyMessage: copy.localized(
+                            query.isEmpty ? '暂无规则资料' : '没有找到规则资料',
+                            query.isEmpty
+                                ? 'No rule materials yet'
+                                : 'No rule materials found',
+                          ),
+                          onClear: query.isEmpty
+                              ? null
+                              : () => setState(_search.clear),
                         ),
                       )
                     : ListView.separated(

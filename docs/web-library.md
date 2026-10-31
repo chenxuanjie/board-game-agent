@@ -1,4 +1,10 @@
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # Web 同源资料读取
+
+2026-10-19：目录失败不再阻断应用启动。首页提供可关闭提示，桌游库持续提供
+重试；使用最后一份可用列表，首次无目录时保留空区域及错误状态，不回退到
+内置目录。实现和边界见 [目录可用性与启动恢复](catalog-availability.md)。
 
 2026-10-17。Web 游客即可使用同源 HTTP 读取 NAS 挂载的已发布资料；Android/Windows 继续使用原生账号与 WebDAV。状态与检查界面的按钮、文案、布局均保留，不增加资料源切换提示。账号登录见 [Web 账号](web-account.md)，部署见 [Docker 部署](docker-deployment.md)。
 

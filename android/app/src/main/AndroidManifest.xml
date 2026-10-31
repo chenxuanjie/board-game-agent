@@ -15,6 +15,9 @@
         <service android:name=".DownloadProgressService"
             android:exported="false" android:stopWithTask="true"
             android:foregroundServiceType="dataSync" />
+        <service android:name=".PublicRealtimeService"
+            android:exported="false" android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

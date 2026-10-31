@@ -1,4 +1,4 @@
-/// A file discovered through the configured remote WebDAV library.
+/// A resource selected from a published SQL catalog snapshot.
 class RemoteAssetFile {
   const RemoteAssetFile({
     required this.remotePath,

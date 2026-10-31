@@ -44,7 +44,7 @@ final class SavedLoginStore {
 
   IdentitySessionStorage get _secureStorage =>
       _storage ??= SecureIdentitySessionStorage(
-        appId: 'board_game_agent_logins',
+        appId: 'board_game_agent_service_logins',
         environment: 'saved_accounts_v1',
       );
 

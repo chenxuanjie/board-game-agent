@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -15,6 +16,7 @@ import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/ai_conversation.dart';
 import 'package:board_game_agent/features/assistant/models/answer_source.dart';
 import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
@@ -22,7 +24,6 @@ import 'package:board_game_agent/features/assistant/services/conversation_store.
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
 import 'package:board_game_agent/features/library/models/remote_asset_file.dart';
@@ -32,6 +33,8 @@ import 'package:board_game_agent/ui/desktop/business_panes.dart';
 import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_motion.dart';
+import 'package:board_game_agent/ui/shared/assistant/conversation_search_dialog.dart';
+import 'package:board_game_agent/core/localization/app_copy.dart';
 
 void _uiTest(String name, WidgetTesterCallback body, {Timeout? timeout}) {
   testWidgets(name, (tester) async {
@@ -58,6 +61,329 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     rootBundle.clear();
+  });
+
+  _uiTest('conversation search remains usable with keyboard and large text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.viewInsets = FakeViewPadding(
+      bottom: 250 * tester.view.devicePixelRatio,
+    );
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.5)),
+          child: child!,
+        ),
+        home: ConversationSearchDialog(
+          messages: [
+            ChatMessage(
+              id: 'one',
+              role: ChatRole.user,
+              text: '战争之匣的规则',
+              timestamp: DateTime.utc(2026),
+            ),
+          ],
+          copy: AppCopy(AppLanguage.zhHans),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('assistant-search-query')),
+      '战争',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('assistant-search-result-one')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final desktop in [false, true]) {
+    _uiTest(
+      'new action reuses an unsent draft and first send preserves the input desktop=$desktop',
+      (tester) async {
+        final store = _MemoryStore();
+        final controller = await _controller(store);
+        addTearDown(controller.dispose);
+        controller.openGlobalAssistant();
+        await _mount(
+          tester,
+          controller,
+          desktop ? const Size(1280, 800) : const Size(320, 700),
+          desktop: desktop,
+        );
+        final initial = controller.selectedConversationId;
+        final field = find.byKey(const ValueKey('assistant-draft'));
+        final editor = find.descendant(
+          of: field,
+          matching: find.byType(EditableText),
+        );
+        await tester.enterText(field, '空白页的草稿');
+        final editable = tester.state<EditableTextState>(editor);
+        for (var i = 0; i < 3; i++) {
+          await tester.tap(
+            find.byKey(const ValueKey('assistant-header-new-conversation')),
+          );
+          await tester.pumpAndSettle();
+          expect(controller.selectedConversationId, initial);
+          expect(controller.conversations, isEmpty);
+          expect(tester.widget<TextField>(field).controller!.text, '空白页的草稿');
+        }
+        expect(store.writes, 0);
+        await controller.saveAiApiConfig(
+          controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            ValueKey(
+              desktop ? 'desktop-composer-send' : 'assistant-composer-send',
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(tester.state<EditableTextState>(editor), same(editable));
+        await tester.pumpAndSettle();
+        expect(controller.conversations, hasLength(1));
+        expect(controller.conversations.single.messages.first.text, '空白页的草稿');
+        expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+        await _capture(tester, 'assistant-first-send-desktop-$desktop');
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-header-new-conversation')),
+        );
+        await tester.pumpAndSettle();
+        final pending = controller.selectedConversationId;
+        expect(pending, isNot(initial));
+        await tester.enterText(field, '下一份草稿');
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-header-new-conversation')),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.selectedConversationId, pending);
+        expect(tester.widget<TextField>(field).controller!.text, '下一份草稿');
+        expect(controller.conversations, hasLength(1));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    _uiTest(
+      'shared header searches and deletes without a clear action desktop=$desktop',
+      (tester) async {
+        final now = DateTime.utc(2026);
+        final conversation = AiConversation(
+          id: 'global',
+          title: '测试对话',
+          scope: AiConversationScope.global,
+          createdAt: now,
+          updatedAt: now,
+          messages: List.generate(
+            70,
+            (i) => ChatMessage(
+              id: 'msg-$i',
+              role: ChatRole.user,
+              text: i == 2 ? '目标规则在哪里' : '普通消息 $i',
+              timestamp: now,
+            ),
+          ),
+        );
+        final store = _MemoryStore()
+          ..value = jsonEncode({
+            'version': 4,
+            'selectedConversationId': 'global',
+            'conversations': {'global': conversation.toMap()},
+          });
+        final controller = _buildController(store);
+        addTearDown(controller.dispose);
+        await tester.runAsync(controller.initialize);
+        await _mount(
+          tester,
+          controller,
+          desktop ? const Size(1280, 800) : const Size(390, 844),
+          desktop: desktop,
+        );
+        expect(
+          find.byKey(const ValueKey('assistant-header-back')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('assistant-header-share')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('assistant-conversations-trigger')),
+          findsOneWidget,
+        );
+        Future<void> openMenu() async {
+          await tester.tap(find.byKey(const ValueKey('assistant-more-menu')));
+          await tester.pumpAndSettle();
+          expect(find.text('查找'), findsOneWidget);
+          expect(find.text('清空'), findsNothing);
+          expect(
+            find.byKey(const ValueKey('assistant-menu-clear')),
+            findsNothing,
+          );
+          expect(find.text('删除'), findsOneWidget);
+          expect(find.text('语音朗读'), findsNothing);
+        }
+
+        await openMenu();
+        await _capture(tester, 'assistant-actions-desktop-$desktop');
+        await tester.tap(find.byKey(const ValueKey('assistant-menu-find')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('assistant-search-query')),
+          '目标规则',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-search-result-msg-2')),
+        );
+        for (
+          var i = 0;
+          i < 100 && find.text('目标规则在哪里').hitTestable().evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(find.text('目标规则在哪里').hitTestable(), findsOneWidget);
+        await openMenu();
+        await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(controller.selectedConversation!.messages, hasLength(70));
+        await openMenu();
+        await tester.tap(find.byKey(const ValueKey('assistant-menu-delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('assistant-confirm-change')),
+        );
+        await tester.pumpAndSettle();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('操作未完成，请重试'), findsNothing);
+        expect(controller.selectedConversationId, isNot('global'));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
+  _uiTest('game assistant opened as a page has a working back button', (
+    tester,
+  ) async {
+    final controller = await _controller(_MemoryStore());
+    addTearDown(controller.dispose);
+    controller.openGameAssistant('puerto-rico');
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AssistantChatScreen(controller: controller),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('assistant-header-back')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('assistant-header-back')));
+    await tester.pumpAndSettle();
+    expect(find.text('打开'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  _uiTest(
+    'compact assistant remains usable with large text and a short viewport',
+    (tester) async {
+      final controller = await _controller(_MemoryStore());
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await _mount(tester, controller, const Size(320, 600), textScale: 1.5);
+      await _capture(tester, 'assistant-small-large-text');
+      for (final key in [
+        'assistant-conversations-trigger',
+        'assistant-header-new-conversation',
+        'assistant-more-menu',
+      ]) {
+        final rect = tester.getRect(find.byKey(ValueKey(key)));
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(320));
+        expect(rect.height, greaterThanOrEqualTo(48));
+      }
+      final composer = find.byKey(const ValueKey('assistant-composer-box'));
+      final collapsedHeight = tester.getSize(composer).height;
+      await tester.enterText(
+        find.byKey(const ValueKey('assistant-draft')),
+        '战争之匣的回合流程是什么？\n请按行动顺序详细解释，并列出需要注意的规则。',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(composer).height, greaterThan(collapsedHeight));
+      expect(find.byKey(const ValueKey('assistant-prompt-0')), findsNothing);
+      await _capture(tester, 'assistant-small-multiline');
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
+      await tester.pumpAndSettle();
+      final contextMenu = tester.getRect(
+        find.byKey(const ValueKey('assistant-context-menu')),
+      );
+      expect(contextMenu.left, greaterThanOrEqualTo(0));
+      expect(contextMenu.right, lessThanOrEqualTo(320));
+      expect(contextMenu.top, greaterThanOrEqualTo(64));
+      await _capture(tester, 'assistant-small-context');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('assistant-more-menu')));
+      await tester.pumpAndSettle();
+      expect(find.text('清空'), findsNothing);
+      await _capture(tester, 'assistant-small-actions');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  _uiTest('header buttons respond to press and return to their original size', (
+    tester,
+  ) async {
+    final controller = await _controller(_MemoryStore());
+    addTearDown(controller.dispose);
+    controller.openGlobalAssistant();
+    await _mount(tester, controller, const Size(320, 700));
+    final button = find.byKey(
+      const ValueKey('assistant-conversations-trigger'),
+    );
+    final scale = find
+        .ancestor(of: button, matching: find.byType(AnimatedScale))
+        .first;
+    final gesture = await tester.startGesture(tester.getCenter(button));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.widget<AnimatedScale>(scale).scale, lessThan(1));
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedScale>(scale).scale, 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets(
@@ -141,7 +467,7 @@ void main() {
         controller.messagesForContext(useGlobalMode: false).first.text,
         '建筑如何计分？',
       );
-      expect(controller.selectedConversation!.title, '建筑如何计分？');
+      expect(controller.conversations, hasLength(1));
       expect(
         controller
             .messagesForContext(useGlobalMode: false)
@@ -149,20 +475,18 @@ void main() {
             .join(),
         isNot(contains('迟到')),
       );
-      controller.selectConversation(legacy);
-      expect(controller.messagesForContext(useGlobalMode: false), isEmpty);
       controller.selectConversation(second);
+      expect(controller.messagesForContext(useGlobalMode: false), isEmpty);
+      expect(first, legacy);
+      expect(await controller.createConversation(useGlobalMode: false), second);
       await controller.disposeServices();
       controller.dispose();
       final restored = _buildController(store);
       await restored.initialize();
       // Let the startup warm-up finish before disposing its controller.
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(restored.selectedConversationId, second);
-      expect(
-        restored.conversations.map((c) => c.id),
-        containsAll([legacy, first, second]),
-      );
+      expect(restored.selectedConversationId, first);
+      expect(restored.conversations.map((c) => c.id), [first]);
       restored.selectConversation(first);
       expect(restored.selectedConversation!.messages.first.text, '建筑如何计分？');
       await restored.disposeServices();
@@ -171,11 +495,51 @@ void main() {
   );
 
   test(
-    'deletion is durable, keeps failed writes retryable and isolates late deltas',
+    'repeated new actions remain transient until a valid nonempty send',
     () async {
       final store = _MemoryStore();
+      final controller = await _controller(store);
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      final drafts = await Future.wait(
+        List.generate(
+          12,
+          (_) => controller.createConversation(useGlobalMode: true),
+        ),
+      );
+      expect(drafts.toSet(), hasLength(1));
+      expect(controller.conversations, isEmpty);
+      await controller.sendPrompt('   ', useGlobalMode: true);
+      await controller.sendPrompt('尚未选择模型', useGlobalMode: true);
+      expect(controller.conversations, isEmpty);
+      expect(store.writes, 0);
+      controller.messagesForContext(useGlobalMode: false);
+      await _submitQuestion(controller, useGlobalMode: true);
+      await controller.prepareForAppUpdate();
+      expect(controller.conversations, hasLength(1));
+      expect(controller.selectedConversationId, drafts.first);
+      final snapshot = jsonDecode(store.value!) as Map;
+      expect((snapshot['conversations'] as Map).keys, [drafts.first]);
+      final writes = store.writes;
+      final next = await controller.createConversation(useGlobalMode: true);
+      expect(next, isNot(drafts.first));
+      expect(await controller.createConversation(useGlobalMode: true), next);
+      expect(controller.conversations, hasLength(1));
+      expect(store.writes, writes);
+      controller.selectConversation(drafts.first);
+      expect(await controller.createConversation(useGlobalMode: true), next);
+      expect(controller.messagesForContext(useGlobalMode: true), isEmpty);
+      await controller.disposeServices();
+    },
+  );
+
+  test(
+    'deletion is durable, keeps failed writes retryable and isolates late deltas',
+    () async {
+      final store = _usedConversationStore();
       final ai = _DelayedAi();
       final controller = await _controller(store, ai: ai);
+      await controller.initialize();
       controller.openGlobalAssistant();
       final first = controller.selectedConversationId!;
       final current = await controller.createConversation(useGlobalMode: true);
@@ -196,7 +560,7 @@ void main() {
       await controller.deleteConversation(current);
       final fresh = controller.selectedConversationId!;
       expect(fresh, isNot(current));
-      expect(controller.conversations, hasLength(1));
+      expect(controller.conversations, isEmpty);
       expect(controller.selectedConversation!.messages, isEmpty);
       ai.events.add(const BoardGameAiStreamEvent(delta: '已删除请求的迟到内容'));
       await ai.events.close();
@@ -204,13 +568,12 @@ void main() {
       await controller.disposeServices();
       controller.dispose();
       final snapshot = jsonDecode(store.value!) as Map<String, dynamic>;
-      expect((snapshot['conversations'] as Map).keys, [fresh]);
+      expect((snapshot['conversations'] as Map), isEmpty);
       final restored = _buildController(store);
       await restored.initialize();
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(restored.selectedConversationId, fresh);
-      expect(restored.conversations, hasLength(1));
-      expect(restored.selectedConversation!.messages, isEmpty);
+      expect(restored.selectedConversationId, isNull);
+      expect(restored.conversations, isEmpty);
       await restored.disposeServices();
       restored.dispose();
     },
@@ -224,6 +587,7 @@ void main() {
         final controller = await _controller(store);
         addTearDown(controller.dispose);
         controller.openGlobalAssistant();
+        await _submitQuestion(controller, useGlobalMode: true);
         final deleted = controller.selectedConversationId!;
         await _mount(
           tester,
@@ -425,8 +789,10 @@ void main() {
     final controller = await _controller(store);
     addTearDown(controller.dispose);
     controller.openGameAssistant('puerto-rico');
+    await _submitQuestion(controller);
     final game = controller.selectedConversationId!;
     controller.openGlobalAssistant();
+    await _submitQuestion(controller, useGlobalMode: true);
     await _mount(tester, controller, const Size(320, 700));
     await tester.enterText(find.byType(TextField).first, '通用草稿');
     await tester.tap(
@@ -470,47 +836,56 @@ void main() {
       tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       isEmpty,
     );
-    expect(controller.conversations, hasLength(3));
+    expect(controller.conversations, hasLength(2));
     expect(tester.takeException(), isNull);
   });
 
-  _uiTest('save failure stays retryable and escape restores the page', (
-    tester,
-  ) async {
-    final store = _MemoryStore();
-    final controller = await _controller(store);
-    addTearDown(controller.dispose);
-    controller.openGlobalAssistant();
-    await _mount(tester, controller, const Size(390, 844));
-    store.fail = true;
-    await tester.tap(
-      find.byKey(const ValueKey('assistant-conversations-trigger')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('assistant-new-conversation')));
-    await tester.pumpAndSettle();
-    expect(find.text(controller.copy.conversationSaveFailed), findsOneWidget);
-    expect(controller.selectedConversationId, 'global');
-    expect(controller.conversations, hasLength(1));
-    store.fail = false;
-    await tester.tap(find.byKey(const ValueKey('assistant-new-conversation')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('assistant-conversation-drawer')),
-      findsNothing,
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('assistant-conversations-trigger')),
-    );
-    await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('assistant-conversation-drawer')),
-      findsNothing,
-    );
-    expect(tester.takeException(), isNull);
-  });
+  _uiTest(
+    'unsent workspace needs no record write and escape restores the page',
+    (tester) async {
+      final store = _MemoryStore();
+      final controller = await _controller(store);
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await _mount(tester, controller, const Size(390, 844));
+      store.fail = true;
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-conversations-trigger')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-new-conversation')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(controller.copy.conversationSaveFailed), findsNothing);
+      expect(controller.selectedConversationId, 'global');
+      expect(controller.conversations, isEmpty);
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-conversations-trigger')),
+      );
+      await tester.pumpAndSettle();
+      store.fail = false;
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-new-conversation')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('assistant-conversation-drawer')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-conversations-trigger')),
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('assistant-conversation-drawer')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final size in [const Size(720, 700), const Size(1280, 800)]) {
     _uiTest('desktop drawer fits scaled English text at $size', (tester) async {
@@ -520,6 +895,11 @@ void main() {
       controller.openGameAssistant('puerto-rico');
       await controller.setLanguage(AppLanguage.en);
       await _mount(tester, controller, size, desktop: true);
+      expect(
+        find.byKey(const ValueKey('assistant-header-share')),
+        findsNothing,
+      );
+      if (size.width == 1280) await _capture(tester, 'assistant-desktop');
       await tester.tap(
         find.byKey(const ValueKey('assistant-conversations-trigger')),
       );
@@ -554,7 +934,12 @@ void main() {
       );
       await _mount(tester, controller, const Size(390, 844));
       await _capture(tester, 'assistant-compact-${language.name}');
-      await tester.tap(find.byKey(const ValueKey('assistant-prompt-0')));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('assistant-prompt-0')),
+          matching: find.byType(InkWell),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(controller.selectedConversation!.messages, isEmpty);
       expect(
@@ -564,6 +949,11 @@ void main() {
             .text,
         isNotEmpty,
       );
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 180 * tester.view.devicePixelRatio,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pumpAndSettle();
       final panel = find.byKey(const ValueKey('desktop-model-picker-panel'));
@@ -651,6 +1041,7 @@ Future<void> _mount(
   AppController controller,
   Size size, {
   bool desktop = false,
+  double textScale = 1.25,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -665,7 +1056,7 @@ Future<void> _mount(
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
-          ).copyWith(textScaler: const TextScaler.linear(1.25)),
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
         home: desktop
@@ -680,6 +1071,17 @@ Future<void> _mount(
 Future<void> _capture(WidgetTester tester, String name) async {
   final output = Platform.environment['CONVERSATION_UI_CAPTURE_DIR'];
   if (output == null) return;
+  final context = tester.element(find.byType(Scaffold).first);
+  final providers = tester
+      .widgetList<Image>(find.byType(Image))
+      .map((image) => image.image)
+      .toList();
+  await tester.runAsync(() async {
+    await Future.wait(
+      providers.map((provider) => precacheImage(provider, context)),
+    );
+  });
+  await tester.pump();
   final boundary = tester.renderObject<RenderRepaintBoundary>(
     find.byKey(const ValueKey('conversation-capture')),
   );
@@ -698,11 +1100,46 @@ Future<AppController> _controller(_MemoryStore store, {AiService? ai}) async {
   return controller;
 }
 
+Future<void> _submitQuestion(
+  AppController controller, {
+  bool useGlobalMode = false,
+}) async {
+  await controller.saveAiApiConfig(
+    controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+  );
+  await controller.sendPrompt('已发送的问题', useGlobalMode: useGlobalMode);
+}
+
+_MemoryStore _usedConversationStore() {
+  final now = DateTime.utc(2026);
+  final conversation = AiConversation(
+    id: 'global',
+    title: '已有对话',
+    scope: AiConversationScope.global,
+    createdAt: now,
+    updatedAt: now,
+    messages: [
+      ChatMessage(
+        id: 'existing-user',
+        role: ChatRole.user,
+        text: '原有问题',
+        timestamp: now,
+      ),
+    ],
+  );
+  return _MemoryStore()
+    ..value = jsonEncode({
+      'version': 4,
+      'selectedConversationId': 'global',
+      'conversations': {'global': conversation.toMap()},
+    });
+}
+
 AppController _buildController(_MemoryStore store, {AiService? ai}) =>
     AppController(
       preferencesService: PreferencesService(),
-      aiService: ai ?? _UnusedAi(),
-      gameManifestService: GameManifestService(),
+      aiService: ai ?? _ImmediateAi(),
+      gameManifestService: FixtureGameManifestService(),
       remoteAssetService: _NoNetwork(),
       speechService: SpeechService(),
       ttsService: _SilentTts(),
@@ -712,11 +1149,13 @@ AppController _buildController(_MemoryStore store, {AiService? ai}) =>
 class _MemoryStore extends ConversationStore {
   String? value;
   bool fail = false;
+  int writes = 0;
   @override
   Future<String?> load() async => value;
   @override
   Future<void> save(String payload) async {
     if (fail) throw StateError('test write failure');
+    ++writes;
     value = payload;
     jsonDecode(payload);
   }
@@ -725,6 +1164,32 @@ class _MemoryStore extends ConversationStore {
 class _UnusedAi extends Fake implements AiService {
   @override
   void dispose() {}
+}
+
+class _ImmediateAi extends _UnusedAi {
+  @override
+  Stream<BoardGameAiStreamEvent> streamReply({
+    required String prompt,
+    required AppLanguage language,
+    required GameInfo game,
+    required AiAnswerMode answerMode,
+    required bool useGlobalMode,
+    required AiApiConfig config,
+    required List<AssetSourceConfig> assetSourceConfigs,
+    required RemoteAssetService remoteAssetService,
+    required List<ChatMessage> conversationHistory,
+    String? conversationId,
+    bool useCurrentGameKnowledge = false,
+    Future<void>? abortTrigger,
+  }) => Stream.value(
+    BoardGameAiStreamEvent(
+      answer: BoardGameAiAnswer(
+        text: '已完成的回答',
+        source: AnswerSource.generalAdvice,
+      ),
+      isDone: true,
+    ),
+  );
 }
 
 class _DelayedAi extends _UnusedAi {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../shared/personal_account_access.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -67,6 +68,7 @@ class _MobileNationalDayScreenState extends State<MobileNationalDayScreen> {
   }
 
   Future<void> _vote(GameInfo game) async {
+    if (!requirePersonalAccount(context)) return;
     final saved = await widget.controller.gameVotes.toggle(game.slug);
     if (!saved && mounted) _notice('投票保存失败，请重试');
   }

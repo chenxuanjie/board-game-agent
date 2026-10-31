@@ -13,6 +13,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
             .height;
         await _navigate(tester, '游戏库');
         expect(search, findsOneWidget);
+        expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
         for (final label in ['我的喜欢', '排行榜', '设置', 'AI助手']) {
           await _navigate(tester, label, settle: false);
           if (label == '排行榜') {
@@ -35,13 +36,20 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
             find.byKey(const ValueKey('desktop-home-search-shell')),
             findsNothing,
           );
-          expect(find.byTooltip('通知'), findsOneWidget);
           expect(
-            tester
-                .getSize(find.byKey(const ValueKey('desktop-top-bar')))
-                .height,
-            lessThan(fullHeaderHeight),
+            find.byKey(const ValueKey('account-menu-button')),
+            findsNothing,
           );
+          if (width < DesktopResponsive.narrowBreakpoint) {
+            expect(
+              tester
+                  .getSize(find.byKey(const ValueKey('desktop-top-bar')))
+                  .height,
+              lessThan(fullHeaderHeight),
+            );
+          } else {
+            expect(find.byKey(const ValueKey('desktop-top-bar')), findsNothing);
+          }
           if (width < DesktopResponsive.narrowBreakpoint) {
             expect(
               find.byKey(const ValueKey('desktop-open-navigation')),
@@ -137,7 +145,7 @@ void _registerDesktopShellTests(_DesktopWorkspaceTestContext context) {
       expect(find.text('外观与主题'), findsOneWidget);
       expect(find.text('桌游检查'), findsOneWidget);
       expect(find.byKey(const ValueKey('library-check-quick')), findsOneWidget);
-      expect(find.byKey(const ValueKey('library-check-full')), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-check-full')), findsNothing);
       expect(find.text('通知设置'), findsNothing);
       expect(find.text('服务器与资料'), findsOneWidget);
       expect(find.text('关于与更新'), findsOneWidget);

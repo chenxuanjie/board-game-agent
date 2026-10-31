@@ -30,10 +30,12 @@ try:
     from .library import Library, LibraryError
     from .comments import Comments
     from .account_files import AccountFiles
+    from .ai_proxy import AiRelay, AiRelayError
 except ImportError:  # Docker's /app module layout.
     from library import Library, LibraryError
     from comments import Comments
     from account_files import AccountFiles
+    from ai_proxy import AiRelay, AiRelayError
 
 
 class Failure(Exception):
@@ -70,11 +72,15 @@ class Settings:
     comments_root: str = "/data/comments"
     comments_nas_path: str = "/friend/apps/board_game_agent_comments/public/v1"
     shared_folder: str = "friend"
+    ai_allowed_origins: tuple[str, ...] = ("https://api.openai.com", "https://api.deepseek.com", "https://www.loomex.lol", "https://loomex.lol")
 
     def __post_init__(self):
         object.__setattr__(self, "nas_origin", origin(self.nas_origin))
         object.__setattr__(self, "identity_origin", origin(self.identity_origin))
         object.__setattr__(self, "public_origin", origin(self.public_origin, allow_http=self.insecure_http))
+        if len(self.ai_allowed_origins) > 16:
+            raise ValueError("At most 16 trusted AI origins are supported")
+        object.__setattr__(self, "ai_allowed_origins", tuple(origin(site) for site in self.ai_allowed_origins))
         if min(self.max_sessions, self.idle_seconds, self.lifetime_seconds) <= 0:
             raise ValueError("Positive session limits are required")
         if (not self.shared_folder or len(self.shared_folder) > 240 or any(
@@ -100,7 +106,9 @@ class Settings:
                    shared_folder=os.getenv("ACCOUNT_SHARED_FOLDER", "friend"),
                    comments_root=os.getenv("COMMENTS_ROOT", "/data/comments"),
                    comments_nas_path=os.getenv("COMMENTS_NAS_PATH", "/friend/apps/board_game_agent_comments/public/v1"),
-                   library_nas_path=os.getenv("LIBRARY_NAS_PATH", "/friend/apps/board_game_agent/board-game-lib"))
+                   library_nas_path=os.getenv("LIBRARY_NAS_PATH", "/friend/apps/board_game_agent/board-game-lib"),
+                   ai_allowed_origins=tuple(site.strip() for site in os.getenv("AI_ALLOWED_ORIGINS",
+                       "https://api.openai.com,https://api.deepseek.com,https://www.loomex.lol,https://loomex.lol").split(",") if site.strip()))
 
 
 @dataclass
@@ -310,13 +318,18 @@ class BrowserSession:
     busy: bool = False
 
 
-def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | None = None):
+def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | None = None,
+               ai_upstream: httpx.AsyncClient | None = None):
     settings = settings or Settings.from_env()
     owned = upstream is None
     upstream = upstream or httpx.AsyncClient(timeout=8, trust_env=False,
                                               verify=ssl.create_default_context(cafile=os.getenv("DSM_CA_FILE")),
                                               limits=httpx.Limits(max_connections=32, max_keepalive_connections=16))
     dsm = Dsm(settings, upstream)
+    owned_ai = ai_upstream is None
+    ai_upstream = ai_upstream or httpx.AsyncClient(timeout=httpx.Timeout(60, connect=8, write=30, pool=3),
+        trust_env=False, limits=httpx.Limits(max_connections=8, max_keepalive_connections=4))
+    ai_relay = AiRelay(settings.ai_allowed_origins, ai_upstream)
     library = Library(settings.library_root)
     comments = Comments(settings.comments_root, settings.comments_nas_path, Failure)
     comment_locks = WeakValueDictionary()
@@ -381,6 +394,18 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
         if state is None or state.nas is None:
             raise Failure("sessionRejected", 401)
         return state
+
+    async def ai_request(request):
+        guard(request)
+        key, state, _ = session(request)
+        if state is None:
+            raise AiRelayError("aiSessionRequired", "站点会话已过期，请刷新网页后重试。", 401)
+        # Guests may continue to use their own key, as on native clients.
+        limit(request, hashlib.sha256(key.encode()).hexdigest(), bucket="ai", maximum=60)
+        return await ai_relay.forward(request)
+
+    async def ai_failure(request, error):
+        return answer({"error": {"code": error.code, "type": "gateway_error", "message": error.message}}, status=error.status)
 
     async def sync_files(request):
         guard(request)
@@ -627,8 +652,11 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
         await asyncio.gather(*(revoke_quiet(state.nas) for state in sessions.values()))
         if owned:
             await upstream.aclose()
+        if owned_ai:
+            await ai_upstream.aclose()
 
     return Starlette(routes=[Route("/api/account/config", config), Route("/api/account/session", current),
+                             Route("/api/ai/request", ai_request, methods=["GET", "POST"]),
                              Route("/api/account/login", login, methods=["POST"]),
                              Route("/api/account/logout", logout, methods=["POST"]),
                              Route("/api/comments/entries", comment_entries),
@@ -637,5 +665,5 @@ def create_app(settings: Settings | None = None, upstream: httpx.AsyncClient | N
                              Route("/library/{path:path}", library_file, methods=["GET", "HEAD"]),
                              Route("/api/library/files", library_files),
                              Route("/api/library/versions", library_versions)],
-                     exception_handlers={Failure: failure_handler, LibraryError: library_error,
+                     exception_handlers={Failure: failure_handler, LibraryError: library_error, AiRelayError: ai_failure,
                                          Exception: unexpected_handler}, lifespan=lifespan)

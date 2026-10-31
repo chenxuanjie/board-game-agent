@@ -33,6 +33,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
   int _totalPages = 0;
   int _viewerRevision = 0;
   Uri? _webUri;
+  PdfDocumentRef? _documentRef;
 
   @override
   void initState() {
@@ -40,10 +41,31 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
     _loadDocument();
   }
 
+  @override
+  void didUpdateWidget(covariant PdfDocumentScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller ||
+        oldWidget.remotePath != widget.remotePath) {
+      _viewerRevision++;
+      _loadDocument();
+    }
+  }
+
   void _loadDocument() {
+    _documentRef = null;
+    _webUri = null;
+    _currentPage = 1;
+    _totalPages = 0;
     if (kIsWeb) {
       _webUri = widget.controller.documentUri(widget.remotePath);
-      if (_webUri == null) {
+      if (_webUri != null) {
+        _documentRef = PdfDocumentRefUri(
+          _webUri!,
+          preferRangeAccess: true,
+          withCredentials: true,
+          timeout: const Duration(seconds: 20),
+        );
+      } else {
         _webBytesFuture = widget.controller.loadDocumentBytes(
           widget.remotePath,
         );
@@ -69,15 +91,7 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
       appBar: AppBar(title: Text(widget.title)),
       backgroundColor: palette.pageBackground,
       body: _webUri != null
-          ? PdfViewer.uri(
-              _webUri!,
-              key: ValueKey(_viewerRevision),
-              controller: _pdfController,
-              preferRangeAccess: true,
-              withCredentials: true,
-              timeout: const Duration(seconds: 20),
-              params: _viewerParams(palette, copy),
-            )
+          ? _buildViewer(palette, copy)
           : kIsWeb
           ? FutureBuilder<List<int>?>(
               future: _webBytesFuture,
@@ -126,26 +140,23 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
     Uint8List? bytes,
     String? path,
   }) {
-    final params = _viewerParams(palette, copy);
-    final viewer = bytes != null
-        ? PdfViewer.data(
+    // PdfViewer starts loading asynchronously. Keep the reference identical
+    // across parent rebuilds until this document is replaced or retried.
+    _documentRef ??= bytes != null
+        ? PdfDocumentRefData(
             bytes,
             sourceName: widget.remotePath,
-            key: ValueKey<int>(_viewerRevision),
-            controller: _pdfController,
             useProgressiveLoading: false,
-            params: params,
           )
-        : PdfViewer.file(
-            path!,
-            key: ValueKey<int>(_viewerRevision),
-            controller: _pdfController,
-            useProgressiveLoading: false,
-            params: params,
-          );
+        : PdfDocumentRefFile(path!, useProgressiveLoading: false);
     return DecoratedBox(
       decoration: BoxDecoration(color: palette.pageBackground),
-      child: viewer,
+      child: PdfViewer(
+        _documentRef!,
+        key: ValueKey<int>(_viewerRevision),
+        controller: _pdfController,
+        params: _viewerParams(palette, copy),
+      ),
     );
   }
 
@@ -160,6 +171,8 @@ class _PdfDocumentScreenState extends State<PdfDocumentScreen> {
       verticalCacheExtent: 3.0,
       horizontalCacheExtent: 1.5,
       scrollPhysics: const _FastPdfScrollPhysics(),
+      loadingBannerBuilder: (_, _, _) =>
+          const Center(child: CircularProgressIndicator()),
       onViewerReady: (document, controller) {
         if (!mounted) return;
         setState(() {

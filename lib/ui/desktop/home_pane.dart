@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../shared/content_entrance.dart';
+import '../shared/library_catalog_status.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
 import '../../core/theme/app_motion.dart';
@@ -115,6 +116,7 @@ class _DesktopHomePaneState extends State<DesktopHomePane> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              LibraryCatalogStatus(controller: widget.controller, home: true),
               DesktopContentStatus(controller: widget.controller),
               if (!widget.controller.hasGames)
                 TextButton(

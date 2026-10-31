@@ -1,71 +1,151 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:app_client/app_client.dart';
 import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_settings/webdav_settings.dart';
-import 'package:crypto/crypto.dart';
-// Existing native transport supports the app's Windows/system proxy policy.
+// Use the existing platform proxy policy instead of an ad-hoc HTTP client.
 // ignore: implementation_imports
 import 'package:app_ai_client/src/default_http_client.dart';
 import '../../../app/state/app_controller.dart';
-import '../models/account_configuration.dart';
-import '../../settings/services/preferences_service.dart';
-import 'account_cloud_sync.dart';
-import 'account_public_reactions.dart';
-import 'saved_login_store.dart';
-import 'web_account_gateway.dart';
+import '../models/service_configuration.dart';
 import '../../community/services/game_comments_service.dart';
-import '../../community/services/web_public_comments_files.dart';
+import '../../community/services/board_public_sync.dart';
+import '../../community/services/public_publication.dart';
+import 'saved_login_store.dart';
+import 'service_identity_gateway.dart';
+import 'board_personal_store.dart';
+import '../../games/services/service_game_statistics.dart';
+import '../../games/models/game_vote_record.dart';
 
+/// Owns the sole app-service identity and the account's local workspace.
+/// Resource configuration is independent and never supplies login credentials.
 final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   AccountService({
     required AppController controller,
-    this.webDav,
-    @visibleForTesting IdentitySessionStorage? savedLoginStorage,
-    @visibleForTesting IdentitySessionStorage Function(String)? credentialStore,
-    @visibleForTesting
-    Future<IdentityGateway> Function(AccountConfiguration)? gatewayFactory,
-    @visibleForTesting Future<void> Function(String?)? switchScope,
-    @visibleForTesting bool? signInSupported,
-    @visibleForTesting bool? browserAccounts,
-    @visibleForTesting
-    Future<AccountConfiguration> Function()? webConfigurationLoader,
-    @visibleForTesting
-    AccountPrivateFiles Function(IdentityGateway)? privateFilesFactory,
-    @visibleForTesting
-    AccountPublicFiles Function(IdentityGateway)? publicFilesFactory,
+    IdentitySessionStorage? savedLoginStorage,
+    Future<IdentityGateway> Function(ServiceConfiguration)? gatewayFactory,
+    RefreshSessionStore Function(ServiceConfiguration)? sessionStoreFactory,
+    http.Client Function()? httpClientFactory,
+    PublicSyncFactory? publicSyncFactory,
+    Future<void> Function(String?)? switchScope,
+    bool? signInSupported,
+    bool? browserAccounts,
+    Uri? browserOrigin,
   }) : _controller = controller,
        _savedLogins = SavedLoginStore(storage: savedLoginStorage),
        _gatewayFactory = gatewayFactory,
+       _storeFactory = sessionStoreFactory,
+       _httpClientFactory = httpClientFactory ?? createDefaultAiHttpClient,
+       _publicSyncFactory = publicSyncFactory ?? BoardPublicSync.open,
        _switchScope = switchScope,
-       _privateFilesFactory = privateFilesFactory,
-       _publicFilesFactory = publicFilesFactory,
-       _credentialStore = credentialStore,
+       _browserOrigin = browserOrigin,
        usesWebAccount = browserAccounts ?? kIsWeb,
-       _webConfigurationLoader = webConfigurationLoader,
-       supportsSignIn = signInSupported ?? true;
-  final bool usesWebAccount;
-  final Future<AccountConfiguration> Function()? _webConfigurationLoader;
-  Duration get _identityTimeout =>
-      usesWebAccount ? const Duration(seconds: 40) : authenticationTimeout;
-  static const _configurationKey =
-      'board_game_agent.identity.synology.direct.configuration.v3';
-  static const authenticationTimeout = Duration(seconds: 3);
-  final WebDavSettingsController? webDav;
-  AppController get controller => _controller;
+       supportsSignIn = signInSupported ?? true {
+    _controller.configureAccountReactions(requireAccount: true);
+  }
+
+  static const authenticationTimeout = Duration(seconds: 45);
+  static const serviceOriginKey = 'board_game_agent.app_service.origin.v1';
+  final AppController _controller;
+  final bool usesWebAccount, supportsSignIn;
+  final Uri? _browserOrigin;
+  final Future<IdentityGateway> Function(ServiceConfiguration)? _gatewayFactory;
+  final RefreshSessionStore Function(ServiceConfiguration)? _storeFactory;
+  final http.Client Function() _httpClientFactory;
+  final PublicSyncFactory _publicSyncFactory;
+  final Future<void> Function(String?)? _switchScope;
   final SavedLoginStore _savedLogins;
+  ServiceConfiguration? _serviceConfiguration;
+  IdentityGateway? _gateway;
+  IdentityController? _identity;
+  Timer? _verificationTimer;
+  bool _disposed = false,
+      _initializing = false,
+      _signingIn = false,
+      _scopeChanging = false,
+      _observing = false;
+  String? _setupError, _scopeError, _appliedScope, _requestedScope, _nickname;
+  int _scopeGeneration = 0, _loginGeneration = 0;
+  Future<void> _scopeQueue = Future.value();
+  BoardPersonalStore? _personalStore;
+  AppJsonClient? _businessClient;
+  GameCommentsService? _comments;
+  BoardPublicSync? _publicSync;
+  String? _publicSyncError;
+  int _publicGeneration = 0;
+  final _statisticsReaders = <String, ServiceGameStatistics>{};
+
+  /// The application shell owns native discovery; public sync never installs.
+  Future<void> Function(Uri, List<PublicPublication>)? onPublications;
+  String? get publicSyncError => _publicSyncError ?? _publicSync?.error;
+  final _personalWatchers = <StreamSubscription<dynamic>>[];
+  Timer? _personalRefresh;
+  bool _refreshingPersonal = false;
+  String? get personalSyncError => _personalStore?.syncError;
+
+  AppController get controller => _controller;
+  ServiceConfiguration? get serviceConfiguration => _serviceConfiguration;
+  String get serviceAddress => _serviceConfiguration?.origin.origin ?? '';
+  IdentityUser? get user => _identity?.user;
+  bool get isConfigured => _serviceConfiguration != null;
+  bool get isSignedIn => user != null;
+  bool get isOffline =>
+      user != null && _identity?.state.trust == IdentityTrust.cached;
+  bool get isBusy =>
+      _initializing ||
+      _signingIn ||
+      _scopeChanging ||
+      (_identity?.busy ?? false);
+  bool get dataScopeReady => !_scopeChanging && _scopeError == null;
+  bool get needsOtp => const {
+    IdentityFailureCode.otpRequired,
+    IdentityFailureCode.invalidOtp,
+  }.contains(_identity?.failure?.code);
+  String? get error =>
+      _scopeError ?? _setupError ?? _localizedFailure(_identity?.failure);
+  String get displayName =>
+      _nickname?.isNotEmpty == true ? _nickname! : user?.displayName ?? '账号';
+  String? get currentAccountScope =>
+      user == null ? null : _serviceConfiguration!.accountScope(user!.id);
+  String get nicknameKey => user == null
+      ? 'mobile_profile_nickname'
+      : 'app_service.profile.$currentAccountScope.nickname';
+
+  // These capabilities are not supplied by authentication. Their old NAS
+  // transports are never attached to a new service session.
+  GameCommentsService? get comments => _comments;
+
+  Future<String> aiAccessToken() async {
+    final gateway = _gateway, current = user, generation = _scopeGeneration;
+    if (gateway is! ServiceIdentityGateway ||
+        current == null ||
+        _scopeChanging ||
+        _disposed) {
+      throw StateError('请先登录后使用 Loomex');
+    }
+    final token = await gateway.accessToken(current.id);
+    if (_disposed ||
+        _scopeChanging ||
+        generation != _scopeGeneration ||
+        user?.id != current.id) {
+      throw StateError('账号已切换，请重新发送');
+    }
+    return token;
+  }
+
+  List<SavedLogin> get savedLogins => _savedLogins.entries
+      .where((e) => e.environment == _serviceConfiguration?.environmentId)
+      .toList(growable: false);
   String? _savedLoginError;
   String? get savedLoginError => _savedLoginError;
   bool _savedLoginNeedsReload = false;
   bool get savedLoginNeedsReload => _savedLoginNeedsReload;
-  List<SavedLogin> get savedLogins => _savedLogins.entries
-      .where((e) => e.environment == _configuration?.environmentId)
-      .toList(growable: false);
-
   Future<void> loadSavedLogins() async {
-    if (!supportsSignIn || usesWebAccount || _disposed) return;
+    if (usesWebAccount || _disposed) return;
     try {
       await _savedLogins.load();
       _savedLoginError = null;
@@ -78,345 +158,66 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> forgetSavedLogin(SavedLogin entry) async {
-    if (!supportsSignIn || isBusy || _disposed) return;
+    if (isBusy || _disposed) return;
     try {
       await _savedLogins.forget(entry);
       _savedLoginError = null;
-      _savedLoginNeedsReload = false;
     } catch (_) {
       _savedLoginError = '已保存账号未移除，请重试';
-      _savedLoginNeedsReload = false;
     }
     if (!_disposed) notifyListeners();
   }
 
-  final IdentitySessionStorage Function(String)? _credentialStore;
-  final Map<String, IdentitySessionStorage> _credentialStores = {};
-  Future<void> _resourceQueue = Future.value();
-  bool _signingIn = false;
-  String? _resourceUserId;
-  bool _resourceProjectionReady = false;
-  int _loginGeneration = 0;
-  IdentitySessionStorage _credentials(String scope) =>
-      _credentialStores.putIfAbsent(
-        scope,
-        () =>
-            _credentialStore?.call(scope) ??
-            SecureIdentitySessionStorage(
-              appId: 'board_game_agent_resources',
-              environment: scope,
-            ),
-      );
-  bool get resourceCredentialsReady => usesWebAccount
-      ? isSignedIn && !isOffline && dataScopeReady
-      : isSignedIn &&
-            _resourceProjectionReady &&
-            _resourceUserId == user?.id &&
-            webDav?.saved.username.isNotEmpty == true &&
-            webDav?.saved.password.isNotEmpty == true;
-  WebDavSettings settingsForResource(Uri target) {
-    final config = _configuration;
-    if (config == null || !resourceCredentialsReady) {
-      return const WebDavSettings();
-    }
-    for (final server in config.servers) {
-      final root = server.webDavRoot(config.storageFolder);
-      if (target.origin == root.origin && target.path.startsWith(root.path)) {
-        return webDav!.saved.copyWith(baseUrl: root.toString());
-      }
-    }
-    return const WebDavSettings();
-  }
-
-  Future<void> _projectResources() {
-    // Browser sessions deliberately have no NAS password/WebDAV projection.
-    if (usesWebAccount) return Future.value();
-    if (webDav == null || _configuration == null) return Future.value();
-    final work = _resourceQueue.then((_) async {
-      if (_disposed) return;
-      _resourceProjectionReady = false;
-      final config = _configuration!;
-      final identity = user;
-      final generation = _loginGeneration;
-      String username = '', password = '';
-      if (identity != null) {
-        final raw = await _credentials(config.accountScope(identity.id)).read();
-        if (raw != null) {
-          final value = jsonDecode(raw) as Map<String, dynamic>;
-          if (value['userId'] == identity.id &&
-              value['environment'] == config.environmentId) {
-            username = value['username'] as String;
-            password = value['password'] as String;
-          }
-        }
-      }
-      if (_disposed ||
-          generation != _loginGeneration ||
-          user?.id != identity?.id ||
-          !identical(config, _configuration)) {
-        return;
-      }
-      await webDav!.saveConfiguration(
-        WebDavSettings(
-          mode: ExternalStorageMode.webDav,
-          baseUrl: config.activeServer
-              .webDavRoot(config.storageFolder)
-              .toString(),
-          username: username,
-          password: password,
-        ),
-      );
-      await _controller.saveAssetSourceConfigs(config.resourceSources);
-      if (!_disposed &&
-          generation == _loginGeneration &&
-          user?.id == identity?.id &&
-          identical(config, _configuration)) {
-        _resourceUserId = identity?.id;
-        _resourceProjectionReady = true;
-      }
-    });
-    _resourceQueue = work.catchError((Object _) {});
-    return work;
-  }
-
-  Future<void> _persistConfiguration() async {
-    if (!await (await SharedPreferences.getInstance()).setString(
-      _configurationKey,
-      jsonEncode(_configuration!.toJson()),
-    )) {
-      throw StateError('Configuration persistence failed');
-    }
-  }
-
-  Future<void> _migrateResourceCredential() async {
-    if (usesWebAccount) return;
-    final identity = user;
-    final config = _configuration;
-    final legacy = webDav?.saved;
-    if (identity == null ||
-        config == null ||
-        legacy == null ||
-        legacy.username != identity.displayName ||
-        legacy.password.isEmpty ||
-        !config.resourceSources.any((s) => s.testUrl == legacy.baseUrl)) {
-      return;
-    }
-    final store = _credentials(config.accountScope(identity.id));
-    if (await store.read() != null || _disposed || user?.id != identity.id) {
-      return;
-    }
-    await store.write(
-      jsonEncode({
-        'version': 1,
-        'userId': identity.id,
-        'environment': config.environmentId,
-        'username': legacy.username,
-        'password': legacy.password,
-      }),
-    );
-  }
-
-  final bool supportsSignIn;
-  final AppController _controller;
-  final Future<IdentityGateway> Function(AccountConfiguration)? _gatewayFactory;
-  final Future<void> Function(String?)? _switchScope;
-  final AccountPrivateFiles Function(IdentityGateway)? _privateFilesFactory;
-  final AccountPublicFiles Function(IdentityGateway)? _publicFilesFactory;
-  AccountConfiguration? _configuration;
-  AccountConfiguration? _pendingLoginConfiguration;
-  IdentityController? _identity;
-  IdentityGateway? _gateway;
-  bool _observing = false,
-      _initializing = false,
-      _scopeChanging = false,
-      _disposed = false;
-  String? _setupError, _scopeError, _appliedScope, _requestedScope;
-  int _scopeGeneration = 0;
-  Future<void> _scopeQueue = Future.value();
-  Timer? _verificationTimer;
-  AccountCloudSync? _cloud;
-  GameCommentsService? _comments;
-  bool _commentsClosing = false;
-  GameCommentsService? get comments {
-    if ((!isSignedIn && !usesWebAccount) ||
-        !dataScopeReady ||
-        _disposed ||
-        _commentsClosing) {
-      return null;
-    }
-    if (_comments != null) return _comments;
-    if (usesWebAccount) {
-      final identityId = user?.id;
-      final uid = _gateway is WebAccountGateway
-          ? (_gateway as WebAccountGateway).nasUid ?? 0
-          : 0;
-      return _comments = GameCommentsService(
-        files: WebPublicCommentsFiles(uid: uid),
-        scope: identityId == null
-            ? 'web_comments_guest'
-            : _configuration!.accountScope(identityId),
-        readOnly: identityId == null || uid == 0,
-        displayName: () => displayName,
-        isActive: () =>
-            !_disposed &&
-            !_commentsClosing &&
-            dataScopeReady &&
-            user?.id == identityId,
-      );
-    }
-    if (_gateway is! SynologyIdentityGateway || isOffline) return null;
-    final identityId = user!.id;
-    final files = (_gateway as SynologyIdentityGateway).publicFiles(
-      appId: 'board_game_agent_comments',
-      sharedFolder: _configuration!.storageFolder,
-    );
-    final comments = GameCommentsService(
-      files: files,
-      scope: _configuration!.accountScope(identityId),
-      displayName: () => displayName,
-      isActive: () =>
-          !_disposed &&
-          !_commentsClosing &&
-          user?.id == identityId &&
-          !isOffline &&
-          dataScopeReady,
-    );
-    try {
-      // Bind DSM UID before exposing the service to synchronous widget reads.
-      comments.uid;
-      return _comments = comments;
-    } on PrivateFileException {
-      comments.dispose();
-      return null;
-    }
-  }
-
-  String? _nickname;
-  AccountCloudSync? get cloud => _cloud;
-  AccountConfiguration? get configuration => _configuration;
-  AccountConfiguration get loginConfiguration =>
-      _configuration ??
-      AccountConfiguration.fromResources(
-        sources: _controller.assetSourceConfigs,
-      );
-  IdentityUser? get user => _identity?.user;
-  bool get isConfigured => _configuration != null;
-  bool get isSignedIn => user != null;
-  bool get isOffline =>
-      user != null && _identity?.state.trust == IdentityTrust.cached;
-  bool get needsOtp => const {
-    IdentityFailureCode.otpRequired,
-    IdentityFailureCode.invalidOtp,
-  }.contains(_identity?.failure?.code);
-  bool get isBusy =>
-      _initializing ||
-      _signingIn ||
-      _scopeChanging ||
-      (_identity?.busy ?? false);
-  bool get dataScopeReady => !_scopeChanging && _scopeError == null;
-  String? get error =>
-      _scopeError ?? _setupError ?? _localizedFailure(_identity?.failure);
-  String get displayName => _nickname?.trim().isNotEmpty == true
-      ? _nickname!
-      : user?.displayName ?? user?.email ?? '群晖账号';
-  Future<void> saveNickname(String nickname) async {
-    if (user == null || isBusy || nickname.trim().length > 80) return;
-    final key = nicknameKey;
-    if (!await (await SharedPreferences.getInstance()).setString(
-      key,
-      nickname.trim(),
-    )) {
-      throw StateError('昵称保存失败');
-    }
-    if (user != null && nicknameKey == key) {
-      _nickname = nickname.trim();
-      notifyListeners();
-      await _cloud?.synchronize();
-    }
-  }
-
-  void _cloudChanged() {
-    if (_disposed) return;
-    unawaited(_refreshNickname());
-    notifyListeners();
-  }
-
-  Future<void> _refreshNickname() async {
-    final key = nicknameKey;
-    String? nickname;
-    try {
-      nickname = (await SharedPreferences.getInstance()).getString(key);
-    } catch (_) {
-      return; // A display-name lookup must not block an authenticated account.
-    }
-    if (!_disposed && key == nicknameKey && _nickname != nickname) {
-      _nickname = nickname;
-      notifyListeners();
-    }
-  }
-
-  void _stopComments() {
-    _comments?.dispose();
-    _comments = null;
-  }
-
-  void _stopCloud() {
-    if (_cloud?.publicReactions != null) {
-      _controller.configureAccountReactions();
-    }
-    _cloud?.removeListener(_cloudChanged);
-    _cloud?.dispose();
-    _cloud = null;
-    _nickname = null;
-  }
-
-  String get nicknameKey => user == null
-      ? 'mobile_profile_nickname'
-      : 'identity.profile.${_configuration!.accountScope(user!.id)}.nickname';
   Future<void> initialize() async {
     if (_initializing || _disposed) return;
+    if (_identity != null) {
+      if (_serviceConfiguration case final config?) {
+        _controller.configureApplicationLibrary(config.origin);
+      }
+      await restore();
+      return;
+    }
+    _initializing = true;
     if (!_observing && supportsSignIn) {
       WidgetsBinding.instance.addObserver(this);
       _observing = true;
     }
-    _initializing = true;
-    unawaited(loadSavedLogins());
-    _setupError = null;
     notifyListeners();
     try {
-      if (usesWebAccount && supportsSignIn) {
-        final config =
-            await (_webConfigurationLoader ??
-                WebAccountGateway.loadConfiguration)();
-        if (_disposed) return;
-        _configuration = config;
-        await _disconnect();
-        await _connect();
-        return;
-      }
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(_configurationKey);
-      if (saved != null) {
-        _configuration = AccountConfiguration.fromJson(
-          jsonDecode(saved) as Map<String, dynamic>,
-        );
+      final address = usesWebAccount
+          ? (_browserOrigin ?? Uri.base).origin
+          : prefs.getString(serviceOriginKey) ??
+                ServiceConfiguration.defaultUpdateOrigin;
+      if (address.isNotEmpty) {
+        _serviceConfiguration = ServiceConfiguration(Uri.parse(address));
+        await _connect();
       }
-      if (_configuration == null ||
-          (saved != null && jsonDecode(saved)['version'] == 3)) {
-        _configuration = AccountConfiguration.fromResources(
-          sources: await PreferencesService().loadAssetSourceConfigs(),
-          previous: _configuration,
-        );
-        await _persistConfiguration();
-      }
-      if (_configuration != null) {
-        await _disconnect();
-        if (supportsSignIn) await _connect();
-        await _migrateResourceCredential();
-        await _projectResources();
-      }
+      _setupError = null;
+      unawaited(loadSavedLogins());
     } catch (_) {
-      _setupError = usesWebAccount ? '账号服务暂不可用，请重试连接' : '无法读取账号配置或安全存储，请重试';
+      _setupError = '账号服务连接未完成，请重试';
+    } finally {
+      _initializing = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  Future<void> configureService(String address) async {
+    if (usesWebAccount) throw StateError('账号服务由当前站点管理');
+    if (isBusy || isSignedIn || _disposed) throw StateError('请先退出账号');
+    final next = ServiceConfiguration(Uri.parse(address.trim()));
+    _initializing = true;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString(serviceOriginKey, next.origin.origin)) {
+        throw StateError('Service configuration could not be saved');
+      }
+      await _disconnect();
+      _serviceConfiguration = next;
+      _setupError = null;
+      await _connect(restoreSession: false);
     } finally {
       _initializing = false;
       if (!_disposed) notifyListeners();
@@ -424,24 +225,32 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _connect({bool restoreSession = true}) async {
-    final config = _configuration!;
+    final config = _serviceConfiguration!;
+    _controller.configureApplicationLibrary(config.origin);
     IdentityGateway gateway;
     if (_gatewayFactory != null) {
       gateway = await _gatewayFactory(config);
-    } else if (usesWebAccount) {
-      gateway = WebAccountGateway();
     } else {
-      final adapter = SynologyIdentityGateway(
-        origin: config.nasOrigin,
-        identityOrigin: config.identityOrigin,
-        environment: config.environmentId,
-        client: createDefaultAiHttpClient(),
-        storage: SecureIdentitySessionStorage(
-          appId: 'board_game_agent',
-          environment: config.nasOrigin == config.identityOrigin
-              ? config.environmentId
-              : '${config.environmentId}_${sha256.convert(utf8.encode(config.nasOrigin.origin)).toString().substring(0, 16)}',
-        ),
+      final key =
+          'board_game_agent.app_service.session.v1.${config.environmentId}';
+      final client = AppJsonClient(
+        config.origin,
+        applicationId: ServiceConfiguration.applicationId,
+        client: _httpClientFactory(),
+        baseUri: usesWebAccount
+            ? config.origin.resolve('/api/')
+            : config.origin.resolve('/'),
+        requestTimeout: const Duration(seconds: 40),
+      );
+      final adapter = ServiceIdentityGateway(
+        configuration: config,
+        client: client,
+        browser: usesWebAccount,
+        store:
+            _storeFactory?.call(config) ??
+            (usesWebAccount
+                ? BrowserLogoutStore(key)
+                : NativeSessionStore(key: key)),
       );
       try {
         await adapter.initialize();
@@ -458,14 +267,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     _gateway = gateway;
     _identity = IdentityController(
       gateway: gateway,
-      requestTimeout: _identityTimeout,
-      signInTimeout: _identityTimeout,
-      failedSignInCleanupTimeout: usesWebAccount
-          ? const Duration(seconds: 5)
-          : const Duration(milliseconds: 500),
+      requestTimeout: authenticationTimeout,
+      signInTimeout: authenticationTimeout,
+      failedSignInCleanupTimeout: const Duration(seconds: 8),
     )..addListener(_identityChanged);
     if (restoreSession) await _identity!.initialize();
     _identityChanged();
+    if (_comments == null && _requestedScope == null) _queueScope(null);
     await _scopeQueue;
     _verificationTimer?.cancel();
     _verificationTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -475,11 +283,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   void _identityChanged() {
     if (_disposed) return;
-    if (_resourceUserId != user?.id) {
-      _resourceUserId = null;
-      _resourceProjectionReady = false;
-    }
-    final target = user == null ? null : _configuration!.accountScope(user!.id);
+    final target = currentAccountScope;
     if (target != _requestedScope ||
         target != _appliedScope && !_scopeChanging) {
       _requestedScope = target;
@@ -492,17 +296,182 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     final generation = ++_scopeGeneration;
     _scopeChanging = true;
     _scopeError = null;
-    _stopComments();
-    _stopCloud();
-    _scopeQueue = _scopeQueue.then((_) async {
+    _nickname = null;
+    _controller.configureAccountReactions(requireAccount: true);
+    final config = _serviceConfiguration;
+    final selectedUser = user;
+    final gateway = _gateway;
+    _scopeQueue = _scopeQueue.catchError((Object _) {}).then((_) async {
       if (_disposed || generation != _scopeGeneration) return;
+      BoardPersonalStore? nextStore;
       try {
-        await (_switchScope ?? _controller.switchIdentityScope)(target);
-        if (_disposed || generation != _scopeGeneration) return;
+        final oldStore = _personalStore;
+        await _stopPublicSync();
+        _statisticsReaders.clear();
+        await _comments?.drain();
+        _comments?.dispose();
+        _comments = null;
+        _businessClient?.close();
+        _businessClient = null;
+        _personalRefresh?.cancel();
+        for (final watcher in _personalWatchers) {
+          await watcher.cancel();
+        }
+        _personalWatchers.clear();
+        await oldStore?.database.disconnect();
+        final client = config == null
+            ? null
+            : AppJsonClient(
+                config.origin,
+                applicationId: ServiceConfiguration.applicationId,
+                client: _httpClientFactory(),
+                baseUri: config.origin.resolve(usesWebAccount ? '/api/' : '/'),
+                maxResponseBytes: 4 * 1024 * 1024,
+                requestTimeout: const Duration(seconds: 20),
+              );
+        _businessClient = client;
+        Future<String>? access() =>
+            gateway is ServiceIdentityGateway && selectedUser != null
+            ? gateway.accessToken(selectedUser.id)
+            : null;
+        if (target != null &&
+            gateway is ServiceIdentityGateway &&
+            selectedUser != null &&
+            client != null) {
+          var dataset = gateway.datasetId;
+          if (dataset == null) {
+            final result = await client.request(
+              '/v1/datasets',
+              get: true,
+              token: await access(),
+            );
+            dataset =
+                ((result['datasets'] as List).single as Map)['id'] as String;
+          }
+          nextStore = await BoardPersonalStore.open(target, dataset);
+        }
+        if (_disposed || generation != _scopeGeneration) {
+          await nextStore?.close();
+          nextStore = null;
+          return;
+        }
+        if (_switchScope != null) {
+          await _switchScope(target);
+        } else {
+          await _controller.switchIdentityScope(
+            target,
+            personalStore: nextStore,
+          );
+        }
+        _personalStore = nextStore;
+        _controller.configureAccountAi(target);
+        nextStore = null;
+        await oldStore?.close();
         _appliedScope = target;
+        if (_disposed || generation != _scopeGeneration) return;
         _scopeChanging = false;
-        if (target != null) unawaited(_startCloud(target, generation));
+        bool active() =>
+            !_disposed &&
+            generation == _scopeGeneration &&
+            currentAccountScope == target &&
+            !_scopeChanging;
+        final token =
+            target != null &&
+                gateway is ServiceIdentityGateway &&
+                selectedUser != null
+            ? () => gateway.accessToken(selectedUser.id)
+            : null;
+        if (client != null && config != null) {
+          final scope = target ?? 'public-${config.environmentId}';
+          _comments = GameCommentsService(
+            client: client,
+            scope: scope,
+            token: token,
+            uid: selectedUser == null
+                ? ''
+                : sha256
+                      .convert(
+                        utf8.encode(
+                          'board_game_agent.public.v1|${selectedUser.id}',
+                        ),
+                      )
+                      .toString(),
+            isActive: active,
+            displayName: () => displayName,
+          );
+          for (final namespace in [
+            GameVoteBallot.favoritesNamespace,
+            GameVoteBallot.campaign,
+          ]) {
+            _statisticsReaders[namespace] = ServiceGameStatistics(
+              client: client,
+              scope: scope,
+              namespace: namespace,
+              token: token,
+              store: _personalStore,
+              active: active,
+              target: () => namespace == GameVoteBallot.favoritesNamespace
+                  ? _controller.favoriteStatistics
+                  : _controller.gameVotes,
+            );
+          }
+          _controller.configureAccountReactions(
+            scope: scope,
+            error: () => publicSyncError,
+            publicationError: () => personalSyncError,
+            recoverRealtime: retryPublicSync,
+            provider: (namespace) => _statisticsReaders[namespace]!,
+          );
+        }
+        if (client != null) unawaited(_startPublicSync(client, active));
+        if (_personalStore case final store?) {
+          store.addListener(() {
+            if (active() && identical(_personalStore, store)) notifyListeners();
+          });
+          _nickname = (await store.preferences())['nickname'] as String;
+          for (final table in [
+            'favorites',
+            'recent_games',
+            'preferences',
+            'conversations',
+            'messages',
+            'votes',
+          ]) {
+            _personalWatchers.add(
+              store.database
+                  .watch('SELECT * FROM $table')
+                  .listen(
+                    (_) {
+                      if (active()) _schedulePersonalRefresh(store, active);
+                    },
+                    onError: (Object _) {
+                      /* SDK keeps the database and pending queue. */
+                    },
+                  ),
+            );
+          }
+          // First network synchronization never blocks successful local login.
+          unawaited(
+            store
+                .connect(
+                  BoardSyncConnector(
+                    client: client!,
+                    store: store,
+                    token: token!,
+                    active: active,
+                    userId: selectedUser!.id,
+                  ),
+                )
+                .catchError((Object _) {
+                  if (active()) {
+                    store.syncError = '个人数据已保存在本机，同步未完成';
+                    notifyListeners();
+                  }
+                }),
+          );
+        }
       } catch (_) {
+        await nextStore?.close();
         if (!_disposed && generation == _scopeGeneration) {
           _scopeError = '账号数据切换未完成，请重试';
         }
@@ -511,81 +480,136 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _startCloud(String target, int generation) async {
-    if (_disposed ||
-        generation != _scopeGeneration ||
-        user == null ||
-        _cloud != null ||
-        !dataScopeReady ||
-        !(_gateway is SynologyIdentityGateway ||
-            _gateway is WebAccountGateway ||
-            _privateFilesFactory != null)) {
-      return;
-    }
-    final identityId = user!.id;
+  void _schedulePersonalRefresh(
+    BoardPersonalStore store,
+    bool Function() active,
+  ) {
+    _personalRefresh?.cancel();
+    _personalRefresh = Timer(const Duration(milliseconds: 250), () async {
+      if (!active() || _refreshingPersonal) return;
+      _refreshingPersonal = true;
+      try {
+        final refreshed = await _controller.reloadServicePersonalState();
+        if (active()) {
+          _nickname = (await store.preferences())['nickname'] as String;
+          notifyListeners();
+          if (!refreshed) _schedulePersonalRefresh(store, active);
+        }
+      } catch (_) {
+        if (active()) _schedulePersonalRefresh(store, active);
+      } finally {
+        _refreshingPersonal = false;
+      }
+    });
+  }
+
+  Future<void> _startPublicSync(
+    AppJsonClient client,
+    bool Function() active,
+  ) async {
+    final generation = ++_publicGeneration;
+    bool valid() =>
+        !_disposed &&
+        generation == _publicGeneration &&
+        active() &&
+        identical(_businessClient, client);
+    BoardPublicSync? next;
     try {
-      final files = _privateFilesFactory != null
-          ? _privateFilesFactory(_gateway!)
-          : _gateway is WebAccountGateway
-          ? (_gateway as WebAccountGateway).privateFiles()
-          : (_gateway as SynologyIdentityGateway).privateFiles(
-              appId: 'board_game_agent',
-            );
-      final cloud = AccountCloudSync(
-        controller: _controller,
-        scope: target,
-        files: files,
-        publicReactions: _publicFilesFactory != null
-            ? AccountPublicReactions(_publicFilesFactory(_gateway!))
-            : _gateway is WebAccountGateway
-            ? AccountPublicReactions(
-                (_gateway as WebAccountGateway).publicFiles(),
-              )
-            : _gateway is SynologyIdentityGateway
-            ? AccountPublicReactions(
-                (_gateway as SynologyIdentityGateway).publicFiles(
-                  appId: 'board_game_agent',
-                  sharedFolder: _configuration!.storageFolder,
-                ),
-              )
-            : null,
-        isActive: () =>
-            !_disposed &&
-            user?.id == identityId &&
-            !isOffline &&
-            dataScopeReady,
+      next = await _publicSyncFactory(
+        client: client,
+        active: valid,
+        onStatusChanged: () {
+          if (valid()) notifyListeners();
+        },
+        refreshPublications: (publications) async {
+          if (!valid()) throw StateError('Public service changed');
+          int? revision;
+          for (final item in publications.where(
+            (item) => item.topic == 'catalog',
+          )) {
+            if (revision == null || item.revision > revision) {
+              revision = item.revision;
+            }
+          }
+          await Future.wait<void>([
+            if (publications.isEmpty || revision != null)
+              _controller.refreshPublishedLibrary(knownRevision: revision),
+            if (onPublications case final handler?)
+              handler(client.origin, publications),
+          ]);
+          if (!valid()) throw StateError('Public service changed');
+        },
+        refresh: (statistics, games) async {
+          if (!valid()) throw StateError('Account changed');
+          if (statistics) {
+            try {
+              await Future.wait(
+                _statisticsReaders.values.map((reader) => reader.synchronize()),
+              );
+            } catch (_) {
+              if (valid()) {
+                _controller.favoriteStatistics.markPublicFailure();
+                _controller.gameVotes.markPublicFailure();
+              }
+              rethrow;
+            }
+            if (!valid()) throw StateError('Public statistics unavailable');
+          }
+          final comments = _comments;
+          if (comments != null) {
+            await comments.initialize();
+            if (!valid()) throw StateError('Account changed');
+            if (comments.pending || comments.error != null) {
+              await comments.synchronize();
+            } else if (games.any(comments.watchedGames.contains)) {
+              await comments.refreshGames(games);
+            }
+            if (!valid() || comments.error != null) {
+              throw StateError('Comments unavailable');
+            }
+          }
+        },
       );
-      _cloud = cloud..addListener(_cloudChanged);
-      if (cloud.publicReactions case final reactions?) {
-        _controller.configureAccountReactions(
-          scope: 'account-public-v1.$target',
-          error: () => cloud.publicError,
-          provider: (namespace) => AccountReactionRemote(
-            scope: 'account-public-v1.$target',
-            namespace: namespace,
-            reactions: reactions,
-            refresh: cloud.refreshPublic,
-            isEnabled: () => cloud.enabled,
-          ),
-        );
+      if (!valid()) {
+        await next.close();
+        return;
       }
-      await cloud.initialize().timeout(authenticationTimeout);
-      if (!_disposed && generation == _scopeGeneration) {
-        await _refreshNickname();
-      }
+      _publicSyncError = null;
+      _publicSync = next;
+      await next.start();
     } catch (_) {
-      if (!_disposed &&
-          generation == _scopeGeneration &&
-          user?.id == identityId) {
-        _stopCloud();
-        _setupError = '已登录，云同步暂不可用，可重试连接';
+      await next?.close().catchError((Object _) {});
+      if (valid()) {
+        if (identical(_publicSync, next)) _publicSync = null;
+        _publicSyncError = '公共数据实时更新未完成，请重试';
+        notifyListeners();
       }
     }
-    if (!_disposed && generation == _scopeGeneration) notifyListeners();
+  }
+
+  Future<void> retryPublicSync() async {
+    if (_disposed || _scopeChanging) return;
+    final sync = _publicSync;
+    if (sync != null) {
+      try {
+        _publicSyncError = null;
+        notifyListeners();
+        await sync.setForeground(true);
+      } catch (_) {
+        _publicSyncError = '公共数据实时更新未完成，请重试';
+        if (!_disposed) notifyListeners();
+      }
+    } else if (_businessClient case final client?) {
+      final generation = _scopeGeneration;
+      await _startPublicSync(
+        client,
+        () => !_disposed && generation == _scopeGeneration && !_scopeChanging,
+      );
+    }
   }
 
   Future<void> restore() async {
-    if (_initializing || _disposed) return;
+    if (_disposed || _initializing || _signingIn) return;
     _setupError = null;
     if (_scopeError != null) {
       _queueScope(_requestedScope);
@@ -598,180 +622,51 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _identity!.restore();
     await _scopeQueue;
-    await _projectResources();
-    if (user != null && dataScopeReady && _cloud == null) {
-      unawaited(
-        _startCloud(_configuration!.accountScope(user!.id), _scopeGeneration),
-      );
-    }
   }
 
   Future<void> signIn({
     required String account,
     required String password,
     String? otp,
-    String? serverId,
-    Uri? customOrigin,
     bool savePassword = false,
   }) async {
-    if (!supportsSignIn) {
-      _setupError = '网页版暂不支持账号登录，知识库不可用';
+    if (_disposed || isBusy || isSignedIn || !supportsSignIn) return;
+    if (_identity == null) {
+      _setupError = '请先配置应用服务地址';
       notifyListeners();
       return;
     }
-    if (usesWebAccount && customOrigin != null) {
-      _setupError = '请使用当前站点配置的账号服务';
-      notifyListeners();
-      return;
-    }
-    if (isBusy || _disposed || isSignedIn) return;
     if (account.trim().isEmpty || password.isEmpty) {
       _setupError = '请输入账号和密码';
       notifyListeners();
       return;
     }
-    if (_identity == null) await restore();
-    if (_disposed || _configuration == null) return;
     final generation = ++_loginGeneration;
     _signingIn = true;
     _setupError = null;
     notifyListeners();
-    final original = _configuration!;
-    var targetConfig = original;
-    NasServerAddress? selected;
-    if (!needsOtp) {
-      try {
-        if (customOrigin != null) {
-          SynologyIdentityGateway.validateOrigin(customOrigin);
-          final normalized = customOrigin.replace(path: '');
-          selected = original.servers
-              .where((s) => s.loginOrigin == normalized)
-              .firstOrNull;
-          if (selected == null) {
-            selected = NasServerAddress(
-              id: 'custom-login',
-              name: '自定义入口',
-              address: Uri(scheme: 'https', host: normalized.host).origin,
-              loginPort: normalized.port,
-              webDavPort: original.activeServer.webDavPort,
-            );
-            // An unknown host is a separate NAS until explicitly configured:
-            // never forward its credentials to the previous device's entrances.
-            targetConfig = AccountConfiguration(
-              nasOrigin: normalized,
-              servers: [selected],
-              storageFolder: original.storageFolder,
-              activeServerId: selected.id,
-            );
-            _pendingLoginConfiguration ??= original;
-          }
-        } else if (serverId != null) {
-          selected = original.servers.firstWhere((s) => s.id == serverId);
-        }
-      } catch (_) {
-        _setupError = '请选择有效的群晖 HTTPS 登录地址';
-        _signingIn = false;
-        notifyListeners();
-        return;
-      }
-    }
-    // OTP retries stay on the NAS that issued the challenge.
-    final addresses = needsOtp
-        ? [original.activeServer]
-        : selected != null
-        ? [selected]
-        : original.servers;
     try {
-      for (final server in addresses) {
-        if (_disposed || generation != _loginGeneration) return;
-        if (_gateway == null ||
-            _configuration!.nasOrigin != server.loginOrigin) {
-          await _disconnect();
-          _configuration = targetConfig.withServer(server.id);
-          await _connect(restoreSession: false);
-        }
-        if (_disposed || generation != _loginGeneration) return;
-        if (_gateway?.cachedUser != null) await _identity!.signOut();
-        if (_disposed || generation != _loginGeneration) return;
-        await _identity!.signIn(
-          account: account.trim(),
-          password: password,
-          otp: otp,
-        );
-        await _scopeQueue;
-        if (_disposed || generation != _loginGeneration) return;
-        if (isSignedIn) {
-          if (usesWebAccount) return;
-          await _persistConfiguration();
-          _pendingLoginConfiguration = null;
-          try {
-            await _savedLogins.remember(
-              environment: _configuration!.environmentId,
-              username: account,
-              password: password,
-              savePassword: savePassword,
-              serverId: _configuration!.activeServer.id,
-            );
-            _savedLoginError = null;
-            _savedLoginNeedsReload = false;
-          } catch (_) {
-            _savedLoginError = '已登录，登录信息未保存，请重新登录后重试';
-            _savedLoginNeedsReload = false;
-          }
-          if (_disposed || generation != _loginGeneration) return;
-          if (webDav != null) {
-            var credentialSaved = false;
-            try {
-              await _credentials(_configuration!.accountScope(user!.id)).write(
-                jsonEncode({
-                  'version': 1,
-                  'userId': user!.id,
-                  'environment': _configuration!.environmentId,
-                  'username': account.trim(),
-                  'password': password,
-                }),
-              );
-              credentialSaved = true;
-              if (_disposed || generation != _loginGeneration) return;
-              await _projectResources();
-            } catch (_) {
-              _setupError = credentialSaved
-                  ? '已登录，资料连接未完成，可重试连接'
-                  : '已登录，资料凭据保存失败，可重新登录再试';
-            }
-          }
-          return;
-        }
-        if (!const {
-          IdentityFailureCode.network,
-          IdentityFailureCode.timeout,
-          IdentityFailureCode.providerUnavailable,
-        }.contains(_identity?.failure?.code)) {
-          break;
-        }
-      }
-    } catch (_) {
-      _setupError = '账号或资料连接未完成，请重试';
-      if (isSignedIn) await _identity?.signOut();
-      if (_identity != null) await _scopeQueue;
-      if (identical(targetConfig, original)) await _projectResources();
-    } finally {
-      if (!_disposed &&
-          !isSignedIn &&
-          !needsOtp &&
-          !identical(targetConfig, original)) {
-        final failure = _setupError ?? _localizedFailure(_identity?.failure);
+      await _identity!.signIn(
+        account: account.trim(),
+        password: password,
+        otp: otp,
+      );
+      await _scopeQueue;
+      if (_disposed || generation != _loginGeneration || !isSignedIn) return;
+      if (!usesWebAccount) {
         try {
-          await _disconnect();
-          _configuration = original;
-          await _connect(restoreSession: false);
-          await _projectResources();
+          await _savedLogins.remember(
+            environment: _serviceConfiguration!.environmentId,
+            username: account,
+            password: password,
+            savePassword: savePassword,
+          );
+          _savedLoginError = null;
         } catch (_) {
-          _setupError = '登录连接未完成，请重试';
+          _savedLoginError = '已登录，登录信息未保存';
         }
-        _setupError = failure ?? _setupError;
-        _pendingLoginConfiguration = null;
       }
+    } finally {
       _signingIn = false;
       if (!_disposed) notifyListeners();
     }
@@ -780,116 +675,46 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> cancelSignIn() async {
     ++_loginGeneration;
     if (isSignedIn) {
-      await signOut();
-      return;
+      await _identity?.signOut();
+    } else {
+      await _identity?.cancelSignIn();
     }
-    await _identity?.cancelSignIn();
     await _scopeQueue;
-    if (needsOtp || _pendingLoginConfiguration != null) {
-      final previous = _pendingLoginConfiguration ?? _configuration!;
-      await _disconnect();
-      _configuration = previous;
-      _pendingLoginConfiguration = null;
-      await _connect(restoreSession: false);
-      _setupError = null;
-    }
-    await _projectResources();
   }
 
   Future<void> signOut() async {
     ++_loginGeneration;
-    _commentsClosing = true;
-    _stopComments();
-    _resourceProjectionReady = false;
-    notifyListeners();
-    try {
-      final scope = user == null
-          ? null
-          : _configuration!.accountScope(user!.id);
-      if (!usesWebAccount && scope != null && webDav != null) {
-        await _credentials(scope).delete();
-      }
-      await _identity?.signOut();
-      await _scopeQueue;
-      await _projectResources();
-    } finally {
-      _commentsClosing = false;
-      if (!_disposed) notifyListeners();
-    }
+    await _identity?.signOut();
+    await _scopeQueue;
   }
 
-  Future<void> saveConfiguration(AccountConfiguration next) async {
-    if (usesWebAccount) throw StateError('连接由当前站点管理');
-    if (isBusy) throw StateError('连接正在处理中');
-    final current = _configuration;
-    final keepsIdentity =
-        current != null &&
-        next.identityOrigin == current.identityOrigin &&
-        next.servers.length == current.servers.length &&
-        next.servers.every(
-          (s) => current.servers.any(
-            (old) => old.id == s.id && old.loginOrigin == s.loginOrigin,
-          ),
-        );
-    if (isSignedIn && !keepsIdentity) throw StateError('修改登录地址前请先退出账号');
-    _initializing = true;
-    notifyListeners();
-    try {
-      if (!isSignedIn) await _disconnect();
-      final prefs = await SharedPreferences.getInstance();
-      if (!await prefs.setString(
-        _configurationKey,
-        jsonEncode(next.toJson()),
-      )) {
-        throw StateError('Configuration persistence failed');
-      }
-      _configuration = next;
-      _resourceProjectionReady = false;
-      _setupError = null;
-      if (_identity == null && supportsSignIn) await _connect();
-      await _projectResources();
-    } catch (_) {
-      _setupError = '登录连接未完成，请重试';
-    } finally {
-      _initializing = false;
-      if (!_disposed) notifyListeners();
+  Future<void> saveNickname(String nickname) async {
+    if (user == null || isBusy || nickname.trim().length > 80) return;
+    final key = nicknameKey;
+    final store = _personalStore;
+    if (store == null) throw StateError('个人数据尚未准备好');
+    await store.setPreference('nickname', nickname.trim());
+    if (key == nicknameKey) {
+      _nickname = nickname.trim();
+      notifyListeners();
     }
-  }
-
-  /// Recovery runs before app initialization; do not restore an identity or switch
-  /// personal data scopes until the normal startup order has completed.
-  Future<void> recoverConnectionConfiguration(
-    AccountConfiguration original,
-  ) async {
-    if (_configuration != null) {
-      await saveConfiguration(original);
-      return;
-    }
-    if (isBusy || _disposed) throw StateError('Configuration is busy');
-    _configuration = original;
-    await _persistConfiguration();
   }
 
   Future<void> clearConfiguration() async {
     if (isBusy || isSignedIn) throw StateError('请先退出账号');
     await _disconnect();
-    final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.remove(_configurationKey)) {
-      throw StateError('Configuration persistence failed');
+    if (!await (await SharedPreferences.getInstance()).remove(
+      serviceOriginKey,
+    )) {
+      throw StateError('连接清除失败');
     }
-    _configuration = null;
-    _resourceUserId = null;
-    _resourceProjectionReady = false;
-    if (webDav != null) {
-      await webDav!.saveConfiguration(const WebDavSettings());
-    }
+    _serviceConfiguration = null;
     _setupError = null;
     notifyListeners();
   }
 
   Future<void> _disconnect() async {
-    _stopComments();
-    _stopCloud();
+    await _stopPublicSync();
     _verificationTimer?.cancel();
     _identity?.removeListener(_identityChanged);
     _identity?.dispose();
@@ -897,10 +722,52 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     final gateway = _gateway;
     _gateway = null;
     await gateway?.dispose();
+    _personalRefresh?.cancel();
+    for (final watcher in _personalWatchers) {
+      await watcher.cancel();
+    }
+    _personalWatchers.clear();
+    await _comments?.drain();
+    _comments?.dispose();
+    _comments = null;
+    _businessClient?.close();
+    _businessClient = null;
+    await _scopeQueue;
+    await _personalStore?.close();
+    _personalStore = null;
+  }
+
+  Future<void> _stopPublicSync() async {
+    ++_publicGeneration;
+    final sync = _publicSync;
+    _publicSync = null;
+    _publicSyncError = null;
+    // Invalidated callbacks can no longer write. A failed public database close
+    // must not strand identity cleanup or turn login into a public-sync error.
+    await sync?.close().catchError((Object _) {});
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final sync = _publicSync;
+      if (sync != null) {
+        unawaited(sync.setForeground(true).catchError((Object _) {}));
+      } else if (_businessClient case final client?
+          when !_scopeChanging && !_disposed) {
+        final generation = _scopeGeneration;
+        unawaited(
+          _startPublicSync(
+            client,
+            () =>
+                !_disposed && generation == _scopeGeneration && !_scopeChanging,
+          ),
+        );
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_publicSync?.setForeground(false).catchError((Object _) {}));
+    }
     if (state == AppLifecycleState.resumed && !isBusy && isConfigured) {
       unawaited(restore());
     }
@@ -909,23 +776,24 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   static String? _localizedFailure(IdentityFailure? failure) =>
       switch (failure?.code) {
         null => null,
-        IdentityFailureCode.network => '无法连接群晖，请检查网络后重试',
+        IdentityFailureCode.network => '无法连接账号服务，请检查网络后重试',
         IdentityFailureCode.timeout => '请求超时，请重试',
         IdentityFailureCode.sessionRejected => '登录已过期，请重新登录',
         IdentityFailureCode.rateLimited => '尝试过于频繁，请稍后重试',
-        IdentityFailureCode.providerUnavailable => '群晖登录服务暂不可用，请稍后重试',
+        IdentityFailureCode.providerUnavailable => '账号服务暂不可用，请稍后重试',
         IdentityFailureCode.invalidCredentials => '账号或密码不正确',
         IdentityFailureCode.otpRequired => '请输入双重验证的验证码',
         IdentityFailureCode.invalidOtp => '验证码不正确，请重新输入',
         IdentityFailureCode.accountDenied => '此账号暂不能使用登录服务',
         IdentityFailureCode.passwordChangeRequired => '请先在群晖 DSM 中更新密码，再登录',
-        IdentityFailureCode.cancelled => '登录已取消',
+        IdentityFailureCode.cancelled => null,
         IdentityFailureCode.localCleanupFailed => '退出未完成，请重试后再登录',
         IdentityFailureCode.remoteSignOutUnconfirmed => '已退出本机，请联网确认服务端退出',
         IdentityFailureCode.storage => '无法访问账号安全存储，请重试',
         IdentityFailureCode.unknown => '登录未完成，请重试',
-        IdentityFailureCode.unsupportedPlatform => '网页版暂不支持账号登录，知识库不可用',
+        IdentityFailureCode.unsupportedPlatform => '当前站点账号服务不可用',
       };
+
   @override
   void dispose() {
     ++_loginGeneration;

@@ -15,6 +15,31 @@ class NationalDayListController extends ChangeNotifier {
   final List<String> Function() defaultSlugs;
   List<String> _slugs = [];
   List<String> get slugs => List.unmodifiable(_slugs);
+  final List<String> _rankedSlugs = [];
+
+  /// Keep the last visible order when votes tie, without changing the saved list.
+  List<String> rankByVotes(int Function(String) voteCount) {
+    _reconcileRankedSlugs();
+    final previous = {
+      for (final (index, slug) in _rankedSlugs.indexed) slug: index,
+    };
+    final counts = {for (final slug in _rankedSlugs) slug: voteCount(slug)};
+    _rankedSlugs.sort((left, right) {
+      final difference = counts[right]!.compareTo(counts[left]!);
+      return difference != 0
+          ? difference
+          : previous[left]!.compareTo(previous[right]!);
+    });
+    return List.unmodifiable(_rankedSlugs);
+  }
+
+  void _reconcileRankedSlugs() {
+    final members = _slugs.toSet();
+    _rankedSlugs.removeWhere((slug) => !members.contains(slug));
+    final ranked = _rankedSlugs.toSet();
+    _rankedSlugs.addAll(_slugs.where((slug) => !ranked.contains(slug)));
+  }
+
   bool loading = false;
   bool saving = false;
   bool ready = false;
@@ -45,6 +70,7 @@ class NationalDayListController extends ChangeNotifier {
       );
       if (_disposed) return;
       _slugs = (stored ?? defaultSlugs()).toSet().toList();
+      _reconcileRankedSlugs();
       ready = true;
     } catch (_) {
       if (!_disposed) error = '清单读取失败';
@@ -68,6 +94,7 @@ class NationalDayListController extends ChangeNotifier {
           .timeout(const Duration(seconds: 8));
       if (_disposed) return false;
       _slugs = next;
+      _reconcileRankedSlugs();
       committed = true;
       return true;
     } catch (_) {

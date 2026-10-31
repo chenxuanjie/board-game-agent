@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'core/platform/background_transfer_notifications.dart';
 import 'core/platform/native_window_surface.dart';
 import 'ui/shared/spatial/spatial_workspace.dart';
 
@@ -12,15 +11,20 @@ import 'package:webdav_settings/webdav_settings.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'features/assistant/services/board_game_ai_service.dart';
+import 'features/assistant/services/web_ai_http_client.dart';
+import 'features/assistant/services/account_ai_http_client.dart';
+// ignore: implementation_imports
+import 'package:app_ai_client/src/default_http_client.dart';
 import 'features/games/services/game_manifest_service.dart';
 import 'features/games/services/game_vote_service.dart';
 import 'features/settings/services/preferences_service.dart';
 import 'features/settings/services/settings_transfer_service.dart';
 import 'features/library/services/remote_asset_service.dart';
-import 'features/library/services/same_origin_library_service.dart';
-import 'features/settings/services/board_game_update_settings.dart';
+
 import 'features/settings/services/board_game_app_update_service.dart';
-import 'features/library/services/board_game_remote_layout.dart';
+import 'features/settings/services/public_release_monitor.dart';
+import 'features/community/services/android_realtime_reminders.dart';
+import 'core/platform/android_public_reminders.dart';
 import 'features/assistant/services/speech_service.dart';
 import 'features/assistant/services/tts_service.dart';
 import 'features/assistant/services/realtime_voice_service.dart';
@@ -28,6 +32,7 @@ import 'features/assistant/services/responses_compaction_store.dart';
 import 'features/assistant/services/ai_run_telemetry.dart';
 import 'features/assistant/services/responses_rules_workflow.dart';
 import 'features/identity/services/account_service.dart';
+import 'features/identity/models/service_configuration.dart';
 import 'app/state/app_controller.dart';
 import 'core/localization/app_language.dart';
 import 'core/theme/color_scheme_option.dart';
@@ -43,6 +48,9 @@ import 'ui/desktop/desktop_window_frame.dart';
 import 'ui/desktop/desktop_responsive.dart';
 import 'ui/desktop/theme.dart';
 
+@pragma('vm:entry-point')
+Future<void> publicReminderMain() => runAndroidRealtimeReminders();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _configureWindowsWindow();
@@ -51,52 +59,46 @@ Future<void> main() async {
   final initialColorScheme = await _loadInitialColorScheme(preferencesService);
 
   final updateStore = SecureWebDavSettingsStore(appId: 'board_game_agent');
-  await _prepareUpdateSettings(updateStore);
   final updateSettingsController = WebDavSettingsController(
     store: updateStore,
     connectionTester: DefaultWebDavConnectionTester(appId: 'board_game_agent'),
   );
 
   late final AccountService accountService;
+  AccountAiHttpClient aiTransport() => AccountAiHttpClient(
+    account: () => accountService,
+    byok: kIsWeb ? WebAiHttpClient() : createDefaultAiHttpClient(),
+  );
+  final modelHttpClient = aiTransport();
   final AppController controller = AppController(
     preferencesService: preferencesService,
     initialColorScheme: initialColorScheme,
-    backgroundTransfers: createBackgroundTransferNotifications(),
     gameVotes: GameVoteService(preferences: preferencesService),
     aiService: BoardGameAiService(
-      aiClient: OpenAiDartAiClient(),
+      aiClient: OpenAiDartAiClient(
+        httpClient: modelHttpClient,
+        streamClientFactory: aiTransport,
+      ),
+      onDispose: modelHttpClient.close,
       responsesWorkflow: ResponsesRulesWorkflow(
-        responsesClient: OpenAiDartResponsesAiClient(),
+        responsesClient: OpenAiDartResponsesAiClient(
+          httpClient: modelHttpClient,
+          streamClientFactory: aiTransport,
+        ),
         compactionStore: SecureResponsesCompactionStore(),
         telemetrySink: SharedPreferencesAiRunTelemetrySink(),
       ),
     ),
     gameManifestService: GameManifestService(),
-    remoteAssetService: kIsWeb
-        ? SameOriginLibraryService(
-            accessAllowed: () => true,
-            accountScope: () =>
-                accountService.dataScopeReady && accountService.user != null
-                ? accountService.configuration!.accountScope(
-                    accountService.user!.id,
-                  )
-                : 'web_guest',
-          )
-        : RemoteAssetService(
-            settingsProvider: () => updateSettingsController.saved,
-            accessAllowed: () => accountService.resourceCredentialsReady,
-            resourceSettingsProvider: (target) =>
-                accountService.settingsForResource(target),
-          ),
+    remoteAssetService: RemoteAssetService(
+      serviceOrigin: () => accountService.serviceConfiguration?.origin,
+    ),
     speechService: SpeechService(),
     ttsService: TtsService(),
     realtimeVoiceService: const UnconfiguredRealtimeVoiceService(),
   );
 
-  accountService = AccountService(
-    controller: controller,
-    webDav: updateSettingsController,
-  );
+  accountService = AccountService(controller: controller);
   runApp(
     BoardGameAgentApp(
       controller: controller,
@@ -136,29 +138,6 @@ Future<ColorSchemeOption> _loadInitialColorScheme(
   }
 }
 
-Future<void> _prepareUpdateSettings(
-  SecureWebDavSettingsStore updateStore,
-) async {
-  final stored = await updateStore.load();
-  if (stored != null) {
-    final normalized = BoardGameRemoteLayout.migrateLegacySettings(stored);
-    if (normalized.baseUrl != stored.baseUrl) {
-      await updateStore.save(normalized);
-    }
-    return;
-  }
-
-  final legacy = await BoardGameUpdateSettingsLoader.load(
-    sources: await PreferencesService().loadAssetSourceConfigs(),
-  );
-  if (!legacy.isComplete) return;
-  await updateStore.save(
-    BoardGameRemoteLayout.normalizeSettings(
-      legacy.copyWith(mode: ExternalStorageMode.webDav),
-    ),
-  );
-}
-
 class BoardGameAgentApp extends StatefulWidget {
   const BoardGameAgentApp({
     super.key,
@@ -175,7 +154,8 @@ class BoardGameAgentApp extends StatefulWidget {
   State<BoardGameAgentApp> createState() => _BoardGameAgentAppState();
 }
 
-class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
+class _BoardGameAgentAppState extends State<BoardGameAgentApp>
+    with WidgetsBindingObserver {
   late final SettingsTransferService _transferService = SettingsTransferService(
     controller: widget.controller,
     webDav: widget.updateSettingsController,
@@ -191,24 +171,60 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
   bool _startupUpdateCheckScheduled = false;
   String? _lastAccountKey;
   String? _lastResourceConnection;
+  String? _releaseNotificationContext;
+  late bool _lastCheckUpdates = widget.controller.checkForUpdates;
+  late final _releaseMonitor = PublicReleaseMonitor(
+    origin: _publicOrigin,
+    enabled: () =>
+        widget.controller.checkForUpdates &&
+        widget.accountService?.dataScopeReady != false,
+    platform: kIsWeb
+        ? null
+        : switch (boardGameUpdateTarget) {
+            AppUpdateTarget.android => 'android',
+            AppUpdateTarget.windows => 'windows',
+            null => null,
+          },
+    service: _createUpdateService,
+    onAvailable: (info) => widget.controller.recordAppUpdate(
+      version: info.latestVersion!,
+      build: info.latestBuild!,
+    ),
+  );
+
+  Uri _publicOrigin() =>
+      widget.accountService?.serviceConfiguration?.origin ??
+      Uri.parse(ServiceConfiguration.defaultUpdateOrigin);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_handleControllerChange);
     widget.accountService?.addListener(_handleAccountChange);
+    widget.accountService?.onPublications = _releaseMonitor.refresh;
     _initialization = _initialize();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_handleControllerChange);
     widget.accountService?.removeListener(_handleAccountChange);
+    widget.accountService?.onPublications = null;
+    _releaseMonitor.dispose();
     widget.accountService?.dispose();
     widget.controller.disposeServices();
     widget.updateSettingsController.dispose();
     _windowChrome.sidebarVisible.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_initializationComplete && state == AppLifecycleState.resumed) {
+      unawaited(widget.controller.checkForLibraryUpdatesQuick());
+    }
   }
 
   @override
@@ -226,12 +242,9 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
         final bool desktopLayout =
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) ||
             (kIsWeb &&
-                (widget.controller.colorScheme == ColorSchemeOption.cinema
-                    ? constraints.maxWidth >=
-                          DesktopResponsive.desktopWindowMinimumWidth
-                    : DesktopResponsive.supportsDesktopViewport(
-                        constraints.biggest,
-                      )));
+                (DesktopResponsive.supportsDesktopViewport(
+                  constraints.biggest,
+                )));
         return NativeWindowSurface(
           enabled:
               widget.controller.colorScheme == ColorSchemeOption.spatialCinema,
@@ -332,14 +345,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
             ],
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
             theme: desktopLayout
-                ? buildDesktopTheme(
-                    activePalette: widget.controller.palette,
-                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
-                  )
-                : AppTheme.buildTheme(
-                    widget.controller.palette,
-                    cinemaGlassEnabled: widget.controller.cinemaGlassEnabled,
-                  ),
+                ? buildDesktopTheme(activePalette: widget.controller.palette)
+                : AppTheme.buildTheme(widget.controller.palette),
             home: FutureBuilder<void>(
               future: _initialization,
               builder: (context, snapshot) {
@@ -370,6 +377,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                     controller: widget.controller,
                     transferService: _transferService,
                     onOpenAbout: _openAbout,
+                    onCheckUpdates: () => _openAbout(checkOnOpen: true),
                   );
                 }
                 if (desktopLayout) {
@@ -387,6 +395,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
                   controller: widget.controller,
                   transferService: _transferService,
                   onOpenAbout: _openAbout,
+                  onCheckUpdates: () => _openAbout(checkOnOpen: true),
                 );
               },
             ),
@@ -403,9 +412,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       await _transferService.recover();
       await widget.controller.initialize();
       await widget.accountService?.initialize();
-      // Publish existing favorites too, even while the ranking entry is hidden.
+      // Prime statistics even while the ranking entry is hidden. The account
+      // coordinator publishes signed-in favorites independently.
       unawaited(widget.controller.refreshFavoriteRankings());
       _initializationComplete = true;
+      unawaited(_configurePublicReminders());
     } catch (error, stackTrace) {
       debugPrint('[startup] initialization failed: $error');
       debugPrint('$stackTrace');
@@ -472,21 +483,10 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     }
   }
 
-  List<WebDavSettings> _updateConnections() {
-    final accounts = widget.accountService;
-    final config = accounts?.configuration;
-    if (config != null && accounts!.resourceCredentialsReady) {
-      return [
-        for (final server in config.servers)
-          accounts.settingsForResource(server.webDavRoot(config.storageFolder)),
-      ];
-    }
-    return [widget.updateSettingsController.saved];
-  }
-
   AppUpdateService _createUpdateService() => createBoardGameUpdateService(
-    settingsProvider: () => widget.updateSettingsController.saved,
-    settingsCandidates: _updateConnections,
+    originProvider: () =>
+        widget.accountService?.serviceConfiguration?.origin ??
+        Uri.parse(ServiceConfiguration.defaultUpdateOrigin),
     beforeInstall: () async {
       if (_transferService.isBusy) {
         throw AppUpdateFailure('设置正在保存，请完成后重试');
@@ -499,7 +499,26 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
     },
     onWindowsInstallerLaunched: () => windowManager.destroy(),
   );
+  Future<void> _configurePublicReminders() async {
+    try {
+      await AndroidPublicReminders.configure(
+        _publicOrigin(),
+        widget.controller.checkForUpdates,
+      );
+    } catch (_) {
+      // Optional reminder setup must not block normal startup or account state.
+    }
+  }
+
   void _handleControllerChange() {
+    final enabled = widget.controller.checkForUpdates;
+    if (_lastCheckUpdates != enabled && _initializationComplete) {
+      unawaited(_configurePublicReminders());
+    }
+    if (!_lastCheckUpdates && enabled) {
+      unawaited(widget.accountService?.retryPublicSync());
+    }
+    _lastCheckUpdates = enabled;
     if (mounted) {
       setState(() {});
     }
@@ -525,20 +544,20 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp> {
       _windowChrome.reset();
     }
     _lastAccountKey = key;
-    if (account != null &&
-        !account.isBusy &&
-        account.resourceCredentialsReady) {
-      final connection =
-          '${account.nicknameKey}|${account.configuration!.resourceSources.map((s) => s.testUrl).join('|')}';
-      if (_lastResourceConnection != connection) {
-        _lastResourceConnection = connection;
-        // Credentials and the account scope are ready now. Probe immediately
-        // rather than leaving the resource status unknown until the next tick.
-        unawaited(widget.controller.refreshAssetAccessStatus());
-        unawaited(widget.controller.refreshLibraryResources(force: true));
-      }
-    } else if (account?.isSignedIn == false) {
-      _lastResourceConnection = null;
+    final notificationContext = account?.dataScopeReady == true
+        ? '${account!.serviceAddress}|$key'
+        : null;
+    if (_releaseNotificationContext != notificationContext) {
+      _releaseNotificationContext = notificationContext;
+      _releaseMonitor.resetNotificationContext();
+    }
+    final connection = account?.serviceAddress;
+    if (connection != null && connection != _lastResourceConnection) {
+      _lastResourceConnection = connection;
+      if (_initializationComplete) unawaited(_configurePublicReminders());
+      unawaited(widget.controller.retryGameCatalog());
+      unawaited(widget.controller.refreshAssetAccessStatus());
+      unawaited(widget.controller.refreshLibraryResources(force: true));
     }
     setState(() {});
   }

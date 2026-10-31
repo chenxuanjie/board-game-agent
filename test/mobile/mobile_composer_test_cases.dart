@@ -5,7 +5,7 @@ class _CompactComposerController extends AppController {
     : super(
         preferencesService: PreferencesService(),
         aiService: _UnusedAiService(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
@@ -13,6 +13,14 @@ class _CompactComposerController extends AppController {
 
   bool listening = false;
   bool sending = false;
+  @override
+  List<AiModel> get availableAiModels => const [
+    AiModel(id: 'gpt-6-sol'),
+    AiModel(id: 'gpt-6-astra'),
+  ];
+  // This fixture exercises controls for an available knowledge context.
+  @override
+  bool get assistantKnowledgeAvailable => true;
   AppLanguage testLanguage = AppLanguage.zhHans;
   @override
   AppCopy get copy => AppCopy(testLanguage);
@@ -28,8 +36,415 @@ class _CompactComposerController extends AppController {
 }
 
 void _registerCompactComposerTests() {
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'model picker survives focus and keyboard changes and applies selection on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        SharedPreferences.setMockInitialValues({});
+        final controller = _CompactComposerController();
+        final draft = TextEditingController(text: '规则问题');
+        final inset = ValueNotifier(0.0);
+        addTearDown(controller.dispose);
+        addTearDown(draft.dispose);
+        addTearDown(inset.dispose);
+        await controller.saveAiApiConfig(
+          AiApiConfig.defaultCustom.copyWith(
+            name: 'Test',
+            baseUrl: 'https://ai.example.test/v1',
+            apiKey: 'test-key',
+            model: 'gpt-6-sol',
+          ),
+        );
+        await tester.binding.setSurfaceSize(const Size(390, 844));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        String? sentModel;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(controller.palette),
+            builder: (context, child) => ValueListenableBuilder<double>(
+              valueListenable: inset,
+              builder: (context, value, _) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(viewInsets: EdgeInsets.only(bottom: value)),
+                child: child!,
+              ),
+            ),
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.bottomCenter,
+                child: AssistantComposer(
+                  controller: controller,
+                  textController: draft,
+                  useGlobalMode: true,
+                  onSend: () async {
+                    sentModel = controller.aiApiConfig.model;
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+        addTearDown(tester.view.resetViewInsets);
+        if (platform == TargetPlatform.android) {
+          inset.value = 300;
+          tester.view.viewInsets = FakeViewPadding(
+            bottom: 300 * tester.view.devicePixelRatio,
+          );
+        }
+        await tester.pumpAndSettle();
+        final inputState = tester.state<EditableTextState>(
+          find.byType(EditableText),
+        );
+        final trigger = find.byKey(const ValueKey('desktop-model-selector'));
+        await tester.tap(trigger);
+        await tester.pumpAndSettle();
+        final panel = find.byKey(const ValueKey('desktop-model-picker-panel'));
+        expect(panel, findsOneWidget);
+        if (platform == TargetPlatform.android) {
+          for (final value in [260.0, 180.0, 80.0, 0.0]) {
+            inset.value = value;
+            tester.view.viewInsets = FakeViewPadding(
+              bottom: value * tester.view.devicePixelRatio,
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 32));
+            expect(panel, findsOneWidget);
+            expect(
+              tester.getRect(panel).center.dy,
+              lessThan(tester.getRect(trigger).center.dy),
+            );
+          }
+          await tester.pumpAndSettle();
+        }
+        final option = find.byKey(
+          const ValueKey('desktop-model-option-gpt-6-astra'),
+        );
+        await tester.ensureVisible(option);
+        await tester.tap(option);
+        await tester.pumpAndSettle();
+        expect(controller.aiApiConfig.model, 'gpt-6-astra');
+        expect(
+          (await PreferencesService().loadAiApiConfig()).model,
+          'gpt-6-astra',
+        );
+        await tester.tap(
+          find.byTooltip(controller.copy.localized('关闭', 'Close')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.state<EditableTextState>(find.byType(EditableText)),
+          same(inputState),
+        );
+        expect(draft.text, '规则问题');
+        await tester.tap(find.byKey(const ValueKey('assistant-composer-send')));
+        await tester.pumpAndSettle();
+        expect(sentModel, 'gpt-6-astra');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
   testWidgets(
-    'compact composer stays on one row at narrow widths and large text',
+    'keyboard closing starts a continuous collapse and keeps the editable state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _CompactComposerController();
+      final draft = TextEditingController(text: '短问题');
+      final inset = ValueNotifier(300.0);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 300 * tester.view.devicePixelRatio,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      addTearDown(controller.dispose);
+      addTearDown(draft.dispose);
+      addTearDown(inset.dispose);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          builder: (context, child) => ValueListenableBuilder<double>(
+            valueListenable: inset,
+            builder: (context, value, _) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(viewInsets: EdgeInsets.only(bottom: value)),
+              child: child!,
+            ),
+          ),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: AssistantComposer(
+                controller: controller,
+                textController: draft,
+                useGlobalMode: true,
+                onSend: () async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
+      final inputState = tester.state<EditableTextState>(
+        find.byType(EditableText),
+      );
+      final box = find.byKey(const ValueKey('assistant-composer-box'));
+      final expandedHeight = tester.getSize(box).height;
+      var previous = expandedHeight;
+      for (final value in [260.0, 200.0, 140.0, 80.0, 0.0]) {
+        inset.value = value;
+        tester.view.viewInsets = FakeViewPadding(
+          bottom: value * tester.view.devicePixelRatio,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 32));
+        final height = tester.getSize(box).height;
+        expect(height, lessThanOrEqualTo(previous + .1));
+        if (value == 260) expect(height, lessThan(expandedHeight));
+        expect((height - previous).abs(), lessThan(30));
+        previous = height;
+      }
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<EditableTextState>(find.byType(EditableText)),
+        same(inputState),
+      );
+      expect(draft.text, '短问题');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'plus opens an anchored menu that stays in view and can be dismissed',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final controller = _CompactComposerController();
+      final draft = TextEditingController();
+      addTearDown(controller.dispose);
+      addTearDown(draft.dispose);
+      await tester.binding.setSurfaceSize(const Size(320, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: AssistantComposer(
+                controller: controller,
+                textController: draft,
+                useGlobalMode: true,
+                onSend: () async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final trigger = find.byKey(const ValueKey('assistant-context-button'));
+      final anchor = tester.getRect(trigger);
+      await tester.tap(trigger);
+      await tester.pumpAndSettle();
+      final menu = find.byKey(const ValueKey('assistant-context-menu'));
+      expect(menu, findsOneWidget);
+      final bounds = tester.getRect(menu);
+      expect(bounds.left, greaterThanOrEqualTo(0));
+      expect(bounds.right, lessThanOrEqualTo(320));
+      expect(bounds.bottom, lessThanOrEqualTo(anchor.top));
+      expect(find.byType(BottomSheet), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets('enter does not send while the input method is composing', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = _CompactComposerController();
+    final draft = TextEditingController();
+    var sends = 0;
+    addTearDown(controller.dispose);
+    addTearDown(draft.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: Scaffold(
+          body: AssistantComposer(
+            controller: controller,
+            textController: draft,
+            useGlobalMode: true,
+            onSend: () async {
+              sends++;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'nihao',
+        selection: TextSelection.collapsed(offset: 5),
+        composing: TextRange(start: 0, end: 5),
+      ),
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(sends, 0);
+    draft.value = const TextEditingValue(
+      text: '你好',
+      selection: TextSelection.collapsed(offset: 2),
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(sends, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets(
+    'android keyboard expands the composer and exposes the model selector',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final controller = _CompactComposerController();
+      final draft = TextEditingController();
+      addTearDown(controller.dispose);
+      addTearDown(draft.dispose);
+      await tester.binding.setSurfaceSize(const Size(390, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      Widget page(double inset) => MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(viewInsets: EdgeInsets.only(bottom: inset)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: AssistantComposer(
+              controller: controller,
+              textController: draft,
+              useGlobalMode: true,
+              keyboardVisible: inset > 0,
+              onSend: () async {},
+              onMicTap: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(page(0));
+      await tester.pumpAndSettle();
+      final box = find.byKey(const ValueKey('assistant-composer-box'));
+      final height = tester.getSize(box).height;
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpWidget(page(300));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsOneWidget,
+      );
+      expect(tester.getSize(box).height, greaterThan(height));
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
+      await tester.pumpAndSettle();
+      final menuBounds = tester.getRect(
+        find.byKey(const ValueKey('assistant-context-menu')),
+      );
+      expect(menuBounds.bottom, lessThanOrEqualTo(500));
+      expect(menuBounds.top, greaterThanOrEqualTo(0));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(page(0));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
+    'composer expands and shrinks without losing the draft or focus',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final controller = _CompactComposerController();
+      final draft = TextEditingController();
+      addTearDown(controller.dispose);
+      addTearDown(draft.dispose);
+      await tester.binding.setSurfaceSize(const Size(390, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: AssistantComposer(
+                controller: controller,
+                textController: draft,
+                useGlobalMode: true,
+                onSend: () async {},
+                onMicTap: () async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final box = find.byKey(const ValueKey('assistant-composer-box'));
+      final field = find.byKey(const ValueKey('assistant-draft'));
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsNothing,
+      );
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsOneWidget,
+      );
+      final small = tester.getSize(box).height;
+      final longText = '很长的桌游规则问题' * 15;
+      await tester.enterText(field, longText);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final halfway = tester.getSize(box).height;
+      await tester.pumpAndSettle();
+      final large = tester.getSize(box).height;
+      expect(large, greaterThan(small));
+      expect(halfway, lessThan(large));
+      expect(draft.text, longText);
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      await tester.enterText(field, '短问题');
+      await tester.pumpAndSettle();
+      expect(tester.getSize(box).height, closeTo(small, 1));
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
+  testWidgets(
+    'compact composer exposes controls at narrow widths and large text',
     (tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final controller = _CompactComposerController();
@@ -70,29 +485,25 @@ void _registerCompactComposerTests() {
               ),
             );
             await tester.pumpAndSettle();
-            final mode = find.byKey(
-              const ValueKey('desktop-answer-mode-selector'),
-            );
-            final model = find.byKey(const ValueKey('desktop-model-selector'));
+            final mode = find.byKey(const ValueKey('assistant-context-button'));
             final action = find.byKey(
               const ValueKey('assistant-composer-send'),
+            );
+            expect(
+              tester
+                  .getRect(find.byKey(const ValueKey('assistant-draft')))
+                  .center
+                  .dy,
+              closeTo(tester.getRect(action).center.dy, 1),
             );
             expect(
               tester.getRect(mode).center.dy,
               closeTo(tester.getRect(action).center.dy, 1),
             );
-            expect(
-              tester.getRect(model).center.dy,
-              closeTo(tester.getRect(action).center.dy, 1),
-            );
             expect(tester.getSize(action), const Size(48, 48));
             expect(
-              tester
-                  .widget<AssistantAnswerModeSelector>(
-                    find.byType(AssistantAnswerModeSelector),
-                  )
-                  .iconOnly,
-              isTrue,
+              find.byKey(const ValueKey('desktop-model-selector')),
+              findsNothing,
             );
             expect(
               find.text(controller.copy.smartSupplementLabel),
@@ -168,12 +579,12 @@ void _registerCompactComposerTests() {
         controller.copy.stopGenerating,
       );
       expect(tester.widget<IconButton>(action).onPressed, isNotNull);
-      await tester.tap(
-        find.byKey(const ValueKey('desktop-answer-mode-selector')),
-      );
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
       await tester.pumpAndSettle();
       expect(find.text('下次发送生效'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('assistant-mode-knowledge')));
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-context-knowledge')),
+      );
       await tester.pumpAndSettle();
       expect(controller.allowSmartSupplement(useGlobalMode: true), isFalse);
       expect(controller.sending, isTrue);

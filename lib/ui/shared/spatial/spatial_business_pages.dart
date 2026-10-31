@@ -13,13 +13,7 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
       'games' =>
         wide
             ? _desktopGames('games', c.copy.localized('桌游库', 'Game Library'))
-            : MobileLibraryContent(
-                controller: c,
-                onOpenGame: _openGame,
-                onActivities: _activities,
-                onProfile: () => _select('account'),
-                accountActions: _accountMenu(),
-              ),
+            : MobileLibraryContent(controller: c, onOpenGame: _openGame),
       'rankings' => GameRankingScreen(
         controller: c,
         onOpenGame: _openGame,
@@ -96,7 +90,6 @@ extension _SpatialBusinessPages on _SpatialWorkspaceState {
                     ),
                   ),
                 ),
-                _accountMenu(),
               ],
             ),
           ),

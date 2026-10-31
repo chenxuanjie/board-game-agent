@@ -1,5 +1,8 @@
 import 'dart:io';
 import 'package:app_about/app_about.dart';
+import 'package:app_client/app_client.dart';
+import 'package:app_client/updates.dart';
+import 'package:remote_update/remote_update.dart' show WindowsUpdateInstaller;
 // ignore: implementation_imports
 import 'package:app_ai_client/src/default_http_client.dart';
 import 'package:webdav_settings/webdav_settings.dart';
@@ -15,6 +18,71 @@ AppUpdateTarget? get boardGameUpdateTarget => Platform.isWindows
     : null;
 
 AppUpdateService createBoardGameUpdateService({
+  required Uri Function() originProvider,
+  required Future<void> Function() beforeInstall,
+  required Future<void> Function() onWindowsInstallerLaunched,
+}) {
+  List<NativeUpdateEndpoint> connections() {
+    final origin = AppJsonClient.parseOrigin('${originProvider()}');
+    return [
+      NativeUpdateEndpoint(
+        key: origin.origin,
+        source: (client) => PublicReleaseSource(
+          appId: 'board_game_agent',
+          origin: origin,
+          client: client,
+          active: () => originProvider().origin == origin.origin,
+        ),
+      ),
+    ];
+  }
+
+  String? failure(Object error, bool downloading) => error is AppClientFailure
+      ? switch (error.status) {
+          404 => '尚未发布当前平台的更新',
+          429 || 503 => '更新服务暂不可用，请稍后重试',
+          _ => error.message,
+        }
+      : null;
+  final config = NativeAppUpdateConfig(
+    appId: 'board_game_agent',
+    target: boardGameUpdateTarget ?? AppUpdateTarget.android,
+    architecture: Platform.isWindows ? 'x64' : 'arm64',
+    directoryName: 'board_game_agent_public_updates',
+  );
+  if (Platform.isWindows) {
+    late final NativeAppUpdateService service;
+    service = NativeAppUpdateService(
+      connections: connections,
+      config: config,
+      clientFactory: createDefaultAiHttpClient,
+      beforeInstall: beforeInstall,
+      failureMessage: failure,
+      installer: WindowsUpdateInstaller(
+        beforeInstall: () async {},
+        beforeLaunch: () async => service.assertInstallationAllowed(),
+        onInstallerLaunched: onWindowsInstallerLaunched,
+      ),
+    );
+    return service;
+  }
+  late final AndroidBackgroundUpdateService service;
+  final inner = createNativeAndroidUpdateService(
+    connections: connections,
+    config: config,
+    clientFactory: createDefaultAiHttpClient,
+    failureMessage: failure,
+    beforeInstall: () => service.beforeInstall(beforeInstall),
+  );
+  service = AndroidBackgroundUpdateService(
+    inner: inner,
+    notifications: createBackgroundTransferNotifications(),
+  );
+  return service;
+}
+
+/// Explicit optional backup; the default factory never falls back to DAV.
+AppUpdateService createBoardGameWebDavUpdateService({
   required WebDavSettings Function() settingsProvider,
   required List<WebDavSettings> Function() settingsCandidates,
   required Future<void> Function() beforeInstall,

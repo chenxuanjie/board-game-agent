@@ -95,24 +95,8 @@ class _MobileGameCoverState extends State<MobileGameCover> {
       GameCoverSource(path: widget.game.coverAssetPath, child: _image(context));
 
   Widget _image(BuildContext context) {
-    final assetPath = widget.game.coverAssetPath;
-    if (_resolvedPath != null) return _cachedOrPlaceholder();
-    if (assetPath.isEmpty) {
-      _resolveRemote();
-      return _cachedOrPlaceholder();
-    }
-    return Image.asset(
-      gaplessPlayback: true,
-      frameBuilder: revealImageFrame,
-      assetPath,
-      fit: widget.fit,
-      width: widget.fit == BoxFit.contain ? null : double.infinity,
-      height: widget.fit == BoxFit.contain ? null : double.infinity,
-      errorBuilder: (_, _, _) {
-        _resolveRemote();
-        return _cachedOrPlaceholder();
-      },
-    );
+    if (_resolvedPath == null) _resolveRemote();
+    return _cachedOrPlaceholder();
   }
 
   Widget _cachedOrPlaceholder() {

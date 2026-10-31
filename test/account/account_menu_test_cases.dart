@@ -1,4 +1,4 @@
-part of '../account_screen_test.dart';
+part of '../account_menu_test.dart';
 
 Widget _menuHome({
   VoidCallback? onAccount,

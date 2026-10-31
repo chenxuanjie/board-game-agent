@@ -2,12 +2,14 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../identity/services/board_personal_store.dart';
+import '../../games/models/game_vote_record.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/models/app_activity.dart';
 import '../../assistant/models/ai_api_config.dart';
 import '../../assistant/models/ai_answer_mode.dart';
 import '../../assistant/models/assistant_mode.dart';
-import '../../library/models/asset_source_config.dart';
 import '../../../core/localization/app_language.dart';
 import '../../../core/theme/color_scheme_option.dart';
 import '../../library/models/desktop_library_resource.dart';
@@ -17,12 +19,13 @@ import '../../games/models/recent_game_record.dart';
 import '../../games/models/search_history_record.dart';
 
 class PreferencesService {
-  PreferencesService({String? identityUserId})
+  PreferencesService({String? identityUserId, this.personalStore})
     : identityUserId = validateIdentityUserId(identityUserId);
 
   /// Immutable: outstanding writes always retain their original account.
   /// Null retains every legacy guest key. Existing data is never adopted.
   final String? identityUserId;
+  final BoardPersonalStore? personalStore;
   final Set<Future<void>> _pendingPersonalWrites = {};
   Future<void> _galleryWriteQueue = Future<void>.value();
 
@@ -48,10 +51,12 @@ class PreferencesService {
     if (!await result) throw StateError('Personal preferences write failed');
   }
 
-  PreferencesService forIdentityScope(String? userId) =>
-      userId == identityUserId
+  PreferencesService forIdentityScope(
+    String? userId, {
+    BoardPersonalStore? store,
+  }) => userId == identityUserId && identical(store, personalStore)
       ? this
-      : PreferencesService(identityUserId: userId);
+      : PreferencesService(identityUserId: userId, personalStore: store);
 
   static String? validateIdentityUserId(String? userId) {
     if (userId != null && (userId.trim().isEmpty || userId.length > 4096)) {
@@ -82,7 +87,6 @@ class PreferencesService {
   static const _colorSchemeKey = 'color_scheme';
   static const _aiApiConfigKey = 'ai_api_config';
   static const _aiCustomPresetsKey = 'ai_custom_presets';
-  static const _assetSourceOrderKey = 'asset_source_order';
   static const _gameAnswerModeKey = 'game_answer_mode';
   static const _globalAnswerModeKey = 'global_answer_mode';
   static const _globalUseCurrentGameKnowledgeKey =
@@ -143,42 +147,22 @@ class PreferencesService {
         return write;
       });
 
-  static const accountCloudPreferenceKeys = <String>{
-    _voiceReplyKey,
-    _assistantModeKey,
-    _gameAnswerModeKey,
-    _globalAnswerModeKey,
-    _globalUseCurrentGameKnowledgeKey,
-  };
-  Future<Map<String, Object>> accountCloudPreferences() async {
-    final prefs = await _prefs;
-    return {
-      for (final key in accountCloudPreferenceKeys)
-        if (prefs.get(_personalKey(key)) case final Object value) key: value,
-    };
+  Future<String?> loadGameVoteCache() async {
+    final raw = (await _prefs).getString(_personalKey(_gameVoteCacheKey));
+    if (personalStore case final store?) {
+      final old = raw == null ? null : GameVoteCache.decode(raw);
+      return GameVoteCache(
+        ballot: GameVoteBallot(
+          deviceId:
+              old?.ballot.deviceId ?? const Uuid().v4().replaceAll('-', ''),
+          games: await store.loadVotes(GameVoteBallot.campaign),
+        ),
+        remoteCounts: old?.remoteCounts ?? {},
+        lastScope: old?.lastScope,
+      ).encode();
+    }
+    return raw;
   }
-
-  Future<void> applyAccountCloudPreferences(Map<String, Object> values) =>
-      _trackPersonalWrite(() async {
-        final prefs = await _prefs;
-        for (final key in accountCloudPreferenceKeys) {
-          final value = values[key];
-          final boolean =
-              key == _voiceReplyKey || key == _globalUseCurrentGameKnowledgeKey;
-          if (value != null && (boolean ? value is! bool : value is! String)) {
-            throw const FormatException('个人偏好格式错误');
-          }
-          final saved = value == null
-              ? await prefs.remove(_personalKey(key))
-              : value is bool
-              ? await prefs.setBool(_personalKey(key), value)
-              : await prefs.setString(_personalKey(key), value as String);
-          if (!saved) throw StateError('个人偏好保存失败');
-        }
-      });
-
-  Future<String?> loadGameVoteCache() async =>
-      (await _prefs).getString(_personalKey(_gameVoteCacheKey));
 
   Future<String?> loadFavoriteRankingCache() async =>
       (await _prefs).getString(_personalKey('game_favorite_ranking_v1'));
@@ -196,6 +180,10 @@ class PreferencesService {
 
   Future<void> saveGameVoteCache(String value) async {
     await _trackPersonalWrite(() async {
+      if (personalStore case final store?) {
+        final cache = GameVoteCache.decode(value);
+        await store.saveVotes(cache.ballot.namespace, cache.ballot.games);
+      }
       if (!await (await _prefs).setString(
         _personalKey(_gameVoteCacheKey),
         value,
@@ -229,11 +217,19 @@ class PreferencesService {
   }
 
   Future<bool> loadVoiceReplyEnabled() async {
+    if (personalStore case final store?) {
+      return (await store.preferences())['voice_reply_enabled'] as bool;
+    }
     final prefs = await _prefs;
     return prefs.getBool(_personalKey(_voiceReplyKey)) ?? false;
   }
 
   Future<void> saveVoiceReplyEnabled(bool enabled) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.setPreference('voice_reply_enabled', enabled),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       await _requirePersonalWrite(
@@ -253,14 +249,6 @@ class PreferencesService {
   Future<void> saveColorScheme(ColorSchemeOption scheme) async {
     final prefs = await _prefs;
     await prefs.setString(_colorSchemeKey, scheme.code);
-  }
-
-  Future<bool> loadCinemaGlassEnabled() async =>
-      (await _prefs).getBool('cinema_glass_enabled') ?? true;
-  Future<void> saveCinemaGlassEnabled(bool enabled) async {
-    if (!await (await _prefs).setBool('cinema_glass_enabled', enabled)) {
-      throw StateError('外观设置未保存');
-    }
   }
 
   Future<AiApiConfig> loadAiApiConfig() async {
@@ -293,21 +281,13 @@ class PreferencesService {
     await prefs.setString(_aiCustomPresetsKey, AiApiConfig.encodeList(configs));
   }
 
-  Future<List<AssetSourceConfig>> loadAssetSourceConfigs() async {
-    final prefs = await _prefs;
-    return AssetSourceConfig.decodeList(prefs.getString(_assetSourceOrderKey));
-  }
-
-  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> configs) async {
-    final prefs = await _prefs;
-    final saved = await prefs.setString(
-      _assetSourceOrderKey,
-      AssetSourceConfig.encodeList(configs),
-    );
-    if (!saved) throw StateError('Resource sources could not be saved');
-  }
-
   Future<AiAnswerMode> loadGameAnswerMode() async {
+    if (personalStore case final store?) {
+      return AiAnswerModeX.fromCode(
+        (await store.preferences())['game_answer_mode'] as String,
+        fallback: AiAnswerMode.knowledgeOnly,
+      );
+    }
     final prefs = await _prefs;
     return AiAnswerModeX.fromCode(
       prefs.getString(_personalKey(_gameAnswerModeKey)),
@@ -316,6 +296,11 @@ class PreferencesService {
   }
 
   Future<void> saveGameAnswerMode(AiAnswerMode mode) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.setPreference('game_answer_mode', mode.code),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       if (!await prefs.setString(_personalKey(_gameAnswerModeKey), mode.code)) {
@@ -325,6 +310,12 @@ class PreferencesService {
   }
 
   Future<AiAnswerMode> loadGlobalAnswerMode() async {
+    if (personalStore case final store?) {
+      return AiAnswerModeX.fromCode(
+        (await store.preferences())['global_answer_mode'] as String,
+        fallback: AiAnswerMode.knowledgeThenDirect,
+      );
+    }
     final prefs = await _prefs;
     return AiAnswerModeX.fromCode(
       prefs.getString(_personalKey(_globalAnswerModeKey)),
@@ -333,6 +324,11 @@ class PreferencesService {
   }
 
   Future<void> saveGlobalAnswerMode(AiAnswerMode mode) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.setPreference('global_answer_mode', mode.code),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       if (!await prefs.setString(
@@ -345,12 +341,20 @@ class PreferencesService {
   }
 
   Future<bool> loadGlobalUseCurrentGameKnowledge() async {
+    if (personalStore case final store?) {
+      return (await store.preferences())['use_game_knowledge'] as bool;
+    }
     final prefs = await _prefs;
     return prefs.getBool(_personalKey(_globalUseCurrentGameKnowledgeKey)) ??
         false;
   }
 
   Future<void> saveGlobalUseCurrentGameKnowledge(bool enabled) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.setPreference('use_game_knowledge', enabled),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       await _requirePersonalWrite(
@@ -370,6 +374,11 @@ class PreferencesService {
   }
 
   Future<AssistantMode> loadAssistantMode() async {
+    if (personalStore case final store?) {
+      return AssistantModeX.fromCode(
+        (await store.preferences())['assistant_mode'] as String,
+      );
+    }
     final prefs = await _prefs;
     return AssistantModeX.fromCode(
       prefs.getString(_personalKey(_assistantModeKey)),
@@ -377,6 +386,11 @@ class PreferencesService {
   }
 
   Future<void> saveAssistantMode(AssistantMode mode) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.setPreference('assistant_mode', mode.code),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       await _requirePersonalWrite(
@@ -492,6 +506,15 @@ class PreferencesService {
   }
 
   Future<List<FavoriteGameRecord>> loadFavoriteGames() async {
+    if (personalStore case final store?) {
+      return [
+        for (final r in await store.loadCollection('favorites'))
+          FavoriteGameRecord(
+            gameSlug: r['game_slug'] as String,
+            createdAt: DateTime.parse(r['created_at'] as String),
+          ),
+      ];
+    }
     final prefs = await _prefs;
     final String? stored = prefs.getString(_personalKey(_favoriteGamesKey));
     if (stored == null || stored.trim().isEmpty) {
@@ -524,6 +547,18 @@ class PreferencesService {
   }
 
   Future<void> saveFavoriteGames(Iterable<FavoriteGameRecord> records) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.saveCollection('favorites', [
+          for (final r in records)
+            {
+              'id': r.gameSlug,
+              'game_slug': r.gameSlug,
+              'created_at': r.createdAt.toUtc().toIso8601String(),
+            },
+        ]),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       final saved = await prefs.setString(
@@ -605,6 +640,15 @@ class PreferencesService {
   }
 
   Future<List<RecentGameRecord>> loadRecentGames() async {
+    if (personalStore case final store?) {
+      return _normalizeRecentGames([
+        for (final r in await store.loadCollection('recent_games'))
+          RecentGameRecord(
+            gameSlug: r['game_slug'] as String,
+            viewedAt: DateTime.parse(r['visited_at'] as String),
+          ),
+      ]);
+    }
     final prefs = await _prefs;
     final String? stored = prefs.getString(_personalKey(_recentGamesKey));
     if (stored == null || stored.trim().isEmpty) {
@@ -629,6 +673,18 @@ class PreferencesService {
   }
 
   Future<void> saveRecentGames(Iterable<RecentGameRecord> records) async {
+    if (personalStore case final store?) {
+      return _trackPersonalWrite(
+        () => store.saveCollection('recent_games', [
+          for (final r in _normalizeRecentGames(records))
+            {
+              'id': r.gameSlug,
+              'game_slug': r.gameSlug,
+              'visited_at': r.viewedAt.toUtc().toIso8601String(),
+            },
+        ]),
+      );
+    }
     await _trackPersonalWrite(() async {
       final prefs = await _prefs;
       await _requirePersonalWrite(

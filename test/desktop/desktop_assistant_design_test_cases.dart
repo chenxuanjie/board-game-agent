@@ -1,6 +1,131 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
+  for (final size in const [Size(390, 844), Size(1280, 800)]) {
+    for (final selected in ['', 'gpt-6-sol']) {
+      _assistantDesignTest(
+        'model discovery failure has one status and one refresh at $size with "$selected"',
+        (tester) async {
+          final ai = _RetryModelDiscoveryAi();
+          final controller = await tester.runAsync(
+            () => _createController(
+              aiService: ai,
+              preferencesService: _InMemoryPreferencesService(),
+            ),
+          );
+          addTearDown(controller!.dispose);
+          await controller.saveAiApiConfig(
+            AiApiConfig.defaultOpenAi.copyWith(
+              apiKey: 'test-only',
+              baseUrl: 'https://models.example.test/v1',
+              model: selected,
+            ),
+          );
+          await tester.binding.setSurfaceSize(size);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          var configureCalls = 0;
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: AppTheme.buildTheme(controller.palette),
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: AssistantModelSelector(
+                    controller: controller,
+                    enabled: true,
+                    onConfigureAi: () => configureCalls++,
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('desktop-model-selector')),
+          );
+          await tester.pumpAndSettle();
+          expect(ai.requests, 1);
+          expect(find.text(controller.copy.aiApiModelsFailed), findsOneWidget);
+          expect(find.text('模型获取失败，请重试。'), findsNothing);
+          expect(find.text('重新获取'), findsNothing);
+          expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
+          expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('desktop-model-picker-retry')),
+            findsNothing,
+          );
+          if (selected.isNotEmpty) {
+            expect(
+              find.byKey(ValueKey('desktop-model-option-$selected')),
+              findsOneWidget,
+            );
+          }
+          ai.fail = false;
+          await tester.tap(
+            find.byKey(const ValueKey('assistant-model-refresh')),
+          );
+          await tester.pumpAndSettle();
+          expect(ai.requests, 2);
+          expect(find.text(controller.copy.aiApiModelsFailed), findsNothing);
+          expect(
+            find.byKey(const ValueKey('desktop-model-option-gpt-5.6-sol')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('assistant-configure-ai')),
+          );
+          await tester.pumpAndSettle();
+          expect(configureCalls, 1);
+          expect(
+            find.byKey(const ValueKey('desktop-model-picker-panel')),
+            findsNothing,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  _assistantDesignTest(
+    'service switch does not discard an unsaved built-in provider',
+    (tester) async {
+      final controller = await tester.runAsync(
+        () => _createController(
+          preferencesService: _InMemoryPreferencesService(),
+        ),
+      );
+      addTearDown(controller!.dispose);
+      await controller.saveAiApiConfig(
+        AiApiConfig.defaultCustom.copyWith(
+          name: 'Personal service',
+          baseUrl: 'https://example.test/v1',
+          apiKey: 'custom-key',
+          model: 'gpt-6-sol',
+        ),
+      );
+      await controller.saveAiApiConfig(
+        AiApiConfig.defaultOpenAi.copyWith(
+          apiKey: 'builtin-key',
+          model: 'gpt-6-astra',
+        ),
+      );
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('assistant-service-selector')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Personal service · gpt-6-sol'));
+      await tester.pumpAndSettle();
+      expect(controller.aiApiConfig.name, 'OpenAI');
+      expect(controller.aiApiConfig.apiKey, 'builtin-key');
+      expect(find.text('当前服务配置尚未保存为独立方案，请先在 AI 设置中处理，再切换服务。'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   _assistantDesignTest(
     'running reply keeps its model and mode while next-send choices change',
     (tester) async {
@@ -29,15 +154,23 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pump();
       expect(ai.configs.single.model, 'gpt-6-astra');
       expect(ai.modes.single, AiAnswerMode.knowledgeThenDirect);
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
       await tester.tap(
-        find.byKey(const ValueKey('desktop-answer-mode-selector')),
+        find.byKey(const ValueKey('assistant-context-knowledge')),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
-      await tester.tap(find.byKey(const ValueKey('assistant-mode-knowledge')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
       expect(controller.allowSmartSupplement(useGlobalMode: true), isFalse);
+      Navigator.of(
+        tester.element(
+          find.byKey(const ValueKey('assistant-context-knowledge')),
+        ),
+      ).pop();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -108,7 +241,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
   );
 
   _assistantDesignTest(
-    'resource access shows one device with entrance details on demand',
+    'resource access shows the application service on demand',
     (tester) async {
       final controller = _SourcePreviewController();
       addTearDown(controller.dispose);
@@ -135,28 +268,35 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pumpAndSettle();
       expect(find.text('资源可用'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('resource-source-lan_share')),
+        find.byKey(const ValueKey('resource-source-application_service')),
         findsNothing,
       );
       await tester.tap(summary);
       await tester.pumpAndSettle();
-      final card = find.byKey(const ValueKey('resource-source-lan_share'));
+      final card = find.byKey(
+        const ValueKey('resource-source-application_service'),
+      );
       expect(
-        find.descendant(of: card, matching: find.text('内网访问')),
+        find.descendant(of: card, matching: find.text('公开资料')),
         findsOneWidget,
       );
       expect(
         find.descendant(of: card, matching: find.text('已连接')),
         findsOneWidget,
       );
-      final remote = find.byKey(const ValueKey('resource-source-cznas_dev'));
       expect(
-        find.descendant(of: remote, matching: find.text('外网访问')),
+        find.text(
+          'https://catalog.example/v1/apps/board_game_agent/catalog/revision',
+        ),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: remote, matching: find.text('未连接')),
-        findsOneWidget,
+        find.byKey(const ValueKey('resource-source-lan_share')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('resource-source-cznas_dev')),
+        findsNothing,
       );
       expect(find.text('已连接 1/2'), findsNothing);
       expect(
@@ -174,6 +314,8 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         await context.controller.saveAiApiConfig(AiApiConfig.defaultOpenAi);
         await _mount(tester, context.controller, size);
         await _navigate(tester, 'AI助手');
+        await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
         await tester.pumpAndSettle();
         expect(find.text('请先在设置中配置 AI 服务'), findsOneWidget);
@@ -181,7 +323,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
           tester
               .getSize(find.byKey(const ValueKey('desktop-model-picker-panel')))
               .height,
-          lessThan(180),
+          lessThan(230),
         );
         expect(find.text('服务等级'), findsNothing);
         expect(
@@ -219,6 +361,8 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       );
       await _mount(tester, context.controller, const Size(1280, 800));
       await _navigate(tester, 'AI助手');
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pumpAndSettle();
       final list = find.byKey(const ValueKey('desktop-model-picker-list'));
@@ -233,7 +377,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         tester
             .getSize(find.byKey(const ValueKey('desktop-model-picker-panel')))
             .height,
-        lessThan(360),
+        lessThan(400),
       );
       await _captureDesktopTypography(tester, 'model-picker-content-height');
       expect(tester.takeException(), isNull);
@@ -281,39 +425,43 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         find.byKey(const ValueKey('assistant-header-new-conversation')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey('desktop-model-selector')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
+      await tester.pumpAndSettle();
       final model = find.descendant(
         of: find.byKey(const ValueKey('desktop-model-selector')),
-        matching: find.byType(Text),
+        matching: find.byIcon(Icons.tune_rounded),
       );
       expect(model, findsOneWidget);
-      final text = tester.widget<Text>(model);
-      expect(text.data, 'gpt-6-astra');
-      expect(text.style!.fontFamily, 'Noto Sans SC');
-      expect(text.style!.fontWeight, FontWeight.w500);
-      expect(text.style!.fontSize, 14);
       expect(find.text('最高'), findsNothing);
       expect(find.text('极高'), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey('desktop-answer-mode-selector')),
-      );
+      await tester.tap(find.byKey(const ValueKey('assistant-context-button')));
       await tester.pumpAndSettle();
       expect(
-        find.byWidgetPredicate((widget) => widget is PopupMenuItem<bool>),
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is ListTile &&
+              (widget.key == const ValueKey('assistant-context-knowledge') ||
+                  widget.key == const ValueKey('assistant-context-smart')),
+        ),
         findsNWidgets(2),
       );
       expect(
-        find.byKey(const ValueKey('assistant-mode-knowledge')),
+        find.byKey(const ValueKey('assistant-context-knowledge')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('assistant-mode-smart')),
+        find.byKey(const ValueKey('assistant-context-smart')),
         findsOneWidget,
       );
       await _captureDesktopTypography(tester, 'assistant-answer-mode');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('assistant-mode-knowledge')),
+        find.byKey(const ValueKey('assistant-context-knowledge')),
         findsNothing,
       );
       expect(tester.takeException(), isNull);
@@ -332,12 +480,12 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         );
         await _navigate(tester, 'AI助手');
         await tester.tap(
-          find.byKey(const ValueKey('desktop-answer-mode-selector')),
+          find.byKey(const ValueKey('assistant-context-button')),
         );
         await tester.pumpAndSettle();
         for (final key in [
-          'assistant-mode-knowledge',
-          'assistant-mode-smart',
+          'assistant-context-knowledge',
+          'assistant-context-smart',
         ]) {
           final rect = tester.getRect(find.byKey(ValueKey(key)));
           expect(rect.left, greaterThanOrEqualTo(0));
@@ -348,7 +496,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         await tester.tapAt(const Offset(1, 1));
         await tester.pumpAndSettle();
         expect(
-          find.byKey(const ValueKey('assistant-mode-smart')),
+          find.byKey(const ValueKey('assistant-context-smart')),
           findsNothing,
         );
         expect(tester.takeException(), isNull);
@@ -364,12 +512,13 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         preferencesService: preferences,
         aiService: _FakeAiService(),
         conversationStore: _WorkspaceConversationStore(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
       );
       addTearDown(controller.dispose);
+      await tester.runAsync(controller.reloadGames);
       await tester.pumpWidget(
         MaterialApp(
           theme: buildDesktopTheme(),
@@ -465,7 +614,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
         preferencesService: preferences,
         aiService: _FakeAiService(),
         conversationStore: _WorkspaceConversationStore(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: _NoNetworkAssetService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
@@ -653,7 +802,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       preferencesService: _InMemoryPreferencesService(),
       aiService: _FakeAiService(),
       conversationStore: _WorkspaceConversationStore(),
-      gameManifestService: GameManifestService(),
+      gameManifestService: FixtureGameManifestService(),
       remoteAssetService: _NoNetworkAssetService(),
       speechService: SpeechService(),
       ttsService: _UnavailableTtsService(),
@@ -662,6 +811,13 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
     addTearDown(controller.dispose);
     await _mount(tester, controller, const Size(1280, 800));
     await _navigate(tester, 'AI助手');
+    await tester.runAsync(() async {
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await controller.sendPrompt('已有对话用于草稿恢复', useGlobalMode: true);
+    });
+    await tester.pumpAndSettle();
     final original = controller.selectedConversationId!;
     await tester.enterText(
       find.byKey(const ValueKey('assistant-draft')),
@@ -717,6 +873,18 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
     );
     expect(tester.widget<TextField>(draft).controller!.text, contains('第一行'));
   });
+}
+
+class _RetryModelDiscoveryAi extends _FakeAiService {
+  bool fail = true;
+  int requests = 0;
+
+  @override
+  Future<List<AiModel>> listModels(AiApiConfig config) async {
+    requests++;
+    if (fail) throw StateError('test model discovery failure');
+    return super.listModels(config);
+  }
 }
 
 class _ControlledFavoritePreferences extends _InMemoryPreferencesService {
@@ -807,11 +975,13 @@ class _SourcePreviewController extends AppController {
     : super(
         preferencesService: _InMemoryPreferencesService(),
         aiService: _FakeAiService(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         speechService: SpeechService(),
         ttsService: _UnavailableTtsService(),
         remoteAssetService: _NoNetworkAssetService(),
-      );
+      ) {
+    configureApplicationLibrary(Uri.parse('https://catalog.example'));
+  }
   @override
   ConnectivityStatus get assetConnectivityStatus => ConnectivityStatus(
     state: ConnectivityState.success,
@@ -820,13 +990,8 @@ class _SourcePreviewController extends AppController {
   );
   @override
   Map<String, ConnectivityStatus> get assetSourceStatuses => {
-    'lan_share': ConnectivityStatus(
+    'application_service': ConnectivityStatus(
       state: ConnectivityState.success,
-      message: 'test',
-      checkedAt: DateTime.now(),
-    ),
-    'cznas_dev': ConnectivityStatus(
-      state: ConnectivityState.failure,
       message: 'test',
       checkedAt: DateTime.now(),
     ),

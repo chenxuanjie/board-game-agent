@@ -8,6 +8,7 @@ import '../../../features/assistant/models/evidence_chunk.dart';
 import '../../../features/assistant/models/rule_citation.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/localization/app_copy.dart';
+import 'assistant_motion.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -194,8 +195,10 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (hasAssistantAction)
-                      _AssistantActions(
+                    AssistantResponseReveal(
+                      key: ValueKey('assistant-actions-${message.id}'),
+                      visible: hasAssistantAction,
+                      child: _AssistantActions(
                         palette: palette,
                         showLabels: showAssistantActionLabels,
                         onCopy: _canCopy ? onCopy : null,
@@ -205,14 +208,18 @@ class MessageBubble extends StatelessWidget {
                         onRetry: _canRetry ? onRetry : null,
                         retryTooltip: retryTooltip,
                       ),
-                    if (hasAssistantReferences)
-                      _AssistantReferenceSection(
+                    ),
+                    AssistantResponseReveal(
+                      key: ValueKey('assistant-references-${message.id}'),
+                      visible: hasAssistantReferences && !message.isStreaming,
+                      child: _AssistantReferenceSection(
                         source: message.source,
                         evidence: message.evidence,
                         citations: message.citations,
                         palette: palette,
                         copy: copy,
                       ),
+                    ),
                     if (showTimestamp)
                       Padding(
                         padding: const EdgeInsets.only(

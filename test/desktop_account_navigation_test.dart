@@ -1,11 +1,13 @@
+import 'support/catalog_fixture.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'dart:async';
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
-import 'package:board_game_agent/features/identity/models/account_configuration.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
@@ -39,7 +41,7 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
   testWidgets(
-    'ready login probes resource access immediately before refreshing the index',
+    'public resource checks work before and after account login',
     (tester) async {
       await tester.binding.setSurfaceSize(
         defaultTargetPlatform == TargetPlatform.android
@@ -58,17 +60,12 @@ void main() {
       await tester.runAsync(() async {
         account = AccountService(
           controller: controller,
-          webDav: settings,
           savedLoginStorage: MemoryLoginStorage(),
-          credentialStore: (_) => MemoryLoginStorage(),
+
           gatewayFactory: (_) async => gateway,
           switchScope: (_) async {},
         );
-        await account.saveConfiguration(
-          AccountConfiguration.fromFields(
-            nasUrl: 'https://nas.example.test:5001',
-          ),
-        );
+        await account.configureService('https://service.example.test');
       });
       await tester.pumpWidget(
         BoardGameAgentApp(
@@ -93,8 +90,8 @@ void main() {
       }
       expect(find.byKey(const ValueKey('app-startup-loading')), findsNothing);
       expect(account.isBusy, isFalse);
-      expect(account.resourceCredentialsReady, isFalse);
-      expect(remote.resourceEvents, isEmpty);
+
+      expect(remote.resourceEvents, isNotEmpty);
       late Future<void> login;
       await tester.runAsync(() async {
         login = account.signIn(account: 'Fixture', password: 'fixture');
@@ -105,19 +102,13 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)),
         );
         await tester.pump(const Duration(milliseconds: 20));
-        if (account.resourceCredentialsReady && !account.isBusy) break;
+        if (account.isSignedIn && !account.isBusy) break;
       }
-      expect(account.resourceCredentialsReady, isTrue);
       await tester.runAsync(() => login);
       await tester.pump(const Duration(milliseconds: 500));
-      expect(account.resourceCredentialsReady, isTrue);
-      expect(remote.resourceEvents.first, 'access');
-      expect(remote.resourceEvents.last, 'index');
-      expect(
-        remote.resourceEvents.where((e) => e == 'access'),
-        hasLength(controller.assetSourceConfigs.length),
-      );
-      expect(remote.resourceEvents.where((e) => e == 'index'), hasLength(1));
+      expect(account.isSignedIn, isTrue);
+
+      expect(remote.resourceEvents, isNotEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
@@ -142,19 +133,26 @@ void main() {
           controller = _Controller();
           gateway = _Gateway();
           account = AccountService(
+            httpClientFactory: () => MockClient(
+              (_) async => http.Response(
+                jsonEncode({
+                  'favorites': {},
+                  'votes': [],
+                  'own_favorites': [],
+                  'own_votes': [],
+                }),
+                200,
+              ),
+            ),
             controller: controller,
             savedLoginStorage: MemoryLoginStorage(),
-            credentialStore: (_) => MemoryLoginStorage(),
+
             gatewayFactory: (_) async => gateway,
             switchScope: (scope) async {
-              if (scope == null && scopeGate != null) await scopeGate.future;
+              if (scope == null) await scopeGate?.future;
             },
           );
-          await account.saveConfiguration(
-            AccountConfiguration.fromFields(
-              nasUrl: 'https://nas.example.test:5001',
-            ),
-          );
+          await account.configureService('https://service.example.test');
         });
         final settings = WebDavSettingsController(
           store: _Store(),
@@ -188,7 +186,13 @@ void main() {
           find.byKey(const ValueKey('desktop-window-sidebar-background')),
           findsNothing,
         );
-        if (slowScope) scopeGate = Completer<void>();
+        if (slowScope) {
+          // The account service runs in runAsync. Its deliberately held gate
+          // must belong to that same real clock, rather than the widget clock.
+          await tester.runAsync(() async {
+            scopeGate = Completer<void>();
+          });
+        }
         late Future<void> logout;
         await tester.runAsync(() async {
           await tester.ensureVisible(
@@ -303,13 +307,15 @@ class _Controller extends AppController {
     : super(
         preferencesService: PreferencesService(),
         aiService: _Ai(),
-        gameManifestService: GameManifestService(),
+        gameManifestService: FixtureGameManifestService(),
         remoteAssetService: remote ?? RemoteAssetService(),
         speechService: _Speech(),
         ttsService: _Tts(),
       );
   @override
   Future<void> initialize() async {}
+  @override
+  Future<void> reloadGames() async {}
   @override
   bool get checkForUpdates => false;
 }
@@ -320,7 +326,7 @@ class _ProbeRemote extends RemoteAssetService {
   Future<ConnectivityStatus> checkAccess(
     AssetSourceConfig source, {
     Completer<void>? abort,
-    void Function(String catalogSource)? onCatalog,
+    void Function(int)? onRevision,
   }) async {
     resourceEvents.add('access');
     return ConnectivityStatus(

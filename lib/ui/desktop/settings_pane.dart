@@ -10,13 +10,12 @@ import 'package:webdav_settings/webdav_settings.dart';
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
 import '../../core/localization/app_language.dart';
-import '../../features/library/models/asset_source_config.dart';
 import '../../core/theme/color_scheme_option.dart';
 import '../../core/models/connectivity_status.dart';
 import '../../features/settings/services/desktop_ai_settings_service.dart';
 import '../../app/state/app_controller.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/cinema_theme.dart';
+
 import '../shared/resource_access_summary.dart';
 import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
@@ -31,7 +30,6 @@ import '../../core/theme/palette_registry.dart';
 import '../../core/localization/app_copy.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
-import '../shared/cinema/cinema_surface.dart';
 
 part 'settings/preferences_cards.dart';
 part 'settings/ai_service_card.dart';
@@ -88,14 +86,13 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     onApplied: _importApplied,
     enabled: !_savingAi && !_checkingSources,
   );
-  Future<void> _editResourceConnection(AssetSourceConfig source) async {
+  Future<void> _editResourceConnection() async {
     if (_transfer.webDav == null || _transfer.isBusy || _checkingSources) {
       return;
     }
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            ResourceConnectionScreen(service: _transfer, source: source),
+        builder: (_) => ResourceConnectionScreen(service: _transfer),
       ),
     );
     if (mounted) _importApplied();
@@ -196,35 +193,6 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
     }
   }
 
-  Future<void> _reorderSources(int oldIndex, int newIndex) async {
-    if (_checkingSources) return;
-    if (newIndex > oldIndex) newIndex--;
-    final next = widget.controller.assetSourceConfigs.toList();
-    next.insert(newIndex, next.removeAt(oldIndex));
-    setState(() => _checkingSources = true);
-    try {
-      final account = AccountScope.maybeOf(context);
-      if (account?.configuration != null) {
-        final config = account!.configuration!;
-        await account.saveConfiguration(
-          config.edited(
-            servers: next
-                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
-                .toList(),
-            folder: config.storageFolder,
-          ),
-        );
-        if (account.error != null) throw StateError('Connection pending');
-      } else {
-        await widget.controller.saveAssetSourceConfigs(next);
-      }
-    } catch (_) {
-      if (mounted) setState(() => _failure = '顺序保存失败，请重试');
-    } finally {
-      if (mounted) setState(() => _checkingSources = false);
-    }
-  }
-
   Future<void> _saveAndCheckAi() async {
     if (_savingAi) return;
     setState(() {
@@ -237,6 +205,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       final DesktopAiSettingsResult result = await _desktopAiSettings
           .saveAndCheck(
             DesktopAiSettingsDraft(
+              accountService: _aiProviderOptionId == 'builtin:loomex',
               provider: _aiProvider.text,
               model: _aiModel.text,
               apiKey: _aiApiKey.text,
@@ -282,6 +251,7 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
 
   String _providerOptionId(AiApiConfig config) =>
       switch (config.providerPreset) {
+        AiProviderPreset.loomex => 'builtin:loomex',
         AiProviderPreset.openAi => 'builtin:openai',
         AiProviderPreset.deepSeek => 'builtin:deepseek',
         AiProviderPreset.custom =>
@@ -304,6 +274,11 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
       custom.insert(0, current);
     }
     return <_DesktopAiProviderOption>[
+      _DesktopAiProviderOption(
+        id: 'builtin:loomex',
+        label: 'Loomex',
+        config: AiApiConfig.defaultLoomex,
+      ),
       _DesktopAiProviderOption(
         id: 'builtin:openai',
         label: copy.aiProviderPresetName(AiProviderPreset.openAi),
@@ -459,18 +434,16 @@ class _DesktopSettingsPaneState extends State<DesktopSettingsPane> {
           ),
           child: LibraryCheckActions(controller: widget.controller),
         ),
-        if (AccountScope.maybeOf(context) == null)
-          _SyncBackupCard(
-            onEditSource: _transfer.webDav == null
-                ? null
-                : _editResourceConnection,
-            transferMenu: _transferMenu(ConfigurationScope.webDav),
-            controller: widget.controller,
-            settingsController: widget.webDavSettingsController,
-            checking: _checkingSources,
-            onReorder: _reorderSources,
-            onCheckSources: _checkResourceSources,
-          ),
+        _SyncBackupCard(
+          onManageConnections: _transfer.webDav == null
+              ? null
+              : () => _editResourceConnection(),
+          transferMenu: _transferMenu(ConfigurationScope.webDav),
+          controller: widget.controller,
+          settingsController: widget.webDavSettingsController,
+          checking: _checkingSources,
+          onCheckSources: _checkResourceSources,
+        ),
         _AboutUpdatesCard(
           controller: widget.controller,
           version: _version,

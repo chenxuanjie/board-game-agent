@@ -1,8 +1,11 @@
+import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, debugDefaultTargetPlatformOverride;
+import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +16,6 @@ import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/library/models/cached_asset.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/games/services/related_game_recommender.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
@@ -34,6 +36,7 @@ import 'package:board_game_agent/ui/mobile/national_day_screen.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/core/localization/app_copy.dart';
+import 'package:board_game_agent/core/models/app_activity.dart';
 import 'package:board_game_agent/core/theme/color_scheme_option.dart';
 import 'package:board_game_agent/core/theme/palette_registry.dart';
 import 'package:board_game_agent/features/games/models/favorite_game_record.dart';
@@ -42,48 +45,191 @@ import 'package:board_game_agent/features/assistant/models/ai_conversation.dart'
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/shared/content_cards.dart';
-import 'package:board_game_agent/ui/shared/account_screen.dart';
 import 'package:board_game_agent/ui/shared/assistant/assistant_presentation.dart';
-import 'package:board_game_agent/ui/shared/assistant/answer_mode_selector.dart';
-import 'package:board_game_agent/ui/shared/cinema/cinema_home.dart';
 
 part 'mobile/mobile_national_day_test_cases.dart';
 part 'mobile/mobile_content_design_test_cases.dart';
 part 'mobile/mobile_composer_test_cases.dart';
 
+Future<void> _openMobileNotifications(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
+  await tester.pumpAndSettle();
+  final entry = find.byKey(const ValueKey('mobile-mine-service-0'));
+  await tester.scrollUntilVisible(
+    entry,
+    250,
+    scrollable: find
+        .descendant(
+          of: find.byKey(const ValueKey('mobile-mine-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(entry);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openMobileProfile(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
+  await tester.pumpAndSettle();
+  final entry = find.byKey(const ValueKey('mobile-mine-account-entry'));
+  await tester.scrollUntilVisible(
+    entry,
+    -250,
+    scrollable: find
+        .descendant(
+          of: find.byKey(const ValueKey('mobile-mine-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(entry);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  for (final width in [320.0, 390.0, 720.0]) {
-    testWidgets('Cinema compact navigation and details work at $width', (
+  for (final width in [320.0, 390.0]) {
+    testWidgets('scan placeholder appears only on mine at $width', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
-      final c = _controller(ttsService: _UnavailableTtsService());
-      addTearDown(c.dispose);
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.runAsync(c.reloadGames);
-      await c.setColorScheme(ColorSchemeOption.cinema);
       await tester.binding.setSurfaceSize(Size(width, 844));
       await tester.pumpWidget(
         MaterialApp(
-          theme: AppTheme.buildTheme(c.palette),
-          home: HomeScreen(controller: c, onOpenAbout: () {}),
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(CinemaHomeContent), findsOneWidget);
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('cinema-hero-details')),
+      for (final tab in ['home', 'library', 'ai', 'mine']) {
+        await tester.tap(find.byKey(ValueKey('mobile-tab-$tab')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('account-menu-button')),
+          findsNothing,
+          reason: tab,
+        );
+        final scan = find.byKey(const ValueKey('mobile-scan-placeholder'));
+        if (tab != 'mine') {
+          expect(scan, findsNothing, reason: tab);
+          continue;
+        }
+        expect(scan, findsOneWidget, reason: tab);
+        expect(
+          find.descendant(of: scan, matching: find.byType(Image)),
+          findsOneWidget,
+        );
+        expect(tester.widget<IconButton>(scan).onPressed, isNull, reason: tab);
+        expect(tester.getSize(scan), const Size(48, 48));
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+  testWidgets(
+    'app update notification opens its action after the sheet closes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      var opened = false;
+      controller.recordAppUpdate(version: '9.0.0', build: 900);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(
+            controller: controller,
+            onOpenAbout: () {},
+            onCheckUpdates: () => opened = true,
+          ),
+        ),
       );
-      await tester.tap(find.byKey(const ValueKey('cinema-hero-details')));
       await tester.pumpAndSettle();
-      expect(find.byType(GameDetailScreen), findsOneWidget);
-      await tester.tap(find.byTooltip('返回'));
+      await _openMobileNotifications(tester);
+      await tester.tap(find.text('发现新版本'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
+      expect(opened, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
+    'library failure notification opens the library; unavailable AI session explains why',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = _ActivityPreferences();
+      final controller = _controller(
+        preferences: preferences,
+        ttsService: _UnavailableTtsService(),
+      );
+      addTearDown(controller.dispose);
+      await tester.runAsync(controller.initialize);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Future<void> openNotifications() async {
+        await _openMobileNotifications(tester);
+      }
+
+      await openNotifications();
+      await tester.tap(find.text('资料加载失败测试'));
       await tester.pumpAndSettle();
       expect(find.byType(MobileLibraryContent), findsOneWidget);
+      await openNotifications();
+      await tester.tap(find.text('AI 会话测试'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.text(controller.copy.activityConversationUnavailable),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  for (final width in [320.0, 390.0]) {
+    testWidgets('mine keeps notifications and profile accessible at $width', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      controller.recordAppUpdate(version: '9.0.0', build: 900);
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: HomeScreen(controller: controller, onOpenAbout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile-home-activities')),
+        findsNothing,
+      );
+      expect(controller.unreadActivityCount, 1);
+      await _openMobileNotifications(tester);
+      expect(find.text('发现新版本'), findsOneWidget);
+      expect(controller.unreadActivityCount, 0);
+      Navigator.of(tester.element(find.text('发现新版本'))).pop();
+      await tester.pumpAndSettle();
+      await _openMobileProfile(tester);
+      expect(find.text('编辑资料'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
     });
   }
   testWidgets(
@@ -140,6 +286,8 @@ void main() {
   testWidgets('empty model opens and highlights expanded mobile AI settings', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final controller = _controller(ttsService: _UnavailableTtsService());
     addTearDown(controller.dispose);
@@ -160,6 +308,8 @@ void main() {
           home: AssistantChatScreen(controller: controller),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('assistant-draft')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('desktop-model-selector')));
       await tester.pumpAndSettle();
@@ -186,11 +336,15 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     }
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('mobile home and settings fit phone sizes', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    final controller = _controller(ttsService: _UnavailableTtsService());
+    final controller = _controller(
+      ttsService: _UnavailableTtsService(),
+      assets: _CachedImageAssetService(),
+    );
     addTearDown(controller.dispose);
     await controller.reloadGames();
     final squareGame = controller.games.firstWhere(
@@ -240,11 +394,11 @@ void main() {
     await tester.runAsync(
       () => Future.wait([
         precacheImage(
-          AssetImage(squareGame.coverAssetPath),
+          FileImage(File(squareGame.coverAssetPath).absolute),
           tester.element(find.byKey(const ValueKey('square-cover'))),
         ),
         precacheImage(
-          AssetImage(portraitGame.coverAssetPath),
+          FileImage(File(portraitGame.coverAssetPath).absolute),
           tester.element(find.byKey(const ValueKey('portrait-cover'))),
         ),
       ]),
@@ -281,7 +435,10 @@ void main() {
       expect(find.text('桌游伙伴'), findsOneWidget);
       expect(find.text('最近AI对话'), findsOneWidget);
       expect(find.text('查看更多'), findsNothing);
-      expect(find.text('向 AI 提一个问题'), findsOneWidget);
+      expect(
+        find.text('向 AI 提一个问题'),
+        controller.conversations.isEmpty ? findsOneWidget : findsNothing,
+      );
       if (size.width == 390) {
         expect(find.text('推荐桌游'), findsOneWidget);
         expect(find.text('快速找到心仪桌游'), findsNothing);
@@ -296,12 +453,12 @@ void main() {
       expect(tester.takeException(), isNull);
 
       if (size.width == 390) {
-        await tester.tap(find.byKey(const ValueKey('mobile-home-profile')));
-        await tester.tap(find.byKey(const ValueKey('mobile-home-profile')));
-        await tester.pumpAndSettle();
-        expect(find.byType(AccountScreen, skipOffstage: false), findsOneWidget);
+        await _openMobileProfile(tester);
+        expect(find.text('编辑资料'), findsOneWidget);
         expect(find.byType(MobileSettingsScreen), findsNothing);
-        await tester.pageBack();
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile-tab-home')));
         await tester.pumpAndSettle();
         await tester.tap(find.text('规则资料库'));
         await tester.pumpAndSettle();
@@ -328,11 +485,13 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('mobile-library-profile')));
-      await tester.pumpAndSettle();
-      expect(find.byType(AccountScreen), findsOneWidget);
+      expect(find.byKey(const ValueKey('account-menu-button')), findsNothing);
+      await _openMobileProfile(tester);
+      expect(find.text('编辑资料'), findsOneWidget);
       expect(find.byType(MobileSettingsScreen), findsNothing);
-      await tester.pageBack();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile-tab-library')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('mobile-library-grid')), findsOneWidget);
       expect(
@@ -462,7 +621,11 @@ void main() {
         find.byKey(const ValueKey('assistant-conversations-trigger')),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
+      expect(find.byKey(const ValueKey('assistant-more-menu')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('assistant-header-share')),
+        findsNothing,
+      );
       expect(find.byIcon(Icons.delete_sweep_rounded), findsNothing);
       expect(find.text('语音已准备好'), findsNothing);
       expect(controller.selectedConversation?.isGlobal, isTrue);
@@ -473,6 +636,13 @@ void main() {
       expect(find.byKey(const ValueKey('mobile-mine-profile')), findsOneWidget);
       expect(find.text('${controller.favoriteCount}'), findsOneWidget);
       expect(find.text('好桌游，让平凡的日子闪闪发光！'), findsNothing);
+      await tester.runAsync(() async {
+        await controller.saveAiApiConfig(
+          controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+        );
+        await controller.sendPrompt('已有对话用于历史导航', useGlobalMode: true);
+      });
+      await tester.pumpAndSettle();
       final conversationCount = controller.conversations.length;
       final conversation = controller.conversations.first;
       await tester.tap(
@@ -624,9 +794,13 @@ void main() {
       find.byKey(const ValueKey('mobile-settings-theme-classic')),
       findsNothing,
     );
-    await tester.tap(find.text('Cinema'));
+    expect(
+      find.byKey(const ValueKey('mobile-settings-theme-cinema')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Spatial Cinema'));
     await tester.pumpAndSettle();
-    expect(controller.colorScheme, ColorSchemeOption.cinema);
+    expect(controller.colorScheme, ColorSchemeOption.spatialCinema);
 
     final aiSection = find.byKey(const ValueKey('mobile-settings-ai'));
     await tester.ensureVisible(aiSection);
@@ -724,6 +898,98 @@ void main() {
     expect(controller.selectedGame.id, game.id);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('detail gallery indicator stays fixed while images move', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = _controller(ttsService: _UnavailableTtsService());
+    addTearDown(controller.dispose);
+    await tester.runAsync(controller.reloadGames);
+    final game = controller.games.firstWhere(
+      (game) => {game.coverAssetPath, ...game.galleryAssetPaths}.length > 1,
+    );
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(controller.palette),
+        home: GameDetailScreen(controller: controller, game: game),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final indicator = find.byKey(
+      const ValueKey('mobile-detail-gallery-indicator'),
+    );
+    final gallery = find.byKey(const ValueKey('mobile-detail-gallery'));
+    expect(indicator, findsOneWidget);
+    final original = tester.getCenter(indicator);
+    final gesture = await tester.startGesture(tester.getCenter(gallery));
+    await gesture.moveBy(const Offset(-30, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-220, 0));
+    await tester.pump();
+    expect(tester.widget<PageView>(gallery).controller!.offset, greaterThan(0));
+    expect(tester.getCenter(indicator), original);
+    expect(indicator, findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(indicator), original);
+    expect(tester.widget<PageView>(gallery).controller!.page, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'missing rulebook notice closes automatically and by horizontal swipe',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final controller = _controller(ttsService: _UnavailableTtsService());
+      addTearDown(controller.dispose);
+      await tester.runAsync(controller.reloadGames);
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(controller.palette),
+          home: GameDetailScreen(
+            controller: controller,
+            game: controller.games.first,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final rules = find.byKey(const ValueKey('mobile-detail-rules'));
+      Future<void> showNotice() async {
+        await tester.ensureVisible(rules);
+        await tester.tap(rules);
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(
+          find.descendant(of: find.byType(SnackBar), matching: find.text('重试')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(SnackBar),
+            matching: find.byIcon(Icons.close),
+          ),
+          findsOneWidget,
+        );
+      }
+
+      await showNotice();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing);
+      for (final dx in [-500.0, 500.0]) {
+        await showNotice();
+        await tester.drag(find.byType(SnackBar), Offset(dx, 0));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   _registerCompactComposerTests();
   testWidgets(
     'compact cover uses the same Hero into detail and returns safely',
@@ -779,11 +1045,12 @@ void main() {
 AppController _controller({
   TtsService? ttsService,
   PreferencesService? preferences,
+  RemoteAssetService? assets,
 }) => AppController(
   preferencesService: preferences ?? PreferencesService(),
   aiService: _UnusedAiService(),
-  gameManifestService: GameManifestService(),
-  remoteAssetService: _NoNetworkAssetService(),
+  gameManifestService: FixtureGameManifestService(),
+  remoteAssetService: assets ?? _NoNetworkAssetService(),
   speechService: SpeechService(),
   ttsService: ttsService ?? TtsService(),
 );
@@ -791,6 +1058,27 @@ AppController _controller({
 class _UnavailableTtsService extends TtsService {
   @override
   bool get isAvailable => false;
+}
+
+class _ActivityPreferences extends PreferencesService {
+  @override
+  Future<List<AppActivity>> loadActivities() async => [
+    AppActivity(
+      id: 'library',
+      kind: AppActivityKind.libraryLoadFailed,
+      title: '资料加载失败测试',
+      message: '打开资料库可重试。',
+      createdAt: DateTime(2026),
+    ),
+    AppActivity(
+      id: 'ai',
+      kind: AppActivityKind.aiCompleted,
+      title: 'AI 会话测试',
+      message: '打开会话',
+      conversationId: 'missing',
+      createdAt: DateTime(2026),
+    ),
+  ];
 }
 
 class _UnusedAiService extends Fake implements AiService {}
@@ -806,4 +1094,25 @@ class _NoNetworkAssetService extends RemoteAssetService {
     bool forceRefresh = false,
     bool allowCachedFallback = true,
   }) async => null;
+}
+
+/// The UI sees a verified local cache result, never a bundled game asset.
+class _CachedImageAssetService extends _NoNetworkAssetService {
+  @override
+  Future<CachedAsset?> ensureCached({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+    bool forceRefresh = false,
+    bool allowCachedFallback = true,
+  }) async {
+    final file = File(remotePath).absolute;
+    if (!remotePath.contains('/images/') || !file.existsSync()) return null;
+    return CachedAsset(
+      remotePath: remotePath,
+      localPath: file.path,
+      exists: true,
+      fromRemote: false,
+      sourceId: 'fixture',
+    );
+  }
 }

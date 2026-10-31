@@ -18,7 +18,7 @@ import '../../features/library/models/resolved_document.dart';
 import '../shared/documents/document_viewer_launcher.dart';
 import 'assistant_chat_screen.dart';
 import 'game_cover.dart';
-import '../../core/theme/cinema_theme.dart';
+
 import '../desktop/desktop_resolved_image.dart';
 import '../shared/hover_carousel_controls.dart';
 import '../shared/content_cards.dart';
@@ -92,7 +92,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final copy = controller.copy;
-    final game = widget.game;
+    final game =
+        widget.controller.games
+            .where((value) => value.id == widget.game.id)
+            .firstOrNull ??
+        widget.game;
     final gallery = <String>{
       if (game.coverAssetPath.isNotEmpty) game.coverAssetPath,
       ...game.galleryAssetPaths,
@@ -160,12 +164,10 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                     padding: const EdgeInsets.only(bottom: 18),
                     children: [
                       SizedBox(
-                        height: isCinema(context)
-                            ? (MediaQuery.sizeOf(context).width - 32) * 9 / 16
-                            : (MediaQuery.sizeOf(context).width * 0.92).clamp(
-                                270.0,
-                                480.0,
-                              ),
+                        height: (MediaQuery.sizeOf(context).width * 0.92).clamp(
+                          270.0,
+                          480.0,
+                        ),
                         child: HoverCarouselControls(
                           enabled: kIsWeb && gallery.length > 1,
                           showControls:
@@ -180,6 +182,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                             fit: StackFit.expand,
                             children: [
                               PageView.builder(
+                                key: const ValueKey('mobile-detail-gallery'),
                                 controller: _galleryController,
                                 itemCount: gallery.length,
                                 onPageChanged: (index) =>
@@ -214,63 +217,62 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                             game: game,
                                             path: gallery[index],
                                           ),
-                                        if (gallery.length > 1)
-                                          Positioned(
-                                            bottom: 12,
-                                            left: 0,
-                                            right: 0,
-                                            child: Center(
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 12,
-                                                      vertical: 7,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black45,
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: List.generate(
-                                                    gallery.length,
-                                                    (dot) => AnimatedContainer(
-                                                      duration:
-                                                          AppMotion.duration(
-                                                            context,
-                                                          ),
-                                                      margin:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 3,
-                                                          ),
-                                                      width:
-                                                          dot == _galleryIndex
-                                                          ? 18
-                                                          : 6,
-                                                      height: 6,
-                                                      decoration: BoxDecoration(
-                                                        color:
-                                                            dot == _galleryIndex
-                                                            ? Colors.white
-                                                            : Colors.white54,
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              6,
-                                                            ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
                                       ],
                                     ),
                                   ),
                                 ),
                               ),
+                              if (gallery.length > 1)
+                                Positioned(
+                                  key: const ValueKey(
+                                    'mobile-detail-gallery-indicator',
+                                  ),
+                                  bottom: 12,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black45,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: List.generate(
+                                            gallery.length,
+                                            (dot) => AnimatedContainer(
+                                              duration: AppMotion.duration(
+                                                context,
+                                              ),
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 3,
+                                                  ),
+                                              width: dot == _galleryIndex
+                                                  ? 18
+                                                  : 6,
+                                              height: 6,
+                                              decoration: BoxDecoration(
+                                                color: dot == _galleryIndex
+                                                    ? Colors.white
+                                                    : Colors.white54,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -739,13 +741,17 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         SnackBar(
           content: Text(
             controller.copy.localized(
-              '登录后使用知识库',
-              'Sign in to use the knowledge library',
+              '公开资料暂不可用，请检查服务地址',
+              'Public library unavailable. Check the service URL.',
             ),
           ),
+          persist: false,
           action: AccountScope.maybeOf(context)?.supportsSignIn == true
               ? SnackBarAction(
-                  label: controller.copy.localized('登录', 'Sign in'),
+                  label: controller.copy.localized(
+                    '连接设置',
+                    'Connection settings',
+                  ),
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute(builder: (_) => const AccountScreen()),
                   ),
@@ -762,7 +768,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
           .resolveRulebookDocument(game);
       if (!mounted) return;
       if (document == null) {
-        _documentUnavailable(title, () => _openDocument(game));
+        _documentUnavailable(title);
         return;
       }
       await DocumentViewerLauncher.open(
@@ -773,7 +779,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       );
     } catch (_) {
       if (mounted) {
-        _documentUnavailable(title, () => _openDocument(game));
+        _documentUnavailable(title);
       }
     } finally {
       if (mounted) {
@@ -789,16 +795,12 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     ).hasMatch(value.trim());
   }
 
-  void _documentUnavailable(String title, VoidCallback retry) {
+  void _documentUnavailable(String title) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(widget.controller.copy.documentUnavailable(title)),
-          action: SnackBarAction(
-            label: widget.controller.copy.retry,
-            onPressed: retry,
-          ),
         ),
       );
   }
@@ -820,18 +822,10 @@ class _GalleryAsset extends StatelessWidget {
     if (path.isEmpty) {
       return MobileGameCover(controller: controller, game: game);
     }
-    if (isCinema(context)) {
-      return DesktopResolvedImage(
-        controller: controller,
-        assetPath: path,
-        palette: AppPalette.of(context),
-      );
-    }
-    return Image.asset(
-      path,
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) =>
-          MobileGameCover(controller: controller, game: game),
+    return DesktopResolvedImage(
+      controller: controller,
+      assetPath: path,
+      palette: AppPalette.of(context),
     );
   }
 }

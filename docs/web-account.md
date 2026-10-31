@@ -1,3 +1,5 @@
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # Web 账号接入
 
 2026-10-17。当前源码支持 Web 群晖账号登录、按需 OTP、服务器验证后的稳定身份、刷新恢复、退出、取消、账号本机数据隔离，以及 [公开挂载资料访问](web-library.md) 和 [桌游评论](game-comments.md)。游客可以读取已发布资料及公开评论；发布、回复、点赞与删除自己的评论要求登录。2026-10-18 源码已通过同源 `/api/sync/` 接入私人云同步和收藏/投票公共统计，复用原有增量引擎，不另建账号数据库；待构建与 NAS 部署验收。Android/Windows 保留原生直连及原安全存储。
@@ -28,6 +30,8 @@ Cookie 是 256 位随机站点标识，HttpOnly、Secure、SameSite=Strict、Pat
 取消、退出和过期都会递增服务端会话版本；晚到登录只能撤销自己的候选 NAS 会话，不能重新发布身份。多标签共用站点 Cookie，其他标签下一次会话验证会发现退出。客户端初始化、返回前台和前台每 60 秒继续使用现有账号验证调度；定时器不保证后台标签准时执行。登录状态不代表资料访问资格，Web 不生成或保存 WebDAV 密码。
 
 ## 部署
+
+2026-10-18 HTTPS 入口诊断：当前网站已通过群晖反代在 `https://cznas.pp.ua:18887` 返回页面。只读接口实测该 Origin 返回 403、旧 HTTP 8887 Origin 返回 200，确认是配置不匹配。交付 YAML 和未来默认值已改为 `WEB_PUBLIC_ORIGIN=https://cznas.pp.ua:18887`、`WEB_ALLOW_INSECURE_HTTP=false`；容器端口仍是 8887:8080，更新配置须重新创建账号网关容器并刷新网页。容器不需要监听 TLS，也不依赖不可信的转发头猜测浏览器 origin。Web AI 的独立跨域问题和同源转发见 [Web AI](web-ai.md)。
 
 群晖部署直接编辑交付目录 `release/reports/docker-linux-amd64/docker-compose.yml` 中的配置，无需 `.env`。以下为对应配置名称；仅开发源码构建时复制 `packaging/docker/.env.example` 为 `.env`：
 

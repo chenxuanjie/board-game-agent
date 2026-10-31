@@ -4,12 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_motion.dart';
 import '../app_modals.dart';
-import '../../../core/theme/cinema_theme.dart';
-import '../cinema/cinema_surface.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../features/assistant/models/ai_conversation.dart';
+import 'assistant_toolbar_icon.dart';
+import 'assistant_motion.dart';
 
 /// A shared, floating history surface. The controller owns session data;
 /// this route owns only animation, focus and the pending create operation.
@@ -52,20 +52,11 @@ Future<void> showConversationDrawer(
                     height: double.infinity,
                     child: _DrawerMotion(
                       animation: animation,
-                      child: isCinema(context)
-                          ? CinemaSurface(
-                              role: CinemaSurfaceRole.overlay,
-                              child: ConversationHistoryPanel(
-                                controller: controller,
-                                onClose: () => Navigator.of(context).pop(),
-                                onOpenConversation: onOpenConversation,
-                              ),
-                            )
-                          : ConversationHistoryPanel(
-                              controller: controller,
-                              onClose: () => Navigator.of(context).pop(),
-                              onOpenConversation: onOpenConversation,
-                            ),
+                      child: ConversationHistoryPanel(
+                        controller: controller,
+                        onClose: () => Navigator.of(context).pop(),
+                        onOpenConversation: onOpenConversation,
+                      ),
                     ),
                   ),
                 ),
@@ -174,25 +165,17 @@ class _ConversationTitleButtonState extends State<ConversationTitleButton> {
         ),
         child: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: palette.primaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.auto_awesome_rounded,
-                size: 20,
-                color: palette.primary,
-              ),
+            AssistantToolbarIcon(
+              asset: 'assets/mobile/assistant/menu.png',
+              size: 24,
+              color: palette.textPrimary,
             ),
             const SizedBox(width: 10),
             Flexible(
               child: Text(
                 widget.title,
-                maxLines: 2,
-                overflow: TextOverflow.clip,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
@@ -233,10 +216,20 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
   bool _creating = false;
   String? _deletingId;
   String? _error;
+  final _scroll = ScrollController();
+  final _removed = <String, (AiConversation, int)>{};
+  Object? _removalIdentity;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   Future<void> _delete(AiConversation conversation) async {
     if (_creating || _deletingId != null) return;
     final copy = widget.controller.copy;
+    final identity = widget.controller.identityUserId;
     final confirmed = await showAppDialog<bool>(
       context: context,
       animationStyle: AppMotion.menuStyle(context),
@@ -265,13 +258,28 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true ||
+        !mounted ||
+        identity != widget.controller.identityUserId ||
+        widget.controller.isSwitchingIdentityScope) {
+      return;
+    }
+    final index = widget.controller.conversations.indexWhere(
+      (c) => c.id == conversation.id,
+    );
     setState(() {
       _deletingId = conversation.id;
       _error = null;
     });
     try {
       await widget.controller.deleteConversation(conversation.id);
+      if (mounted &&
+          identity == widget.controller.identityUserId &&
+          !widget.controller.isSwitchingIdentityScope &&
+          !AppMotion.reduced(context) &&
+          index >= 0) {
+        setState(() => _removed[conversation.id] = (conversation, index));
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -321,7 +329,22 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final yesterday = DateTime(today.year, today.month, today.day - 1);
-      final conversations = controller.conversations;
+      final identity = (
+        controller.identityUserId,
+        controller.isSwitchingIdentityScope,
+      );
+      if (_removalIdentity != identity) {
+        _removed.clear();
+        _removalIdentity = identity;
+      }
+      final conversations = [...controller.conversations];
+      final removed = _removed.values.toList()
+        ..sort((a, b) => a.$2.compareTo(b.$2));
+      for (final item in removed) {
+        if (!conversations.any((c) => c.id == item.$1.id)) {
+          conversations.insert(item.$2.clamp(0, conversations.length), item.$1);
+        }
+      }
       final groups = <String, List<AiConversation>>{
         copy.conversationToday: [],
         copy.conversationYesterday: [],
@@ -341,7 +364,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
         label: copy.conversationDrawerTitle,
         child: Material(
           key: const ValueKey('assistant-conversation-drawer'),
-          color: isCinema(context) ? Colors.transparent : palette.surface,
+          color: palette.surface,
           elevation: 12,
           shadowColor: palette.shadow.withValues(alpha: .22),
           shape: RoundedRectangleBorder(
@@ -420,6 +443,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                           ),
                         )
                       : ListView(
+                          controller: _scroll,
                           padding: EdgeInsets.zero,
                           children: [
                             for (final group in groups.entries)
@@ -440,7 +464,36 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                                   ),
                                 ),
                                 for (final conversation in group.value)
-                                  _row(context, conversation),
+                                  AssistantHistoryRemoval(
+                                    key: ValueKey(
+                                      'assistant-history-row-${conversation.id}',
+                                    ),
+                                    removing: _removed.containsKey(
+                                      conversation.id,
+                                    ),
+                                    onRemoved: () {
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                            if (mounted &&
+                                                _removed.containsKey(
+                                                  conversation.id,
+                                                )) {
+                                              setState(
+                                                () => _removed.remove(
+                                                  conversation.id,
+                                                ),
+                                              );
+                                            }
+                                          });
+                                    },
+                                    child: _row(
+                                      context,
+                                      conversation,
+                                      enabled: !_removed.containsKey(
+                                        conversation.id,
+                                      ),
+                                    ),
+                                  ),
                                 const SizedBox(height: 14),
                               ],
                           ],
@@ -454,7 +507,11 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
     },
   );
 
-  Widget _row(BuildContext context, AiConversation conversation) {
+  Widget _row(
+    BuildContext context,
+    AiConversation conversation, {
+    bool enabled = true,
+  }) {
     final controller = widget.controller;
     final palette = AppPalette.of(context);
     final selected = conversation.id == controller.selectedConversationId;
@@ -468,15 +525,23 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
       padding: const EdgeInsets.only(bottom: 4),
       child: Semantics(
         selected: selected,
-        child: Material(
-          color: selected
-              ? palette.primaryContainer.withValues(alpha: .65)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+        child: TweenAnimationBuilder<Color?>(
+          tween: ColorTween(
+            end: selected
+                ? palette.primaryContainer.withValues(alpha: .65)
+                : Colors.transparent,
+          ),
+          duration: AppMotion.duration(context),
+          curve: AppMotion.curve,
+          builder: (context, color, child) => Material(
+            color: color,
+            borderRadius: BorderRadius.circular(14),
+            child: child,
+          ),
           child: InkWell(
             key: ValueKey('assistant-conversation-${conversation.id}'),
             borderRadius: BorderRadius.circular(14),
-            onTap: _creating || _deletingId != null
+            onTap: !enabled || _creating || _deletingId != null
                 ? null
                 : () {
                     controller.selectConversation(conversation.id);
@@ -523,7 +588,7 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                       '删除会话',
                       'Delete conversation',
                     ),
-                    onPressed: _creating || _deletingId != null
+                    onPressed: !enabled || _creating || _deletingId != null
                         ? null
                         : () => _delete(conversation),
                     style: IconButton.styleFrom(
@@ -536,7 +601,11 @@ class _ConversationHistoryPanelState extends State<ConversationHistoryPanel> {
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.delete_outline_rounded, size: 18),
+                        : AssistantToolbarIcon(
+                            asset: 'assets/mobile/assistant/delete.png',
+                            size: 22,
+                            color: palette.textSecondary,
+                          ),
                   ),
                 ],
               ),

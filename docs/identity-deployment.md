@@ -1,3 +1,5 @@
+> 历史接入/部署记录：当前客户端已替换账号、公开资料和业务协议，以 [阶段 2、3 记录](service-business.md) 为准；这里的旧 DSM/FileStation/Web 网关步骤不用于新服务。Web 部署仍暂缓。
+
 # 直连方案无需部署登录服务
 
 当前 Android / Windows 已直接连接 `https://cznas.dpdns.org:5001` 的 `SYNO.API.Auth`。

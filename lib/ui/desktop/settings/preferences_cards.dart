@@ -114,7 +114,6 @@ class _AppearanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const List<ColorSchemeOption> schemes = [
       ColorSchemeOption.warmwoodStudy,
-      ColorSchemeOption.cinema,
       ColorSchemeOption.spatialCinema,
     ];
     final AppCopy copy = controller.copy;
@@ -140,8 +139,6 @@ class _AppearanceCard extends StatelessWidget {
               ],
             ],
           ),
-          if (controller.colorScheme == ColorSchemeOption.cinema)
-            CinemaGlassSetting(controller: controller),
         ],
       ),
     );

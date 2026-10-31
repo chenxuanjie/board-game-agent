@@ -2,11 +2,10 @@ import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/ui_tokens.dart';
-import '../shared/cinema/cinema_surface.dart';
 
 import '../../features/assistant/models/ai_api_config.dart';
+import '../../features/assistant/models/assistant_mode.dart';
 import '../../features/assistant/models/ai_model_policy.dart';
-import '../../features/library/models/asset_source_config.dart';
 import '../../core/localization/app_language.dart';
 import '../../core/models/connectivity_status.dart';
 import '../../core/theme/color_scheme_option.dart';
@@ -21,6 +20,8 @@ import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
 import '../shared/library_check_actions.dart';
+import '../../core/platform/android_public_reminders.dart';
+import 'android_public_reminders_tile.dart';
 import '../../features/settings/models/configuration_transfer.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
 
@@ -70,14 +71,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     onApplied: _importApplied,
     enabled: !_isTesting && !_isTestingAssets,
   );
-  Future<void> _editResourceConnection([AssetSourceConfig? source]) async {
+  Future<void> _editResourceConnection() async {
     if (_transfer.webDav == null || _isTestingAssets || _transfer.isBusy) {
       return;
     }
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            ResourceConnectionScreen(service: _transfer, source: source),
+        builder: (_) => ResourceConnectionScreen(service: _transfer),
       ),
     );
     if (mounted) {
@@ -217,14 +217,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                         palette: palette,
                         child: LayoutBuilder(
                           builder: (context, box) {
-                            final columns = box.maxWidth < 500 ? 2 : 3;
+                            const columns = 2;
                             return Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: [
                                 for (final scheme in const [
                                   ColorSchemeOption.warmwoodStudy,
-                                  ColorSchemeOption.cinema,
                                   ColorSchemeOption.spatialCinema,
                                 ])
                                   SizedBox(
@@ -251,85 +250,77 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                           },
                         ),
                       ),
-                      if (controller.colorScheme == ColorSchemeOption.cinema)
-                        CinemaGlassSetting(controller: controller),
-                      if (AccountScope.maybeOf(context) == null)
-                        _SectionCard(
-                          palette: palette,
-                          padding: EdgeInsets.zero,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  16,
-                                  16,
-                                  10,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.storage_rounded,
-                                      color: palette.primary,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        copy.assetPriorityTitle,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleMedium,
-                                      ),
-                                    ),
-                                    if (_transfer.webDav != null)
-                                      _transferMenu(ConfigurationScope.webDav),
-                                  ],
-                                ),
+
+                      _SectionCard(
+                        palette: palette,
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                10,
                               ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                child: ResourceAccessSummary(
-                                  controller: controller,
-                                  onReorder: _reorderSources,
-                                  onEdit: _transfer.webDav == null
-                                      ? null
-                                      : _editResourceConnection,
-                                ),
-                              ),
-                              if (_transfer.webDav != null)
-                                ListTile(
-                                  key: const ValueKey(
-                                    'mobile-settings-webdav-connection',
-                                  ),
-                                  leading: Icon(
-                                    Icons.cloud_outlined,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.storage_rounded,
                                     color: palette.primary,
+                                    size: 22,
                                   ),
-                                  title: Text(
-                                    copy.localized(
-                                      '账号与连接',
-                                      'Account & connections',
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      copy.localized('公开资料', 'Public library'),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
                                     ),
                                   ),
-                                  trailing: const Icon(
-                                    Icons.chevron_right_rounded,
-                                  ),
-                                  onTap: _editResourceConnection,
-                                ),
-                              TextButton.icon(
-                                onPressed: _isTestingAssets
-                                    ? null
-                                    : _testAssets,
-                                icon: const Icon(Icons.network_check_rounded),
-                                label: Text(copy.assetTest),
+                                  if (_transfer.webDav != null)
+                                    _transferMenu(ConfigurationScope.webDav),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: ResourceAccessSummary(
+                                controller: controller,
+                              ),
+                            ),
+                            if (_transfer.webDav != null)
+                              ListTile(
+                                key: const ValueKey(
+                                  'mobile-settings-webdav-connection',
+                                ),
+                                leading: Icon(
+                                  Icons.cloud_outlined,
+                                  color: palette.primary,
+                                ),
+                                title: Text(
+                                  copy.localized(
+                                    'WebDAV 备用连接',
+                                    'WebDAV backup connection',
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: _editResourceConnection,
+                              ),
+                            TextButton.icon(
+                              onPressed: _isTestingAssets ? null : _testAssets,
+                              icon: const Icon(Icons.network_check_rounded),
+                              label: Text(copy.assetTest),
+                            ),
+                          ],
                         ),
+                      ),
                       const SizedBox(height: 12),
                       SettingsSectionFocus(
                         reveal: widget.focusAiSettings,
@@ -387,12 +378,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                     onChanged: _handleAiFieldChanged,
                                   ),
                                   const SizedBox(height: 12),
-                                  _ApiField(
-                                    label: copy.aiApiKeyLabel,
-                                    controller: _keyController,
-                                    obscureText: true,
-                                    onChanged: _handleAiFieldChanged,
-                                  ),
+                                  if (!selectedPreset.config.accountService)
+                                    _ApiField(
+                                      label: copy.aiApiKeyLabel,
+                                      controller: _keyController,
+                                      obscureText: true,
+                                      onChanged: _handleAiFieldChanged,
+                                    ),
                                   const SizedBox(height: 14),
                                   _ModelDiscoveryPanel(
                                     controller: controller,
@@ -569,6 +561,97 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       ),
                       const SizedBox(height: 24),
                       _SectionTitle(
+                        title: copy.assistantModeTitle,
+                        icon: Icons.record_voice_over_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        palette: palette,
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            SwitchListTile.adaptive(
+                              key: const ValueKey(
+                                'mobile-settings-voice-output',
+                              ),
+                              title: Text(copy.voiceReplySwitchLabel),
+                              subtitle: controller.voiceReplyAvailable
+                                  ? null
+                                  : Text(
+                                      copy.localized(
+                                        '当前设备暂不支持语音朗读',
+                                        'Voice output is unavailable on this device',
+                                      ),
+                                    ),
+                              value: controller.voiceReplyEnabled,
+                              onChanged: controller.voiceReplyAvailable
+                                  ? (value) async {
+                                      try {
+                                        await controller.setVoiceReplyEnabled(
+                                          value,
+                                        );
+                                      } catch (_) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                copy.localized(
+                                                  '设置未保存，请重试',
+                                                  'Could not save the setting. Try again.',
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  : null,
+                            ),
+                            SwitchListTile.adaptive(
+                              key: const ValueKey(
+                                'mobile-settings-realtime-voice',
+                              ),
+                              title: Text(copy.assistantRealtimeModeLabel),
+                              subtitle: controller.realtimeVoiceAvailable
+                                  ? null
+                                  : Text(copy.assistantRealtimeModeHint),
+                              value:
+                                  controller.assistantMode ==
+                                  AssistantMode.realtimeVoice,
+                              onChanged: controller.realtimeVoiceAvailable
+                                  ? (value) async {
+                                      try {
+                                        await controller.setAssistantMode(
+                                          value
+                                              ? AssistantMode.realtimeVoice
+                                              : AssistantMode.textAndDictation,
+                                        );
+                                      } catch (_) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                copy.localized(
+                                                  '设置未保存，请重试',
+                                                  'Could not save the setting. Try again.',
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _SectionTitle(
                         title: copy.localized('桌游检查', 'Game library checks'),
                         icon: Icons.fact_check_outlined,
                       ),
@@ -593,6 +676,16 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                             title: Text(copy.checkForUpdatesTitle),
                             subtitle: Text(copy.checkForUpdatesHint),
                             secondary: const Icon(Icons.system_update_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (AndroidPublicReminders.supported) ...[
+                        _SectionCard(
+                          palette: palette,
+                          child: AndroidPublicRemindersTile(
+                            checkUpdates: controller.checkForUpdates,
+                            isChinese: copy.isChinese,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -654,7 +747,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     List<AiModel>? models;
     Object? modelError;
     try {
-      if (draft.baseUrl.trim().isNotEmpty && draft.apiKey.trim().isNotEmpty) {
+      if (draft.isConfigured) {
         models = await _refreshModels(draft);
       } else {
         controller.invalidateAiModels();
@@ -720,9 +813,13 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   }
 
   Future<void> _resetDefault() async {
-    final _AiPresetOption openAi = _presetOptions(
-      widget.controller,
-    ).firstWhere((_AiPresetOption option) => option.id == 'builtin:openai');
+    final _AiPresetOption openAi = _presetOptions(widget.controller).firstWhere(
+      (_AiPresetOption option) =>
+          option.id ==
+          (widget.controller.accountAiAvailable
+              ? 'builtin:loomex'
+              : 'builtin:openai'),
+    );
     _applyPreset(openAi);
     final AiApiConfig next = _draftConfig();
     await widget.controller.saveAiApiConfig(next);
@@ -741,6 +838,10 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   AiApiConfig _draftConfig() {
     final current = widget.controller.aiApiConfig;
     return current.copyWith(
+      accountService: _selectedPreset.config.accountService,
+      accountContext: _selectedPreset.config.accountService
+          ? current.accountContext
+          : '',
       name: _selectedPreset.isCustom
           ? _nameController.text.trim()
           : _selectedPreset.config.name,
@@ -780,6 +881,11 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     final AppCopy copy = controller.copy;
     return <_AiPresetOption>[
       _AiPresetOption(
+        id: 'builtin:loomex',
+        label: 'Loomex',
+        config: AiApiConfig.defaultLoomex,
+      ),
+      _AiPresetOption(
         id: 'builtin:openai',
         label: copy.aiProviderPresetName(AiProviderPreset.openAi),
         config: AiApiConfig.defaultOpenAi,
@@ -815,6 +921,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     AiApiConfig config,
   ) {
     final String id = switch (config.providerPreset) {
+      AiProviderPreset.loomex => 'builtin:loomex',
       AiProviderPreset.openAi => 'builtin:openai',
       AiProviderPreset.deepSeek => 'builtin:deepseek',
       AiProviderPreset.custom =>
@@ -870,48 +977,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       // blocks it if it is outside the allowed catalog.
     });
     return models;
-  }
-
-  Future<void> _reorderSources(int oldIndex, int newIndex) async {
-    if (_isTestingAssets) return;
-    if (newIndex > oldIndex) newIndex--;
-    final next = List<AssetSourceConfig>.from(
-      widget.controller.assetSourceConfigs,
-    );
-    next.insert(newIndex, next.removeAt(oldIndex));
-    setState(() => _isTestingAssets = true);
-    try {
-      final account = AccountScope.maybeOf(context);
-      if (account?.configuration != null) {
-        final config = account!.configuration!;
-        await account.saveConfiguration(
-          config.edited(
-            servers: next
-                .map((s) => config.servers.firstWhere((a) => a.id == s.id))
-                .toList(),
-            folder: config.storageFolder,
-          ),
-        );
-        if (account.error != null) throw StateError('Connection pending');
-      } else {
-        await widget.controller.saveAssetSourceConfigs(next);
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.controller.copy.localized(
-                '顺序保存失败，请重试',
-                'Could not save order. Retry',
-              ),
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isTestingAssets = false);
-    }
   }
 
   Future<void> _testAssets() async {

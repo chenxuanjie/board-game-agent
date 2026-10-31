@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/services.dart';
 
 import '../../../app/state/app_controller.dart';
@@ -8,7 +9,7 @@ import '../../../core/localization/app_copy.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_motion.dart';
 import 'model_selector.dart';
-import 'answer_mode_selector.dart';
+import 'assistant_context_menu.dart';
 
 export 'assistant_motion.dart';
 
@@ -18,10 +19,12 @@ class AssistantWelcome extends StatelessWidget {
     required this.copy,
     required this.onPrompt,
     this.gameTitle,
+    this.compact = false,
   });
 
   final AppCopy copy;
   final String? gameTitle;
+  final bool compact;
   final ValueChanged<String> onPrompt;
 
   @override
@@ -30,34 +33,36 @@ class AssistantWelcome extends StatelessWidget {
     final prompts = [
       (
         Icons.format_list_numbered_rounded,
-        copy.localized('梳理回合流程', 'Review turn order'),
+        copy.localized('回合流程', 'Turn order'),
         copy.localized('帮我梳理一遍回合流程', 'Walk me through the turn order'),
       ),
       (
         Icons.menu_book_outlined,
-        copy.localized('解释一个术语', 'Explain a term'),
+        copy.localized('术语解释', 'Terms'),
         copy.quickPromptTerm,
       ),
       (
         Icons.forum_outlined,
-        copy.localized('讨论规则争议', 'Discuss a ruling'),
+        copy.localized('规则争议', 'Rulings'),
         copy.localized('我有一个规则争议，帮我看看', 'Help me resolve a rules question'),
       ),
     ];
-    return Center(
+    return Align(
+      alignment: const Alignment(0, -.2),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 580),
         child: Column(
           key: const ValueKey('assistant-welcome'),
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             if (gameTitle != null) ...[
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.casino_outlined, color: palette.primary, size: 17),
                   const SizedBox(width: 8),
-                  Expanded(
+                  Flexible(
                     child: Text(
                       gameTitle!,
                       style: Theme.of(
@@ -69,48 +74,71 @@ class AssistantWelcome extends StatelessWidget {
               ),
               const SizedBox(height: 18),
             ],
-            Text(
-              copy.localized('有什么规则疑问？', 'What would you like to ask?'),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: palette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              copy.localized(
-                '可以从回合流程、术语或具体情境开始。',
-                'Start with turn order, a term, or a situation at the table.',
-              ),
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: palette.textSecondary),
-            ),
-            const SizedBox(height: 24),
             LayoutBuilder(
               builder: (context, constraints) {
-                final columns = constraints.maxWidth >= 520 ? 3 : 1;
-                final width =
-                    (constraints.maxWidth - (columns - 1) * 10) / columns;
-                return Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (var index = 0; index < prompts.length; index++)
-                      SizedBox(
-                        width: width,
-                        child: _PromptCard(
-                          key: ValueKey('assistant-prompt-$index'),
-                          icon: prompts[index].$1,
-                          label: prompts[index].$2,
-                          compact: columns == 1,
-                          onPressed: () => onPrompt(prompts[index].$3),
-                        ),
-                      ),
-                  ],
+                final style = Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: palette.textPrimary,
+                    );
+                var heading = copy.localized(
+                  '有什么规则疑问？',
+                  'What would you like to ask?',
                 );
+                if (copy.isChinese) {
+                  final measure = TextPainter(
+                    text: TextSpan(text: heading, style: style),
+                    textDirection: Directionality.of(context),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  )..layout();
+                  if (measure.width > constraints.maxWidth) {
+                    heading = '有什么\n规则疑问？';
+                  }
+                  measure.dispose();
+                }
+                return Text(heading, textAlign: TextAlign.center, style: style);
               },
             ),
+            if (!compact) ...[
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Text(
+                  copy.localized(
+                    '可以从回合流程、术语或具体情境开始。',
+                    'Start with turn order, a term, or a situation at the table.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (var index = 0; index < prompts.length; index++)
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: constraints.maxWidth,
+                          ),
+                          child: _PromptCard(
+                            key: ValueKey('assistant-prompt-$index'),
+                            icon: prompts[index].$1,
+                            label: prompts[index].$2,
+                            onPressed: () => onPrompt(prompts[index].$3),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -123,12 +151,10 @@ class _PromptCard extends StatefulWidget {
     super.key,
     required this.icon,
     required this.label,
-    required this.compact,
     required this.onPressed,
   });
   final IconData icon;
   final String label;
-  final bool compact;
   final VoidCallback onPressed;
 
   @override
@@ -144,53 +170,46 @@ class _PromptCardState extends State<_PromptCard> {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final contents = [
       Icon(widget.icon, size: 19, color: palette.primary),
-      SizedBox(width: widget.compact ? 10 : 0, height: widget.compact ? 0 : 13),
-      if (widget.compact)
-        Expanded(child: Text(widget.label))
-      else
-        Text(widget.label),
+      const SizedBox(width: 8),
+      Flexible(
+        child: Text(
+          widget.label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: palette.textSecondary),
+        ),
+      ),
     ];
     return AnimatedContainer(
       duration: AppMotion.duration(context),
       curve: AppMotion.curve,
       transform: Matrix4.translationValues(
         0,
-        _highlighted && !reduceMotion ? -3 : 0,
+        _highlighted && !reduceMotion ? -2 : 0,
         0,
       ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadow.withValues(alpha: _highlighted ? .10 : .035),
-            blurRadius: _highlighted ? 18 : 7,
-            offset: Offset(0, _highlighted ? 6 : 2),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(18)),
       child: Material(
         color: palette.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           side: BorderSide(
             color: _highlighted
                 ? palette.primary.withValues(alpha: .35)
-                : palette.outline,
+                : palette.outline.withValues(alpha: .6),
           ),
         ),
         child: InkWell(
           onTap: widget.onPressed,
           onHover: (value) => setState(() => _highlighted = value),
           onFocusChange: (value) => setState(() => _highlighted = value),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: EdgeInsets.all(widget.compact ? 14 : 17),
-            child: widget.compact
-                ? Row(children: contents)
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: contents,
-                  ),
+          borderRadius: BorderRadius.circular(18),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(mainAxisSize: MainAxisSize.min, children: contents),
+            ),
           ),
         ),
       ),
@@ -209,6 +228,7 @@ class AssistantComposer extends StatefulWidget {
     required this.onSend,
     this.onMicTap,
     this.desktop = false,
+    this.keyboardVisible,
     this.onConfigureAi,
   });
   final AppController controller;
@@ -217,19 +237,27 @@ class AssistantComposer extends StatefulWidget {
   final Future<void> Function() onSend;
   final Future<void> Function()? onMicTap;
   final bool desktop;
+  final bool? keyboardVisible;
   final VoidCallback? onConfigureAi;
 
   @override
   State<AssistantComposer> createState() => AssistantComposerState();
 }
 
-class AssistantComposerState extends State<AssistantComposer> {
+class AssistantComposerState extends State<AssistantComposer>
+    with WidgetsBindingObserver {
   late final FocusNode _focus;
+  final GlobalKey _fieldKey = GlobalKey();
   bool _focused = false;
+  bool _pickerOpen = false;
+  bool _pickerHeldExpanded = false;
+  double _lastKeyboardInset = 0;
+  bool _keyboardClosing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _focus = FocusNode(
       onKeyEvent: (_, event) {
         if (event is KeyDownEvent &&
@@ -244,7 +272,14 @@ class AssistantComposerState extends State<AssistantComposer> {
     )..addListener(_focusChanged);
   }
 
-  void _focusChanged() => setState(() => _focused = _focus.hasFocus);
+  void _focusChanged() {
+    if (mounted) setState(() => _focused = _focus.hasFocus);
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (mounted) setState(() {});
+  }
 
   void focusDraft() => _focus.requestFocus();
 
@@ -259,6 +294,7 @@ class AssistantComposerState extends State<AssistantComposer> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _focus.removeListener(_focusChanged);
     _focus.dispose();
     super.dispose();
@@ -271,215 +307,316 @@ class AssistantComposerState extends State<AssistantComposer> {
     return ListenableBuilder(
       listenable: Listenable.merge([widget.textController, widget.controller]),
       builder: (context, _) {
-        final isSending = widget.controller.isSendingForContext(
+        final sending = widget.controller.isSendingForContext(
           useGlobalMode: widget.useGlobalMode,
         );
         final canSend =
-            widget.textController.text.trim().isNotEmpty && !isSending;
-        return AnimatedContainer(
-          key: ValueKey(
-            widget.desktop ? 'desktop-composer-box' : 'assistant-composer-box',
-          ),
-          duration: AppMotion.duration(context),
-          curve: AppMotion.curve,
-          padding: const EdgeInsets.fromLTRB(15, 13, 10, 10),
-          decoration: BoxDecoration(
-            color: palette.surface,
-            borderRadius: BorderRadius.circular(19),
-            border: Border.all(
-              color: _focused
-                  ? palette.primary.withValues(alpha: .65)
-                  : palette.outline,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: (_focused ? palette.primary : palette.shadow).withValues(
-                  alpha: _focused ? .075 : .055,
-                ),
-                blurRadius: 24,
-                offset: const Offset(0, 6),
+            widget.textController.text.trim().isNotEmpty && !sending;
+        final listening =
+            widget.controller.isListening && widget.onMicTap != null;
+        final voiceAction = widget.onMicTap != null && !canSend;
+        final actionIcon = sending || listening
+            ? Icons.stop_rounded
+            : voiceAction
+            ? Icons.mic_none_rounded
+            : Icons.arrow_upward_rounded;
+        final actionLabel = sending
+            ? copy.stopGenerating
+            : listening
+            ? copy.tapToStop
+            : voiceAction
+            ? copy.speechReady
+            : copy.send;
+        final enabled = sending || listening || canSend || voiceAction;
+        // Scaffold removes viewInsets from its body's MediaQuery. The view
+        // still exposes the IME animation, including its closing frames.
+        final view = View.of(context);
+        final keyboardInset = (view.viewInsets.bottom / view.devicePixelRatio)
+            .clamp(MediaQuery.viewInsetsOf(context).bottom, double.infinity);
+        final mobileKeyboard =
+            !widget.desktop &&
+            !kIsWeb &&
+            (defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS) &&
+            (widget.keyboardVisible ?? keyboardInset > 0);
+        if (keyboardInset != _lastKeyboardInset) {
+          _keyboardClosing =
+              keyboardInset > 0 && keyboardInset < _lastKeyboardInset;
+          _lastKeyboardInset = keyboardInset;
+        }
+        final showModel =
+            _pickerOpen ||
+            (widget.desktop ||
+                    kIsWeb ||
+                    (defaultTargetPlatform != TargetPlatform.android &&
+                        defaultTargetPlatform != TargetPlatform.iOS)
+                ? _focused
+                : mobileKeyboard);
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final textWidth =
+                (constraints.maxWidth - 24 - 48 - 48 - (showModel ? 48 : 0))
+                    .clamp(32.0, double.infinity);
+            final textStyle =
+                (Theme.of(context).textTheme.bodyLarge ?? const TextStyle())
+                    .copyWith(fontSize: 16, height: 1.45);
+            final painter = TextPainter(
+              text: TextSpan(
+                text: widget.textController.text.isEmpty
+                    ? ' '
+                    : widget.textController.text,
+                style: textStyle,
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              maxLines: 1,
+            )..layout(maxWidth: textWidth);
+            final expanded =
+                (mobileKeyboard && !_keyboardClosing) ||
+                (_pickerOpen && _pickerHeldExpanded) ||
+                widget.textController.text.contains('\n') ||
+                painter.didExceedMaxLines;
+            painter.dispose();
+            final fieldWidth = expanded ? constraints.maxWidth - 34 : textWidth;
+            final lines = TextPainter(
+              text: TextSpan(
+                text: '${widget.textController.text} ',
+                style: textStyle,
+              ),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              maxLines: 5,
+            )..layout(maxWidth: fieldWidth.clamp(1.0, double.infinity));
+            final fieldHeight = lines.height + 16;
+            lines.dispose();
+            final contentHeight = expanded
+                ? fieldHeight + 48
+                : (fieldHeight > 48 ? fieldHeight : 48.0);
+            final motion = AppMotion.duration(context, AppMotion.content);
+
+            final field = KeyedSubtree(
+              key: _fieldKey,
+              child: TextField(
                 key: const ValueKey('assistant-draft'),
                 focusNode: _focus,
                 controller: widget.textController,
-                minLines: 2,
-                maxLines: 4,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _send(),
+                style: textStyle,
+                minLines: 1,
+                maxLines: 5,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
-                  hintText: copy.localized('输入你的问题', 'Ask a question'),
+                  hintText: copy.localized(
+                    '询问桌游助手',
+                    'Ask the board game assistant',
+                  ),
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   disabledBorder: InputBorder.none,
                   filled: false,
                   isDense: true,
-                  contentPadding: const EdgeInsets.only(left: 2, bottom: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
                 ),
               ),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final expandedText =
-                      MediaQuery.textScalerOf(context).scale(14) > 17;
-                  final compact =
-                      !widget.desktop ||
-                      constraints.maxWidth < 370 ||
-                      expandedText;
-                  final listening = compact && widget.controller.isListening;
-                  final voiceAction =
-                      compact && widget.onMicTap != null && !canSend;
-                  final actionIcon = isSending || listening
-                      ? Icons.stop_rounded
-                      : voiceAction
-                      ? Icons.mic_none_rounded
-                      : Icons.arrow_upward_rounded;
-                  final actionLabel = isSending
-                      ? copy.stopGenerating
-                      : listening
-                      ? copy.tapToStop
-                      : voiceAction
-                      ? copy.speechReady
-                      : compact && widget.onMicTap != null && canSend
-                      ? copy.localized(
-                          '发送；长按语音输入',
-                          'Send; hold for voice input',
-                        )
-                      : copy.send;
-                  final actionEnabled =
-                      isSending || listening || canSend || voiceAction;
-                  final actionSize = compact ? 48.0 : 40.0;
-                  final mode = AssistantAnswerModeSelector(
-                    controller: widget.controller,
-                    useGlobalMode: widget.useGlobalMode,
-                    enabled: true,
-                    iconOnly: compact,
-                  );
-                  final controls = Row(
-                    children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: AssistantModelSelector(
-                            controller: widget.controller,
-                            enabled: true,
-                            compact: compact,
-                            useGlobalMode: widget.useGlobalMode,
-                            onConfigureAi:
-                                widget.onConfigureAi ??
-                                () => Navigator.of(
-                                  context,
-                                ).pushNamed('/settings/ai'),
+            );
+            final contextButton = Builder(
+              builder: (buttonContext) => IconButton(
+                key: const ValueKey('assistant-context-button'),
+                tooltip: copy.assistantContextTitle,
+                onPressed: () => showAssistantContextMenu(
+                  buttonContext,
+                  widget.controller,
+                  useGlobalMode: widget.useGlobalMode,
+                ),
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.add_rounded),
+                    if (widget.controller.assistantKnowledgeAvailable &&
+                        (!widget.useGlobalMode ||
+                            widget.controller.globalUseCurrentGameKnowledge))
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: palette.primary,
+                            shape: BoxShape.circle,
                           ),
                         ),
                       ),
-                      if (!compact && widget.onMicTap != null)
-                        IconButton(
-                          tooltip: widget.controller.isListening
-                              ? copy.tapToStop
-                              : copy.speechReady,
-                          onPressed: isSending ? null : widget.onMicTap,
-                          icon: Icon(
-                            widget.controller.isListening
-                                ? Icons.stop_rounded
-                                : Icons.mic_none_rounded,
-                            color: widget.controller.isListening
-                                ? palette.primary
-                                : palette.textSecondary,
-                          ),
-                        ),
-                      const SizedBox(width: 3),
-                      TooltipTheme(
-                        // Leave the hold gesture to voice input. Tooltip text
-                        // remains available to pointer hover and semantics.
-                        data: TooltipTheme.of(context).copyWith(
-                          triggerMode: compact
-                              ? TooltipTriggerMode.manual
-                              : TooltipTriggerMode.longPress,
-                        ),
-                        child: GestureDetector(
-                          onLongPress:
-                              compact && canSend && !isSending && !listening
-                              ? widget.onMicTap
-                              : null,
-                          child: AnimatedContainer(
-                            duration: AppMotion.duration(context),
-                            decoration: BoxDecoration(
-                              color: actionEnabled
-                                  ? palette.primary
-                                  : palette.disabledBackground,
-                              borderRadius: BorderRadius.circular(11),
-                            ),
-                            child: IconButton(
-                              key: ValueKey(
-                                widget.desktop
-                                    ? 'desktop-composer-send'
-                                    : 'assistant-composer-send',
-                              ),
-                              tooltip: actionLabel,
-                              onPressed: isSending
-                                  ? () => widget.controller.stopGenerating(
-                                      useGlobalMode: widget.useGlobalMode,
-                                    )
-                                  : listening
-                                  ? widget.onMicTap
-                                  : canSend
-                                  ? _send
-                                  : voiceAction
-                                  ? widget.onMicTap
-                                  : null,
-                              style: IconButton.styleFrom(
-                                foregroundColor: palette.onPrimary,
-                                disabledForegroundColor:
-                                    palette.disabledForeground,
-                                minimumSize: Size.square(actionSize),
-                                maximumSize: Size.square(actionSize),
-                                padding: EdgeInsets.zero,
-                              ),
-                              icon: AnimatedSwitcher(
-                                duration: AppMotion.duration(context),
-                                child: Icon(
-                                  actionIcon,
-                                  key: ValueKey(actionIcon),
-                                  size: 21,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                  return compact
-                      ? Row(
-                          children: [
-                            mode,
-                            const SizedBox(width: 4),
-                            Expanded(child: controls),
-                          ],
-                        )
-                      : Row(
-                          children: [
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: mode,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(flex: 2, child: controls),
-                          ],
-                        );
-                },
+                  ],
+                ),
               ),
-            ],
-          ),
+            );
+            final model = AssistantModelSelector(
+              controller: widget.controller,
+              enabled: true,
+              compact: true,
+              iconOnly: true,
+              useGlobalMode: widget.useGlobalMode,
+              onOpenChanged: (open) {
+                if (mounted) {
+                  setState(() {
+                    _pickerHeldExpanded = open && expanded;
+                    _pickerOpen = open;
+                  });
+                }
+              },
+              onConfigureAi:
+                  widget.onConfigureAi ??
+                  () => Navigator.of(context).pushNamed('/settings/ai'),
+            );
+            final action = TooltipTheme(
+              data: TooltipTheme.of(
+                context,
+              ).copyWith(triggerMode: TooltipTriggerMode.manual),
+              child: GestureDetector(
+                onLongPress:
+                    canSend && widget.onMicTap != null && !sending && !listening
+                    ? widget.onMicTap
+                    : null,
+                child: AnimatedContainer(
+                  duration: AppMotion.duration(context),
+                  decoration: BoxDecoration(
+                    color: enabled
+                        ? palette.primary
+                        : palette.disabledBackground,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: IconButton(
+                    key: ValueKey(
+                      widget.desktop
+                          ? 'desktop-composer-send'
+                          : 'assistant-composer-send',
+                    ),
+                    tooltip: actionLabel,
+                    onPressed: sending
+                        ? () => widget.controller.stopGenerating(
+                            useGlobalMode: widget.useGlobalMode,
+                          )
+                        : listening
+                        ? widget.onMicTap
+                        : canSend
+                        ? _send
+                        : voiceAction
+                        ? widget.onMicTap
+                        : null,
+                    style: IconButton.styleFrom(
+                      foregroundColor: palette.onPrimary,
+                      disabledForegroundColor: palette.disabledForeground,
+                      minimumSize: const Size.square(48),
+                      maximumSize: const Size.square(48),
+                      padding: EdgeInsets.zero,
+                    ),
+                    icon: AnimatedSwitcher(
+                      duration: AppMotion.duration(context),
+                      child: Icon(
+                        actionIcon,
+                        key: ValueKey(actionIcon),
+                        size: 21,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            // Keep the input and picker in the same slots during keyboard and
+            // line-count transitions. Reparenting the EditableText between a
+            // Row and Column tears down focus/input state and moves the popup.
+            return TextFieldTapRegion(
+              child: AnimatedContainer(
+                key: ValueKey(
+                  widget.desktop
+                      ? 'desktop-composer-box'
+                      : 'assistant-composer-box',
+                ),
+                duration: motion,
+                curve: AppMotion.curve,
+                height: contentHeight + 12,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  borderRadius: BorderRadius.circular(expanded ? 25 : 32),
+                  border: Border.all(
+                    color: _focused
+                        ? palette.primary.withValues(alpha: .28)
+                        : palette.outline.withValues(alpha: .5),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.shadow.withValues(
+                        alpha: _focused ? .10 : .065,
+                      ),
+                      blurRadius: _focused ? 24 : 18,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      left: expanded ? 8 : 48,
+                      right: expanded ? 8 : (showModel ? 96 : 48),
+                      top: expanded ? 0 : (contentHeight - fieldHeight) / 2,
+                      height: fieldHeight,
+                      child: field,
+                    ),
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      left: 0,
+                      bottom: expanded ? 0 : (contentHeight - 48) / 2,
+                      child: contextButton,
+                    ),
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      right: 48,
+                      bottom: expanded ? 0 : (contentHeight - 48) / 2,
+                      child: ExcludeFocus(
+                        excluding: !showModel,
+                        child: ExcludeSemantics(
+                          excluding: !showModel,
+                          child: IgnorePointer(
+                            ignoring: !showModel,
+                            child: AnimatedOpacity(
+                              opacity: showModel ? 1 : 0,
+                              duration: AppMotion.duration(
+                                context,
+                                AppMotion.feedback,
+                              ),
+                              child: Offstage(
+                                offstage: !showModel,
+                                child: model,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    AnimatedPositioned(
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      right: 0,
+                      bottom: expanded ? 0 : (contentHeight - 48) / 2,
+                      child: action,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );

@@ -3,6 +3,7 @@ import '../../core/theme/app_motion.dart';
 import '../../app/state/app_controller.dart';
 import '../../features/games/models/game_info.dart';
 import 'app_failure_notice.dart';
+import 'personal_account_access.dart';
 
 class FavoriteFeedbackIcon extends StatefulWidget {
   const FavoriteFeedbackIcon({
@@ -115,6 +116,7 @@ class _FavoriteToggleButtonState extends State<FavoriteToggleButton> {
   }
 
   Future<void> _toggle() async {
+    if (!requirePersonalAccount(context)) return;
     if (_busy) return;
     final generation = ++_generation;
     final controller = widget.controller;

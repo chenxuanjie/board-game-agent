@@ -11,6 +11,7 @@ import '../../features/games/services/game_vote_service.dart';
 import '../desktop/desktop_responsive.dart';
 import '../mobile/game_cover.dart';
 import 'ranking_medal.dart';
+import 'inline_status_notice.dart';
 
 /// Public favorites ranking, independent from seasonal want-to-play votes.
 class GameRankingScreen extends StatefulWidget {
@@ -29,9 +30,10 @@ class GameRankingScreen extends StatefulWidget {
 }
 
 class _GameRankingScreenState extends State<GameRankingScreen> {
-  bool _loading = true;
-  bool _failed = false;
-  bool _refreshRunning = false;
+  bool _loading = true, _failed = false, _refreshRunning = false;
+  int _attempt = 0;
+  Object? _dismissedNotice;
+
   @override
   void initState() {
     super.initState();
@@ -40,15 +42,25 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
     });
   }
 
-  Future<void> _refresh() async {
-    if (_refreshRunning) return;
+  Future<void> _refresh({bool userInitiated = false}) async {
+    if (_refreshRunning) {
+      if (userInitiated) {
+        try {
+          await widget.controller.refreshFavoriteRankings();
+        } catch (_) {
+          if (mounted) setState(() => _failed = true);
+        }
+      }
+      return;
+    }
     _refreshRunning = true;
     setState(() {
       _loading = true;
       _failed = false;
+      if (userInitiated) ++_attempt;
     });
     try {
-      await widget.controller.refreshFavoriteRankings();
+      await widget.controller.refreshFavoriteRankingPage();
     } catch (_) {
       _failed = true;
     } finally {
@@ -58,194 +70,210 @@ class _GameRankingScreenState extends State<GameRankingScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.controller,
+    builder: (context, _) => ListenableBuilder(
+      listenable: widget.controller.favoriteStatistics,
+      builder: (context, _) => _content(context),
+    ),
+  );
+
+  Widget _content(BuildContext context) {
     final controller = widget.controller;
     final copy = controller.copy;
     final statistics = controller.favoriteStatistics;
     final palette = AppPalette.of(context);
     final compact = MediaQuery.sizeOf(context).width < 760;
-    return AnimatedBuilder(
-      animation: Listenable.merge([controller, statistics]),
-      builder: (context, _) {
-        final entries = controller.favoriteRankings;
-        final highestCount = entries.isEmpty ? 0 : entries.first.favoriteCount;
-        final metrics = DesktopMetricsScope.of(context);
-        final error =
-            (_failed && statistics.status != GameVoteSyncStatus.synced) ||
-            statistics.loadError != null ||
-            (!controller.favoriteRankingSourceReady &&
-                !controller.isSwitchingIdentityScope);
-        final syncing =
-            _loading || statistics.status == GameVoteSyncStatus.syncing;
-        return Scaffold(
-          key: const ValueKey('game-ranking-screen'),
-          appBar: AppBar(
-            leading:
-                compact &&
-                    (widget.onBack != null || Navigator.of(context).canPop())
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 8,
-                    ),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: palette.surface,
-                        border: Border.all(
-                          color: palette.primary.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: BackButton(onPressed: widget.onBack),
-                    ),
-                  )
-                : widget.onBack == null
-                ? null
-                : BackButton(onPressed: widget.onBack),
-            backgroundColor: palette.pageBackground,
-            toolbarHeight: metrics.px(64),
-            centerTitle: compact,
-            title: Text(
-              copy.localized(
-                compact ? '排行' : '喜欢榜',
-                compact ? 'Rankings' : 'Most liked',
-              ),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontSize: compact ? 24 : metrics.font(28),
-                fontWeight: FontWeight.w800,
-              ),
+    final metrics = DesktopMetricsScope.of(context);
+    final hasData = controller.favoriteRankingHasData;
+    final entries = hasData
+        ? controller.favoriteRankings
+        : <GameRankingEntry>[];
+    final highestCount = entries.isEmpty ? 0 : entries.first.favoriteCount;
+    final syncing = _loading || statistics.status == GameVoteSyncStatus.syncing;
+    final readError =
+        _failed ||
+        statistics.loadError != null ||
+        !controller.favoriteRankingSourceReady ||
+        statistics.status == GameVoteSyncStatus.pending ||
+        controller.gameCatalogFailed;
+    final blocked = !hasData && !syncing && (readError || controller.hasGames);
+    String? notice;
+    if (hasData && !syncing) {
+      if (readError) {
+        notice = copy.localized(
+          '更新未完成，显示上次排名',
+          'Update incomplete; showing saved rankings',
+        );
+      } else if (statistics.publicationStatus ==
+          GameVotePublicationStatus.failed) {
+        notice = copy.localized(
+          '喜欢已保存在本机，暂未同步',
+          'Likes saved on this device; sync incomplete',
+        );
+      } else if (controller.favoriteRankingRealtimeError != null) {
+        notice = copy.localized(
+          '实时更新暂不可用',
+          'Live updates are temporarily unavailable',
+        );
+      } else if (statistics.status == GameVoteSyncStatus.paused) {
+        notice = copy.localized(
+          '实时更新已暂停，显示上次排名',
+          'Live updates paused; showing saved rankings',
+        );
+      }
+    }
+    final noticeRevision = (controller.identityUserId, _attempt, notice);
+    return Scaffold(
+      key: const ValueKey('game-ranking-screen'),
+      appBar: AppBar(
+        leading: widget.onBack != null
+            ? BackButton(onPressed: widget.onBack)
+            : null,
+        backgroundColor: palette.pageBackground,
+        toolbarHeight: metrics.px(64),
+        centerTitle: compact,
+        title: Text(
+          copy.localized(
+            compact ? '排行' : '喜欢榜',
+            compact ? 'Rankings' : 'Most liked',
+          ),
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            fontSize: compact ? 24 : metrics.font(28),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        actions: [
+          if (hasData || (!syncing && !blocked))
+            IconButton(
+              key: const ValueKey('ranking-refresh'),
+              tooltip: copy.localized('刷新', 'Refresh'),
+              onPressed: () => unawaited(_refresh(userInitiated: true)),
+              icon: syncing
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
             ),
-            actions: [
-              IconButton(
-                key: const ValueKey('ranking-refresh'),
-                tooltip: copy.localized('刷新', 'Refresh'),
-                onPressed: syncing ? null : _refresh,
-                icon: const Icon(Icons.refresh_rounded),
+        ],
+      ),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              palette.pageBackground,
+              Color.alphaBlend(
+                palette.primary.withValues(alpha: .035),
+                palette.pageBackground,
               ),
             ],
           ),
-          body: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  palette.pageBackground,
-                  Color.alphaBlend(
-                    palette.primary.withValues(alpha: 0.035),
-                    palette.pageBackground,
+        ),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: metrics.px(DesktopResponsive.gamesMaxContentWidth),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (syncing && hasData)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (notice != null && _dismissedNotice != noticeRevision)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: InlineStatusNotice(
+                        key: const ValueKey('ranking-status'),
+                        keyPrefix: 'ranking-status',
+                        message: notice,
+                        revision: noticeRevision,
+                        dismissLabel: copy.localized('关闭提示', 'Dismiss notice'),
+                        onDismiss: () =>
+                            setState(() => _dismissedNotice = noticeRevision),
+                      ),
+                    ),
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: () => _refresh(userInitiated: true),
+                      child: ListView.separated(
+                        key: const ValueKey('game-ranking-list'),
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: EdgeInsets.all(
+                          compact
+                              ? UiTokens.pageInset
+                              : metrics.px(UiTokens.sectionGap),
+                        ),
+                        itemCount: entries.isEmpty ? 1 : entries.length,
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: UiTokens.itemGap),
+                        itemBuilder: (context, index) {
+                          if (entries.isEmpty) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 48),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (syncing) ...[
+                                    const SizedBox.square(
+                                      dimension: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  Text(
+                                    copy.localized(
+                                      syncing
+                                          ? '正在加载喜欢榜…'
+                                          : blocked
+                                          ? '暂时无法加载喜欢榜'
+                                          : '暂无桌游',
+                                      syncing
+                                          ? 'Loading rankings…'
+                                          : blocked
+                                          ? 'Rankings are unavailable'
+                                          : 'No games yet',
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  if (blocked)
+                                    TextButton.icon(
+                                      key: const ValueKey('ranking-retry'),
+                                      onPressed: () => unawaited(
+                                        _refresh(userInitiated: true),
+                                      ),
+                                      icon: const Icon(Icons.refresh_rounded),
+                                      label: Text(
+                                        copy.localized('重试', 'Retry'),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }
+                          return _RankingRow(
+                            entry: entries[index],
+                            highestCount: highestCount,
+                            controller: controller,
+                            onTap: () => widget.onOpenGame(entries[index].game),
+                          );
+                        },
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-            child: SafeArea(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: metrics.px(
-                      DesktopResponsive.gamesMaxContentWidth,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (syncing) const LinearProgressIndicator(minHeight: 2),
-                      if (!syncing && error)
-                        _notice(
-                          copy.localized('喜欢统计读取失败', 'Could not load likes'),
-                          action: copy.localized('重试', 'Retry'),
-                        )
-                      else if (!syncing &&
-                          statistics.status == GameVoteSyncStatus.pending)
-                        _notice(
-                          copy.localized(
-                            statistics.syncError ?? '已保存在本机，待同步',
-                            'Sync incomplete. Showing saved data',
-                          ),
-                          action: copy.localized('重试', 'Retry'),
-                        ),
-                      if (statistics.status == GameVoteSyncStatus.paused)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            copy.localized(
-                              '云同步已暂停，显示已保存数据',
-                              'Cloud sync paused. Showing saved data',
-                            ),
-                          ),
-                        ),
-                      Expanded(
-                        child: RefreshIndicator(
-                          onRefresh: _refresh,
-                          child: ListView.separated(
-                            key: const ValueKey('game-ranking-list'),
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: EdgeInsets.all(
-                              MediaQuery.sizeOf(context).width >= 760
-                                  ? metrics.px(UiTokens.sectionGap)
-                                  : UiTokens.pageInset,
-                            ),
-                            itemCount: entries.isEmpty ? 1 : entries.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: UiTokens.itemGap),
-                            itemBuilder: (context, index) {
-                              if (entries.isEmpty) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 48,
-                                  ),
-                                  child: Text(
-                                    _loading
-                                        ? copy.localized(
-                                            '正在读取喜欢统计',
-                                            'Loading likes',
-                                          )
-                                        : error
-                                        ? copy.localized(
-                                            '重试后查看排名',
-                                            'Retry to see the ranking',
-                                          )
-                                        : copy.localized(
-                                            '暂无桌游',
-                                            'No games yet',
-                                          ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                );
-                              }
-                              return _RankingRow(
-                                entry: entries[index],
-                                highestCount: highestCount,
-                                controller: controller,
-                                onTap: () =>
-                                    widget.onOpenGame(entries[index].game),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
-
-  Widget _notice(String text, {required String action}) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(text, style: Theme.of(context).textTheme.bodySmall),
-        ),
-        TextButton(onPressed: _loading ? null : _refresh, child: Text(action)),
-      ],
-    ),
-  );
 }
 
 class _MobileRankingContent extends StatelessWidget {

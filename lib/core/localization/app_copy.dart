@@ -15,8 +15,8 @@ class AppCopy {
 
   String get appTitle => isChinese ? '桌游导师' : 'Board Game Agent';
   String get startupDataUnavailable => isChinese
-      ? '暂时无法加载桌游资料，请稍后重试。'
-      : 'Board-game data is temporarily unavailable. Please try again later.';
+      ? '应用初始化未完成，请重试。'
+      : 'App initialization could not finish. Please try again.';
   String get appSubtitle => isChinese
       ? '像 Ludomentor 一样的桌游入口与统一 AI 助手'
       : 'A Ludomentor-style board game library with a unified AI helper';
@@ -130,6 +130,8 @@ class AppCopy {
 
   String aiProviderPresetName(AiProviderPreset preset) {
     switch (preset) {
+      case AiProviderPreset.loomex:
+        return 'Loomex';
       case AiProviderPreset.openAi:
         return 'OpenAI';
       case AiProviderPreset.deepSeek:
@@ -493,11 +495,8 @@ class AppCopy {
   String get desktopQuickActions => isChinese ? '快捷操作' : 'Quick actions';
   String get desktopAskAi => isChinese ? '询问 AI' : 'Ask AI';
   String get desktopRecentGames => isChinese ? '最近游戏' : 'Recent games';
-  String get desktopAssistantUnavailable =>
-      isChinese ? 'AI 助手暂不可用' : 'AI assistant unavailable';
-  String get desktopAssistantUnavailableMessage => isChinese
-      ? '请先加载至少一个游戏资料，AI 助手才能建立对应的规则上下文。'
-      : 'Load at least one game before opening a rules-aware assistant.';
+  String get assistantKnowledgeUnavailable =>
+      isChinese ? '桌游资料暂不可用' : 'Game sources are unavailable';
   String get desktopNoSession => isChinese ? '还没有会话' : 'No sessions yet';
   String get desktopNoSessionHint => isChinese
       ? '进入桌游详情页点击“询问 AI”，或直接打开通用助手。'
@@ -567,8 +566,6 @@ class AppCopy {
 
   String colorSchemeName(ColorSchemeOption scheme) {
     switch (scheme) {
-      case ColorSchemeOption.cinema:
-        return isChinese ? '影院' : 'Cinema';
       case ColorSchemeOption.spatialCinema:
         return isChinese ? '空间影院' : 'Spatial Cinema';
       case ColorSchemeOption.warmwoodStudy:

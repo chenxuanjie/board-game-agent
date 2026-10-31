@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/features/settings/services/preferences_service.dart';
-import 'package:board_game_agent/features/games/services/game_manifest_service.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/speech_service.dart';
 import 'package:board_game_agent/features/assistant/services/tts_service.dart';
@@ -63,7 +63,7 @@ void main() {
 AppController _controller() => AppController(
   preferencesService: PreferencesService(),
   aiService: _Ai(),
-  gameManifestService: GameManifestService(),
+  gameManifestService: FixtureGameManifestService(),
   remoteAssetService: _Assets(),
   speechService: SpeechService(),
   ttsService: TtsService(),

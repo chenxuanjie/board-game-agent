@@ -6,17 +6,15 @@ class _SyncBackupCard extends StatelessWidget {
     required this.settingsController,
     required this.checking,
     required this.onCheckSources,
-    this.onEditSource,
+    this.onManageConnections,
     this.transferMenu,
-    this.onReorder,
   });
   final AppController controller;
   final WebDavSettingsController? settingsController;
   final bool checking;
   final VoidCallback onCheckSources;
-  final ValueChanged<AssetSourceConfig>? onEditSource;
+  final VoidCallback? onManageConnections;
   final Widget? transferMenu;
-  final void Function(int, int)? onReorder;
   @override
   Widget build(BuildContext context) {
     final copy = controller.copy;
@@ -27,11 +25,7 @@ class _SyncBackupCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ResourceAccessSummary(
-            controller: controller,
-            onEdit: onEditSource,
-            onReorder: onReorder,
-          ),
+          ResourceAccessSummary(controller: controller),
           SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -42,16 +36,14 @@ class _SyncBackupCard extends StatelessWidget {
                 icon: Icon(Icons.refresh_rounded, size: 16),
                 label: Text(copy.localized('检测资源访问', 'Check resource access')),
               ),
-              if (onEditSource != null &&
-                  controller.assetSourceConfigs.isNotEmpty)
+              if (onManageConnections != null)
                 TextButton.icon(
                   key: ValueKey('desktop-settings-webdav-config'),
-                  onPressed: checking
-                      ? null
-                      : () =>
-                            onEditSource!(controller.assetSourceConfigs.first),
+                  onPressed: checking ? null : onManageConnections,
                   icon: Icon(Icons.account_circle_outlined, size: 16),
-                  label: Text(copy.localized('账号与连接', 'Account & connections')),
+                  label: Text(
+                    copy.localized('WebDAV 备用连接', 'WebDAV backup connection'),
+                  ),
                 ),
             ],
           ),
@@ -135,9 +127,7 @@ class _AboutUpdatesCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     minimumSize: Size(0, _px(context, 39)),
                     backgroundColor: desktopColors(context).orange,
-                    foregroundColor: isCinema(context)
-                        ? AppPalette.of(context).onPrimary
-                        : Colors.white,
+                    foregroundColor: Colors.white,
                     padding: EdgeInsets.symmetric(horizontal: _px(context, 8)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(_px(context, 9)),

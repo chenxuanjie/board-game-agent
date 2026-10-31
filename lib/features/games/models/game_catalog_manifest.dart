@@ -2,49 +2,6 @@ import '../../../core/localization/app_language.dart';
 import 'game_info.dart';
 import '../../library/models/game_resource.dart';
 
-class GameCatalogManifest {
-  GameCatalogManifest({required this.version, required this.games});
-
-  final int version;
-  final List<GameCatalogEntry> games;
-
-  factory GameCatalogManifest.fromJson(Map<String, dynamic> json) {
-    final List<dynamic> gamesJson =
-        json['games'] as List<dynamic>? ?? const <dynamic>[];
-    return GameCatalogManifest(
-      version: json['version'] as int? ?? 1,
-      games: gamesJson
-          .map(
-            (item) => GameCatalogEntry.fromJson(item as Map<String, dynamic>),
-          )
-          .toList(),
-    );
-  }
-}
-
-class GameCatalogEntry {
-  GameCatalogEntry({
-    required this.slug,
-    required this.order,
-    required this.enabled,
-    List<String> browseCategories = const <String>[],
-  }) : browseCategories = List<String>.unmodifiable(browseCategories);
-
-  final String slug;
-  final int order;
-  final bool enabled;
-  final List<String> browseCategories;
-
-  factory GameCatalogEntry.fromJson(Map<String, dynamic> json) {
-    return GameCatalogEntry(
-      slug: json['slug'] as String,
-      order: json['order'] as int? ?? 0,
-      enabled: json['enabled'] as bool? ?? false,
-      browseCategories: GameManifest._stringList(json['browseCategories']),
-    );
-  }
-}
-
 class GameManifest {
   GameManifest({
     required this.id,
@@ -90,49 +47,99 @@ class GameManifest {
   final List<String> browseCategories;
   final Map<String, GameLocaleContent> locales;
 
-  factory GameManifest.fromJson(
-    Map<String, dynamic> json, {
-    GameResourceManifest? resourceManifest,
-    List<String> browseCategories = const <String>[],
-  }) {
-    final Map<String, dynamic> documents =
-        json['documents'] as Map<String, dynamic>? ?? <String, dynamic>{};
-    final Map<String, dynamic> locales =
-        json['locales'] as Map<String, dynamic>? ?? <String, dynamic>{};
-    final List<GameResource> manifestResources =
-        resourceManifest?.resources ?? const <GameResource>[];
+  /// Published SQL edition data. No game.json/manifest.json conversion occurs here.
+  factory GameManifest.fromCatalog(Map<String, dynamic> json) {
+    final id = json['id'] as String;
+    final slug = json['slug'] as String;
+    final localeData = (json['locales'] as Map).cast<String, dynamic>();
+    if (id.isEmpty ||
+        slug.isEmpty ||
+        localeData.isEmpty ||
+        json['enabled'] != true) {
+      throw const FormatException('Invalid published edition');
+    }
+    final resources = (json['resources'] as List)
+        .map(
+          (value) =>
+              GameResource.fromCatalog((value as Map).cast<String, dynamic>()),
+        )
+        .toList(growable: false);
+    final byId = {for (final resource in resources) resource.id: resource};
+    if (byId.length != resources.length) {
+      throw const FormatException('Duplicate resource identity');
+    }
+    final bindings =
+        (json['bindings'] as List)
+            .map((value) => (value as Map).cast<String, dynamic>())
+            .toList()
+          ..sort(
+            (a, b) => (a['position'] as int).compareTo(b['position'] as int),
+          );
+    String image(String kind) {
+      for (final binding in bindings) {
+        if (binding['kind'] == kind) {
+          final resource = byId[binding['resource_id']];
+          if (resource == null) {
+            throw const FormatException('Unknown image binding');
+          }
+          return resource.path;
+        }
+      }
+      return '';
+    }
 
+    Map<String, String> documents(String kind) => {
+      for (final binding in bindings)
+        if (binding['kind'] == kind && byId.containsKey(binding['resource_id']))
+          binding['locale'] as String: byId[binding['resource_id']]!.path,
+    };
+    Map<String, List<String>> localizedList(String field) => {
+      for (final entry in localeData.entries)
+        entry.key: _stringList((entry.value as Map)[field]),
+    };
     return GameManifest(
-      id: json['id'] as String,
-      slug: json['slug'] as String,
-      editionLabels: _localizedStringMap(json['editionLabel']),
-      aliases: _localizedStringListMap(json['aliases']),
-      designers: _localizedStringListMap(json['designers']),
-      publishers: _localizedStringListMap(json['publishers']),
-      keywords: _localizedStringListMap(json['keywords']),
-      coverAsset: json['coverAsset'] as String? ?? '',
-      bannerAsset: json['bannerAsset'] as String? ?? '',
-      galleryAssets: _stringList(json['galleryAssets']),
-      cardAccent: _parseColor(json['cardAccent']),
-      score: json['score'] as String? ?? '',
-      supportedPlayers: _intList(json['supportedPlayers']),
-      recommendedPlayer: json['recommendedPlayer'] as int? ?? 0,
-      rulebookPaths: _localizedStringMap(documents['rulebook']),
-      faqPaths: _localizedStringMap(documents['faq']),
-      knowledgePaths: _localizedStringListMap(documents['knowledge']),
-      resources: manifestResources.isNotEmpty
-          ? manifestResources
-          : _legacyResources(
-              slug: json['slug'] as String? ?? '',
-              documents: documents,
-            ),
-      browseCategories: browseCategories,
-      locales: locales.map(
-        (key, value) => MapEntry(
-          key,
-          GameLocaleContent.fromJson(value as Map<String, dynamic>),
-        ),
-      ),
+      id: id,
+      slug: slug,
+      editionLabels: {
+        for (final entry in localeData.entries)
+          entry.key: (entry.value as Map)['edition_label'] as String? ?? '',
+      },
+      aliases: localizedList('aliases'),
+      designers: localizedList('designers'),
+      publishers: localizedList('publishers'),
+      keywords: localizedList('keywords'),
+      coverAsset: image('cover'),
+      bannerAsset: image('hero'),
+      galleryAssets: [
+        for (final binding in bindings)
+          if (binding['kind'] == 'gallery' &&
+              byId.containsKey(binding['resource_id']))
+            byId[binding['resource_id']]!.path,
+      ],
+      cardAccent: _parseColor(json['card_accent']),
+      score: json['external_score_text'] as String,
+      supportedPlayers: _intList(json['supported_players']),
+      recommendedPlayer: json['recommended_player'] as int,
+      rulebookPaths: documents('rulebook'),
+      faqPaths: documents('faq'),
+      knowledgePaths: {
+        for (final locale in localeData.keys)
+          locale: [
+            for (final binding in bindings)
+              if (binding['kind'] == 'knowledge' &&
+                  binding['locale'] == locale &&
+                  byId.containsKey(binding['resource_id']))
+                byId[binding['resource_id']]!.path,
+          ],
+      },
+      resources: resources,
+      browseCategories: _stringList(json['categories']),
+      locales: {
+        for (final entry in localeData.entries)
+          entry.key: GameLocaleContent.fromCatalog(
+            (entry.value as Map).cast<String, dynamic>(),
+          ),
+      },
     );
   }
 
@@ -367,84 +374,6 @@ class GameManifest {
     return <String>[];
   }
 
-  static List<GameResource> _legacyResources({
-    required String slug,
-    required Map<String, dynamic> documents,
-  }) {
-    final List<GameResource> result = <GameResource>[];
-    final Set<String> paths = <String>{};
-
-    void add(
-      String path, {
-      required String documentType,
-      required bool aiEnabled,
-      required int priority,
-    }) {
-      final String normalized = path.trim();
-      if (normalized.isEmpty || !paths.add(normalized)) return;
-      final String fileName = normalized.replaceAll('\\', '/').split('/').last;
-      final String idPath = normalized
-          .replaceAll('\\', '-')
-          .replaceAll('/', '-')
-          .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-      result.add(
-        GameResource(
-          id: '$slug-legacy-$idPath',
-          path: normalized,
-          documentType: documentType,
-          sourceClass: 'unknown',
-          origin: 'legacy_game_json',
-          language: _legacyLanguage(fileName),
-          edition: 'unknown',
-          status: 'available',
-          enabled: true,
-          aiEnabled: aiEnabled,
-          priority: priority,
-          derivedFrom: const <String>[],
-          sourceUrl: null,
-          reviewStatus: 'unreviewed',
-          notes: 'Compatibility resource generated from legacy game.json.',
-        ),
-      );
-    }
-
-    final Map<String, String> rulebook = _localizedStringMap(
-      documents['rulebook'],
-    );
-    for (final String path in rulebook.values) {
-      add(path, documentType: 'rulebook', aiEnabled: false, priority: 10);
-    }
-
-    final Map<String, String> faq = _localizedStringMap(documents['faq']);
-    for (final String path in faq.values) {
-      add(path, documentType: 'faq', aiEnabled: false, priority: 20);
-    }
-
-    final Map<String, List<String>> knowledge = _localizedStringListMap(
-      documents['knowledge'],
-    );
-    for (final List<String> localizedPaths in knowledge.values) {
-      for (final String path in localizedPaths) {
-        add(path, documentType: 'other', aiEnabled: true, priority: 30);
-      }
-    }
-    return List<GameResource>.unmodifiable(result);
-  }
-
-  static String _legacyLanguage(String fileName) {
-    final String normalized = fileName.toLowerCase();
-    if (normalized.contains('_en.') || normalized.contains('-en.')) {
-      return 'en';
-    }
-    if (normalized.contains('_cn.') ||
-        normalized.contains('-cn.') ||
-        normalized.contains('_zh.') ||
-        normalized.contains('-zh.')) {
-      return 'cn';
-    }
-    return 'none';
-  }
-
   String _assetPath(String relativeOrAbsolutePath) {
     if (relativeOrAbsolutePath.trim().isEmpty ||
         isOtherStoragePath(relativeOrAbsolutePath)) {
@@ -473,27 +402,6 @@ class GameManifest {
     return fallback;
   }
 
-  static Map<String, String> _localizedStringMap(dynamic value) {
-    final Map<String, dynamic> map =
-        value as Map<String, dynamic>? ?? <String, dynamic>{};
-    return map.map((key, dynamic value) => MapEntry(key, value as String));
-  }
-
-  static Map<String, List<String>> _localizedStringListMap(dynamic value) {
-    if (value is List) {
-      // Some manifests use one language-neutral list instead of a localized
-      // map. Keep it under a fallback key so locale resolution can still
-      // consume it without special-casing every caller.
-      return <String, List<String>>{'default': _stringList(value)};
-    }
-    if (value is! Map) {
-      return <String, List<String>>{};
-    }
-    return value.map(
-      (key, dynamic value) => MapEntry(key.toString(), _stringList(value)),
-    );
-  }
-
   static List<String> _stringList(dynamic value) {
     if (value is String) {
       final String normalized = value.trim();
@@ -520,6 +428,7 @@ class GameManifest {
     }
     if (value is String) {
       final String normalized = value.trim();
+      if (normalized.isEmpty) return 0xFF607D8B;
       if (normalized.startsWith('0x') || normalized.startsWith('0X')) {
         return int.parse(normalized.substring(2), radix: 16);
       }
@@ -582,32 +491,32 @@ class GameLocaleContent {
   final List<String> assistantSkills;
   final List<String> quickPrompts;
 
-  factory GameLocaleContent.fromJson(Map<String, dynamic> json) {
+  factory GameLocaleContent.fromCatalog(Map<String, dynamic> json) {
     return GameLocaleContent(
       title: json['title'] as String? ?? '',
       subtitle: json['subtitle'] as String? ?? '',
-      aliases: GameManifest._stringList(json['aliases']),
-      designers: GameManifest._stringList(json['designers']),
-      publishers: GameManifest._stringList(json['publishers']),
-      keywords: GameManifest._stringList(json['keywords']),
-      scoreCountLabel: json['scoreCountLabel'] as String? ?? '',
-      releaseYear: json['releaseYear'] as String? ?? '',
-      categoryLine: json['categoryLine'] as String? ?? '',
-      learningDifficulty: json['learningDifficulty'] as String? ?? '',
-      perPlayerTime: json['perPlayerTime'] as String? ?? '',
-      setupTime: json['setupTime'] as String? ?? '',
-      languageRequirement: json['languageRequirement'] as String? ?? '',
-      rankBadges: GameManifest._stringList(json['rankBadges']),
-      heroTagline: json['heroTagline'] as String? ?? '',
-      assistantIntro: json['assistantIntro'] as String? ?? '',
+      aliases: GameManifest._stringList(json['local_aliases']),
+      designers: GameManifest._stringList(json['local_designers']),
+      publishers: GameManifest._stringList(json['local_publishers']),
+      keywords: GameManifest._stringList(json['local_keywords']),
+      scoreCountLabel: json['score_count_label'] as String? ?? '',
+      releaseYear: json['release_year'] as String? ?? '',
+      categoryLine: json['category_line'] as String? ?? '',
+      learningDifficulty: json['learning_difficulty'] as String? ?? '',
+      perPlayerTime: json['per_player_time'] as String? ?? '',
+      setupTime: json['setup_time'] as String? ?? '',
+      languageRequirement: json['language_requirement'] as String? ?? '',
+      rankBadges: GameManifest._stringList(json['rank_badges']),
+      heroTagline: json['hero_tagline'] as String? ?? '',
+      assistantIntro: json['assistant_intro'] as String? ?? '',
       summary: json['summary'] as String? ?? '',
-      mentorPitch: json['mentorPitch'] as String? ?? '',
-      playTime: json['playTime'] as String? ?? '',
-      playerCount: json['playerCount'] as String? ?? '',
+      mentorPitch: json['mentor_pitch'] as String? ?? '',
+      playTime: json['play_time'] as String? ?? '',
+      playerCount: json['player_count'] as String? ?? '',
       complexity: json['complexity'] as String? ?? '',
-      roundFlow: GameManifest._stringList(json['roundFlow']),
-      assistantSkills: GameManifest._stringList(json['assistantSkills']),
-      quickPrompts: GameManifest._stringList(json['quickPrompts']),
+      roundFlow: GameManifest._stringList(json['round_flow']),
+      assistantSkills: GameManifest._stringList(json['assistant_skills']),
+      quickPrompts: GameManifest._stringList(json['quick_prompts']),
     );
   }
 }

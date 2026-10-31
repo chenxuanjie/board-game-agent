@@ -33,7 +33,7 @@ extension AppConversationController on AppController {
           gameId: useGlobalMode ? null : game.id,
         );
         _conversations[id] = updated;
-        _queueConversationSave(conversationId: id);
+        if (!updated.isDraft) _queueConversationSave(conversationId: id);
         return updated;
       }
       return existing;
@@ -52,7 +52,6 @@ extension AppConversationController on AppController {
       messages: const <ChatMessage>[],
     );
     _conversations[id] = created;
-    _queueConversationSave(conversationId: id);
     return created;
   }
 
@@ -244,9 +243,16 @@ extension AppConversationController on AppController {
   void _queueSelectedConversationSave(String conversationId) {
     _selectedConversationDirty = true;
     final preferences = _preferencesService;
+    final persistedId = _conversations[conversationId]?.isDraft == false
+        ? conversationId
+        : null;
     _selectedConversationSaveQueue = _selectedConversationSaveQueue
         .then((_) async {
-          await preferences.saveSelectedConversationId(conversationId);
+          if (persistedId == null) {
+            await preferences.clearSelectedConversationId();
+          } else {
+            await preferences.saveSelectedConversationId(persistedId);
+          }
           _selectedConversationDirty = false;
         })
         .catchError((Object error, StackTrace stackTrace) {
@@ -257,7 +263,7 @@ extension AppConversationController on AppController {
 
   Future<void> _persistSelectedConversationId() async {
     final String? id = _selectedConversationId;
-    if (id == null || id.isEmpty) {
+    if (id == null || _conversations[id]?.isDraft != false) {
       await _preferencesService.clearSelectedConversationId();
       _selectedConversationDirty = false;
       return;
@@ -331,14 +337,19 @@ extension AppConversationController on AppController {
         'version': _conversationStoreVersion,
         'savedAt': DateTime.now().toIso8601String(),
         'selectedConversationId': excludingConversationId == null
-            ? _selectedConversationId
-            : selectionAfterDelete,
+            ? (_conversations[_selectedConversationId]?.isDraft == false
+                  ? _selectedConversationId
+                  : null)
+            : (_conversations[selectionAfterDelete]?.isDraft == false
+                  ? selectionAfterDelete
+                  : null),
         'conversations': <String, dynamic>{
           for (final MapEntry<String, AiConversation> entry
               in _conversations.entries)
-            if (entry.key != excludingConversationId)
+            if (entry.key != excludingConversationId && !entry.value.isDraft)
               entry.key: entry.value.toMap(),
-          if (replacement != null) replacement.id: replacement.toMap(),
+          if (replacement != null && !replacement.isDraft)
+            replacement.id: replacement.toMap(),
         },
       };
       await _conversationStore.save(jsonEncode(payload));
@@ -412,7 +423,10 @@ extension AppConversationController on AppController {
       final AiConversation conversation = _conversations[preferred]!;
       if (conversation.isGlobal ||
           (conversation.gameId != null &&
-              _games.any((GameInfo game) => game.id == conversation.gameId))) {
+              ((!hasGames && _gameCatalogLoadState != LibraryLoadState.empty) ||
+                  _games.any(
+                    (GameInfo game) => game.id == conversation.gameId,
+                  )))) {
         if (conversation.scope == AiConversationScope.game &&
             conversation.gameId != null) {
           _selectedGameId = conversation.gameId!;

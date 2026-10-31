@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../personal_account_access.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
@@ -16,6 +17,7 @@ import '../../mobile/national_day_screen.dart';
 import '../../mobile/universal_ai_screen.dart';
 import '../../mobile/rule_materials_screen.dart';
 import '../account_screen.dart';
+import '../library_catalog_status.dart';
 import '../account_menu.dart';
 import '../game_ranking_screen.dart';
 import '../library_update_review.dart';
@@ -41,10 +43,12 @@ class SpatialWorkspace extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenAbout,
+    this.onCheckUpdates,
     this.transferService,
   });
   final AppController controller;
   final VoidCallback onOpenAbout;
+  final VoidCallback? onCheckUpdates;
   final SettingsTransferService? transferService;
   @override
   State<SpatialWorkspace> createState() => _SpatialWorkspaceState();
@@ -161,6 +165,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
   );
 
   Future<void> _toggleSpatialFavorite(GameInfo game) async {
+    if (!requirePersonalAccount(context)) return;
     if (_favoriteSaving.contains(game.id)) return;
     setState(() {
       _favoriteSaving.add(game.id);
@@ -216,6 +221,10 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
     );
     if (!mounted || selected == null) return;
     final activity = c.resolveActivityTarget(selected!);
+    if (activity.kind == AppActivityKind.appUpdate) {
+      (widget.onCheckUpdates ?? widget.onOpenAbout)();
+      return;
+    }
     if (activity.kind == AppActivityKind.libraryUpdate) {
       await showLibraryUpdateReview(
         _navigator.currentState?.overlay?.context ?? context,
@@ -549,7 +558,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
                   ),
                 ),
               ),
-              _accountMenu(),
+              if (!mobile) _accountMenu(),
             ],
           );
           final top = SizedBox(
@@ -619,13 +628,18 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
                 ? 4
                 : 6,
           );
-          if (largeText || box.maxHeight < 560) {
+          if (largeText ||
+              box.maxHeight < 560 ||
+              c.showGameCatalogNotice ||
+              (!c.hasGames &&
+                  c.gameCatalogLoadState == LibraryLoadState.loading)) {
             return SingleChildScrollView(
               padding: EdgeInsets.all(inset),
               child: Column(
                 children: [
                   header,
                   const SizedBox(height: 12),
+                  LibraryCatalogStatus(controller: c, home: true),
                   top,
                   const SizedBox(height: 18),
                   title,
@@ -641,6 +655,7 @@ class _SpatialWorkspaceState extends State<SpatialWorkspace> {
               children: [
                 header,
                 const SizedBox(height: 12),
+                LibraryCatalogStatus(controller: c, home: true),
                 top,
                 const SizedBox(height: 18),
                 title,

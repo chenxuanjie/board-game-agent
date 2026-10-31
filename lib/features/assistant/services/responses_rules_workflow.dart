@@ -2134,6 +2134,7 @@ class ResponsesRulesWorkflow {
   List<ResponsesContextManagement> _contextManagementFor(AiApiConfig config) {
     final AiProviderPreset preset = config.providerPreset;
     if (preset != AiProviderPreset.openAi &&
+        preset != AiProviderPreset.loomex &&
         preset != AiProviderPreset.custom) {
       return const <ResponsesContextManagement>[];
     }
@@ -2241,6 +2242,7 @@ class ResponsesRulesWorkflow {
               config.apiKeyHeader.trim(),
               config.chatPath.trim(),
               config.providerPreset.name,
+              config.accountContext,
               config.reasoningEffort.name,
               config.responseSpeed.name,
               'current-game-knowledge:$useCurrentGameKnowledge',
@@ -2551,8 +2553,8 @@ class ResponsesRulesWorkflow {
 
   AiEndpointConfig _endpoint(AiApiConfig config) => AiEndpointConfig(
     name: config.name,
-    baseUrl: config.baseUrl,
-    apiKey: config.apiKey,
+    baseUrl: config.clientBaseUrl,
+    apiKey: config.clientApiKey,
     model: config.model,
     apiKeyHeader: config.apiKeyHeader,
     chatPath: config.chatPath,

@@ -20,8 +20,12 @@ import '../../core/localization/app_copy.dart';
 import '../shared/assistant/ai_run_activity.dart';
 import '../shared/assistant/assistant_presentation.dart';
 import '../shared/assistant/assistant_view_state.dart';
+import '../shared/assistant/conversation_actions.dart';
+import '../shared/assistant/conversation_search_dialog.dart';
+import '../shared/app_modals.dart';
 import '../shared/assistant/conversation_drawer.dart';
 import '../shared/assistant/message_bubble.dart';
+import '../shared/assistant/scroll_to_bottom_button.dart';
 import '../shared/documents/markdown_document_screen.dart';
 import '../shared/documents/pdf_document_screen.dart';
 import '../shared/documents/library_resource_document_screen.dart';
@@ -30,17 +34,6 @@ import '../shared/account_scope.dart';
 part 'activity_popup.dart';
 part 'assistant/assistant_pane.dart';
 part 'library/library_pane.dart';
-
-ButtonStyle _desktopIconButtonStyle(AppPalette palette) => IconButton.styleFrom(
-  foregroundColor: palette.textSecondary,
-  backgroundColor: Colors.transparent,
-  minimumSize: const Size.square(34),
-  maximumSize: const Size.square(34),
-  fixedSize: const Size.square(34),
-  padding: EdgeInsets.zero,
-  visualDensity: VisualDensity.standard,
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-);
 
 class _DesktopNoGamesPane extends StatefulWidget {
   const _DesktopNoGamesPane({

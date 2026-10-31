@@ -5,11 +5,9 @@ import 'package:webdav_settings/webdav_settings.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../assistant/models/ai_api_config.dart';
-import '../../library/models/asset_source_config.dart';
 import '../../library/services/board_game_remote_layout.dart';
 import '../models/configuration_transfer.dart';
 import '../../identity/services/account_service.dart';
-import '../../identity/models/account_configuration.dart';
 
 abstract interface class ConfigurationTransferJournal {
   Future<Map<String, dynamic>?> read();
@@ -74,8 +72,6 @@ class SettingsTransferService {
     AiApiConfig? ai,
     WebDavSettings? dav,
     bool activateWebDav = false,
-    AssetSourceConfig? resourceSource,
-    AccountConfiguration? connections,
   }) async {
     if (isBusy) {
       throw const ConfigurationTransferException(
@@ -102,8 +98,7 @@ class SettingsTransferService {
     }
     if (dav != null) {
       ConfigurationTransfer.validateUrl(dav.baseUrl);
-      if (account == null &&
-          dav.username.trim().isEmpty != dav.password.isEmpty) {
+      if (dav.username.trim().isEmpty != dav.password.isEmpty) {
         throw const ConfigurationTransferException(
           'WebDAV 账号与密码需同时填写或同时留空。',
           'Provide both WebDAV username and password, or leave both empty.',
@@ -125,80 +120,19 @@ class SettingsTransferService {
         'version': 1,
         'committed': false,
         if (ai != null) 'ai': controller.aiApiConfig.toMap(),
-        if (dav != null) ...{
-          'webdav': _davMap(webDav!.saved),
-          if (account?.configuration != null)
-            'account': account!.configuration!.toJson(),
-          'sources': controller.assetSourceConfigs
-              .map((source) => source.toMap())
-              .toList(),
-        },
+        if (dav != null) 'webdav': _davMap(webDav!.saved),
       };
       await journal.write(snapshot);
       if (dav != null) {
-        if (account?.configuration != null) {
-          final current = account!.configuration!;
-          AccountConfiguration next;
-          if (connections != null) {
-            next = current.edited(
-              servers: connections.servers,
-              folder: connections.storageFolder,
-            );
-          } else {
-            final uri = Uri.parse(dav.baseUrl);
-            if (uri.scheme != 'https') {
-              throw const FormatException('HTTPS required');
-            }
-            final sources = current.resourceSources.toList();
-            final id = resourceSource?.id ?? current.activeServer.id;
-            final index = sources.indexWhere((s) => s.id == id);
-            sources[index] = sources[index].copyWith(
-              testUrl: dav.baseUrl,
-              address: dav.baseUrl,
-            );
-            final migrated = AccountConfiguration.fromResources(
-              sources: sources,
-              previous: current,
-            );
-            next = current.edited(
-              servers: migrated.servers,
-              folder: AccountConfiguration.normalizeFolder(
-                uri.pathSegments.where((s) => s.isNotEmpty).join('/'),
-              ),
-            );
-          }
-          await account!.saveConfiguration(next);
-          if (account!.error != null) {
-            throw StateError('Account connection pending');
-          }
-        } else {
-          final next = BoardGameRemoteLayout.normalizeSettings(
+        await webDav!.saveConfiguration(
+          BoardGameRemoteLayout.normalizeSettings(
             dav.copyWith(
               mode: activateWebDav
                   ? ExternalStorageMode.webDav
                   : ExternalStorageMode.localOnly,
             ),
-          );
-          await webDav!.saveConfiguration(next);
-          final sources = controller.assetSourceConfigs.toList();
-          final source = AssetSourceConfig(
-            id: resourceSource?.id ?? 'configured_webdav',
-            name: resourceSource?.name ?? 'WebDAV',
-            address: next.baseUrl,
-            testUrl: next.baseUrl,
-          );
-          final index = sources.indexWhere((item) => item.id == source.id);
-          if (index >= 0) {
-            sources[index] = source;
-          } else {
-            sources.insert(0, source);
-          }
-          if (activateWebDav) {
-            sources.removeWhere((item) => item.id == source.id);
-            sources.insert(0, source);
-          }
-          await controller.saveAssetSourceConfigs(sources);
-        }
+          ),
+        );
       }
       // Last write publishes the new model while preserving any running reply.
       if (ai != null) {
@@ -247,23 +181,6 @@ class SettingsTransferService {
       await webDav!.saveConfiguration(
         _davFromMap(Map<String, dynamic>.from(snapshot['webdav'] as Map)),
       );
-      await controller.saveAssetSourceConfigs(
-        (snapshot['sources'] as List)
-            .map(
-              (value) => AssetSourceConfig.fromMap(
-                Map<String, dynamic>.from(value as Map),
-              ),
-            )
-            .toList(),
-      );
-    }
-    if (snapshot['account'] != null && account != null) {
-      await account!.recoverConnectionConfiguration(
-        AccountConfiguration.fromJson(
-          Map<String, dynamic>.from(snapshot['account'] as Map),
-        ),
-      );
-      if (account!.error != null) throw StateError('Account recovery pending');
     }
     if (snapshot['ai'] != null) {
       final values = Map<String, dynamic>.from(

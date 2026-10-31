@@ -23,6 +23,9 @@ extension AppAiConfigurationController on AppController {
     required bool rememberPreset,
   }) async {
     final AiApiConfig previous = _aiApiConfig;
+    next = next.copyWith(
+      accountContext: next.accountService ? (_accountAiScope ?? '') : '',
+    );
     // Publish config/clear Run state only after the durable write succeeds.
     await _preferencesService.saveAiApiConfig(next);
     ++_aiServiceStatusGeneration;
@@ -37,12 +40,15 @@ extension AppAiConfigurationController on AppController {
       _clearIncompatibleRunState(preserveActiveRuns: forNextRun);
     }
     _aiConnectivityStatus = ConnectivityStatus.unknown(
-      next.baseUrl.trim().isEmpty || next.apiKey.trim().isEmpty
-          ? '未配置 AI 服务'
-          : '等待检查',
+      !next.isConfigured ? '未配置 AI 服务' : '等待检查',
     );
     if (_aiModelSignature(previous) != _aiModelSignature(next)) {
       invalidateAiModels();
+      if (next.accountService && accountAiAvailable) {
+        _availableAiModels = const [
+          AiModel(id: 'gpt-6-sol', ownedBy: 'loomex'),
+        ];
+      }
     }
     if (rememberPreset && _isSaveableCustomPreset(next)) {
       final presets = _upsertCustomPreset(_customAiPresets, next);
@@ -116,6 +122,8 @@ extension AppAiConfigurationController on AppController {
 
   bool _aiRunContextChanged(AiApiConfig previous, AiApiConfig next) {
     return previous.name.trim() != next.name.trim() ||
+        previous.accountService != next.accountService ||
+        previous.accountContext != next.accountContext ||
         previous.baseUrl.trim() != next.baseUrl.trim() ||
         previous.apiKey.trim() != next.apiKey.trim() ||
         previous.model.trim() != next.model.trim() ||
@@ -254,40 +262,7 @@ extension AppAiConfigurationController on AppController {
   }
 
   String _aiModelSignature(AiApiConfig config) {
-    return '${config.baseUrl.trim()}\n${config.apiKey.trim()}';
-  }
-
-  Future<void> saveAssetSourceConfigs(List<AssetSourceConfig> next) async {
-    final saved = List<AssetSourceConfig>.from(next);
-    await _preferencesService.saveAssetSourceConfigs(saved);
-    final changedIds = <String>{
-      for (final source in saved)
-        if (!_assetSourceConfigs.any(
-          (old) => old.id == source.id && old.testUrl == source.testUrl,
-        ))
-          source.id,
-    };
-    if (changedIds.isNotEmpty ||
-        _assetSourceConfigs.any(
-          (old) => !saved.any((source) => source.id == old.id),
-        )) {
-      _invalidateAssetAccessStatus();
-      _pendingLibraryUpdate = null;
-      _libraryUpdateError = null;
-      _libraryUpdatePromptSeen = false;
-    }
-    _assetSourceConfigs = saved;
-    _assetSourceStatuses.removeWhere(
-      (id, _) =>
-          !saved.any((source) => source.id == id) || changedIds.contains(id),
-    );
-    for (final source in _assetSourceConfigs) {
-      _assetSourceStatuses.putIfAbsent(
-        source.id,
-        () => ConnectivityStatus.unknown('未检测'),
-      );
-    }
-    _notifyListeners();
+    return '${config.clientBaseUrl.trim()}\n${config.apiKey.trim()}\n${config.accountContext}';
   }
 
   Future<String> testAiApiConfig(AiApiConfig config) async {

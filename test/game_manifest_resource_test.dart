@@ -1,247 +1,123 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/features/games/models/game_catalog_manifest.dart';
-import 'package:board_game_agent/features/games/models/game_info.dart';
-import 'package:board_game_agent/features/library/models/game_resource.dart';
+import 'package:board_game_agent/features/library/models/published_catalog.dart';
+import 'support/catalog_fixture.dart';
 
 void main() {
-  test('companion manifest prefers the official PDF for the rulebook', () {
-    final GameManifest game = GameManifest.fromJson(
-      <String, dynamic>{
-        'id': 'cabo',
-        'slug': 'cabo',
-        'coverAsset': 'images/cover.jpg',
-        'bannerAsset': 'images/background.jpg',
-        'locales': <String, dynamic>{
-          'zhHans': <String, dynamic>{'title': '卡波'},
-          'en': <String, dynamic>{'title': 'Cabo'},
-        },
+  Map<String, dynamic> definition() => catalogEditionFixture(
+    {
+      'id': 'cabo',
+      'slug': 'cabo',
+      'score': '8.2',
+      'supportedPlayers': [2, 3, 4],
+      'recommendedPlayer': 3,
+      'editionLabel': {'zhHans': '第二版'},
+      'aliases': {
+        'zhHans': ['卡波别名'],
       },
-      resourceManifest: GameResourceManifest.fromJson(<String, dynamic>{
-        'schemaVersion': 3,
-        'game': <String, dynamic>{
-          'id': 'cabo',
-          'slug': 'cabo',
-          'edition': 'second_edition_2019',
+      'coverAsset': 'images/cover.jpg',
+      'locales': {
+        'zhHans': {
+          'title': '卡波',
+          'summary': '规则简介',
+          'playTime': '45 分钟',
+          'quickPrompts': ['如何开始？'],
         },
-        'resources': <Map<String, dynamic>>[
-          _resource(
-            id: 'official-rulebook',
-            path: 'docs/official/rules/rulebook_en.pdf',
-            documentType: 'rulebook',
-            language: 'en',
-            aiEnabled: false,
-            priority: 10,
-          ),
-          _resource(
-            id: 'english-knowledge',
-            path: 'docs/local/knowledge/rulebook_en.md',
-            documentType: 'rulebook',
-            sourceClass: 'official_extracted',
-            language: 'en',
-            priority: 20,
-          ),
-          _resource(
-            id: 'chinese-knowledge',
-            path: 'docs/local/knowledge/rulebook_cn.md',
-            documentType: 'rulebook',
-            sourceClass: 'local_translated',
-            language: 'cn',
-            priority: 30,
-          ),
-          _resource(
-            id: 'chinese-ruling',
-            path: 'docs/community/answers/ruling_cn.md',
-            documentType: 'ruling',
-            sourceClass: 'community',
-            language: 'cn',
-            priority: 60,
-          ),
-          _resource(
-            id: 'missing-knowledge',
-            path: 'docs/local/knowledge/missing_cn.md',
-            documentType: 'faq',
-            language: 'cn',
-            status: 'missing',
-            priority: 1,
-          ),
-        ],
-      }),
-    );
-
-    final infoCn = game.toGameInfo(AppLanguage.zhHans);
-    expect(
-      infoCn.rulebookAssetPath,
-      'assets/games/cabo/docs/official/rules/rulebook_en.pdf',
-    );
-    expect(infoCn.knowledgeAssetPaths, <String>[
-      'assets/games/cabo/docs/local/knowledge/rulebook_cn.md',
-      'assets/games/cabo/docs/community/answers/ruling_cn.md',
-    ]);
-    expect(infoCn.resources.length, 5);
-
-    final infoEn = game.toGameInfo(AppLanguage.en);
-    expect(
-      infoEn.rulebookAssetPath,
-      'assets/games/cabo/docs/official/rules/rulebook_en.pdf',
-    );
-    expect(infoEn.knowledgeAssetPaths, <String>[
-      'assets/games/cabo/docs/local/knowledge/rulebook_en.md',
-    ]);
-  });
-
-  test('legacy game.json documents remain a compatibility fallback', () {
-    final GameManifest game = GameManifest.fromJson(<String, dynamic>{
-      'id': 'legacy',
-      'slug': 'legacy',
-      'documents': <String, dynamic>{
-        'rulebook': <String, dynamic>{'zhHans': 'docs/rulebook_cn.md'},
-        'faq': <String, dynamic>{'zhHans': 'docs/faq_cn.md'},
-        'knowledge': <String, dynamic>{
-          'zhHans': <String>['docs/rulebook_cn.md', 'docs/faq_cn.md'],
-        },
+        'en': {'title': 'Cabo', 'summary': 'Rules summary'},
       },
-      'locales': <String, dynamic>{
-        'zhHans': <String, dynamic>{'title': 'Legacy'},
-      },
-    });
-
-    final info = game.toGameInfo(AppLanguage.zhHans);
-    expect(info.rulebookAssetPath, 'assets/games/legacy/docs/rulebook_cn.md');
-    expect(info.faqAssetPath, 'assets/games/legacy/docs/faq_cn.md');
-    expect(info.knowledgeAssetPaths, <String>[
-      'assets/games/legacy/docs/rulebook_cn.md',
-      'assets/games/legacy/docs/faq_cn.md',
-    ]);
-  });
-
-  test('resources under docs/others are excluded from runtime paths', () {
-    final GameManifest game = GameManifest.fromJson(
-      <String, dynamic>{
-        'id': 'cabo',
-        'slug': 'cabo',
-        'documents': <String, dynamic>{
-          'rulebook': <String, dynamic>{
-            'en': 'docs/others/raw/rulebook_extracted_en.txt',
-          },
-          'faq': <String, dynamic>{
-            'en': 'docs/others/raw/faq_extracted_en.txt',
-          },
-          'knowledge': <String, dynamic>{
-            'en': <String>['docs/others/raw/rulebook_extracted_en.txt'],
-          },
-        },
-        'locales': <String, dynamic>{
-          'en': <String, dynamic>{'title': 'Cabo'},
-        },
-      },
-      resourceManifest: GameResourceManifest.fromJson(<String, dynamic>{
-        'game': <String, dynamic>{'id': 'cabo', 'slug': 'cabo'},
-        'resources': <Map<String, dynamic>>[
-          _resource(
-            id: 'other-rulebook',
-            path: 'docs/others/raw/rulebook_extracted_en.txt',
-            documentType: 'rulebook',
-            language: 'en',
-          ),
-          _resource(
-            id: 'other-faq',
-            path: 'docs/others/raw/faq_extracted_en.txt',
-            documentType: 'faq',
-            language: 'en',
-          ),
-          _resource(
-            id: 'other-knowledge',
-            path: 'docs/others/raw/knowledge_en.md',
-            documentType: 'other',
-            language: 'en',
-          ),
-        ],
-      }),
-    );
-
-    final GameInfo info = game.toGameInfo(AppLanguage.en);
-    expect(info.rulebookAssetPath, isEmpty);
-    expect(info.faqAssetPath, isEmpty);
-    expect(info.knowledgeAssetPaths, isEmpty);
-    expect(info.resources, hasLength(3));
-    expect(
-      info.resources.every((resource) => resource.isInOthersDirectory),
-      isTrue,
-    );
-    expect(
-      isOtherStoragePath('assets/games/cabo/docs/others/raw/file.md'),
-      isTrue,
-    );
-    expect(isOtherStoragePath('docs/local/knowledge/file.md'), isFalse);
-  });
-
-  test('all bundled game pairs parse through the runtime models', () {
-    // Only catalog entries are bundled runtime games. Resource preparation may
-    // create additional, unfinished directories that are not yet in the catalog.
-    final catalog = GameCatalogManifest.fromJson(
-      jsonDecode(File('assets/catalog.json').readAsStringSync())
-          as Map<String, dynamic>,
-    );
-    expect(catalog.games, isNotEmpty);
-    final gameDirectories = [
-      for (final entry in catalog.games)
-        Directory('assets/games/${entry.slug}'),
-    ];
-    for (final Directory directory in gameDirectories) {
-      final String gameJson = File(
-        '${directory.path}${Platform.pathSeparator}game.json',
-      ).readAsStringSync();
-      final String resourceJson = File(
-        '${directory.path}${Platform.pathSeparator}manifest.json',
-      ).readAsStringSync();
-      final GameManifest manifest = GameManifest.fromJson(
-        jsonDecode(gameJson) as Map<String, dynamic>,
-        resourceManifest: GameResourceManifest.fromJson(
-          jsonDecode(resourceJson) as Map<String, dynamic>,
+    },
+    resourceManifest: {
+      'resources': [
+        resource('cover', 'images/cover.jpg', type: 'cover', ai: false),
+        resource(
+          'official',
+          'docs/official/rules/rules_en.pdf',
+          language: 'en',
+          ai: false,
+          source: 'official',
         ),
-      );
-
+        resource('cn', 'docs/local/knowledge/rules_cn.md', language: 'cn'),
+        resource('en', 'docs/local/knowledge/rules_en.md', language: 'en'),
+      ],
+    },
+  );
+  test(
+    'SQL editions preserve localized metadata, image bindings and AI permission',
+    () {
+      final model = GameManifest.fromCatalog(definition());
+      final cn = model.toGameInfo(AppLanguage.zhHans),
+          en = model.toGameInfo(AppLanguage.en);
+      expect(cn.title, '卡波');
+      expect(cn.summary, '规则简介');
+      expect(cn.playTime, '45 分钟');
+      expect(cn.aliases, ['卡波别名']);
+      expect(cn.editionLabel, '第二版');
       expect(
-        manifest.slug,
-        directory.path.replaceAll('\\', '/').split('/').last,
+        cn.rulebookAssetPath,
+        'assets/games/cabo/docs/official/rules/rules_en.pdf',
       );
-      expect(manifest.resources, isNotEmpty);
-      expect(manifest.toGameInfo(AppLanguage.zhHans).slug, manifest.slug);
-      expect(manifest.toGameInfo(AppLanguage.en).slug, manifest.slug);
-    }
+      expect(cn.knowledgeAssetPaths, [
+        'assets/games/cabo/docs/local/knowledge/rules_cn.md',
+      ]);
+      expect(en.knowledgeAssetPaths, [
+        'assets/games/cabo/docs/local/knowledge/rules_en.md',
+      ]);
+      expect(cn.coverAssetPath, 'assets/games/cabo/images/cover.jpg');
+      expect(cn.resources.every((r) => r.sha256?.length == 64), isTrue);
+    },
+  );
+  test('SQL input cannot invent bindings from a legacy documents field', () {
+    final value = definition()..['bindings'] = [];
+    value['documents'] = {
+      'faq': {'zhHans': 'docs/absent.md'},
+    };
+    expect(
+      GameManifest.fromCatalog(
+        value,
+      ).toGameInfo(AppLanguage.zhHans).faqAssetPath,
+      isEmpty,
+    );
   });
+  test(
+    'invalid, archived and off-origin resource data cannot become a snapshot',
+    () {
+      for (final edit in <void Function(Map<String, dynamic>)>[
+        (r) => r['visibility'] = 'archive',
+        (r) => r['enabled'] = false,
+        (r) => r['content_url'] = 'https://untrusted.invalid/content',
+        (r) => r['file_sha256'] = 'bad',
+        (r) => r['path'] = 'docs/others/private.md',
+      ]) {
+        final value = definition();
+        edit((value['resources'] as List).first as Map<String, dynamic>);
+        expect(
+          () => PublishedCatalog.fromJson({
+            'protocol': 1,
+            'revision': 1,
+            'editions': [value],
+          }),
+          throwsFormatException,
+        );
+      }
+    },
+  );
 }
 
-Map<String, dynamic> _resource({
-  required String id,
-  required String path,
-  required String documentType,
-  required String language,
-  String sourceClass = 'official_extracted',
-  String status = 'available',
-  bool aiEnabled = true,
-  int priority = 50,
-}) {
-  return <String, dynamic>{
-    'id': id,
-    'path': path,
-    'documentType': documentType,
-    'sourceClass': sourceClass,
-    'origin': 'test',
-    'language': language,
-    'edition': 'second_edition_2019',
-    'status': status,
-    'enabled': true,
-    'aiEnabled': aiEnabled,
-    'priority': priority,
-    'derivedFrom': <String>[],
-    'sourceUrl': null,
-    'reviewStatus': 'checked',
-    'notes': null,
-  };
-}
+Map<String, dynamic> resource(
+  String id,
+  String path, {
+  String type = 'rulebook',
+  String language = 'none',
+  bool ai = true,
+  String source = 'official_extracted',
+}) => {
+  'id': id,
+  'path': path,
+  'documentType': type,
+  'language': language,
+  'sourceClass': source,
+  'enabled': true,
+  'status': 'available',
+  'aiEnabled': ai,
+};

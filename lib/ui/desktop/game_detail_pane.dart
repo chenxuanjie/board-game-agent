@@ -11,8 +11,7 @@ import 'desktop_resolved_image.dart';
 import 'content_primitives.dart';
 import 'desktop_responsive.dart';
 import 'theme.dart';
-import '../../core/theme/cinema_theme.dart';
-import '../../core/theme/app_palette.dart';
+
 import '../shared/hover_horizontal_scrollbar.dart';
 import '../shared/favorite_feedback.dart';
 import '../shared/content_entrance.dart';
@@ -89,16 +88,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
           SnackBar(
             content: Text(
               copy.localized('图片位置未保存', 'Image position was not saved'),
-            ),
-            action: SnackBarAction(
-              label: copy.localized('重试', 'Retry'),
-              onPressed: () {
-                if (!mounted) return;
-                final paths = _galleryPaths();
-                if (paths.isNotEmpty) {
-                  _persistGalleryImage(paths[_galleryIndex]);
-                }
-              },
             ),
           ),
         );
@@ -1071,13 +1060,7 @@ class _HeroButtonState extends State<_HeroButton> {
     final heart =
         widget.icon == Icons.favorite_rounded ||
         widget.icon == Icons.favorite_border_rounded;
-    final color = isCinema(context)
-        ? (widget.light
-              ? AppPalette.of(context).textPrimary
-              : AppPalette.of(context).onPrimary)
-        : widget.light
-        ? Color(0xFF59463B)
-        : Colors.white;
+    final color = widget.light ? Color(0xFF59463B) : Colors.white;
     return MouseRegion(
       cursor: widget.onTap == null
           ? SystemMouseCursors.basic
@@ -1100,9 +1083,7 @@ class _HeroButtonState extends State<_HeroButton> {
           padding: EdgeInsets.symmetric(horizontal: metrics.px(20)),
           decoration: BoxDecoration(
             color: widget.light
-                ? (isCinema(context)
-                      ? AppPalette.of(context).surfaceContainer
-                      : Color(0xEFFCF7F3))
+                ? (Color(0xEFFCF7F3))
                 : desktopColors(context).orange,
             borderRadius: BorderRadius.circular(metrics.radius(12)),
             boxShadow: hover

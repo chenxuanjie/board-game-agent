@@ -12,6 +12,17 @@ from services.web_account.account_files import AccountFiles
 
 
 class AccountFilesTests(unittest.IsolatedAsyncioTestCase):
+    async def test_public_entry_optional_revision_preserves_owner_and_legacy_fallback(self):
+        async def call(api, method, fields):
+            self.assertEqual(json.loads(fields['additional']), ['owner', 'size', 'time'])
+            path = self.files.public_root + '/u1001/d' + 'b' * 32 + '.json'
+            return {'total': 1, 'files': [{'path': path, 'name': path.rsplit('/', 1)[-1],
+                'isdir': False, 'additional': {'owner': {'uid': 1001}, 'size': 123,
+                'time': {'mtime': 10, 'ctime': 11}}}]}
+        entries = await self.files.entries(call, 'public', 'u1001')
+        self.assertEqual(json.loads(entries[0]['revision']), [1001, 123, 10, 11])
+        self.assertEqual(entries[0]['ownerUid'], 1001)
+
     async def asyncSetUp(self):
         self.settings = Settings('https://nas.example:5001', 'https://identity.example:5001', 'https://games.example')
         self.files = AccountFiles(self.settings, Failure)

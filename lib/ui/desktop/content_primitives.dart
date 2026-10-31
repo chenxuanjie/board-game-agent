@@ -1,8 +1,7 @@
 // Body primitives adapted from the read-only Desktop reference layout.
 import 'package:flutter/material.dart';
 import '../../core/theme/app_motion.dart';
-import '../../core/theme/cinema_theme.dart';
-import '../../core/theme/app_palette.dart';
+
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import '../../app/state/app_controller.dart';
@@ -56,9 +55,7 @@ class _HoverSurfaceState extends State<HoverSurface> {
             borderRadius: widget.borderRadius,
             border: Border.all(
               color: _focused
-                  ? (isCinema(context)
-                        ? AppPalette.of(context).focusRing
-                        : Theme.of(context).colorScheme.primary)
+                  ? (Theme.of(context).colorScheme.primary)
                   : Colors.transparent,
               width: 2,
             ),
@@ -68,9 +65,7 @@ class _HoverSurfaceState extends State<HoverSurface> {
             boxShadow: widget.addShadow && (_hovering || _focused)
                 ? [
                     BoxShadow(
-                      color: isCinema(context)
-                          ? AppPalette.of(context).shadow.withValues(alpha: .20)
-                          : const Color(0x1A7D4D2C),
+                      color: const Color(0x1A7D4D2C),
                       blurRadius: 15,
                       offset: Offset(0, 6),
                     ),

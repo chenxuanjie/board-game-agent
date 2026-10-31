@@ -102,4 +102,30 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  for (final dx in [-500.0, 500.0]) {
+    testWidgets('top notice dismisses horizontally: $dx', (tester) async {
+      late BuildContext source;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                source = context;
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+      showAppFailureNotice(source, '操作未完成');
+      await tester.pumpAndSettle();
+      final notice = find.byKey(const ValueKey('app-failure-notice'));
+      expect(notice, findsOneWidget);
+      await tester.drag(notice, Offset(dx, 0));
+      await tester.pumpAndSettle();
+      expect(notice, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

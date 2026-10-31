@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/state/app_controller.dart';
 import '../../../core/localization/app_copy.dart';
@@ -19,6 +20,8 @@ class AssistantModelSelector extends StatefulWidget {
     this.onConfigureAi,
     this.useGlobalMode = false,
     this.compact = false,
+    this.iconOnly = false,
+    this.onOpenChanged,
   });
 
   final AppController controller;
@@ -26,6 +29,8 @@ class AssistantModelSelector extends StatefulWidget {
   final VoidCallback? onConfigureAi;
   final bool useGlobalMode;
   final bool compact;
+  final bool iconOnly;
+  final ValueChanged<bool>? onOpenChanged;
 
   @override
   State<AssistantModelSelector> createState() => _AssistantModelSelectorState();
@@ -41,10 +46,35 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final Rect trigger = box.localToGlobal(Offset.zero) & box.size;
+    final media = MediaQuery.of(context);
+    final initialAbove = trigger.top - media.padding.top - 16;
+    final initialBelow =
+        media.size.height -
+        math.max(media.viewInsets.bottom, media.padding.bottom) -
+        trigger.bottom -
+        16;
+    // Choose one edge for this opening. Keyboard animation must not flip a
+    // live picker from below its trigger to above it halfway through a tap.
+    final openAbove = initialAbove >= 430 || initialAbove >= initialBelow;
     setState(() => _open = true);
+    widget.onOpenChanged?.call(true);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    // Preserve the draft/IME focus while retaining the modal's Escape action.
+    // If a service submenu is open, maybePop closes that top route first.
+    KeyEventResult escapeHandler(KeyEvent event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        if (navigator.mounted) unawaited(navigator.maybePop());
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    FocusManager.instance.addEarlyKeyEventHandler(escapeHandler);
     try {
       await showGeneralDialog<void>(
         context: context,
+        requestFocus: false,
         barrierDismissible: true,
         barrierLabel: widget.controller.copy.localized(
           '关闭模型选择',
@@ -82,11 +112,10 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
             const desiredHeight = 430.0;
             final above = math.max(0.0, anchor.top - safeTop - 8);
             final below = math.max(0.0, safeBottom - anchor.bottom - 8);
-            final openAbove = above >= desiredHeight || above >= below;
             final available = openAbove ? above : below;
             final height = math.min(
               desiredHeight,
-              math.min(safeBottom - safeTop, math.max(160.0, available)),
+              math.min(safeBottom - safeTop, math.max(1.0, available)),
             );
             final left = (anchor.right - width)
                 .clamp(12.0, math.max(12.0, viewport.width - width - 12))
@@ -129,7 +158,11 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _open = false);
+      FocusManager.instance.removeEarlyKeyEventHandler(escapeHandler);
+      if (mounted) {
+        setState(() => _open = false);
+        widget.onOpenChanged?.call(false);
+      }
     }
   }
 
@@ -165,18 +198,20 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
           child: AnimatedContainer(
             duration: AppMotion.duration(context),
             curve: AppMotion.curve,
-            constraints: BoxConstraints(
-              maxWidth: 310,
-              minHeight: widget.compact ? 48 : 36,
-            ),
+            constraints: widget.iconOnly
+                ? const BoxConstraints.tightFor(width: 48, height: 48)
+                : BoxConstraints(
+                    maxWidth: 310,
+                    minHeight: widget.compact ? 48 : 36,
+                  ),
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
-              color: _open || _hovered || _focused
+              color: !widget.iconOnly && (_open || _hovered || _focused)
                   ? palette.primaryContainer.withValues(alpha: 0.45)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(widget.iconOnly ? 24 : 10),
               border: Border.all(
-                color: _open || _focused
+                color: _focused || (!widget.iconOnly && _open)
                     ? palette.primary.withValues(alpha: 0.5)
                     : Colors.transparent,
               ),
@@ -184,30 +219,34 @@ class _AssistantModelSelectorState extends State<AssistantModelSelector> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Flexible(
-                  child: Text(
-                    modelLabel,
-                    maxLines: widget.compact ? 1 : 2,
-                    overflow: widget.compact
-                        ? TextOverflow.ellipsis
-                        : TextOverflow.clip,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
-                      color: palette.textPrimary,
-                      fontWeight: FontWeight.w500,
+                if (widget.iconOnly)
+                  Icon(Icons.tune_rounded, size: 22, color: palette.textPrimary)
+                else ...[
+                  Flexible(
+                    child: Text(
+                      modelLabel,
+                      maxLines: widget.compact ? 1 : 2,
+                      overflow: widget.compact
+                          ? TextOverflow.ellipsis
+                          : TextOverflow.clip,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        color: palette.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 5),
-                AnimatedRotation(
-                  turns: _open ? 0.5 : 0,
-                  duration: AppMotion.duration(context),
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 16,
-                    color: palette.textSecondary,
+                  const SizedBox(width: 5),
+                  AnimatedRotation(
+                    turns: _open ? 0.5 : 0,
+                    duration: AppMotion.duration(context),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: palette.textSecondary,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -243,8 +282,7 @@ class _AssistantModelPickerPanelState
   void initState() {
     super.initState();
     if (widget.controller.availableAiModels.isEmpty &&
-        widget.controller.aiApiConfig.apiKey.trim().isNotEmpty &&
-        widget.controller.aiApiConfig.baseUrl.trim().isNotEmpty &&
+        widget.controller.aiApiConfig.isConfigured &&
         widget.controller.aiModelLoadState != AiModelLoadState.loading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_refreshModels());
@@ -267,14 +305,7 @@ class _AssistantModelPickerPanelState
     try {
       await widget.controller.refreshAiModels();
     } catch (_) {
-      if (mounted) {
-        setState(
-          () => _error = widget.controller.copy.localized(
-            '模型获取失败，请重试。',
-            'Could not load models. Try again.',
-          ),
-        );
-      }
+      // Discovery failure is shown once from the controller's load state.
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -297,6 +328,51 @@ class _AssistantModelPickerPanelState
           () => _error = widget.controller.copy.localized(
             '切换模型失败，请重试。',
             'Could not switch models. Try again.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _selectService(AiApiConfig config) async {
+    if (_busy) return;
+    final current = widget.controller.aiApiConfig;
+    final preserved =
+        current.accountService ||
+        !current.isConfigured ||
+        widget.controller.customAiPresets.any(
+          (preset) => preset.toJson() == current.toJson(),
+        );
+    if (!preserved) {
+      setState(
+        () => _error = widget.controller.copy.localized(
+          '当前服务配置尚未保存为独立方案，请先在 AI 设置中处理，再切换服务。',
+          'The current service is not saved separately. Manage it in AI settings before switching.',
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.controller.saveAiApiConfig(config, forNextRun: true);
+      if (config.isConfigured) {
+        try {
+          await widget.controller.refreshAiModels();
+        } catch (_) {
+          // The service name and shared discovery status already show the result.
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = widget.controller.copy.localized(
+            '切换服务失败，请重试。',
+            'Could not switch services. Try again.',
           ),
         );
       }
@@ -331,9 +407,7 @@ class _AssistantModelPickerPanelState
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     final copy = widget.controller.copy;
-    final canRefresh =
-        widget.controller.aiApiConfig.apiKey.trim().isNotEmpty &&
-        widget.controller.aiApiConfig.baseUrl.trim().isNotEmpty;
+    final canRefresh = widget.controller.aiApiConfig.isConfigured;
     return Material(
       key: const ValueKey('desktop-model-picker-panel'),
       color: palette.surface,
@@ -358,10 +432,26 @@ class _AssistantModelPickerPanelState
                     ),
                   ),
                   IconButton(
+                    key: const ValueKey('assistant-model-refresh'),
                     tooltip: copy.desktopRefreshModels,
                     onPressed: _busy || !canRefresh ? null : _refreshModels,
-                    icon: const Icon(Icons.refresh_rounded, size: 19),
+                    icon:
+                        _busy &&
+                            widget.controller.aiModelLoadState ==
+                                AiModelLoadState.loading
+                        ? const SizedBox.square(
+                            dimension: 19,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_rounded, size: 19),
                   ),
+                  if (widget.onConfigureAi != null)
+                    IconButton(
+                      key: const ValueKey('assistant-configure-ai'),
+                      tooltip: copy.localized('管理 AI 服务', 'Manage AI services'),
+                      onPressed: widget.onConfigureAi,
+                      icon: const Icon(Icons.settings_outlined, size: 19),
+                    ),
                   IconButton(
                     tooltip: copy.localized('关闭', 'Close'),
                     onPressed: () => Navigator.of(context).pop(),
@@ -382,6 +472,63 @@ class _AssistantModelPickerPanelState
                   ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: PopupMenuButton<AiApiConfig>(
+                key: const ValueKey('assistant-service-selector'),
+                enabled: !_busy,
+                tooltip: copy.localized('选择 AI 服务', 'Choose AI service'),
+                onSelected: (config) => unawaited(_selectService(config)),
+                itemBuilder: (_) => [
+                  if (widget.controller.accountAiAvailable)
+                    PopupMenuItem(
+                      value: AiApiConfig.defaultLoomex,
+                      child: Text(
+                        'Loomex · ${AiApiConfig.defaultLoomex.model}',
+                      ),
+                    ),
+                  for (final preset in widget.controller.customAiPresets.where(
+                    (config) => config.isConfigured,
+                  ))
+                    PopupMenuItem(
+                      value: preset,
+                      child: Text(
+                        '${preset.name} · ${preset.model}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (!widget.controller.accountAiAvailable &&
+                      widget.controller.customAiPresets
+                          .where((config) => config.isConfigured)
+                          .isEmpty)
+                    PopupMenuItem(
+                      enabled: false,
+                      child: Text(
+                        copy.localized(
+                          '暂无其他已配置服务',
+                          'No other configured services',
+                        ),
+                      ),
+                    ),
+                ],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        copy.localized(
+                          '服务：${widget.controller.aiApiConfig.name}',
+                          'Service: ${widget.controller.aiApiConfig.name}',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(Icons.expand_more_rounded),
+                  ],
+                ),
+              ),
+            ),
             if (_busy ||
                 widget.controller.aiModelLoadState == AiModelLoadState.loading)
               LinearProgressIndicator(
@@ -396,6 +543,18 @@ class _AssistantModelPickerPanelState
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 child: Text(
                   _error!,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: palette.error),
+                ),
+              ),
+            if (widget.controller.aiModelLoadState ==
+                    AiModelLoadState.failure &&
+                AiModelPolicy.allowsModel(widget.controller.aiApiConfig.model))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                child: Text(
+                  copy.aiApiModelsFailed,
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: palette.error),
@@ -605,9 +764,7 @@ class _AssistantModelPickerPanelState
                         Text(
                           query.isNotEmpty
                               ? copy.localized('没有匹配的模型', 'No matching models')
-                              : widget.controller.aiApiConfig.apiKey
-                                    .trim()
-                                    .isEmpty
+                              : !widget.controller.aiApiConfig.isConfigured
                               ? copy.localized(
                                   '请先在设置中配置 AI 服务',
                                   'Configure the AI service in Settings',
@@ -621,33 +778,15 @@ class _AssistantModelPickerPanelState
                               : copy.localized('暂无可用模型', 'No models available'),
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: palette.textSecondary),
+                              ?.copyWith(
+                                color:
+                                    query.isEmpty &&
+                                        widget.controller.aiModelLoadState ==
+                                            AiModelLoadState.failure
+                                    ? palette.error
+                                    : palette.textSecondary,
+                              ),
                         ),
-                        if (query.isEmpty && widget.onConfigureAi != null) ...[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            key: const ValueKey('assistant-configure-ai'),
-                            onPressed: widget.onConfigureAi,
-                            icon: const Icon(Icons.settings_outlined, size: 16),
-                            label: Text(
-                              copy.localized('前往 AI 设置', 'Open AI settings'),
-                            ),
-                          ),
-                        ],
-                        if (query.isEmpty &&
-                            widget.controller.aiApiConfig.apiKey
-                                .trim()
-                                .isNotEmpty) ...<Widget>[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            key: const ValueKey<String>(
-                              'desktop-model-picker-retry',
-                            ),
-                            onPressed: _busy ? null : _refreshModels,
-                            icon: const Icon(Icons.refresh_rounded, size: 16),
-                            label: Text(copy.localized('重新获取', 'Retry')),
-                          ),
-                        ],
                       ],
                     ),
                   ),
