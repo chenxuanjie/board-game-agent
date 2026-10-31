@@ -305,14 +305,7 @@ class _AssistantModelPickerPanelState
     try {
       await widget.controller.refreshAiModels();
     } catch (_) {
-      if (mounted) {
-        setState(
-          () => _error = widget.controller.copy.localized(
-            '模型获取失败，请重试。',
-            'Could not load models. Try again.',
-          ),
-        );
-      }
+      // Discovery failure is shown once from the controller's load state.
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -365,23 +358,22 @@ class _AssistantModelPickerPanelState
       _busy = true;
       _error = null;
     });
-    var switched = false;
     try {
       await widget.controller.saveAiApiConfig(config, forNextRun: true);
-      switched = true;
-      if (config.isConfigured) await widget.controller.refreshAiModels();
+      if (config.isConfigured) {
+        try {
+          await widget.controller.refreshAiModels();
+        } catch (_) {
+          // The service name and shared discovery status already show the result.
+        }
+      }
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error = switched
-              ? widget.controller.copy.localized(
-                  '服务已切换，模型列表刷新失败。',
-                  'Service changed; model list refresh failed.',
-                )
-              : widget.controller.copy.localized(
-                  '切换服务失败，请重试。',
-                  'Could not switch services. Try again.',
-                ),
+          () => _error = widget.controller.copy.localized(
+            '切换服务失败，请重试。',
+            'Could not switch services. Try again.',
+          ),
         );
       }
     } finally {
@@ -440,12 +432,22 @@ class _AssistantModelPickerPanelState
                     ),
                   ),
                   IconButton(
+                    key: const ValueKey('assistant-model-refresh'),
                     tooltip: copy.desktopRefreshModels,
                     onPressed: _busy || !canRefresh ? null : _refreshModels,
-                    icon: const Icon(Icons.refresh_rounded, size: 19),
+                    icon:
+                        _busy &&
+                            widget.controller.aiModelLoadState ==
+                                AiModelLoadState.loading
+                        ? const SizedBox.square(
+                            dimension: 19,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_rounded, size: 19),
                   ),
                   if (widget.onConfigureAi != null)
                     IconButton(
+                      key: const ValueKey('assistant-configure-ai'),
                       tooltip: copy.localized('管理 AI 服务', 'Manage AI services'),
                       onPressed: widget.onConfigureAi,
                       icon: const Icon(Icons.settings_outlined, size: 19),
@@ -541,6 +543,18 @@ class _AssistantModelPickerPanelState
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 child: Text(
                   _error!,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: palette.error),
+                ),
+              ),
+            if (widget.controller.aiModelLoadState ==
+                    AiModelLoadState.failure &&
+                AiModelPolicy.allowsModel(widget.controller.aiApiConfig.model))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                child: Text(
+                  copy.aiApiModelsFailed,
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: palette.error),
@@ -764,34 +778,15 @@ class _AssistantModelPickerPanelState
                               : copy.localized('暂无可用模型', 'No models available'),
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: palette.textSecondary),
+                              ?.copyWith(
+                                color:
+                                    query.isEmpty &&
+                                        widget.controller.aiModelLoadState ==
+                                            AiModelLoadState.failure
+                                    ? palette.error
+                                    : palette.textSecondary,
+                              ),
                         ),
-                        if (query.isEmpty && widget.onConfigureAi != null) ...[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            key: const ValueKey('assistant-configure-ai'),
-                            onPressed: widget.onConfigureAi,
-                            icon: const Icon(Icons.settings_outlined, size: 16),
-                            label: Text(
-                              copy.localized('前往 AI 设置', 'Open AI settings'),
-                            ),
-                          ),
-                        ],
-                        if (query.isEmpty &&
-                            widget
-                                .controller
-                                .aiApiConfig
-                                .isConfigured) ...<Widget>[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            key: const ValueKey<String>(
-                              'desktop-model-picker-retry',
-                            ),
-                            onPressed: _busy ? null : _refreshModels,
-                            icon: const Icon(Icons.refresh_rounded, size: 16),
-                            label: Text(copy.localized('重新获取', 'Retry')),
-                          ),
-                        ],
                       ],
                     ),
                   ),

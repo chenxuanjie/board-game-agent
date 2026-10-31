@@ -83,7 +83,20 @@ void _registerDesktopNationalDayTests(_DesktopWorkspaceTestContext context) {
       await tester.tap(vote);
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pumpAndSettle();
-      expect(controller.nationalDayGames.map((game) => game.slug), original);
+      expect(controller.nationalDayGames.map((game) => game.slug), [
+        target,
+        ...original.where((slug) => slug != target),
+      ]);
+      expect(
+        tester.getTopLeft(find.byKey(ValueKey('national-day-game-$target'))).dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(ValueKey('national-day-game-${original.first}')),
+              )
+              .dx,
+        ),
+      );
       controller.configureAccountReactions(
         provider: (_) => throw StateError('Unexpected network request'),
         scope: 'seasonal-ranking-test',
@@ -101,6 +114,21 @@ void _registerDesktopNationalDayTests(_DesktopWorkspaceTestContext context) {
         original[1],
         original.first,
       ]);
+      for (final (targetCount, expectedFirst) in [
+        (3, target),
+        (2, original[1]),
+        (3, original[1]),
+        (4, target),
+      ]) {
+        await tester.runAsync(
+          () => controller.gameVotes.acceptPublicCounts(
+            'seasonal-ranking-test',
+            {original.first: 1, original[1]: 3, target: targetCount},
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.nationalDayGames.first.slug, expectedFirst);
+      }
       expect(controller.nationalDayList.slugs, original);
       expect(tester.takeException(), isNull);
     },

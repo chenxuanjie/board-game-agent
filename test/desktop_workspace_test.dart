@@ -55,6 +55,7 @@ import 'package:board_game_agent/ui/desktop/theme.dart';
 import 'package:board_game_agent/ui/desktop/sidebar.dart';
 import 'package:board_game_agent/ui/desktop/home_pane.dart';
 import 'package:board_game_agent/ui/desktop/national_day_page.dart';
+import 'package:board_game_agent/ui/shared/assistant/model_selector.dart';
 import 'package:board_game_agent/ui/desktop/games_pane.dart';
 import 'package:board_game_agent/ui/desktop/favorites_pane.dart';
 import 'package:board_game_agent/ui/desktop/game_detail_pane.dart';

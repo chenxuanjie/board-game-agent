@@ -140,41 +140,17 @@ void _registerContentDesignTests() {
 
           await tester.tap(find.byKey(const ValueKey('mobile-tab-mine')));
           await tester.pumpAndSettle();
-          final shortcut = find.byKey(const ValueKey('mobile-mine-shortcut-0'));
-          await tester.scrollUntilVisible(
-            shortcut,
-            100,
-            scrollable: find
-                .descendant(
-                  of: find.byKey(const ValueKey('mobile-mine-scroll')),
-                  matching: find.byType(Scrollable),
-                )
-                .first,
-          );
           for (var index = 0; index < 2; index++) {
-            final panel = tester.widget<Material>(
-              find
-                  .ancestor(
-                    of: find.byKey(ValueKey('mobile-mine-shortcut-$index')),
-                    matching: find.byType(Material),
-                  )
-                  .first,
-            );
             expect(
-              panel.color,
-              Color.lerp(
-                palette.surface,
-                index == 0
-                    ? palette.primaryContainer
-                    : palette.secondaryContainer,
-                .65,
-              ),
-            );
-            expect(
-              (panel.shape! as RoundedRectangleBorder).side.color,
-              palette.outline.withValues(alpha: .45),
+              find.byKey(ValueKey('mobile-mine-shortcut-$index')),
+              findsNothing,
             );
           }
+          expect(find.text('我的喜欢'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('mobile-mine-favorites-stat')),
+            findsOneWidget,
+          );
           final recent = find.byKey(
             ValueKey(
               'mobile-mine-recent-${controller.recentlyViewedGames.first.id}',

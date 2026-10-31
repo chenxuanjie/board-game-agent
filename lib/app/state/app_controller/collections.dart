@@ -10,20 +10,10 @@ extension AppCollectionController on AppController {
   }
 
   List<GameInfo> get nationalDayGames {
-    final slugs = nationalDayList.slugs;
-    final order = {for (final (index, slug) in slugs.indexed) slug: index};
-    final result = slugs
+    return nationalDayList
+        .rankByVotes(gameVotes.count)
         .expand((slug) => games.where((game) => game.slug == slug))
         .toList();
-    result.sort((left, right) {
-      final votes = gameVotes
-          .count(right.slug)
-          .compareTo(gameVotes.count(left.slug));
-      return votes != 0
-          ? votes
-          : order[left.slug]!.compareTo(order[right.slug]!);
-    });
-    return result;
   }
 
   String get nationalDayShareText =>

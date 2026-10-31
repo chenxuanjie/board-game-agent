@@ -115,7 +115,26 @@ void _registerMobileNationalDayTests() {
       await tester.ensureVisible(vote);
       await tester.tap(vote);
       await tester.pumpAndSettle();
-      expect(value.nationalDayGames.map((game) => game.slug), original);
+      expect(value.nationalDayGames.map((game) => game.slug), [
+        target,
+        ...original.where((slug) => slug != target),
+      ]);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(ValueKey('mobile-national-day-open-$target')),
+            )
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(
+                  ValueKey('mobile-national-day-open-${original.first}'),
+                ),
+              )
+              .dy,
+        ),
+      );
       value.configureAccountReactions(
         provider: (_) => throw StateError('Unexpected network request'),
         scope: 'seasonal-ranking-test',
@@ -127,10 +146,23 @@ void _registerMobileNationalDayTests() {
       });
       await tester.pumpAndSettle();
       expect(value.nationalDayGames.map((game) => game.slug), [
-        original[1],
         target,
+        original[1],
         original.first,
       ]);
+      for (final (targetCount, expectedFirst) in [
+        (4, original[1]),
+        (5, original[1]),
+        (6, target),
+      ]) {
+        await value.gameVotes.acceptPublicCounts('seasonal-ranking-test', {
+          original.first: 1,
+          original[1]: 5,
+          target: targetCount,
+        });
+        await tester.pumpAndSettle();
+        expect(value.nationalDayGames.first.slug, expectedFirst);
+      }
       expect(value.nationalDayList.slugs, original);
       expect(tester.takeException(), isNull);
     },

@@ -1,6 +1,90 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
+  for (final size in const [Size(390, 844), Size(1280, 800)]) {
+    for (final selected in ['', 'gpt-6-sol']) {
+      _assistantDesignTest(
+        'model discovery failure has one status and one refresh at $size with "$selected"',
+        (tester) async {
+          final ai = _RetryModelDiscoveryAi();
+          final controller = await tester.runAsync(
+            () => _createController(
+              aiService: ai,
+              preferencesService: _InMemoryPreferencesService(),
+            ),
+          );
+          addTearDown(controller!.dispose);
+          await controller.saveAiApiConfig(
+            AiApiConfig.defaultOpenAi.copyWith(
+              apiKey: 'test-only',
+              baseUrl: 'https://models.example.test/v1',
+              model: selected,
+            ),
+          );
+          await tester.binding.setSurfaceSize(size);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          var configureCalls = 0;
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: AppTheme.buildTheme(controller.palette),
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: AssistantModelSelector(
+                    controller: controller,
+                    enabled: true,
+                    onConfigureAi: () => configureCalls++,
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('desktop-model-selector')),
+          );
+          await tester.pumpAndSettle();
+          expect(ai.requests, 1);
+          expect(find.text(controller.copy.aiApiModelsFailed), findsOneWidget);
+          expect(find.text('模型获取失败，请重试。'), findsNothing);
+          expect(find.text('重新获取'), findsNothing);
+          expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
+          expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('desktop-model-picker-retry')),
+            findsNothing,
+          );
+          if (selected.isNotEmpty) {
+            expect(
+              find.byKey(ValueKey('desktop-model-option-$selected')),
+              findsOneWidget,
+            );
+          }
+          ai.fail = false;
+          await tester.tap(
+            find.byKey(const ValueKey('assistant-model-refresh')),
+          );
+          await tester.pumpAndSettle();
+          expect(ai.requests, 2);
+          expect(find.text(controller.copy.aiApiModelsFailed), findsNothing);
+          expect(
+            find.byKey(const ValueKey('desktop-model-option-gpt-5.6-sol')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('assistant-configure-ai')),
+          );
+          await tester.pumpAndSettle();
+          expect(configureCalls, 1);
+          expect(
+            find.byKey(const ValueKey('desktop-model-picker-panel')),
+            findsNothing,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   _assistantDesignTest(
     'service switch does not discard an unsaved built-in provider',
     (tester) async {
@@ -789,6 +873,18 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
     );
     expect(tester.widget<TextField>(draft).controller!.text, contains('第一行'));
   });
+}
+
+class _RetryModelDiscoveryAi extends _FakeAiService {
+  bool fail = true;
+  int requests = 0;
+
+  @override
+  Future<List<AiModel>> listModels(AiApiConfig config) async {
+    requests++;
+    if (fail) throw StateError('test model discovery failure');
+    return super.listModels(config);
+  }
 }
 
 class _ControlledFavoritePreferences extends _InMemoryPreferencesService {
