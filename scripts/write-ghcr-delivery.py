@@ -55,6 +55,12 @@ def main():
               "apiRequiresBrowserOriginConfiguration": True, "applicationVersion":
                   json.loads(subprocess.check_output(["docker", "image", "inspect", args.web_image], text=True))[0]["Config"]["Labels"]["org.opencontainers.image.version"]}
     record["nasChannelPublished"] = args.nas_channel
+    batch_path = ROOT / "release-batch.json"
+    if batch_path.is_file():
+        batch = json.loads(batch_path.read_text(encoding="utf-8"))
+        if f"{batch['versionName']}+{batch['buildNumber']}" != record["applicationVersion"]:
+            raise ValueError("Release batch version differs from the images")
+        record["batchId"] = batch["batchId"]
     (args.output / "release.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     checksums = "".join(hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
                         for path in sorted(args.output.iterdir()) if path.is_file() and path.name != "checksums.sha256")

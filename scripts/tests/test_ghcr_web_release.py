@@ -15,6 +15,44 @@ spec.loader.exec_module(release)
 
 
 class GhcrWebTests(unittest.TestCase):
+    def test_registry_rejects_a_frozen_dependency_or_version_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "packaging/ci").mkdir(parents=True)
+            (root / "pubspec.yaml").write_text("name: board_game_agent\nversion: 5.0.1+56\n")
+            descriptor = {"schemaVersion": 1, "appId": "board_game_agent", "batchId": "00000000-0000-4000-8000-000000000001", "versionName": "5.0.1", "buildNumber": 56}
+            (root / "release-batch.json").write_text(json.dumps(descriptor))
+            (root / release.LOCK).write_text(json.dumps({"packages": [{"name": "app_client", "commit": "b" * 40}]}))
+            frozen = {**descriptor, "state": "frozen", "sourceRevision": "a" * 40, "dependencyRevisions": {"app_client": "b" * 40}}
+            def git(_, *args):
+                return "" if args[0] == "status" else "a" * 40
+            with patch.object(release, "git", side_effect=git), patch.object(release, "registry_request", return_value=frozen):
+                self.assertEqual(release.verify_batch(root)["buildNumber"], 56)
+                frozen["dependencyRevisions"] = {"app_client": "c" * 40}
+                with self.assertRaisesRegex(ValueError, "dependencies"):
+                    release.verify_batch(root)
+                (root / "pubspec.yaml").write_text("version: 5.0.1+57\n")
+                with self.assertRaisesRegex(ValueError, "version differ"):
+                    release.verify_batch(root)
+
+    def test_registry_image_registration_preserves_the_reused_proxy_source(self):
+        batch = {"batchId": "00000000-0000-4000-8000-000000000001", "versionName": "5.0.1", "buildNumber": 56, "sourceRevision": "a" * 40}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "release.json"
+            path.write_text(json.dumps({"dirtySource": False, "sourceRevision": "a" * 40, "applicationVersion": "5.0.1+56", "images": {
+                "web": {"reference": "ghcr.io/example/web@sha256:" + "c" * 64, "sourceRevision": "a" * 40},
+                "webAi": {"reference": "ghcr.io/example/relay@sha256:" + "d" * 64, "sourceRevision": "b" * 40, "reused": True, "inputDigest": "e" * 64}}}))
+            with patch.object(release, "verify_batch", return_value=batch), patch.object(release, "registry_request", return_value={}) as request:
+                release.register_images(path, "published")
+                records = [call.args[2] for call in request.call_args_list]
+                self.assertEqual([record["sourceRevision"] for record in records], ["a" * 40, "b" * 40])
+                self.assertTrue(records[1]["reused"])
+                retry = json.loads(path.read_text())
+                retry["images"]["webAi"].update(sourceRevision="a" * 40, reused=True)
+                path.write_text(json.dumps(retry))
+                release.register_images(path, "published")
+                self.assertFalse(request.call_args.args[2]["reused"])
+
     def test_relay_inputs_ignore_web_edits_and_include_dependency_and_base_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

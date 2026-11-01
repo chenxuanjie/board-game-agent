@@ -131,6 +131,8 @@ def verify(web_image, ai_image, output, ai_input_digest=None, expected_version=N
                           and response.read() == body and previous_etag != etag)
             with request("/missing-file.js") as response:
                 check("missing assets stay 404", response.status == 404)
+            with request("/_catalog_files/aa/" + "a" * 64) as response:
+                check("catalog files cannot bypass SQL through an internal path", response.status == 404)
             with request("/api/v1/apps/board_game_agent/probe", headers={"Origin": "https://games.example.test", "Cookie": "fixture=1", "X-CSRF-Token": "fixture-csrf"}) as response:
                 body = json.load(response)
                 check("new API path", body["path"] == "/v1/apps/board_game_agent/probe")

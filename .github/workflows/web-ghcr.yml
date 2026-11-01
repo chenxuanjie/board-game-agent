@@ -43,8 +43,22 @@ jobs:
         env:
           AI_IMAGE: ${{ steps.meta.outputs.aiImage }}
         run: python3 scripts/ghcr_web_release.py resolve-ai --image "$AI_IMAGE" --github-output "$GITHUB_OUTPUT"
+      - name: Resolve the immutable Web image
+        id: web
+        env:
+          WEB_IMAGE: ${{ steps.meta.outputs.webImage }}
+        run: python3 scripts/ghcr_web_release.py resolve-web --image "$WEB_IMAGE" --github-output "$GITHUB_OUTPUT"
+      - name: Verify the frozen NAS release batch
+        id: batch
+        if: startsWith(github.ref, 'refs/tags/web-nas-v') || inputs.publish_nas == true
+        env:
+          RELEASE_SERVICE_ORIGIN: ${{ vars.RELEASE_SERVICE_ORIGIN || 'https://cznas.pp.ua:18281' }}
+          RELEASE_PUBLISH_KEY: ${{ secrets.RELEASE_PUBLISH_KEY }}
+        run: python3 scripts/ghcr_web_release.py registry verify
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Build Web image
+        id: web_build
+        if: steps.web.outputs.build == 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: ${{ runner.temp }}/bga-context
@@ -59,7 +73,13 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.applicationVersion }}
           cache-from: type=gha,scope=bga-web-amd64
           cache-to: type=gha,mode=max,scope=bga-web-amd64
+      - name: Reuse the existing Web image for the same source
+        if: steps.web.outputs.build != 'true'
+        env:
+          WEB_IMAGE: ${{ steps.meta.outputs.webImage }}
+        run: docker pull "$WEB_IMAGE"
       - name: Build BYOK relay image
+        id: ai_build
         if: steps.relay.outputs.build == 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -104,10 +124,13 @@ jobs:
           AI_IMAGE: ${{ steps.meta.outputs.aiImage }}
           BRANCH_TAG: ${{ steps.meta.outputs.branchTag }}
           BUILD_AI: ${{ steps.relay.outputs.build }}
+          BUILD_WEB: ${{ steps.web.outputs.build }}
           PUBLISH_NAS: ${{ startsWith(github.ref, 'refs/tags/web-nas-v') || inputs.publish_nas == true }}
+          RELEASE_SERVICE_ORIGIN: ${{ vars.RELEASE_SERVICE_ORIGIN || 'https://cznas.pp.ua:18281' }}
+          RELEASE_PUBLISH_KEY: ${{ secrets.RELEASE_PUBLISH_KEY }}
         run: |
           for image in "$WEB_IMAGE" "$AI_IMAGE"; do
-            if [ "$image" = "$WEB_IMAGE" ] || [ "$BUILD_AI" = "true" ]; then
+            if { [ "$image" = "$WEB_IMAGE" ] && [ "$BUILD_WEB" = "true" ]; } || { [ "$image" = "$AI_IMAGE" ] && [ "$BUILD_AI" = "true" ]; }; then
               docker push "$image"
             fi
             repository="${image%:*}"
@@ -116,15 +139,28 @@ jobs:
           done
           extra=()
           if [ "$BUILD_AI" != "true" ]; then extra+=(--reuse-ai); fi
+          python3 scripts/write-ghcr-delivery.py --web-image "$WEB_IMAGE" --ai-image "$AI_IMAGE" --output release/ghcr "${extra[@]}"
           if [ "$PUBLISH_NAS" = "true" ]; then
+            python3 scripts/ghcr_web_release.py registry record --record release/ghcr/release.json --status built
             for image in "$WEB_IMAGE" "$AI_IMAGE"; do
               repository="${image%:*}"
               docker tag "$image" "$repository:nas"
               docker push "$repository:nas"
             done
+            python3 scripts/ghcr_web_release.py registry record --record release/ghcr/release.json --status published
             extra+=(--nas-channel)
           fi
           python3 scripts/write-ghcr-delivery.py --web-image "$WEB_IMAGE" --ai-image "$AI_IMAGE" --output release/ghcr "${extra[@]}"
+      - name: Record the failed build target
+        if: failure() && steps.batch.outcome == 'success'
+        env:
+          RELEASE_SERVICE_ORIGIN: ${{ vars.RELEASE_SERVICE_ORIGIN || 'https://cznas.pp.ua:18281' }}
+          RELEASE_PUBLISH_KEY: ${{ secrets.RELEASE_PUBLISH_KEY }}
+          WEB_OUTCOME: ${{ steps.web_build.outcome }}
+          AI_OUTCOME: ${{ steps.ai_build.outcome }}
+        run: |
+          if [ "$WEB_OUTCOME" = "failure" ]; then python3 scripts/ghcr_web_release.py registry failure --component web; fi
+          if [ "$AI_OUTCOME" = "failure" ]; then python3 scripts/ghcr_web_release.py registry failure --component web-ai; fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
