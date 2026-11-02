@@ -350,6 +350,153 @@ void _registerDesktopLibraryTests(_DesktopWorkspaceTestContext context) {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('detail tabs animate and rapid changes keep the latest panel', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final game = context.controller.dailyRecommendedGames.first;
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final tab0 = find.byKey(const ValueKey<String>('detail-tab-0'));
+    final tab1 = find.byKey(const ValueKey<String>('detail-tab-1'));
+    final indicator = find.byKey(const ValueKey('detail-tab-indicator'));
+    await tester.ensureVisible(tab1);
+    await tester.pumpAndSettle();
+    final start = tester.getCenter(indicator).dx;
+    await tester.tap(tab1);
+    await tester.pump();
+    final container = find.byKey(const ValueKey('detail-tab-content'));
+    final selectedPanel = find.descendant(
+      of: container,
+      matching: find.byKey(const ValueKey<int>(1)),
+    );
+    final fade = find
+        .ancestor(of: selectedPanel, matching: find.byType(Opacity))
+        .first;
+    expect(tester.widget<Opacity>(fade).opacity, 0);
+    await tester.pump(const Duration(milliseconds: 125));
+    final middle = tester.getCenter(indicator).dx;
+    expect(middle, greaterThan(start));
+    expect(tester.widget<Opacity>(fade).opacity, closeTo(.125, .03));
+    await tester.tap(tab0);
+    await tester.pump();
+    final matchingPanels = find.descendant(
+      of: container,
+      matching: find.byKey(const ValueKey<int>(0)),
+    );
+    final activePanels = matchingPanels.evaluate().where((element) {
+      final pointer = tester.widget<IgnorePointer>(
+        find
+            .ancestor(
+              of: find.byElementPredicate((candidate) => candidate == element),
+              matching: find.byType(IgnorePointer),
+            )
+            .first,
+      );
+      return !pointer.ignoring;
+    });
+    expect(activePanels.length, 1);
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(indicator).dx, closeTo(start, .1));
+    expect(
+      find.descendant(
+        of: container,
+        matching: find.byKey(const ValueKey<int>(0)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: container,
+        matching: find.byKey(const ValueKey<int>(1)),
+      ),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('detail tabs switch immediately with reduced motion', (
+    tester,
+  ) async {
+    await _mount(
+      tester,
+      context.controller,
+      const Size(1280, 800),
+      disableAnimations: true,
+    );
+    final game = context.controller.dailyRecommendedGames.first;
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final tab = find.byKey(const ValueKey<String>('detail-tab-1'));
+    await tester.ensureVisible(tab);
+    await tester.pumpAndSettle();
+    await tester.tap(tab);
+    await tester.pump();
+    await tester.pump();
+    final panel = find.byKey(const ValueKey('detail-tab-content'));
+    expect(
+      find.descendant(of: panel, matching: find.byKey(const ValueKey<int>(1))),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.byKey(const ValueKey<int>(0))),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('detail panels stay top aligned while their heights change', (
+    tester,
+  ) async {
+    await _mount(tester, context.controller, const Size(1280, 800));
+    final game = context.controller.dailyRecommendedGames.first;
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('desktop-home-recommendation-card-${game.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final tab = find.byKey(const ValueKey<String>('detail-tab-1'));
+    await tester.ensureVisible(tab);
+    await tester.pumpAndSettle();
+    final container = find.byKey(const ValueKey('detail-tab-content'));
+    final related = find.byKey(const ValueKey('desktop-related-games-section'));
+    for (final index in [1, 0]) {
+      await tester.tap(find.byKey(ValueKey<String>('detail-tab-$index')));
+      await tester.pump();
+      final panel = find.descendant(
+        of: container,
+        matching: find.byKey(ValueKey<int>(index)),
+      );
+      final relativeTop = <double>[];
+      final relatedTop = <double>[];
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        relativeTop.add(
+          tester.getTopLeft(panel).dy - tester.getTopLeft(container).dy,
+        );
+        relatedTop.add(tester.getTopLeft(related).dy);
+      }
+      final finalTop = relativeTop.last;
+      expect(
+        relativeTop.reduce((a, b) => a > b ? a : b) - finalTop,
+        lessThanOrEqualTo(9),
+      );
+      for (var i = 1; i < relatedTop.length; i++) {
+        expect((relatedTop[i] - relatedTop[i - 1]).abs(), lessThan(30));
+      }
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'library posters match legacy proportion and hover preview, then open Desktop details',
     (tester) async {

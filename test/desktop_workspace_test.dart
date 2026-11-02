@@ -292,6 +292,7 @@ Future<void> _mount(
   bool settle = true,
   WebDavSettingsController? webDavSettingsController,
   TextScaler textScaler = TextScaler.noScaling,
+  bool? disableAnimations,
 }) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.binding.setSurfaceSize(size);
@@ -302,7 +303,11 @@ Future<void> _mount(
         debugShowCheckedModeBanner: false,
         theme: buildDesktopTheme(),
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          data: MediaQuery.of(context).copyWith(
+            textScaler: textScaler,
+            disableAnimations:
+                disableAnimations ?? MediaQuery.of(context).disableAnimations,
+          ),
           child: child!,
         ),
         home: DesktopWorkspace(

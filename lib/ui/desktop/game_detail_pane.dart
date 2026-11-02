@@ -128,14 +128,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                       )
                     : _tabBar(),
               ),
-              AnimatedSwitcher(
-                duration: AppMotion.duration(context, AppMotion.menu),
-                child: Padding(
-                  key: ValueKey<int>(_tab),
-                  padding: EdgeInsets.all(16),
-                  child: _tabBody(),
-                ),
-              ),
+              _tabContent(),
             ],
           ),
         ),
@@ -570,6 +563,69 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
       ? _warmTabBar()
       : _originalTabBar();
 
+  // Motion Prompt #057, MIT License (c) 2026 Shohei Ohtaki.
+  // https://showheyohtaki.github.io/motion-prompt/#057
+  Widget _tabContent() {
+    final warm =
+        AppPalette.of(context).scheme == ColorSchemeOption.warmwoodStudy;
+    final current = _tab;
+    final content = AnimatedSwitcher(
+      key: const ValueKey('detail-tab-content'),
+      duration: AppMotion.duration(
+        context,
+        warm ? const Duration(milliseconds: 300) : AppMotion.menu,
+      ),
+      switchInCurve: Curves.linear,
+      switchOutCurve: Curves.linear,
+      layoutBuilder: warm
+          ? (currentChild, previousChildren) => Stack(
+              alignment: Alignment.topCenter,
+              children: [...previousChildren, ?currentChild],
+            )
+          : AnimatedSwitcher.defaultLayoutBuilder,
+      transitionBuilder: warm
+          ? (child, animation) {
+              return AnimatedBuilder(
+                animation: animation,
+                child: child,
+                builder: (context, content) {
+                  final incoming = animation.status != AnimationStatus.reverse;
+                  final opacity = const Interval(
+                    1 / 3,
+                    1,
+                  ).transform(animation.value);
+                  return IgnorePointer(
+                    ignoring: !incoming,
+                    child: ExcludeSemantics(
+                      excluding: !incoming,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Transform.translate(
+                          offset: Offset(0, incoming ? 8 * (1 - opacity) : 0),
+                          child: content,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            }
+          : AnimatedSwitcher.defaultTransitionBuilder,
+      child: Padding(
+        key: ValueKey<int>(current),
+        padding: const EdgeInsets.all(16),
+        child: _tabBody(),
+      ),
+    );
+    if (!warm || AppMotion.reduced(context)) return content;
+    return AnimatedSize(
+      duration: AppMotion.duration(context, const Duration(milliseconds: 200)),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: content,
+    );
+  }
+
   Widget _warmTabBar() => LayoutBuilder(
     builder: (context, constraints) => Stack(
       children: [
@@ -583,22 +639,26 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
           children: [
             for (var index = 0; index < _tabs.length; index++)
               Expanded(
-                child: InkWell(
-                  key: ValueKey<String>('detail-tab-$index'),
-                  onTap: () => setState(() => _tab = index),
-                  child: SizedBox(
-                    height: 57,
-                    child: Center(
-                      child: Text(
-                        _tabs[index],
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: index == _tab
-                              ? FontWeight.w800
-                              : FontWeight.w500,
-                          color: index == _tab
-                              ? desktopColors(context).text
-                              : desktopColors(context).secondaryText,
+                child: Semantics(
+                  selected: index == _tab,
+                  button: true,
+                  child: InkWell(
+                    key: ValueKey<String>('detail-tab-$index'),
+                    onTap: () => setState(() => _tab = index),
+                    child: SizedBox(
+                      height: 57,
+                      child: Center(
+                        child: Text(
+                          _tabs[index],
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: index == _tab
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color: index == _tab
+                                ? desktopColors(context).orange
+                                : desktopColors(context).secondaryText,
+                          ),
                         ),
                       ),
                     ),
@@ -613,8 +673,11 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
           right: 0,
           child: IgnorePointer(
             child: AnimatedAlign(
-              duration: AppMotion.duration(context, AppMotion.content),
-              curve: AppMotion.curve,
+              duration: AppMotion.duration(
+                context,
+                const Duration(milliseconds: 250),
+              ),
+              curve: Curves.easeInOutCubic,
               alignment: _tab == 0
                   ? Alignment.centerLeft
                   : Alignment.centerRight,
@@ -622,6 +685,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                 width: constraints.maxWidth / _tabs.length,
                 child: Center(
                   child: Container(
+                    key: const ValueKey('detail-tab-indicator'),
                     width: 48,
                     height: 2,
                     color: desktopColors(context).orange,
