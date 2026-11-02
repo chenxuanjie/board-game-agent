@@ -1284,18 +1284,17 @@ class _RoundIcon extends StatelessWidget {
   final VoidCallback onTap;
   final bool showTooltip;
   @override
-  Widget build(BuildContext context) => Tooltip(
-    message: tooltip,
-    triggerMode: showTooltip
-        ? TooltipTriggerMode.longPress
-        : TooltipTriggerMode.manual,
-    child: IconButton(
+  Widget build(BuildContext context) {
+    final button = IconButton(
       onPressed: onTap,
       style: IconButton.styleFrom(
         backgroundColor: Color(0x9953443B),
         foregroundColor: Colors.white,
       ),
       icon: Icon(icon),
-    ),
-  );
+    );
+    return showTooltip
+        ? Tooltip(message: tooltip, child: button)
+        : Semantics(label: tooltip, button: true, child: button);
+  }
 }
