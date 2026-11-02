@@ -4,7 +4,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/color_scheme_option.dart';
 import '../../core/theme/app_motion.dart';
 
 import '../../features/assistant/models/ai_conversation.dart';
@@ -232,11 +231,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ][_tab];
     Navigator.of(context).push(
       GameDetailRoute<void>(
-        reference:
-            widget.controller.palette.scheme ==
-                ColorSchemeOption.warmwoodStudy &&
-            source?.matches(game.coverAssetPath) == true &&
-            !AppMotion.reduced(context),
         builder: (_) => GameDetailScreen(
           controller: widget.controller,
           game: game,

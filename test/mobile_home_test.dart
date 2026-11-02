@@ -1027,12 +1027,6 @@ void main() {
       );
       expect(detail.coverOrigin?.tag, sourceHero.tag);
       expect(detail.coverOrigin?.path, controller.games.first.coverAssetPath);
-      final detailHero = tester.widget<Hero>(
-        find.byWidgetPredicate(
-          (widget) => widget is Hero && widget.tag == sourceHero.tag,
-        ),
-      );
-      expect(detailHero.flightShuttleBuilder, isNotNull);
       expect(
         find.byWidgetPredicate(
           (widget) => widget is Hero && widget.tag == sourceHero.tag,
@@ -1043,18 +1037,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(card, findsOneWidget);
       expect(find.byType(GameDetailScreen), findsNothing);
-      final cardRect = tester.getRect(card);
-      await tester.tapAt(Offset(cardRect.center.dx, cardRect.bottom - 20));
-      await tester.pumpAndSettle();
-      final textDetail = tester.widget<GameDetailScreen>(
-        find.byType(GameDetailScreen),
-      );
-      expect(textDetail.coverOrigin?.tag, sourceHero.tag);
-      final route = ModalRoute.of(
-        tester.element(find.byType(GameDetailScreen)),
-      );
-      expect(route, isA<GameDetailRoute<void>>());
-      expect((route! as GameDetailRoute<void>).reference, isTrue);
       expect(tester.takeException(), isNull);
     },
   );

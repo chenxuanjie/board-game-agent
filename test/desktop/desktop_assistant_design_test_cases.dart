@@ -588,59 +588,9 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pump();
       expect(find.byType(GameCoverFlight), findsOneWidget);
       expect(find.byType(DesktopGameDetailPane), findsOneWidget);
-      expect(find.byType(DesktopGamesPane), findsOneWidget);
-      double pageOpacity(Finder page) => tester
-          .widget<FadeTransition>(
-            find
-                .ancestor(of: page, matching: find.byType(FadeTransition))
-                .first,
-          )
-          .opacity
-          .value;
-      await tester.pump(const Duration(milliseconds: 105));
-      expect(
-        pageOpacity(find.byType(DesktopGamesPane)),
-        closeTo(1 - 105 / 217, .04),
-      );
-      expect(pageOpacity(find.byType(DesktopGameDetailPane)), 0);
-      await tester.pump(const Duration(milliseconds: 140));
-      expect(pageOpacity(find.byType(DesktopGamesPane)), 0);
-      expect(
-        pageOpacity(find.byType(DesktopGameDetailPane)),
-        closeTo(.25, .05),
-      );
-      final outbound = tester.widget<GameCoverFlight>(
-        find.byType(GameCoverFlight),
-      );
-      expect(outbound.reference, isTrue);
-      expect(outbound.end.width, greaterThan(outbound.begin.width));
-      expect(
-        tester
-            .widget<DesktopGameDetailPane>(find.byType(DesktopGameDetailPane))
-            .initialCoverPath,
-        game.coverAssetPath,
-      );
+      expect(find.byType(DesktopGamesPane), findsNothing);
       await tester.pumpAndSettle();
       expect(find.byType(GameCoverFlight), findsNothing);
-      await tester.tap(find.byTooltip('返回游戏库'));
-      await tester.pump();
-      await tester.pump();
-      expect(find.byType(GameCoverFlight), findsOneWidget);
-      expect(find.byType(DesktopGamesPane), findsOneWidget);
-      final inbound = tester.widget<GameCoverFlight>(
-        find.byType(GameCoverFlight),
-      );
-      expect(inbound.reference, isTrue);
-      expect(inbound.begin.width, greaterThan(inbound.end.width));
-      await tester.pumpAndSettle();
-      expect(find.byType(GameCoverFlight), findsNothing);
-      await tester.tap(poster);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 120));
-      await tester.tap(find.byTooltip('返回游戏库'));
-      await tester.pumpAndSettle();
-      expect(find.byType(DesktopGamesPane), findsOneWidget);
-      expect(tester.takeException(), isNull);
       await _navigate(tester, '首页');
       await _navigate(tester, '游戏库');
       await tester.tap(poster);

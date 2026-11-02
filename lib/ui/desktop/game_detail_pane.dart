@@ -33,9 +33,6 @@ class DesktopGameDetailPane extends StatefulWidget {
     this.coverKey,
     this.favoriteSaving = false,
     this.favoritePreview,
-    this.initialCoverPath,
-    this.initialCoverImage,
-    this.onGalleryChanged,
   });
 
   final AppController controller;
@@ -49,9 +46,6 @@ class DesktopGameDetailPane extends StatefulWidget {
   final Key? coverKey;
   final bool favoriteSaving;
   final bool? favoritePreview;
-  final String? initialCoverPath;
-  final Widget? initialCoverImage;
-  final ValueChanged<String>? onGalleryChanged;
 
   @override
   State<DesktopGameDetailPane> createState() => _DesktopGameDetailPaneState();
@@ -59,20 +53,8 @@ class DesktopGameDetailPane extends StatefulWidget {
 
 class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
   int _tab = 0;
-  String? _initialCover;
-  @override
-  void initState() {
-    super.initState();
-    _initialCover = widget.initialCoverPath;
-  }
-
-  int get _galleryIndex {
-    final paths = _galleryPaths();
-    final initialIndex = paths.indexOf(_initialCover ?? '');
-    return initialIndex >= 0
-        ? initialIndex
-        : widget.controller.gameGalleryIndex(game, paths);
-  }
+  int get _galleryIndex =>
+      widget.controller.gameGalleryIndex(game, _galleryPaths());
 
   static const _tabs = ['游戏介绍', '规则摘要'];
 
@@ -81,7 +63,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.game.id != widget.game.id) {
       _tab = 0;
-      _initialCover = widget.initialCoverPath;
     }
   }
 
@@ -94,10 +75,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     if (count <= 0 || index < 0 || index >= count || index == _galleryIndex) {
       return;
     }
-    _initialCover = null;
-    final selected = _galleryPaths()[index];
-    widget.onGalleryChanged?.call(selected);
-    _persistGalleryImage(selected);
+    _persistGalleryImage(_galleryPaths()[index]);
     setState(() {});
   }
 
@@ -226,9 +204,6 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                   controller: widget.controller,
                   assetPath: heroPath,
                   palette: widget.controller.palette,
-                  continuityImage: heroPath == widget.initialCoverPath
-                      ? widget.initialCoverImage
-                      : null,
                 ),
                 DecoratedBox(
                   decoration: BoxDecoration(

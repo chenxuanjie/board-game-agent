@@ -1189,14 +1189,9 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       expect(find.text(game.title), findsWidgets);
       expect(find.text(game.subtitle), findsWidgets);
       expect(find.text('询问 AI'), findsOneWidget);
-      final currentHero = find.byWidgetPredicate(
-        (widget) =>
-            widget.key is ValueKey<String> &&
-            (widget.key! as ValueKey<String>).value.startsWith(
-              'desktop-detail-gallery-image-',
-            ),
+      final heroSize = tester.getSize(
+        find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
       );
-      final heroSize = tester.getSize(currentHero);
       expect(
         heroSize.width,
         tester.getSize(find.byType(DesktopGameDetailPane)).width,
@@ -1207,7 +1202,9 @@ void _registerDesktopHomeTests(_DesktopWorkspaceTestContext context) {
       final thumbnailRect = tester.getRect(
         find.byKey(const ValueKey('desktop-detail-gallery-thumbnail-0')),
       );
-      final heroRect = tester.getRect(currentHero);
+      final heroRect = tester.getRect(
+        find.byKey(const ValueKey('desktop-detail-gallery-image-0')),
+      );
       expect(thumbnailRect.size, const Size(146, 88));
       expect(thumbnailRect.top, closeTo(heroRect.bottom + 10, .01));
       expect(
