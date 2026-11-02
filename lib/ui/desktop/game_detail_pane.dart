@@ -255,6 +255,7 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                             _RoundIcon(
                               icon: Icons.zoom_in_rounded,
                               tooltip: '查看大图',
+                              showTooltip: false,
                               onTap: () => _openGalleryImage(heroPath),
                             ),
                         ],
@@ -1276,13 +1277,18 @@ class _RoundIcon extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    this.showTooltip = true,
   });
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
+  final bool showTooltip;
   @override
   Widget build(BuildContext context) => Tooltip(
     message: tooltip,
+    triggerMode: showTooltip
+        ? TooltipTriggerMode.longPress
+        : TooltipTriggerMode.manual,
     child: IconButton(
       onPressed: onTap,
       style: IconButton.styleFrom(

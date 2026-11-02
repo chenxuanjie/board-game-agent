@@ -192,12 +192,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 5,
                                   ),
-                                  child: Tooltip(
-                                    message:
-                                        AppPalette.of(context).scheme ==
-                                            ColorSchemeOption.warmwoodStudy
-                                        ? copy.localized('查看大图', 'View image')
-                                        : '',
+                                  child: Semantics(
+                                    label: copy.localized('查看大图', 'View image'),
+                                    button: true,
                                     child: InkWell(
                                       onTap:
                                           AppPalette.of(context).scheme ==
@@ -221,6 +218,14 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                                 ),
                                                 child: Hero(
                                                   tag: widget.coverOrigin!.tag,
+                                                  createRectTween:
+                                                      controller
+                                                              .palette
+                                                              .scheme ==
+                                                          ColorSchemeOption
+                                                              .warmwoodStudy
+                                                      ? referenceHeroRectTween
+                                                      : null,
                                                   child: _GalleryAsset(
                                                     controller: controller,
                                                     game: game,

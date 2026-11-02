@@ -1,5 +1,45 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_motion.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/color_scheme_option.dart';
+
+/// Motion Prompt #161, MIT License (c) 2026 Shohei Ohtaki.
+/// https://showheyohtaki.github.io/motion-prompt/#161
+class ReferenceViewCurve extends Curve {
+  const ReferenceViewCurve();
+  @override
+  double transformInternal(double t) =>
+      t < .5 ? 4 * t * t * t : 1 - (2 - 2 * t) * (2 - 2 * t) * (2 - 2 * t) / 2;
+}
+
+class _ReferenceHeroRectTween extends RectTween {
+  _ReferenceHeroRectTween({required super.begin, required super.end});
+  @override
+  Rect? lerp(double t) {
+    // Hero applies fastOutSlowIn before this tween. Undo it so the shared
+    // element follows the reference's cubic ease-in-out over real time.
+    // Pop flights use ReverseAnimation around Hero's flipped curve, yielding
+    // the same forward progress curve for the rect tween.
+    const curve = Curves.fastOutSlowIn;
+    var low = 0.0, high = 1.0;
+    for (var i = 0; i < 24; i++) {
+      final mid = (low + high) / 2;
+      if (curve.transform(mid) < t) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    return Rect.lerp(
+      begin,
+      end,
+      const ReferenceViewCurve().transform((low + high) / 2),
+    );
+  }
+}
+
+RectTween referenceHeroRectTween(Rect? begin, Rect? end) =>
+    _ReferenceHeroRectTween(begin: begin, end: end);
 
 class CoverOrigin {
   CoverOrigin(this.path, this.rect, this.tag) : capturedAt = DateTime.now();
@@ -55,7 +95,17 @@ class _GameCoverSourceState extends State<GameCoverSource> {
       },
       child: HeroMode(
         enabled: !AppMotion.reduced(context),
-        child: Hero(tag: _tag, child: widget.child),
+        child: Hero(
+          tag: _tag,
+          createRectTween:
+              Theme.of(
+                    context,
+                  ).extension<AppPaletteThemeExtension>()?.palette.scheme ==
+                  ColorSchemeOption.warmwoodStudy
+              ? (begin, end) => referenceHeroRectTween(begin, end)
+              : null,
+          child: widget.child,
+        ),
       ),
     );
   }
@@ -117,9 +167,34 @@ class GameCoverFlight extends StatelessWidget {
 }
 
 class GameDetailRoute<T> extends MaterialPageRoute<T> {
-  GameDetailRoute({required super.builder});
+  GameDetailRoute({required super.builder, this.reference = false});
+  final bool reference;
   @override
-  Duration get transitionDuration => AppMotion.cover;
+  Duration get transitionDuration =>
+      reference ? const Duration(milliseconds: 600) : AppMotion.cover;
   @override
-  Duration get reverseTransitionDuration => AppMotion.panel;
+  Duration get reverseTransitionDuration =>
+      reference ? const Duration(milliseconds: 600) : AppMotion.panel;
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (!reference) {
+      return super.buildTransitions(
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
+    }
+    if (AppMotion.reduced(context)) return child;
+    return FadeTransition(
+      opacity: animation.drive(CurveTween(curve: const Interval(.6, 1))),
+      child: child,
+    );
+  }
 }
