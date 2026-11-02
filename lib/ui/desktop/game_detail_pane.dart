@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_motion.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/theme/color_scheme_option.dart';
 
 import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
@@ -246,6 +248,15 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
                             tooltip: widget.backTooltip,
                             onTap: widget.onBack,
                           ),
+                          const Spacer(),
+                          if (heroPath.isNotEmpty &&
+                              AppPalette.of(context).scheme ==
+                                  ColorSchemeOption.warmwoodStudy)
+                            _RoundIcon(
+                              icon: Icons.zoom_in_rounded,
+                              tooltip: '查看大图',
+                              onTap: () => _openGalleryImage(heroPath),
+                            ),
                         ],
                       ),
                       Spacer(),
@@ -442,6 +453,53 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     return paths.toList();
   }
 
+  Future<void> _openGalleryImage(String path) => showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.black87,
+    transitionDuration: AppMotion.duration(context, AppMotion.content),
+    pageBuilder: (context, animation, secondaryAnimation) => Material(
+      color: Colors.transparent,
+      child: SafeArea(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: DesktopResolvedImage(
+                controller: widget.controller,
+                assetPath: path,
+                palette: AppPalette.of(context),
+                fit: BoxFit.contain,
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton.filledTonal(
+                tooltip: '关闭图片',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+    transitionBuilder: (context, animation, secondaryAnimation, child) =>
+        FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: .96, end: 1).animate(
+              CurvedAnimation(parent: animation, curve: AppMotion.curve),
+            ),
+            child: child,
+          ),
+        ),
+  );
+
   Widget _gallery() {
     final paths = _galleryPaths();
     if (paths.isEmpty) {
@@ -506,7 +564,77 @@ class _DesktopGameDetailPaneState extends State<DesktopGameDetailPane> {
     );
   }
 
-  Widget _tabBar() => Row(
+  Widget _tabBar() =>
+      AppPalette.of(context).scheme == ColorSchemeOption.warmwoodStudy
+      ? _warmTabBar()
+      : _originalTabBar();
+
+  Widget _warmTabBar() => LayoutBuilder(
+    builder: (context, constraints) => Stack(
+      children: [
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(height: 1, color: desktopColors(context).line),
+          ),
+        ),
+        Row(
+          children: [
+            for (var index = 0; index < _tabs.length; index++)
+              Expanded(
+                child: InkWell(
+                  key: ValueKey<String>('detail-tab-$index'),
+                  onTap: () => setState(() => _tab = index),
+                  child: SizedBox(
+                    height: 57,
+                    child: Center(
+                      child: Text(
+                        _tabs[index],
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: index == _tab
+                              ? FontWeight.w800
+                              : FontWeight.w500,
+                          color: index == _tab
+                              ? desktopColors(context).text
+                              : desktopColors(context).secondaryText,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: AnimatedAlign(
+              duration: AppMotion.duration(context, AppMotion.content),
+              curve: AppMotion.curve,
+              alignment: _tab == 0
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: SizedBox(
+                width: constraints.maxWidth / _tabs.length,
+                child: Center(
+                  child: Container(
+                    width: 48,
+                    height: 2,
+                    color: desktopColors(context).orange,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _originalTabBar() => Row(
     children: [
       for (var index = 0; index < _tabs.length; index++)
         Expanded(

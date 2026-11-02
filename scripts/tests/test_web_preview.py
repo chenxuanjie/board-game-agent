@@ -56,6 +56,42 @@ class PreviewTests(unittest.TestCase):
             **kwargs,
         )
 
+    def test_http_loopback_preserves_origin_and_secure_cookie_attributes(self):
+        for site in ("http://127.0.0.1:8083", "http://localhost:8083"):
+            with self.subTest(site=site):
+
+                async def upstream(request):
+                    self.assertEqual(request.headers["origin"], site)
+                    self.assertEqual(request.url.host, "api.example.test")
+                    return httpx.Response(
+                        200,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Set-Cookie": "__Host-app-session-board_game_agent=fixture; Secure; HttpOnly; SameSite=Strict; Path=/",
+                        },
+                        stream=Bytes(b'{"ok":true}'),
+                    )
+
+                app = preview.create_app(
+                    self.root,
+                    "https://api.example.test",
+                    origins=[site],
+                    api_client=httpx.AsyncClient(
+                        transport=httpx.MockTransport(upstream)
+                    ),
+                )
+                with TestClient(app, base_url=site) as client:
+                    result = client.post(
+                        "/api/v1/apps/board_game_agent/auth/browser/bootstrap",
+                        json={},
+                        headers={"Origin": site},
+                    )
+                    self.assertEqual(result.status_code, 200)
+                    self.assertIn(
+                        "Secure; HttpOnly; SameSite=Strict",
+                        result.headers["set-cookie"],
+                    )
+
     def test_api_prefix_cookies_csrf_and_multiple_set_cookie_are_preserved(self):
         async def upstream(request):
             return httpx.Response(

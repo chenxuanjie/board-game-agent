@@ -23,13 +23,15 @@
 
 ```powershell
 pwsh -NoProfile -File scripts/start-web-preview.ps1
-# 完整浏览器会话验证使用已有受信任证书；本命令不生成证书或修改系统信任
+# 可选 HTTPS 使用已有受信任证书；本命令不生成证书或修改系统信任
 pwsh -NoProfile -File scripts/start-web-preview.ps1 -Https -Certificate C:/certs/localhost.pem -PrivateKey C:/certs/localhost-key.pem
 ```
 
 HTTP 默认 `http://127.0.0.1:8083`，HTTPS 默认 `https://127.0.0.1:8084`；也可使用同端口的 localhost。现有本机后台 `.venv` 提供 httpx、Starlette、uvicorn，可通过 `-Python` 指定其他已准备的环境；`-ApiUpstream` 仅接受固定 HTTPS origin 或回环 HTTP。缺依赖或端口被占用直接报错，不安装另一套运行库、不停止未知进程。publisher profile 的 `web.previewScript`、`apiUpstream`、`previewPython` 指向同一实现，避免构建后预览又变回纯静态服务器。
 
-在 API 的 `browser_allowed_origins` 中显式添加实际使用的 HTTPS 本地地址，例如 `https://localhost:8084` 和 `https://127.0.0.1:8084`；生产 Cookie 继续使用 Secure/HttpOnly，不能通过移除这些属性来适配 HTTP。`8083` 适合静态及公开接口检查，完整登录验收以 HTTPS 为准。浏览器仍只访问本地同源 `/api/`，无需直接跨域请求远端 API；允许浏览器来源与开放 CORS 是两个配置边界。
+本地预览白名单包含 `http://127.0.0.1:8083`、`http://localhost:8083` 及对应的 HTTPS 8084 两个地址。配置生成工具不传 `--preview-origin` 时保留现有附加来源并补入这四项；显式传入时按所列来源配置。2026-11-01 在当前内置浏览器实测，两个 HTTP 回环地址均属于安全上下文，能正常收发 Secure/HttpOnly 的 `__Host-` Cookie，不需要修改 Cookie 属性。这个本地例外不扩展到 NAS 域名或局域网 IP 的 HTTP；正式 NAS 入口继续使用 HTTPS，其他浏览器应实际验证，必要时使用本机 HTTPS。
+
+来源配置写入 API Compose 后，须重新应用并重建 API 容器才生效；只是浏览器地址变化或刷新网页不会改变服务端白名单。已有本轮来源支持的 API 镜像无需为增加这两条值再次构建。浏览器仍只访问本地同源 `/api/`，无需直接跨域请求远端 API；允许浏览器来源与开放 CORS 是两个配置边界。
 
 API 响应流直接转交，不整份缓存 PDF/模型流；保留多条 Set-Cookie、CSRF、Range/If-Range、ETag 和同步 NDJSON，断开时关闭上游。预览仅监听回环地址；不提供任意网址转发或机器发布接口凭据传递。本机 PowerSync 使用 HTTP 流，NAS Nginx 同时保留 WebSocket 转发。
 
