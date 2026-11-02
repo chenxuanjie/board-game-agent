@@ -271,6 +271,17 @@ final class ServiceIdentityGateway
         _access = null;
         _datasetId = null;
         await _persist(null);
+        // Browsers must probe HttpOnly cookies even for a fresh guest. The
+        // service's missing-session response is normal in that case, rather
+        // than evidence that a known login expired. Keep protocol/identity
+        // mismatches and rejection of a previously accepted user visible.
+        if (browser &&
+            expected == null &&
+            error is AppClientFailure &&
+            error.status == 401 &&
+            error.code == 'session_rejected') {
+          return null;
+        }
       }
       throw failure;
     }
