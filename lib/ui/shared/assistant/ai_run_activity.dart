@@ -13,7 +13,7 @@ import '../../../core/localization/app_copy.dart';
 /// explained to a user: routing, source lookup, web search, retries, and the
 /// final response state. Provider event names, raw output items, and hidden
 /// reasoning are never shown here.
-class AiRunActivity extends StatelessWidget {
+class AiRunActivity extends StatefulWidget {
   const AiRunActivity({
     super.key,
     required this.events,
@@ -34,12 +34,41 @@ class AiRunActivity extends StatelessWidget {
   final ValueChanged<bool>? onExpandedChanged;
 
   @override
+  State<AiRunActivity> createState() => _AiRunActivityState();
+}
+
+class _AiRunActivityState extends State<AiRunActivity> {
+  List<AiRunEvent> get events => widget.events;
+  bool get isRunning => widget.isRunning;
+  AppPalette get palette => widget.palette;
+  AppCopy get copy => widget.copy;
+  bool? get initialExpanded => widget.initialExpanded;
+  ValueChanged<bool>? get onExpandedChanged => widget.onExpandedChanged;
+  List<AiRunEvent>? _projectedEvents;
+  bool? _projectedChinese;
+  int _projectedLength = -1;
+  AiRunEvent? _projectedLast;
+  List<_ActivityStep> _projectedSteps = [];
+  Duration _projectedDuration = Duration.zero;
+
+  @override
   Widget build(BuildContext context) {
     if (!isRunning && events.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final List<_ActivityStep> steps = _steps;
+    if (!identical(_projectedEvents, events) ||
+        _projectedLength != events.length ||
+        !identical(_projectedLast, events.lastOrNull) ||
+        _projectedChinese != copy.isChinese) {
+      _projectedEvents = events;
+      _projectedLength = events.length;
+      _projectedLast = events.lastOrNull;
+      _projectedChinese = copy.isChinese;
+      _projectedSteps = _steps;
+      _projectedDuration = _runDuration;
+    }
+    final List<_ActivityStep> steps = _projectedSteps;
     final bool hasTimeline = steps.isNotEmpty;
     final bool isRunCompleted =
         !isRunning &&
@@ -92,7 +121,7 @@ class AiRunActivity extends StatelessWidget {
       runId: events.isEmpty ? null : events.first.runId,
       isRunning: isRunning,
       isCompleted: isRunCompleted,
-      duration: _runDuration,
+      duration: _projectedDuration,
       palette: palette,
       copy: copy,
       initialExpanded: initialExpanded,

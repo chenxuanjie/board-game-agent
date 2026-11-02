@@ -131,7 +131,13 @@ extension AppConversationController on AppController {
       if (checkpoint != null && checkpoint.events.isNotEmpty) {
         generation
           ..runId = checkpoint.runId
+          ..runEvents.clear()
           ..runEvents.addAll(checkpoint.events)
+          ..eventIds.clear()
+          ..eventIds.addAll(
+            checkpoint.events.map((e) => (e.runId, e.sequence, e.type)),
+          )
+          ..cachedEvents = null
           ..runStartedAt = checkpoint.startedAt
           ..runCompletedAt = checkpoint.completedAt
           ..runStatus = checkpoint.status
@@ -206,17 +212,34 @@ extension AppConversationController on AppController {
 
   void _queueConversationSave({String? conversationId}) {
     _conversationDirty = true;
-    if (conversationId != null) {
+    if (conversationId == null) {
+      _saveAllConversations = true;
+    } else {
+      _pendingConversationIds.add(conversationId);
       _touchConversation(conversationId);
     }
-    _conversationSaveQueue = _conversationSaveQueue
-        .then((_) async {
-          await _persistConversations();
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          debugPrint('[chat] persist conversations failed: $error');
-          debugPrint('$stackTrace');
-        });
+    if (_conversationSaveScheduled) return;
+    _conversationSaveScheduled = true;
+    _conversationSaveQueue = _conversationSaveQueue.then((_) async {
+      _conversationSaveScheduled = false;
+      final ids = _saveAllConversations
+          ? null
+          : Set<String>.of(_pendingConversationIds);
+      _saveAllConversations = false;
+      _pendingConversationIds.clear();
+      try {
+        await _persistConversations(throwOnError: true, changedIds: ids);
+      } catch (error, stackTrace) {
+        _conversationDirty = true;
+        if (ids == null) {
+          _saveAllConversations = true;
+        } else {
+          _pendingConversationIds.addAll(ids);
+        }
+        debugPrint('[chat] persist conversations failed: $error');
+        debugPrint('$stackTrace');
+      }
+    });
   }
 
   void _touchConversation(String conversationId) {
@@ -275,6 +298,25 @@ extension AppConversationController on AppController {
   Future<void> _restoreConversations({bool throwOnError = false}) async {
     final epoch = _identityScopeEpoch;
     try {
+      final changes = await _conversationStore.loadChanges().timeout(
+        const Duration(seconds: 8),
+      );
+      if (epoch != _identityScopeEpoch) return;
+      if (changes != null) {
+        for (final id in changes.deleted) {
+          _conversations.remove(id);
+          _generationStates.remove(id);
+          _runExpandedByContext.remove(id);
+        }
+        for (final entry in changes.updated.entries) {
+          final restored = _conversationFromStoredEntry(entry.key, entry.value);
+          if (restored != null && !restored.isUnstarted) {
+            _conversations[entry.key] = restored;
+            _generationStates[entry.key]?.checkpointRestored = false;
+          }
+        }
+        return;
+      }
       final stored = await _conversationStore.load().timeout(
         const Duration(seconds: 8),
       );
@@ -287,6 +329,7 @@ extension AppConversationController on AppController {
           json['conversations'] as Map<String, dynamic>? ?? <String, dynamic>{};
 
       _conversations.clear();
+      _serializedConversations.clear();
       bool removedLegacyGreetings = false;
       for (final MapEntry<String, dynamic> entry in conversations.entries) {
         final AiConversation? restored = _conversationFromStoredEntry(
@@ -302,6 +345,11 @@ extension AppConversationController on AppController {
           debugPrint(
             '[chat] skipped unused session during migration: ${restored.id}',
           );
+        }
+      }
+      for (final entry in _conversations.entries) {
+        if (!entry.value.isDraft) {
+          _serializedConversations[entry.key] = jsonEncode(entry.value.toMap());
         }
       }
       final String? persistedSelection =
@@ -328,12 +376,52 @@ extension AppConversationController on AppController {
 
   Future<void> _persistConversations({
     bool throwOnError = false,
+    Set<String>? changedIds,
     String? excludingConversationId,
     AiConversation? replacement,
     String? selectionAfterDelete,
   }) async {
     try {
-      final Map<String, dynamic> payload = <String, dynamic>{
+      if (_conversationStore.personalStore != null) {
+        final entries = <String, dynamic>{
+          for (final id
+              in changedIds ??
+                  (excludingConversationId == null
+                      ? _conversations.keys
+                      : const <String>[]))
+            if (id != excludingConversationId &&
+                _conversations[id]?.isDraft == false)
+              id: _conversations[id]!.toMap(),
+          if (replacement != null && !replacement.isDraft)
+            replacement.id: replacement.toMap(),
+        };
+        await _conversationStore.saveChanges(entries, {
+          ?excludingConversationId,
+        });
+        _conversationDirty =
+            _conversationSaveScheduled || _pendingConversationIds.isNotEmpty;
+        return;
+      }
+      // Keep the existing atomic guest snapshot, but encode only changed
+      // sessions. Joining cached JSON avoids walking every historical message.
+      final encoded = Map<String, String>.of(_serializedConversations);
+      final ids = changedIds ?? _conversations.keys.toSet();
+      encoded.removeWhere(
+        (id, _) =>
+            id == excludingConversationId ||
+            !_conversations.containsKey(id) ||
+            _conversations[id]!.isDraft,
+      );
+      for (final id in ids) {
+        final conversation = _conversations[id];
+        if (id != excludingConversationId && conversation?.isDraft == false) {
+          encoded[id] = jsonEncode(conversation!.toMap());
+        }
+      }
+      if (replacement != null && !replacement.isDraft) {
+        encoded[replacement.id] = jsonEncode(replacement.toMap());
+      }
+      final metadata = jsonEncode({
         'version': _conversationStoreVersion,
         'savedAt': DateTime.now().toIso8601String(),
         'selectedConversationId': excludingConversationId == null
@@ -343,17 +431,18 @@ extension AppConversationController on AppController {
             : (_conversations[selectionAfterDelete]?.isDraft == false
                   ? selectionAfterDelete
                   : null),
-        'conversations': <String, dynamic>{
-          for (final MapEntry<String, AiConversation> entry
-              in _conversations.entries)
-            if (entry.key != excludingConversationId && !entry.value.isDraft)
-              entry.key: entry.value.toMap(),
-          if (replacement != null && !replacement.isDraft)
-            replacement.id: replacement.toMap(),
-        },
-      };
-      await _conversationStore.save(jsonEncode(payload));
-      _conversationDirty = false;
+      });
+      final entries = encoded.entries
+          .map((entry) => '${jsonEncode(entry.key)}:${entry.value}')
+          .join(',');
+      await _conversationStore.save(
+        '${metadata.substring(0, metadata.length - 1)},"conversations":{$entries}}',
+      );
+      _serializedConversations
+        ..clear()
+        ..addAll(encoded);
+      _conversationDirty =
+          _conversationSaveScheduled || _pendingConversationIds.isNotEmpty;
     } catch (error, stackTrace) {
       debugPrint('[chat] persist conversations failed: $error');
       debugPrint('$stackTrace');

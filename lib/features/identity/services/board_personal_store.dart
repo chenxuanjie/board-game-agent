@@ -55,17 +55,29 @@ String _utc(Object? value) =>
     DateTime.parse(value as String).toUtc().toIso8601String();
 final boardPersonalSchema = Schema([
   for (final entry in _fields.entries)
-    Table(entry.key, [
-      const Column.text('dataset_id'),
-      for (final field in entry.value)
-        if (_booleans.contains(field))
-          Column.integer(field)
-        else
-          Column.text(field),
-      const Column.integer('row_version'),
-      const Column.text('updated_at'),
-      const Column.text('deleted_at'),
-    ], trackMetadata: true),
+    Table(
+      entry.key,
+      [
+        const Column.text('dataset_id'),
+        for (final field in entry.value)
+          if (_booleans.contains(field))
+            Column.integer(field)
+          else
+            Column.text(field),
+        const Column.integer('row_version'),
+        const Column.text('updated_at'),
+        const Column.text('deleted_at'),
+      ],
+      trackMetadata: true,
+      indexes: entry.key == 'messages'
+          ? [
+              Index('conversation_created', [
+                IndexedColumn('conversation_id'),
+                IndexedColumn('created_at'),
+              ]),
+            ]
+          : [],
+    ),
   const Table.localOnly('run_checkpoints', [
     Column.text('payload'),
     Column.text('modified_at'),
@@ -299,59 +311,96 @@ class BoardPersonalStore extends ChangeNotifier {
         .timeout(const Duration(seconds: 20));
   }
 
-  Future<String> loadConversations() async {
-    final snapshot = await database.readTransaction(
-      (tx) async => (
-        await tx.getAll('SELECT * FROM conversations WHERE deleted_at IS NULL'),
-        await tx.getAll('SELECT * FROM messages WHERE deleted_at IS NULL'),
-        await tx.getAll('SELECT * FROM run_checkpoints'),
-      ),
-    );
-    final conversations = snapshot.$1
-        .map((r) => _record('conversations', r))
-        .toList();
-    final messages = snapshot.$2.map((r) => _record('messages', r)).toList();
-    _baselines['conversations'] = {
-      for (final r in conversations) r['id'] as String: r,
-    };
-    _baselines['messages'] = {for (final r in messages) r['id'] as String: r};
-    final checkpoints = {
-      for (final r in snapshot.$3)
-        if (conversations.any(
-          (c) =>
-              c['id'] == r['id'] &&
-              r['modified_at'] != null &&
-              DateTime.parse(
-                c['modified_at'] as String,
-              ).isAtSameMomentAs(DateTime.parse(r['modified_at'] as String)),
-        ))
-          r['id']: jsonDecode(r['payload'] as String),
-    };
-    return jsonEncode({
-      'version': 4,
-      'conversations': {
-        for (final c in conversations)
-          c['id']: {
-            'id': c['id'],
-            'title': c['title'],
-            'scope': c['scope'],
-            'gameId': c['game_id'],
-            'createdAt': c['created_at'],
-            'updatedAt': c['modified_at'],
-            'opened': c['opened'],
-            if (checkpoints[c['id']] != null) 'lastRun': checkpoints[c['id']],
-            'messages': [
-              for (final m
-                  in (messages
-                      .where((m) => m['conversation_id'] == c['id'])
-                      .toList()
-                    ..sort(
-                      (a, b) => (a['created_at'] as String).compareTo(
-                        b['created_at'] as String,
-                      ),
-                    )))
-                {
-                  'id': (m['id'] as String).substring('${c['id']}|'.length),
+  Map<String, String> _conversationHeaders = {},
+      _messageHeaders = {},
+      _checkpointHeaders = {};
+  Map<String, String> _messageParents = {};
+  final Map<String, dynamic> _conversationViews = {};
+
+  /// Read small version headers first, then materialize only changed sessions.
+  /// Message-only changes and tombstones count even when the parent is unchanged.
+  Future<({Map<String, dynamic> updated, Set<String> deleted})>
+  loadConversationChanges() async {
+    final result = await database.readTransaction((tx) async {
+      final conversations = await tx.getAll(
+        'SELECT id,row_version,updated_at,deleted_at FROM conversations',
+      );
+      final messages = await tx.getAll(
+        'SELECT id,conversation_id,row_version,updated_at,deleted_at FROM messages',
+      );
+      final checkpoints = await tx.getAll(
+        'SELECT id,modified_at FROM run_checkpoints',
+      );
+      String signature(Map<String, dynamic> r) =>
+          '${r['row_version']}|${r['updated_at']}|${r['deleted_at']}';
+      final cHeaders = {
+        for (final r in conversations) r['id'] as String: signature(r),
+      };
+      final mHeaders = {
+        for (final r in messages) r['id'] as String: signature(r),
+      };
+      final parents = {
+        for (final r in messages)
+          r['id'] as String: r['conversation_id'] as String,
+      };
+      final pHeaders = {
+        for (final r in checkpoints) r['id'] as String: '${r['modified_at']}',
+      };
+      final changed = <String>{
+        for (final id in {...cHeaders.keys, ..._conversationHeaders.keys})
+          if (cHeaders[id] != _conversationHeaders[id]) id,
+        for (final id in {...mHeaders.keys, ..._messageHeaders.keys})
+          if (mHeaders[id] != _messageHeaders[id]) ...[
+            if (parents[id] != null) parents[id]!,
+            if (_messageParents[id] != null) _messageParents[id]!,
+          ],
+        for (final id in {...pHeaders.keys, ..._checkpointHeaders.keys})
+          if (pHeaders[id] != _checkpointHeaders[id]) id,
+      };
+      final updated = <String, dynamic>{};
+      final deleted = <String>{};
+      final cRows = <String, Map<String, dynamic>>{};
+      final mRows = <String, Map<String, dynamic>>{};
+      for (final id in changed) {
+        final row = await tx.getOptional(
+          'SELECT * FROM conversations WHERE id=? AND deleted_at IS NULL',
+          [id],
+        );
+        if (row == null) {
+          deleted.add(id);
+          continue;
+        }
+        final c = _record('conversations', row);
+        cRows[id] = c;
+        final rows = await tx.getAll(
+          'SELECT * FROM messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY created_at,id',
+          [id],
+        );
+        final checkpoint = await tx.getOptional(
+          'SELECT * FROM run_checkpoints WHERE id=?',
+          [id],
+        );
+        final localRun =
+            checkpoint != null &&
+            DateTime.parse(c['modified_at'] as String).isAtSameMomentAs(
+              DateTime.parse(checkpoint['modified_at'] as String),
+            );
+        updated[id] = {
+          'id': id,
+          'title': c['title'],
+          'scope': c['scope'],
+          'gameId': c['game_id'],
+          'createdAt': c['created_at'],
+          'updatedAt': c['modified_at'],
+          'opened': c['opened'],
+          if (localRun) 'lastRun': jsonDecode(checkpoint['payload'] as String),
+          'messages': [
+            for (final row in rows)
+              (() {
+                final m = _record('messages', row);
+                mRows[m['id'] as String] = m;
+                return {
+                  'id': (m['id'] as String).substring('$id|'.length),
                   'role': m['role'],
                   'text': m['content'],
                   'timestamp': m['created_at'],
@@ -361,15 +410,62 @@ class BoardPersonalStore extends ChangeNotifier {
                   'evidence': m['evidence'],
                   'canRetry': m['can_retry'],
                   'retryPrompt': m['retry_prompt'],
-                },
-            ],
-          },
-      },
+                };
+              })(),
+          ],
+        };
+      }
+      return (
+        updated: updated,
+        deleted: deleted,
+        changed: changed,
+        c: cRows,
+        m: mRows,
+        cHeaders: cHeaders,
+        mHeaders: mHeaders,
+        parents: parents,
+        pHeaders: pHeaders,
+      );
     });
+    final cBaseline = _baselines.putIfAbsent('conversations', () => {});
+    final mBaseline = _baselines.putIfAbsent('messages', () => {});
+    cBaseline.removeWhere((id, _) => result.changed.contains(id));
+    mBaseline.removeWhere(
+      (_, row) => result.changed.contains(row['conversation_id']),
+    );
+    cBaseline.addAll(result.c);
+    mBaseline.addAll(result.m);
+    _conversationHeaders = result.cHeaders;
+    _messageHeaders = result.mHeaders;
+    _messageParents = result.parents;
+    _checkpointHeaders = result.pHeaders;
+    for (final id in result.deleted) {
+      _conversationViews.remove(id);
+    }
+    _conversationViews.addAll(result.updated);
+    return (updated: result.updated, deleted: result.deleted);
   }
 
-  Future<void> saveConversations(String payload) async {
-    final envelope = jsonDecode(payload) as Map<String, dynamic>;
+  Future<String> loadConversations() async {
+    await loadConversationChanges();
+    return jsonEncode({'version': 4, 'conversations': _conversationViews});
+  }
+
+  Future<void> saveConversationChanges(
+    Map<String, dynamic> updated,
+    Set<String> deleted,
+  ) => _saveConversations(
+    {'conversations': updated},
+    onlyIds: {...updated.keys, ...deleted},
+  );
+
+  Future<void> saveConversations(String payload) =>
+      _saveConversations(jsonDecode(payload) as Map<String, dynamic>);
+
+  Future<void> _saveConversations(
+    Map<String, dynamic> envelope, {
+    Set<String>? onlyIds,
+  }) async {
     final sessions = (envelope['conversations'] as Map).values
         .cast<Map<String, dynamic>>();
     final c = <Map<String, dynamic>>[], m = <Map<String, dynamic>>[];
@@ -409,6 +505,21 @@ class BoardPersonalStore extends ChangeNotifier {
     }
     final nextC = {for (final row in c) row['id'] as String: row};
     final nextM = {for (final row in m) row['id'] as String: row};
+    final removedM = beforeMessages.keys
+        .where(
+          (id) =>
+              !nextM.containsKey(id) &&
+              (onlyIds == null ||
+                  onlyIds.contains(beforeMessages[id]!['conversation_id'])),
+        )
+        .toList();
+    final removedC = beforeConversations.keys
+        .where(
+          (id) =>
+              !nextC.containsKey(id) &&
+              (onlyIds == null || onlyIds.contains(id)),
+        )
+        .toList();
     await database.writeTransaction((tx) async {
       for (final r in c) {
         if (!_same(r, beforeConversations[r['id']])) {
@@ -418,14 +529,10 @@ class BoardPersonalStore extends ChangeNotifier {
       for (final r in m) {
         if (!_same(r, beforeMessages[r['id']])) await _put(tx, 'messages', r);
       }
-      for (final id in beforeMessages.keys.where(
-        (id) => !nextM.containsKey(id),
-      )) {
+      for (final id in removedM) {
         await _put(tx, 'messages', beforeMessages[id]!, delete: true);
       }
-      for (final id in beforeConversations.keys.where(
-        (id) => !nextC.containsKey(id),
-      )) {
+      for (final id in removedC) {
         await _put(tx, 'conversations', beforeConversations[id]!, delete: true);
         await tx.execute('DELETE FROM run_checkpoints WHERE id=?', [id]);
       }
@@ -440,8 +547,19 @@ class BoardPersonalStore extends ChangeNotifier {
         }
       }
     });
-    _baselines['conversations'] = nextC;
-    _baselines['messages'] = nextM;
+    for (final id in removedC) {
+      beforeConversations.remove(id);
+    }
+    for (final id in removedM) {
+      beforeMessages.remove(id);
+    }
+    beforeConversations.addAll(nextC);
+    beforeMessages.addAll(nextM);
+    // Local edits can have the same null SDK version header before upload.
+    // Invalidate only affected parents so a subsequent read observes the write.
+    for (final id in {...nextC.keys, ...removedC}) {
+      _conversationHeaders.remove(id);
+    }
   }
 }
 

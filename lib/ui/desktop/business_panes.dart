@@ -9,7 +9,6 @@ import '../../core/theme/app_motion.dart';
 
 import '../../core/models/app_activity.dart';
 import '../../features/assistant/models/ai_conversation.dart';
-import '../../features/assistant/models/ai_run.dart';
 import '../../features/assistant/models/chat_message.dart';
 import '../../features/library/models/desktop_library_resource.dart';
 import '../../features/games/models/game_info.dart';

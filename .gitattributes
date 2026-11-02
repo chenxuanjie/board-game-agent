@@ -2,3 +2,5 @@
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java text eol=lf
 # Linux container entrypoints must remain executable by /bin/sh on Windows checkouts.
 packaging/docker/*.sh text eol=lf
+# The SDK worker's byte fingerprint is embedded in its cache-busting URL.
+web/powersync/powersync_db.worker.js text eol=lf

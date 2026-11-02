@@ -1,5 +1,6 @@
 import 'support/catalog_fixture.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show ImageByteFormat, PointerDeviceKind;
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:board_game_agent/core/theme/app_theme.dart';
 import 'package:board_game_agent/ui/mobile/home_screen.dart';
+import 'package:board_game_agent/ui/mobile/assistant_chat_screen.dart';
+import 'package:board_game_agent/ui/shared/assistant/message_bubble.dart';
 import 'package:board_game_agent/ui/mobile/library_content.dart';
 import 'package:board_game_agent/ui/mobile/settings_screen.dart';
 import 'package:board_game_agent/ui/mobile/game_detail_screen.dart';
@@ -23,6 +26,7 @@ import 'package:board_game_agent/ui/shared/spatial/spatial_recommendations.dart'
 import 'package:webdav_settings/webdav_settings.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
+import 'package:board_game_agent/features/assistant/models/ai_run.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/assistant/models/answer_source.dart';
 import 'package:board_game_agent/core/models/app_activity.dart';
@@ -375,6 +379,7 @@ Future<void> _navigate(
 
 Future<AppController> _createController({
   PreferencesService? preferencesService,
+  ConversationStore? conversationStore,
   TtsService? ttsService,
   AiService? aiService,
   RemoteAssetService? remoteAssetService,
@@ -385,7 +390,7 @@ Future<AppController> _createController({
   final AppController controller = AppController(
     preferencesService: preferencesService ?? PreferencesService(),
     aiService: aiService ?? _FakeAiService(),
-    conversationStore: _WorkspaceConversationStore(),
+    conversationStore: conversationStore ?? _WorkspaceConversationStore(),
     gameManifestService: FixtureGameManifestService(),
     remoteAssetService: remoteAssetService ?? _NoNetworkAssetService(),
     speechService: SpeechService(),

@@ -371,6 +371,10 @@ class AppController extends ChangeNotifier {
   int _homeAssetsLoaded = 0;
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
+  bool _conversationSaveScheduled = false;
+  bool _saveAllConversations = false;
+  final Set<String> _pendingConversationIds = {};
+  final Map<String, String> _serializedConversations = {};
   bool _conversationDirty = false;
   Future<void>? _aiConfigSaveQueue;
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
@@ -414,9 +418,7 @@ class AppController extends ChangeNotifier {
   bool isSendingForContext({required bool useGlobalMode}) =>
       _generationStateForContext(useGlobalMode: useGlobalMode).isSending;
   List<AiRunEvent> aiRunEventsForContext({required bool useGlobalMode}) =>
-      UnmodifiableListView<AiRunEvent>(
-        _generationStateForContext(useGlobalMode: useGlobalMode).runEvents,
-      );
+      _generationStateForContext(useGlobalMode: useGlobalMode).eventSnapshot;
   String? aiRunIdForContext({required bool useGlobalMode}) =>
       _generationStateForContext(useGlobalMode: useGlobalMode).runId;
   DateTime? aiRunStartedAtForContext({required bool useGlobalMode}) =>
@@ -1081,9 +1083,16 @@ class AppController extends ChangeNotifier {
     if (!_controllerDisposed) notifyListeners();
   }
 
+  /// High-frequency answer content must not invalidate the application shell.
+  final ChangeNotifier assistantContentChanges = ChangeNotifier();
+  void _notifyAssistantContent() {
+    if (!_controllerDisposed) assistantContentChanges.notifyListeners();
+  }
+
   @override
   void dispose() {
     _controllerDisposed = true;
+    assistantContentChanges.dispose();
     _cancelGameCatalogRequest();
     _invalidateAssetAccessStatus();
     _favoriteStatistics?.dispose();
@@ -1102,7 +1111,7 @@ class _StreamTextBatcher {
   void add(String delta) {
     if (delta.isEmpty) return;
     _buffer.write(delta);
-    _timer ??= Timer(const Duration(milliseconds: 16), flush);
+    _timer ??= Timer(const Duration(milliseconds: 40), flush);
   }
 
   void flush() {
@@ -1137,5 +1146,9 @@ class _ChatGenerationState {
   int operationToken = 0;
   int contextEpoch = 0;
   final List<AiRunEvent> runEvents = <AiRunEvent>[];
+  final Set<(String, int, AiRunEventType)> eventIds = {};
+  List<AiRunEvent>? cachedEvents;
+  List<AiRunEvent> get eventSnapshot =>
+      cachedEvents ??= List<AiRunEvent>.unmodifiable(runEvents);
   bool useGlobalMode = false;
 }
