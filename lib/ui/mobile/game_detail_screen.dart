@@ -218,6 +218,19 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                                 ),
                                                 child: Hero(
                                                   tag: widget.coverOrigin!.tag,
+                                                  flightShuttleBuilder:
+                                                      (
+                                                        flightContext,
+                                                        animation,
+                                                        direction,
+                                                        from,
+                                                        to,
+                                                      ) =>
+                                                          widget
+                                                              .coverOrigin!
+                                                              .image ??
+                                                          (to.widget as Hero)
+                                                              .child,
                                                   createRectTween:
                                                       controller
                                                               .palette
@@ -230,6 +243,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                                     controller: controller,
                                                     game: game,
                                                     path: gallery[index],
+                                                    continuityImage: widget
+                                                        .coverOrigin!
+                                                        .image,
                                                   ),
                                                 ),
                                               )
@@ -884,11 +900,13 @@ class _GalleryAsset extends StatelessWidget {
     required this.controller,
     required this.game,
     required this.path,
+    this.continuityImage,
   });
 
   final AppController controller;
   final GameInfo game;
   final String path;
+  final Widget? continuityImage;
 
   @override
   Widget build(BuildContext context) {
@@ -899,6 +917,7 @@ class _GalleryAsset extends StatelessWidget {
       controller: controller,
       assetPath: path,
       palette: AppPalette.of(context),
+      continuityImage: continuityImage,
     );
   }
 }

@@ -35,6 +35,7 @@ class GameCommentsPanel extends StatefulWidget {
 class _GameCommentsPanelState extends State<GameCommentsPanel> {
   GameCommentsService? _service;
   bool _latest = false;
+  bool _refreshRequested = false;
   int _limit = 20;
   String? _freshId;
   final Set<String> _liking = {};
@@ -54,6 +55,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
       ++_actionEpoch;
       _liking.clear();
       _likeErrors.clear();
+      _refreshRequested = false;
       _limit = 20;
       _freshId = null;
     }
@@ -79,6 +81,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     _service?.removeListener(_changed);
     _service?.unwatchGame(previousGame ?? widget.gameSlug);
     _service = service;
+    _refreshRequested = false;
     service?.watchGame(widget.gameSlug);
     _freshId = null;
     _liking.clear();
@@ -97,6 +100,19 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
       _likeErrors.removeWhere((id, _) => !service.likePending(id));
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshComments() async {
+    final service = _service;
+    if (service == null || service.loading) return;
+    setState(() => _refreshRequested = true);
+    try {
+      await service.synchronize();
+    } finally {
+      if (mounted && identical(service, _service)) {
+        setState(() => _refreshRequested = false);
+      }
+    }
   }
 
   @override
@@ -312,6 +328,8 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     final mobile = MediaQuery.sizeOf(context).width < 760;
     final visible = widget.rootId == null ? roots : replies;
     final displayed = visible.take(widget.preview ? 3 : _limit).toList();
+    final showSkeleton =
+        service.loading && (visible.isEmpty || _refreshRequested);
     if (widget.rootId != null) {
       final freshReply = visible.where((c) => c.id == _freshId).firstOrNull;
       if (freshReply != null && !displayed.contains(freshReply)) {
@@ -372,7 +390,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                 ],
                 IconButton(
                   tooltip: service.loading ? '正在刷新评论' : '刷新评论',
-                  onPressed: service.loading ? null : service.synchronize,
+                  onPressed: service.loading ? null : _refreshComments,
                   icon: const Icon(Icons.refresh_rounded),
                 ),
               ],
@@ -442,30 +460,31 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
           ),
           const Divider(height: 24),
         ],
-        if (visible.isEmpty &&
-            service.loading &&
-            palette.scheme == ColorSchemeOption.warmwoodStudy)
-          const _CommentLoadingPlaceholder()
-        else if (visible.isEmpty &&
-            (palette.scheme != ColorSchemeOption.warmwoodStudy ||
-                service.error == null ||
-                service.loading))
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 28),
-            child: Text(
-              service.loading
-                  ? '正在加载评论…'
-                  : widget.rootId == null
-                  ? '还没有评论，聊聊你的桌游体验吧'
-                  : '还没有回复',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: palette.textSecondary),
+        if (palette.scheme == ColorSchemeOption.warmwoodStudy)
+          AnimatedSwitcher(
+            duration: AppMotion.duration(
+              context,
+              Duration(milliseconds: showSkeleton ? 150 : 300),
             ),
-          ),
-        for (final comment in displayed) ...[
-          _tile(comment, comments),
-          Divider(height: 24, color: palette.outline.withValues(alpha: .25)),
-        ],
+            reverseDuration: AppMotion.duration(
+              context,
+              Duration(milliseconds: showSkeleton ? 300 : 150),
+            ),
+            switchInCurve: Curves.linear,
+            switchOutCurve: Curves.linear,
+            child: showSkeleton
+                ? const _CommentLoadingPlaceholder(
+                    key: ValueKey('comments-loading'),
+                  )
+                : _commentList(
+                    visible,
+                    displayed,
+                    comments,
+                    key: const ValueKey('comments-loaded'),
+                  ),
+          )
+        else
+          _commentList(visible, displayed, comments),
         if (widget.preview &&
             (palette.scheme != ColorSchemeOption.warmwoodStudy ||
                 visible.length > displayed.length))
@@ -500,6 +519,42 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
             icon: const Icon(Icons.edit_outlined),
             label: Text(service.readOnly ? '登录后评论' : '写评论'),
           ),
+      ],
+    );
+  }
+
+  Widget _commentList(
+    List<GameComment> visible,
+    List<GameComment> displayed,
+    List<GameComment> comments, {
+    Key? key,
+  }) {
+    final palette = AppPalette.of(context);
+    final service = _service!;
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (visible.isEmpty &&
+            (palette.scheme != ColorSchemeOption.warmwoodStudy ||
+                service.error == null ||
+                service.loading))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            child: Text(
+              service.loading
+                  ? '正在加载评论…'
+                  : widget.rootId == null
+                  ? '还没有评论，聊聊你的桌游体验吧'
+                  : '还没有回复',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: palette.textSecondary),
+            ),
+          ),
+        for (final comment in displayed) ...[
+          _tile(comment, comments),
+          Divider(height: 24, color: palette.outline.withValues(alpha: .25)),
+        ],
       ],
     );
   }
@@ -776,49 +831,126 @@ class _LikeCountState extends State<_LikeCount>
 }
 
 /// Stable first-load geometry; existing comments stay visible during refresh.
-class _CommentLoadingPlaceholder extends StatelessWidget {
-  const _CommentLoadingPlaceholder();
+class _CommentLoadingPlaceholder extends StatefulWidget {
+  const _CommentLoadingPlaceholder({super.key});
+  @override
+  State<_CommentLoadingPlaceholder> createState() =>
+      _CommentLoadingPlaceholderState();
+}
+
+// Motion Prompt #069, MIT License (c) 2026 Shohei Ohtaki.
+// https://showheyohtaki.github.io/motion-prompt/#069
+class _CommentLoadingPlaceholderState extends State<_CommentLoadingPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reduced(context)) {
+      _shimmer.stop();
+      _shimmer.value = 0;
+    } else if (!_shimmer.isAnimating) {
+      _shimmer.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    Widget line(double width) => Container(
+    Widget line(double width, double height) => Container(
       width: width,
-      height: 10,
+      height: height,
       decoration: BoxDecoration(
         color: palette.surfaceContainer,
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+    );
+    final placeholders = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        children: [
+          for (var index = 0; index < 2; index++) ...[
+            if (index != 0) const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  key: ValueKey('skeleton-image-$index'),
+                  width: 96,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: palette.surfaceContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 340),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          FractionallySizedBox(
+                            widthFactor: 200 / 340,
+                            child: line(double.infinity, 14),
+                          ),
+                          const SizedBox(height: 8),
+                          line(double.infinity, 10),
+                          const SizedBox(height: 6),
+                          FractionallySizedBox(
+                            widthFactor: 260 / 340,
+                            child: line(double.infinity, 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
     return Semantics(
       label: '正在加载评论',
       liveRegion: true,
       child: ExcludeSemantics(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: palette.surfaceContainer,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    line(90),
-                    const SizedBox(height: 10),
-                    line(double.infinity),
-                    const SizedBox(height: 8),
-                    line(140),
-                  ],
+        child: AppMotion.reduced(context)
+            ? placeholders
+            : AnimatedBuilder(
+                animation: _shimmer,
+                child: placeholders,
+                builder: (context, child) => ShaderMask(
+                  blendMode: BlendMode.srcATop,
+                  shaderCallback: (bounds) {
+                    final center = -200 + _shimmer.value * (bounds.width + 400);
+                    return const LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        Color(0xbfffffff),
+                        Colors.transparent,
+                      ],
+                    ).createShader(
+                      Rect.fromLTWH(center - 80, 0, 160, bounds.height),
+                    );
+                  },
+                  child: child,
                 ),
               ),
-            ],
-          ),
-        ),
       ),
     );
   }

@@ -15,6 +15,7 @@ import '../../features/games/models/game_info.dart';
 import '../../features/games/models/game_metadata_text.dart';
 import 'game_cover.dart';
 import '../shared/content_cards.dart';
+import '../shared/game_cover_motion.dart';
 
 class MobileLibraryContent extends StatefulWidget {
   const MobileLibraryContent({
@@ -385,64 +386,66 @@ class _GameCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tags = _tags(game);
-    return Material(
-      color: AppPalette.of(context).surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ContentCardStyle.radius),
-        side: BorderSide(color: AppPalette.of(context).outline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        key: ValueKey('mobile-library-game-${game.id}'),
-        borderRadius: BorderRadius.circular(ContentCardStyle.radius),
-        onTap: onOpen,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: coverHeight,
-              child: ColoredBox(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                child: Center(
-                  child: MobileGameCover(
-                    controller: controller,
-                    game: game,
-                    fit: BoxFit.contain,
+    return GameCoverCaptureRegion(
+      child: Material(
+        color: AppPalette.of(context).surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+          side: BorderSide(color: AppPalette.of(context).outline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: ValueKey('mobile-library-game-${game.id}'),
+          borderRadius: BorderRadius.circular(ContentCardStyle.radius),
+          onTap: onOpen,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: coverHeight,
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  child: Center(
+                    child: MobileGameCover(
+                      controller: controller,
+                      game: game,
+                      fit: BoxFit.contain,
+                    ),
                   ),
                 ),
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      game.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: ContentCardStyle.title(context),
-                    ),
-                    const SizedBox(height: 4),
-                    if (tags.isNotEmpty) ContentAttributeTags(tags: tags),
-                    const SizedBox(height: 8),
-                    ContentRating(score: game.score),
-                    const Spacer(),
-                    _GameCardFact(
-                      icon: Icons.people_alt_rounded,
-                      text: GameMetadataText.players(game.playerCount),
-                    ),
-                    const SizedBox(height: 4),
-                    _GameCardFact(
-                      icon: Icons.schedule_rounded,
-                      text: GameMetadataText.playTime(game.playTime),
-                    ),
-                  ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        game.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: ContentCardStyle.title(context),
+                      ),
+                      const SizedBox(height: 4),
+                      if (tags.isNotEmpty) ContentAttributeTags(tags: tags),
+                      const SizedBox(height: 8),
+                      ContentRating(score: game.score),
+                      const Spacer(),
+                      _GameCardFact(
+                        icon: Icons.people_alt_rounded,
+                        text: GameMetadataText.players(game.playerCount),
+                      ),
+                      const SizedBox(height: 4),
+                      _GameCardFact(
+                        icon: Icons.schedule_rounded,
+                        text: GameMetadataText.playTime(game.playTime),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

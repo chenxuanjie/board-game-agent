@@ -26,17 +26,58 @@ void main() {
       }
     },
   );
+  testWidgets('desktop cover fades into the destination before removal', (
+    tester,
+  ) async {
+    var finished = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 300,
+          height: 200,
+          child: GameCoverFlight(
+            begin: const Rect.fromLTWH(0, 0, 100, 80),
+            end: const Rect.fromLTWH(0, 0, 300, 200),
+            reference: true,
+            onEnd: () => finished = true,
+            child: const ColoredBox(
+              key: ValueKey('shared-cover'),
+              color: Colors.red,
+            ),
+          ),
+        ),
+      ),
+    );
+    double opacity() => tester
+        .widget<Opacity>(
+          find
+              .ancestor(
+                of: find.byKey(const ValueKey('shared-cover')),
+                matching: find.byType(Opacity),
+              )
+              .first,
+        )
+        .opacity;
+    await tester.pump(const Duration(milliseconds: 210));
+    expect(opacity(), closeTo(1, .01));
+    await tester.pump(const Duration(milliseconds: 70));
+    expect(opacity(), closeTo(.5, .01));
+    await tester.pump(const Duration(milliseconds: 70));
+    expect(opacity(), 0);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(finished, isTrue);
+  });
   test(
-    'reference detail route has equal 600 ms forward and reverse durations',
+    'reference detail route has equal 350 ms forward and reverse durations',
     () {
       final route = GameDetailRoute<void>(
         builder: (_) => const SizedBox(),
         reference: true,
       );
-      expect(route.transitionDuration, const Duration(milliseconds: 600));
+      expect(route.transitionDuration, const Duration(milliseconds: 350));
       expect(
         route.reverseTransitionDuration,
-        const Duration(milliseconds: 600),
+        const Duration(milliseconds: 350),
       );
     },
   );

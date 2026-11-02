@@ -19,6 +19,7 @@ class DesktopResolvedImage extends StatefulWidget {
     required this.assetPath,
     required this.palette,
     this.placeholderBuilder,
+    this.continuityImage,
     this.fit = BoxFit.cover,
   });
 
@@ -26,6 +27,7 @@ class DesktopResolvedImage extends StatefulWidget {
   final String assetPath;
   final AppPalette palette;
   final WidgetBuilder? placeholderBuilder;
+  final Widget? continuityImage;
   final BoxFit fit;
 
   @override
@@ -73,53 +75,80 @@ class _DesktopResolvedImageState extends State<DesktopResolvedImage> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      GameCoverSource(path: widget.assetPath, child: _image(context));
+  Widget build(BuildContext context) => _image(context);
 
   Widget _image(BuildContext context) {
     return SizedBox.expand(
       child: FutureBuilder<String?>(
         future: _pathFuture,
         builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
+          Widget source(Widget child) =>
+              GameCoverSource(path: widget.assetPath, child: child);
           final String? path = snapshot.data;
           if (snapshot.connectionState != ConnectionState.done &&
               path == null &&
               !kIsWeb) {
-            return const ImageLoadingPlaceholder();
+            return source(
+              widget.continuityImage ?? const ImageLoadingPlaceholder(),
+            );
           }
           if (snapshot.hasError || path == null || path.isEmpty) {
-            return _placeholder(context);
+            return source(
+              snapshot.connectionState != ConnectionState.done
+                  ? widget.continuityImage ?? _placeholder(context)
+                  : _placeholder(context),
+            );
           }
           if (path.startsWith('https://') || path.startsWith('http://')) {
-            return Image.network(
-              path,
-              gaplessPlayback: true,
-              fit: widget.fit,
-              frameBuilder: revealImageFrame,
-              errorBuilder: (_, _, _) => _placeholder(context),
+            return source(
+              Image.network(
+                path,
+                gaplessPlayback: true,
+                fit: widget.fit,
+                frameBuilder: _frameBuilder,
+                errorBuilder: (_, _, _) => _placeholder(context),
+              ),
             );
           }
           if (path.startsWith('data:')) {
-            return Image.memory(
-              gaplessPlayback: true,
-              Uri.parse(path).data!.contentAsBytes(),
-              fit: widget.fit,
-              frameBuilder: revealImageFrame,
-              errorBuilder: (_, _, _) => _placeholder(context),
+            return source(
+              Image.memory(
+                gaplessPlayback: true,
+                Uri.parse(path).data!.contentAsBytes(),
+                fit: widget.fit,
+                frameBuilder: _frameBuilder,
+                errorBuilder: (_, _, _) => _placeholder(context),
+              ),
             );
           }
-          return Image.file(
-            gaplessPlayback: true,
-            frameBuilder: revealImageFrame,
-            File(path),
-            fit: widget.fit,
-            errorBuilder:
-                (BuildContext context, Object error, StackTrace? stackTrace) =>
-                    _placeholder(context),
+          return source(
+            Image.file(
+              gaplessPlayback: true,
+              frameBuilder: _frameBuilder,
+              File(path),
+              fit: widget.fit,
+              errorBuilder:
+                  (
+                    BuildContext context,
+                    Object error,
+                    StackTrace? stackTrace,
+                  ) => _placeholder(context),
+            ),
           );
         },
       ),
     );
+  }
+
+  Widget _frameBuilder(
+    BuildContext context,
+    Widget child,
+    int? frame,
+    bool synchronous,
+  ) {
+    final fallback = widget.continuityImage;
+    if (fallback != null) return frame == null ? fallback : child;
+    return revealImageFrame(context, child, frame, synchronous);
   }
 
   Widget _placeholder(BuildContext context) {

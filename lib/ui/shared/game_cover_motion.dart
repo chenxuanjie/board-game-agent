@@ -5,6 +5,9 @@ import '../../core/theme/color_scheme_option.dart';
 
 /// Motion Prompt #161, MIT License (c) 2026 Shohei Ohtaki.
 /// https://showheyohtaki.github.io/motion-prompt/#161
+/// Shortened from the reference at the user's request.
+const referenceViewDuration = Duration(milliseconds: 350);
+
 class ReferenceViewCurve extends Curve {
   const ReferenceViewCurve();
   @override
@@ -42,10 +45,12 @@ RectTween referenceHeroRectTween(Rect? begin, Rect? end) =>
     _ReferenceHeroRectTween(begin: begin, end: end);
 
 class CoverOrigin {
-  CoverOrigin(this.path, this.rect, this.tag) : capturedAt = DateTime.now();
+  CoverOrigin(this.path, this.rect, this.tag, {this.image})
+    : capturedAt = DateTime.now();
   final String path;
   final Rect rect;
   final Object tag;
+  final Widget? image;
   final DateTime capturedAt;
   bool matches(String path) =>
       this.path == path &&
@@ -57,13 +62,16 @@ class GameCoverMotionScope extends InheritedWidget {
   const GameCoverMotionScope({
     super.key,
     required this.onCapture,
+    this.hiddenTag,
     required super.child,
   });
   final ValueChanged<CoverOrigin> onCapture;
+  final Object? hiddenTag;
   static GameCoverMotionScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<GameCoverMotionScope>();
   @override
-  bool updateShouldNotify(GameCoverMotionScope oldWidget) => false;
+  bool updateShouldNotify(GameCoverMotionScope oldWidget) =>
+      hiddenTag != oldWidget.hiddenTag;
 }
 
 class GameCoverSource extends StatefulWidget {
@@ -74,25 +82,73 @@ class GameCoverSource extends StatefulWidget {
   State<GameCoverSource> createState() => _GameCoverSourceState();
 }
 
+/// Makes the card's cover the transition source even when its text is tapped.
+class GameCoverCaptureRegion extends StatefulWidget {
+  const GameCoverCaptureRegion({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<GameCoverCaptureRegion> createState() => _GameCoverCaptureRegionState();
+}
+
+class _GameCoverCaptureRegionState extends State<GameCoverCaptureRegion> {
+  final _capture = ValueNotifier<VoidCallback?>(null);
+  @override
+  void dispose() {
+    _capture.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _GameCoverCaptureScope(
+    capture: _capture,
+    child: Listener(
+      onPointerDown: (_) => _capture.value?.call(),
+      child: widget.child,
+    ),
+  );
+}
+
+class _GameCoverCaptureScope extends InheritedWidget {
+  const _GameCoverCaptureScope({required this.capture, required super.child});
+  final ValueNotifier<VoidCallback?> capture;
+  @override
+  bool updateShouldNotify(_GameCoverCaptureScope oldWidget) =>
+      capture != oldWidget.capture;
+}
+
 class _GameCoverSourceState extends State<GameCoverSource> {
   final Object _tag = Object();
+  void _capture() {
+    if (!mounted) return;
+    final scope = GameCoverMotionScope.maybeOf(context);
+    final box = context.findRenderObject();
+    if (scope != null &&
+        box is RenderBox &&
+        box.hasSize &&
+        !AppMotion.reduced(context)) {
+      scope.onCapture(
+        CoverOrigin(
+          widget.path,
+          box.localToGlobal(Offset.zero) & box.size,
+          _tag,
+          image: widget.child,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = GameCoverMotionScope.maybeOf(context);
+    context
+            .dependOnInheritedWidgetOfExactType<_GameCoverCaptureScope>()
+            ?.capture
+            .value =
+        _capture;
     if (scope == null) return widget.child;
     return Listener(
-      onPointerDown: (_) {
-        final box = context.findRenderObject();
-        if (box is RenderBox && box.hasSize && !AppMotion.reduced(context)) {
-          scope.onCapture(
-            CoverOrigin(
-              widget.path,
-              box.localToGlobal(Offset.zero) & box.size,
-              _tag,
-            ),
-          );
-        }
-      },
+      onPointerDown: (_) => _capture(),
       child: HeroMode(
         enabled: !AppMotion.reduced(context),
         child: Hero(
@@ -104,7 +160,10 @@ class _GameCoverSourceState extends State<GameCoverSource> {
                   ColorSchemeOption.warmwoodStudy
               ? (begin, end) => referenceHeroRectTween(begin, end)
               : null,
-          child: widget.child,
+          child: Opacity(
+            opacity: scope.hiddenTag == _tag ? 0 : 1,
+            child: widget.child,
+          ),
         ),
       ),
     );
@@ -121,11 +180,15 @@ class GameCoverFlight extends StatelessWidget {
     required this.child,
     required this.onEnd,
     this.viewport,
+    this.reference = false,
+    this.reverse = false,
   });
   final Rect begin, end;
   final Widget child;
   final VoidCallback onEnd;
   final Size? viewport;
+  final bool reference;
+  final bool reverse;
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -137,13 +200,21 @@ class GameCoverFlight extends StatelessWidget {
         child: ExcludeSemantics(
           child: TweenAnimationBuilder<double>(
             tween: Tween(begin: 0, end: 1),
-            duration: AppMotion.duration(context, AppMotion.cover),
-            curve: AppMotion.curve,
+            duration: AppMotion.duration(
+              context,
+              reference ? referenceViewDuration : AppMotion.cover,
+            ),
+            curve: reference ? Curves.linear : AppMotion.curve,
             onEnd: onEnd,
             child: child,
             builder: (context, value, child) {
-              final rect = Rect.lerp(begin, end, value)!;
-              final opacity = ((1 - value) / .25).clamp(0.0, 1.0);
+              final movement = reference
+                  ? const ReferenceViewCurve().transform(value)
+                  : value;
+              final rect = Rect.lerp(begin, end, movement)!;
+              final opacity = reference
+                  ? 1 - const Interval(.6, 1).transform(value)
+                  : ((1 - value) / .25).clamp(0.0, 1.0);
               return Stack(
                 children: [
                   Positioned.fromRect(
@@ -151,7 +222,11 @@ class GameCoverFlight extends StatelessWidget {
                     child: Opacity(
                       opacity: AppMotion.reduced(context) ? 0 : opacity,
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10 * (1 - value)),
+                        borderRadius: BorderRadius.circular(
+                          reference
+                              ? (reverse ? 8 - 2 * movement : 6 + 2 * movement)
+                              : 10 * (1 - value),
+                        ),
                         child: child,
                       ),
                     ),
@@ -171,10 +246,10 @@ class GameDetailRoute<T> extends MaterialPageRoute<T> {
   final bool reference;
   @override
   Duration get transitionDuration =>
-      reference ? const Duration(milliseconds: 600) : AppMotion.cover;
+      reference ? referenceViewDuration : AppMotion.cover;
   @override
   Duration get reverseTransitionDuration =>
-      reference ? const Duration(milliseconds: 600) : AppMotion.panel;
+      reference ? referenceViewDuration : AppMotion.panel;
 
   @override
   Widget buildTransitions(
