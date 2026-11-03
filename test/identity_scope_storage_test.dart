@@ -41,6 +41,37 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
+    'account switch drains cancelled knowledge preparation without waiting for late bytes',
+    () async {
+      final assets = _HeldPreparationAssets();
+      final client = _ResponsesClient();
+      final app = await _app(
+        ai: _WorkflowAi(ResponsesRulesWorkflow(responsesClient: client)),
+        remote: assets,
+      );
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      final game = app.games.firstWhere(
+        (g) => g.knowledgeAssetPaths.isNotEmpty,
+      );
+      app.openGameAssistant(game.id);
+      final sending = app.sendPrompt('规则问题');
+      await assets.started.future.timeout(const Duration(seconds: 2));
+      await app
+          .switchIdentityScope('next-account')
+          .timeout(const Duration(seconds: 2));
+      await sending;
+      expect(client.requests, isEmpty);
+      expect(app.identityUserId, 'next-account');
+      expect(app.conversations, isEmpty);
+      assets.release.complete([1, 2, 3]);
+      await Future<void>.delayed(Duration.zero);
+      expect(client.requests, isEmpty);
+      expect(app.conversations, isEmpty);
+    },
+  );
+  test(
     'gallery positions restore per account and survive reorder and missing images',
     () async {
       final app = await _app();
@@ -861,12 +892,13 @@ Future<AppController> _app({
   GameVoteService? votes,
   ConversationStore? store,
   RemoteGameVoteStore? Function()? favoriteProvider,
+  RemoteAssetService? remote,
 }) async {
   final app = AppController(
     preferencesService: preferences ?? PreferencesService(),
     aiService: ai ?? _UnusedAi(),
     gameManifestService: FixtureGameManifestService(),
-    remoteAssetService: _NoNetwork(),
+    remoteAssetService: remote ?? _NoNetwork(),
     speechService: speech ?? _Speech(),
     ttsService: _Tts(),
     conversationStore: store ?? const ConversationStore(browserStorage: true),
@@ -879,6 +911,22 @@ Future<AppController> _app({
   });
   await app.reloadGames();
   return app;
+}
+
+class _HeldPreparationAssets extends _NoNetwork {
+  final started = Completer<void>();
+  final release = Completer<List<int>?>();
+  @override
+  Future<List<int>?> loadBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+    int maxBytes = 64 * 1024 * 1024,
+    Duration? timeout,
+    Future<void>? abortTrigger,
+  }) {
+    if (!started.isCompleted) started.complete();
+    return release.future;
+  }
 }
 
 class _HeldPreferences extends PreferencesService {

@@ -90,6 +90,65 @@ String _structuredPublishedAnswer(String id) => jsonEncode({
 
 void _registerPublishedInputTests() {
   test(
+    'SDK response streaming still receives cancellation after input preparation',
+    () async {
+      final abort = Completer<void>();
+      final client = _CancellableResponseClient();
+      final workflow = ResponsesRulesWorkflow(responsesClient: client);
+      final subscription = workflow
+          .streamReply(
+            prompt: '规则问题',
+            language: AppLanguage.zhHans,
+            game: _game(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: _config(),
+            assetSourceConfigs: [],
+            remoteAssetService: _FakeRemoteAssetService(),
+            conversationHistory: [],
+            abortTrigger: abort.future,
+          )
+          .listen((_) {});
+      await client.started.future;
+      abort.complete();
+      await subscription.cancel().timeout(const Duration(seconds: 1));
+      await client.cancelled.future.timeout(const Duration(seconds: 1));
+      expect(client.requests, hasLength(1));
+      workflow.close();
+    },
+  );
+  test(
+    'provider cleanup does not wait for a resource adapter that ignores abort',
+    () async {
+      final abort = Completer<void>();
+      final assets = _HeldKnowledgeFile();
+      final client = _FakeResponsesClient(responses: []);
+      final workflow = ResponsesRulesWorkflow(responsesClient: client);
+      final subscription = workflow
+          .streamReply(
+            prompt: '规则问题',
+            language: AppLanguage.zhHans,
+            game: _game(),
+            answerMode: AiAnswerMode.knowledgeOnly,
+            useGlobalMode: false,
+            config: _config(),
+            assetSourceConfigs: [],
+            remoteAssetService: assets,
+            conversationHistory: [],
+            abortTrigger: abort.future,
+          )
+          .listen((_) {});
+      await assets.started.future;
+      abort.complete();
+      await subscription.cancel().timeout(const Duration(seconds: 1));
+      expect(client.requests, isEmpty);
+      assets.release.complete(utf8.encode('late file'));
+      await Future<void>.delayed(Duration.zero);
+      expect(client.requests, isEmpty);
+      workflow.close();
+    },
+  );
+  test(
     'cancelling a later file never dispatches the already-loaded subset',
     () async {
       final abort = Completer<void>();
@@ -508,6 +567,44 @@ void _registerPublishedInputTests() {
       expect(telemetry.recent.last.stages.last.requestCount, 0);
     },
   );
+}
+
+class _HeldKnowledgeFile extends _FakeRemoteAssetService {
+  final started = Completer<void>();
+  final release = Completer<List<int>?>();
+  @override
+  Future<List<int>?> loadBytes({
+    required List<AssetSourceConfig> sources,
+    required String remotePath,
+    int maxBytes = 64 * 1024 * 1024,
+    Duration? timeout,
+    Future<void>? abortTrigger,
+  }) {
+    if (!started.isCompleted) started.complete();
+    return release.future;
+  }
+}
+
+class _CancellableResponseClient extends _FakeResponsesClient {
+  _CancellableResponseClient() : super(responses: []);
+  final started = Completer<void>(), cancelled = Completer<void>();
+  @override
+  Stream<ResponsesStreamEvent> stream(
+    ResponsesRequest request, {
+    Future<void>? abortTrigger,
+  }) {
+    requests.add(request);
+    final controller = StreamController<ResponsesStreamEvent>(
+      onCancel: () {
+        if (!cancelled.isCompleted) cancelled.complete();
+      },
+    );
+    abortTrigger?.then((_) {
+      if (!controller.isClosed) unawaited(controller.close());
+    });
+    started.complete();
+    return controller.stream;
+  }
 }
 
 class _TimedKnowledgeAssets extends _FakeRemoteAssetService {

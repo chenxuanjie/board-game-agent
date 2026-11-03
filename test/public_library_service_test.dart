@@ -4,8 +4,12 @@ import 'dart:io';
 import 'package:board_game_agent/features/library/services/remote_asset_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:http/testing.dart';
 import 'support/catalog_http_fixture.dart';
+
+// Bypass only Flutter's test HTTP stub for the loopback transport regression.
+class _NativeHttpOverrides extends HttpOverrides {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +31,220 @@ void main() {
     service.dispose();
     await directory.delete(recursive: true);
   });
+  test(
+    'native HTTP cancellation closes a stalled resource read without closing the client',
+    () async {
+      service.dispose();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final started = Completer<void>(), finish = Completer<void>();
+      addTearDown(() async {
+        if (!finish.isCompleted) finish.complete();
+        await server.close(force: true);
+      });
+      origin = Uri.parse('http://127.0.0.1:${server.port}');
+      server.listen((request) async {
+        try {
+          if (request.uri.path.endsWith('/cabo-rules/content')) {
+            request.response.bufferOutput = false;
+            request.response.write('ru');
+            await request.response.flush();
+            started.complete();
+            await finish.future;
+            request.response.write('les');
+          } else {
+            final response = await fixture.handle(
+              http.Request(request.method, request.requestedUri),
+            );
+            request.response.statusCode = response.statusCode;
+            request.response.add(response.bodyBytes);
+          }
+          await request.response.close();
+        } catch (_) {
+          // The cancelled request's socket is expected to close during shutdown.
+        }
+      });
+      service = RemoteAssetService(
+        client: IOClient(_NativeHttpOverrides().createHttpClient(null)),
+        cacheDirectory: directory,
+        serviceOrigin: () => origin,
+      );
+      await service.loadCatalog();
+      final abort = Completer<void>();
+      final reading = service.loadBytes(
+        sources: [],
+        remotePath: 'assets/games/cabo/docs/rules.md',
+        maxBytes: 100,
+        abortTrigger: abort.future,
+      );
+      final assertion = expectLater(reading, throwsA(isA<TimeoutException>()));
+      await started.future.timeout(const Duration(seconds: 2));
+      abort.complete();
+      await assertion.timeout(const Duration(seconds: 2));
+      await service
+          .drainReadConsumer(abort.future)
+          .timeout(const Duration(seconds: 2));
+      expect(await service.refreshCatalog(), isFalse);
+      expect(
+        directory
+            .listSync(recursive: true)
+            .where((file) => file.path.endsWith('.knowledge')),
+        isEmpty,
+      );
+    },
+  );
+  test(
+    'cancelling one AI read leaves the viewer transfer and shared client usable',
+    () async {
+      service.dispose();
+      final streams = <StreamController<List<int>>>[];
+      final cancelled = <Completer<void>>[];
+      final aborted = <bool>[];
+      final releaseAiCleanup = Completer<void>();
+      final transport = MockClient.streaming((request, _) async {
+        if (request.url.path.endsWith('/cabo-rules/content')) {
+          final index = streams.length;
+          final stopped = Completer<void>();
+          final body = StreamController<List<int>>(
+            onCancel: () {
+              if (!stopped.isCompleted) stopped.complete();
+              return index == 0 ? releaseAiCleanup.future : null;
+            },
+          );
+          streams.add(body);
+          cancelled.add(stopped);
+          aborted.add(false);
+          (request as http.Abortable).abortTrigger!.then(
+            (_) => aborted[index] = true,
+          );
+          return http.StreamedResponse(body.stream, 200);
+        }
+        final result = await fixture.handle(
+          http.Request(request.method, request.url),
+        );
+        return http.StreamedResponse(
+          Stream.value(result.bodyBytes),
+          result.statusCode,
+          headers: result.headers,
+        );
+      });
+      service = RemoteAssetService(
+        client: transport,
+        cacheDirectory: directory,
+        serviceOrigin: () => origin,
+      );
+      await service.loadCatalog();
+      final stop = Completer<void>();
+      final reading = service.loadBytes(
+        sources: [],
+        remotePath: 'assets/games/cabo/docs/rules.md',
+        maxBytes: 100,
+        abortTrigger: stop.future,
+      );
+      final assertion = expectLater(reading, throwsA(isA<TimeoutException>()));
+      Future<void> waitStreams(int count) async {
+        final elapsed = Stopwatch()..start();
+        while (streams.length < count) {
+          if (elapsed.elapsed > const Duration(seconds: 3)) {
+            fail('Missing request');
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+      }
+
+      await waitStreams(1);
+      final viewer = service.ensureCached(
+        sources: [],
+        remotePath: 'assets/games/cabo/docs/rules.md',
+      );
+      await waitStreams(2);
+      stop.complete();
+      await cancelled[0].future.timeout(const Duration(seconds: 1));
+      var drained = false;
+      final cleanup = service
+          .drainReadConsumer(stop.future)
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      releaseAiCleanup.complete();
+      await assertion;
+      await cleanup.timeout(const Duration(seconds: 1));
+      expect(aborted[0], isTrue);
+      expect(aborted[1], isFalse);
+      streams[1].add(utf8.encode('rules'));
+      await streams[1].close();
+      final cached = await viewer;
+      expect(await File(cached!.localPath).readAsString(), 'rules');
+      // Cancelling AI did not close the common client or the viewer request.
+      expect(await service.refreshCatalog(), isFalse);
+      expect(
+        directory
+            .listSync(recursive: true)
+            .where(
+              (f) =>
+                  f.path.endsWith('.knowledge') || f.path.endsWith('.download'),
+            ),
+        isEmpty,
+      );
+      await streams[0].close();
+    },
+  );
+
+  for (final concurrentHeaders in [false, true]) {
+    test(
+      'cancellation releases unclaimed headers (concurrent=$concurrentHeaders)',
+      () async {
+        service.dispose();
+        final header = Completer<http.StreamedResponse>(),
+            started = Completer<void>(),
+            cancelled = Completer<void>();
+        final body = StreamController<List<int>>(
+          onCancel: () => cancelled.complete(),
+        );
+        service = RemoteAssetService(
+          client: MockClient.streaming((request, _) async {
+            if (request.url.path.endsWith('/cabo-rules/content')) {
+              started.complete();
+              return header
+                  .future; // deliberately ignores the transport abort signal
+            }
+            final result = await fixture.handle(
+              http.Request(request.method, request.url),
+            );
+            return http.StreamedResponse(
+              Stream.value(result.bodyBytes),
+              result.statusCode,
+              headers: result.headers,
+            );
+          }),
+          cacheDirectory: directory,
+          serviceOrigin: () => origin,
+        );
+        await service.loadCatalog();
+        final abort = Completer<void>();
+        final reading = service.loadBytes(
+          sources: [],
+          remotePath: 'assets/games/cabo/docs/rules.md',
+          maxBytes: 100,
+          abortTrigger: abort.future,
+        );
+        final assertion = expectLater(
+          reading,
+          throwsA(isA<TimeoutException>()),
+        );
+        await started.future;
+        if (concurrentHeaders) {
+          header.complete(http.StreamedResponse(body.stream, 200));
+        }
+        abort.complete();
+        await assertion.timeout(const Duration(seconds: 1));
+        if (!concurrentHeaders) {
+          header.complete(http.StreamedResponse(body.stream, 200));
+        }
+        await cancelled.future.timeout(const Duration(seconds: 1));
+        await body.close();
+      },
+    );
+  }
   test(
     'bounded AI reads reject oversized whole files and reuse verified native cache',
     () async {

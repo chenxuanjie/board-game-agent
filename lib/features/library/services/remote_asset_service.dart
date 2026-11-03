@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -14,6 +13,7 @@ import '../models/cached_asset.dart';
 import '../models/game_resource.dart';
 import '../models/published_catalog.dart';
 import '../models/remote_asset_file.dart';
+import 'cancellable_asset_bytes.dart';
 import 'browser_asset_cache_stub.dart'
     if (dart.library.js_interop) 'browser_asset_cache_web.dart';
 
@@ -38,6 +38,7 @@ class RemoteAssetService {
   final _active = <Completer<void>>{};
   final _pending = <String, Future<Uint8List?>>{};
   final _downloads = <String, Future<void>>{};
+  final _readConsumers = <Future<void>, Set<Future<void>>>{};
   String? _scope;
   PublishedCatalog? _catalog;
   Future<void>? _restoreTask;
@@ -105,6 +106,9 @@ class RemoteAssetService {
     }
     final cancellation = Completer<void>();
     _active.add(cancellation);
+    final timer = Timer(requestTimeout, () {
+      if (!cancellation.isCompleted) cancellation.complete();
+    });
     abort?.future.then((_) {
       if (!cancellation.isCompleted) cancellation.complete();
     });
@@ -113,24 +117,40 @@ class RemoteAssetService {
       uri,
       abortTrigger: cancellation.future,
     )..followRedirects = false;
+    Future<http.StreamedResponse>? pendingResponse;
+    var responseClaimed = false;
     try {
-      return await (() async {
-        final stream = await _client.send(request);
-        final body = BytesBuilder(copy: false);
-        await for (final bytes in stream.stream) {
-          if (body.length + bytes.length > maxBytes) {
-            throw StateError('request_too_large');
-          }
-          body.add(bytes);
-        }
-        if (cancellation.isCompleted) throw StateError('Request cancelled');
-        return http.Response.bytes(
-          body.takeBytes(),
-          stream.statusCode,
-          headers: stream.headers,
-        );
-      })().timeout(requestTimeout);
+      pendingResponse = _client.send(request);
+      final stream = await awaitAssetRead(pendingResponse, cancellation.future);
+      responseClaimed = true;
+      final body = await readAssetBytes(
+        stream.stream,
+        abort: cancellation.future,
+        maxBytes: maxBytes,
+      );
+      if (cancellation.isCompleted) throw StateError('Request cancelled');
+      return http.Response.bytes(
+        body,
+        stream.statusCode,
+        headers: stream.headers,
+      );
+    } on TimeoutException {
+      if (_closed || !_current(Uri.parse(uri.origin))) {
+        throw StateError('资料入口已变化');
+      }
+      rethrow;
     } finally {
+      // A custom client may ignore abort until headers arrive. Exactly one
+      // owner releases its body, even if cancellation wins just as headers
+      // arrive and before readAssetBytes takes ownership of the stream.
+      if (!responseClaimed && pendingResponse != null) {
+        unawaited(
+          pendingResponse
+              .then<void>((response) => response.stream.listen((_) {}).cancel())
+              .catchError((Object _) {}),
+        );
+      }
+      timer.cancel();
       if (!cancellation.isCompleted) cancellation.complete();
       _active.remove(cancellation);
     }
@@ -566,12 +586,29 @@ class RemoteAssetService {
     if (timeout != null ||
         abortTrigger != null ||
         maxBytes != 64 * 1024 * 1024) {
-      return _loadBoundedBytes(
+      final read = _loadBoundedBytes(
         remotePath,
         maxBytes,
         timeout ?? requestTimeout,
         abortTrigger,
       );
+      if (abortTrigger != null) {
+        // Track cleanup by consumer, never by the common HTTP client. A Run
+        // can drain its own cancelled reads without waiting for a PDF viewer.
+        final cleanup = read.then<void>((_) {}, onError: (Object _) {});
+        final consumers = _readConsumers.putIfAbsent(abortTrigger, () => {});
+        consumers.add(cleanup);
+        unawaited(
+          cleanup.then((_) {
+            consumers.remove(cleanup);
+            if (consumers.isEmpty &&
+                identical(_readConsumers[abortTrigger], consumers)) {
+              _readConsumers.remove(abortTrigger);
+            }
+          }),
+        );
+      }
+      return read;
     }
     if (browser) {
       final resource = await _record(remotePath), origin = _currentOrigin();
@@ -597,6 +634,16 @@ class RemoteAssetService {
     return file.readAsBytes();
   }
 
+  /// Await only the file handles, stream subscriptions and staging cleanup
+  /// owned by this cancellation scope. Unrelated shared work stays independent.
+  Future<void> drainReadConsumer(Future<void> consumerAbort) async {
+    while (true) {
+      final pending = _readConsumers[consumerAbort];
+      if (pending == null || pending.isEmpty) return;
+      await Future.wait(pending.toList());
+    }
+  }
+
   /// Small AI inputs use a bounded, cancellable read on every platform. The
   /// normal PDF viewer's streamed disk-download path stays independent.
   Future<List<int>?> _loadBoundedBytes(
@@ -606,6 +653,7 @@ class RemoteAssetService {
     Future<void>? abortTrigger,
   ) async {
     final abort = Completer<void>();
+    _active.add(abort);
     final timer = Timer(timeout, () {
       if (!abort.isCompleted) abort.complete();
     });
@@ -623,20 +671,24 @@ class RemoteAssetService {
     }
 
     Future<List<int>?> read() async {
-      final resource = await _record(path);
+      final resource = await awaitAssetRead(_record(path), abort.future);
       guard();
       if (resource == null) return null;
       final key = _objectKey(origin!, resource);
       List<int>? cached;
       if (browser) {
-        cached = await readBrowserAsset(key);
+        cached = await awaitAssetRead(readBrowserAsset(key), abort.future);
       } else {
-        final file = await _file(key);
-        if (await file.exists()) {
-          if (await file.length() > maxBytes) {
+        final file = await awaitAssetRead(_file(key), abort.future);
+        if (await awaitAssetRead(file.exists(), abort.future)) {
+          if (await awaitAssetRead(file.length(), abort.future) > maxBytes) {
             throw StateError('request_too_large');
           }
-          cached = await file.readAsBytes();
+          cached = await readAssetBytes(
+            file.openRead(),
+            abort: abort.future,
+            maxBytes: maxBytes,
+          );
         }
       }
       guard();
@@ -644,7 +696,8 @@ class RemoteAssetService {
         throw StateError('request_too_large');
       }
       if (cached != null &&
-          sha256.convert(cached).toString() == resource.sha256 &&
+          await digestAssetBytes(cached, abort: abort.future) ==
+              resource.sha256 &&
           _sameResource(origin, path, resource)) {
         return cached;
       }
@@ -654,19 +707,27 @@ class RemoteAssetService {
       guard();
       if (response.statusCode != 200) throw StateError('knowledge_unavailable');
       if (response.bodyBytes.isEmpty ||
-          sha256.convert(response.bodyBytes).toString() != resource.sha256 ||
+          await digestAssetBytes(response.bodyBytes, abort: abort.future) !=
+              resource.sha256 ||
           !_sameResource(origin, path, resource)) {
         throw StateError('knowledge_integrity');
       }
       try {
         if (browser) {
-          await writeBrowserAsset(key, response.bodyBytes);
+          await awaitAssetRead(
+            writeBrowserAsset(key, response.bodyBytes),
+            abort.future,
+          );
         } else {
           final file = await _file(key);
           await file.parent.create(recursive: true);
           final staged = File('${file.path}.${_sequence++}.knowledge');
           try {
-            await staged.writeAsBytes(response.bodyBytes, flush: true);
+            await writeAssetBytes(
+              staged,
+              response.bodyBytes,
+              abort: abort.future,
+            );
             guard();
             if (!_sameResource(origin, path, resource)) {
               throw StateError('Library changed');
@@ -687,17 +748,11 @@ class RemoteAssetService {
     }
 
     try {
-      return await Future.any<List<int>?>([
-        read(),
-        abort.future.then<List<int>?>(
-          (_) => throw TimeoutException(
-            'Knowledge preparation cancelled or timed out',
-          ),
-        ),
-      ]);
+      return await read();
     } finally {
       timer.cancel();
       if (!abort.isCompleted) abort.complete();
+      _active.remove(abort);
     }
   }
 

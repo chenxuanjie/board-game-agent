@@ -20,6 +20,7 @@ import 'board_game_prompt_builder.dart';
 import 'board_game_question_classifier.dart';
 import 'board_game_question_router.dart';
 import '../../library/services/remote_asset_service.dart';
+import '../../library/services/cancellable_asset_bytes.dart';
 import 'ai_service.dart';
 import 'responses_compaction_store.dart';
 import 'responses_request_budget.dart';
@@ -2420,7 +2421,11 @@ class ResponsesRulesWorkflow {
     final elapsed = Stopwatch()..start();
     String? errorCode, errorMessage;
     bool cancelled = false;
-    abortTrigger?.then((_) => cancelled = true);
+    final preparationAbort = Completer<void>();
+    abortTrigger?.then((_) {
+      cancelled = true;
+      if (!preparationAbort.isCompleted) preparationAbort.complete();
+    });
     void failed(String code) {
       errorCode = code;
       errorMessage = AiErrorPresentation.from(
@@ -2459,15 +2464,16 @@ class ResponsesRulesWorkflow {
         }
         final maxRawBytes = remainingBytes * 3 ~/ 4;
         try {
-          final bytes = await context.remoteAssetService
-              .loadBytes(
-                sources: context.sources,
-                remotePath: document.path,
-                maxBytes: maxRawBytes,
-                timeout: remaining,
-                abortTrigger: abortTrigger,
-              )
-              .timeout(remaining);
+          final bytes = await awaitAssetRead(
+            context.remoteAssetService.loadBytes(
+              sources: context.sources,
+              remotePath: document.path,
+              maxBytes: maxRawBytes,
+              timeout: remaining,
+              abortTrigger: preparationAbort.future,
+            ),
+            preparationAbort.future,
+          ).timeout(remaining);
           if (cancelled) break;
           if (bytes == null || bytes.isEmpty) {
             failed('knowledge_unavailable');
@@ -2477,7 +2483,10 @@ class ResponsesRulesWorkflow {
             failed('request_too_large');
             continue;
           }
-          final digest = sha256.convert(bytes).toString();
+          final digest = await digestAssetBytes(
+            bytes,
+            abort: preparationAbort.future,
+          );
           if (document.fileSha256 != null && document.fileSha256 != digest) {
             failed('knowledge_integrity');
             continue;
@@ -2516,6 +2525,10 @@ class ResponsesRulesWorkflow {
         }
       }
     } finally {
+      if (!preparationAbort.isCompleted) preparationAbort.complete();
+      await context.remoteAssetService.drainReadConsumer(
+        preparationAbort.future,
+      );
       context.preparationElapsed += elapsed.elapsed;
     }
     // A cancelled preparation must not dispatch even an already-loaded subset.
