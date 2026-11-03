@@ -1,4 +1,3 @@
-import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -7,18 +6,47 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Missing or damaged release credentials must not prevent IDE sync or Debug.
+// Validation belongs to the Release task graph, never to requested task names.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+val signingPropertiesReadable = runCatching {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}.isSuccess
+if (!signingPropertiesReadable) keystoreProperties.clear()
+val missingSigningFields = listOf("keyAlias", "keyPassword", "storeFile", "storePassword")
+    .filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+val releaseStoreFile = keystoreProperties.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { runCatching { rootProject.file(it) }.getOrNull() }
+
+val validateReleaseSigningConfiguration = tasks.register("validateReleaseSigningConfiguration") {
+    group = "verification"
+    description = "Require private signing material for Release without a Debug fallback."
+    doLast {
+        check(keystorePropertiesFile.isFile) {
+            "Release signing requires android/key.properties. Debug does not require it."
+        }
+        check(signingPropertiesReadable) {
+            "Release signing could not read android/key.properties."
+        }
+        check(missingSigningFields.isEmpty()) {
+            "Release signing is missing fields: ${missingSigningFields.joinToString()}."
+        }
+        check(releaseStoreFile?.isFile == true) {
+            "Release signing keystore is missing or invalid; check storeFile in android/key.properties."
+        }
+    }
+}
+
 android {
     // flutter-release-publisher: signing-start
-    val keystoreProperties = Properties()
-    val keystorePropertiesFile = rootProject.file("key.properties")
-    FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
-
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = releaseStoreFile
+            storePassword = keystoreProperties.getProperty("storePassword")
         }
     }
     // flutter-release-publisher: signing-end
@@ -48,6 +76,15 @@ android {
         release {
             signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+androidComponents.onVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    val suffix = variant.name.replaceFirstChar { it.uppercaseChar() }
+    tasks.matching {
+        it.name == "pre${suffix}Build" || it.name == "validateSigning$suffix"
+    }.configureEach {
+        dependsOn(validateReleaseSigningConfiguration)
     }
 }
 
