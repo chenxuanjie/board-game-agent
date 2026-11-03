@@ -22,6 +22,7 @@ import 'board_game_question_router.dart';
 import '../../library/services/remote_asset_service.dart';
 import 'ai_service.dart';
 import 'responses_compaction_store.dart';
+import '../models/responses_context_window.dart';
 import 'ai_run_orchestrator.dart';
 import 'ai_run_telemetry.dart';
 import 'ai_error_presenter.dart';
@@ -63,8 +64,8 @@ class ResponsesRulesWorkflow {
   final BoardGameQuestionClassifier _questionClassifier;
   final AiRunTelemetrySink _telemetrySink;
   final AiRunOrchestrator _orchestrator;
-  final Map<String, List<ResponsesInputItem>> _compactionInputsByContext =
-      <String, List<ResponsesInputItem>>{};
+  final Map<String, ResponsesContextWindow> _contextWindows =
+      <String, ResponsesContextWindow>{};
   final Map<String, String> _activeCompactionContextByScope =
       <String, String>{};
   final Map<String, int> _compactionEpochByScope = <String, int>{};
@@ -72,7 +73,7 @@ class ResponsesRulesWorkflow {
   bool _compactionLoaded = false;
 
   void close() {
-    _compactionInputsByContext.clear();
+    _contextWindows.clear();
     _activeCompactionContextByScope.clear();
     _compactionEpochByScope.clear();
     _responsesClient.close();
@@ -141,6 +142,7 @@ class ResponsesRulesWorkflow {
             ),
           ],
         );
+        await _commitConversationWindow(context, run);
         await _recordTelemetry(run);
         return run.answer ?? _unknownAnswer(language);
       }
@@ -160,6 +162,7 @@ class ResponsesRulesWorkflow {
         useCurrentGameKnowledge: useCurrentGameKnowledge,
       ),
     );
+    await _commitConversationWindow(context, run);
     await _recordTelemetry(run);
     return run.answer ?? _unknownAnswer(language);
   }
@@ -215,6 +218,7 @@ class ResponsesRulesWorkflow {
           );
       if (routing.route == BoardGameQuestionRoute.general) {
         yield* _streamOrchestrated(
+          context: context,
           runId: _runId(),
           stages: <AiStageDefinition>[
             AiStageDefinition(
@@ -240,6 +244,7 @@ class ResponsesRulesWorkflow {
     }
 
     yield* _streamOrchestrated(
+      context: context,
       runId: _runId(),
       stages: _streamStageDefinitions(
         context: context,
@@ -285,19 +290,14 @@ class ResponsesRulesWorkflow {
       useGlobalMode: useGlobalMode,
       conversationId: conversationId,
     );
-    final List<ResponsesInputItem> compaction = _compactionInputsFor(
-      config: config,
-      game: game,
-      useGlobalMode: useGlobalMode,
-      conversationId: conversationId,
-      useCurrentGameKnowledge: useCurrentGameKnowledge,
-    );
-    // A provider compaction item is a replacement snapshot, not an extra
-    // history message. Once present, discard the older local input window and
-    // send only the opaque snapshot plus the current user turn.
-    final List<ResponsesInputItem> conversation = compaction.isNotEmpty
-        ? <ResponsesInputItem>[...compaction, ResponsesTextInput(prompt)]
-        : _conversationInputs(conversationHistory, prompt);
+    final cached = _contextWindows[contextKey];
+    final continued = cached?.continueWith(conversationHistory, prompt);
+    if (cached != null && continued == null) {
+      _contextWindows.remove(contextKey);
+      await _saveCompactionWindows();
+    }
+    final conversation =
+        continued ?? _conversationInputs(conversationHistory, prompt);
     final String scopeKey = _scopeKey(game, useGlobalMode, conversationId);
     return _WorkflowContext(
       prompt: prompt,
@@ -317,6 +317,7 @@ class ResponsesRulesWorkflow {
       sources: assetSourceConfigs,
       remoteAssetService: remoteAssetService,
       conversation: conversation,
+      history: List.of(conversationHistory),
       documents: _documentsForGame(game),
     );
   }
@@ -579,6 +580,7 @@ class ResponsesRulesWorkflow {
   }
 
   Stream<BoardGameAiStreamEvent> _streamOrchestrated({
+    required _WorkflowContext context,
     required String runId,
     required List<AiStageDefinition> stages,
     required String sessionId,
@@ -614,6 +616,9 @@ class ResponsesRulesWorkflow {
             yield BoardGameAiStreamEvent(runEvent: event);
           }
         case AiRunEventType.completed:
+          if (event.runResult != null) {
+            await _commitConversationWindow(context, event.runResult!);
+          }
           if (event.runResult != null) {
             await _recordTelemetry(event.runResult!);
           }
@@ -966,8 +971,8 @@ class ResponsesRulesWorkflow {
     String? errorMessage;
     final List<ResponsesWebSearchCitation> webCitations =
         <ResponsesWebSearchCitation>[];
-    final List<ResponsesInputItem> outputItems = <ResponsesInputItem>[];
-    final Set<String> outputItemKeys = <String>{};
+    final indexedOutputs = <int, ResponsesInputItem>{};
+    final unindexedOutputs = <String, ResponsesInputItem>{};
     int rawEventCount = 0;
     int attempts = 0;
     bool emittedProviderEvent = false;
@@ -980,6 +985,9 @@ class ResponsesRulesWorkflow {
 
     while (true) {
       attempts += 1;
+      // A retry is a new stateless response, not a continuation of failed output.
+      indexedOutputs.clear();
+      unindexedOutputs.clear();
       bool attemptHadProviderEvent = false;
       bool retryAttempt = false;
       String attemptText = '';
@@ -1034,16 +1042,23 @@ class ResponsesRulesWorkflow {
           }
           if (event.response != null) {
             response = event.response;
-            await _rememberCompaction(context, event.response!);
           }
-          if (event.outputItem != null) {
-            final Map<String, dynamic> value = event.outputItem!.value;
-            final String key =
-                value['id'] is String &&
-                    (value['id'] as String).trim().isNotEmpty
-                ? 'id:${(value['id'] as String).trim()}'
-                : 'json:${jsonEncode(value)}';
-            if (outputItemKeys.add(key)) outputItems.add(event.outputItem!);
+          if (event.type == ResponsesStreamEventType.completed &&
+              event.response != null) {
+            for (var i = 0; i < event.response!.outputItems.length; i++) {
+              indexedOutputs[i] = event.response!.outputItems[i];
+            }
+          }
+          // Added items can be incomplete placeholders. Only retain done items,
+          // replacing by output_index so late metadata preserves provider order.
+          if (event.type == ResponsesStreamEventType.outputItemDone &&
+              event.outputItem != null) {
+            if (event.outputIndex != null) {
+              indexedOutputs[event.outputIndex!] = event.outputItem!;
+            } else {
+              unindexedOutputs[_outputItemKey(event.outputItem!)] =
+                  event.outputItem!;
+            }
           }
           final String? safeDelta =
               event.type == ResponsesStreamEventType.textDelta
@@ -1350,25 +1365,27 @@ class ResponsesRulesWorkflow {
         terminalType ?? ResponsesStreamEventType.incomplete;
     text = _preferCompleteText(retainedText, text);
     final ResponsesResponse? collectedResponse = response;
+    bool outputOrderKnown = true;
     if (collectedResponse != null) {
-      for (final ResponsesInputItem item in collectedResponse.outputItems) {
-        final Map<String, dynamic> value = item is ResponsesRawInput
-            ? item.value
-            : item.toJson();
-        final String key =
-            value['id'] is String && (value['id'] as String).trim().isNotEmpty
-            ? 'id:${(value['id'] as String).trim()}'
-            : 'json:${jsonEncode(value)}';
-        if (outputItemKeys.add(key)) outputItems.add(item);
+      final indexes = indexedOutputs.keys.toList()..sort();
+      final outputItems = [for (final index in indexes) indexedOutputs[index]!];
+      final keys = outputItems.map(_outputItemKey).toSet();
+      // Without an index, an extra item cannot safely be placed relative to a
+      // partial indexed snapshot. Keep the answer, but do not cache a guessed
+      // ordering (in particular on either side of a compaction boundary).
+      outputOrderKnown =
+          indexedOutputs.isEmpty || unindexedOutputs.keys.every(keys.contains);
+      for (final item in unindexedOutputs.values) {
+        if (keys.add(_outputItemKey(item))) outputItems.add(item);
       }
-    }
-    if (collectedResponse != null &&
-        collectedResponse.outputItems.isEmpty &&
-        outputItems.isNotEmpty) {
       response = _copyResponseWithOutputItems(collectedResponse, outputItems);
-      await _rememberCompaction(context, response);
     }
     final ResponsesResponse? finalResponse = response;
+    if (finalResponse != null &&
+        outputOrderKnown &&
+        finalTerminalType == ResponsesStreamEventType.completed) {
+      _rememberResponse(context, request, finalResponse, scope.code);
+    }
     if (finalResponse != null) {
       webCitations.addAll(
         finalResponse.webSearchCitations.where(
@@ -1388,7 +1405,7 @@ class ResponsesRulesWorkflow {
         ),
         terminalEventType: terminalEventType,
         rawEventCount: rawEventCount,
-        outputItemCount: outputItems.length,
+        outputItemCount: finalResponse?.outputItems.length ?? 0,
         errorCode: errorCode,
         errorMessage: errorMessage,
       ),
@@ -1691,17 +1708,21 @@ class ResponsesRulesWorkflow {
       return const _StageResult(status: AiStageStatus.skipped);
     }
     try {
-      final ResponsesResponse response = await _responsesClient.complete(
-        _documentRequest(
-          context,
-          prepared.inputs,
-          documents: prepared.documents,
-          language: language,
-          game: game,
-          source: source,
-        ),
+      final request = _documentRequest(
+        context,
+        prepared.inputs,
+        documents: prepared.documents,
+        language: language,
+        game: game,
+        source: source,
       );
-      await _rememberCompaction(context, response);
+      final response = await _responsesClient.complete(request);
+      _rememberResponse(
+        context,
+        request,
+        response,
+        source == AnswerSource.official ? 'official' : 'community',
+      );
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
         return _StageResult(
@@ -1759,10 +1780,9 @@ class ResponsesRulesWorkflow {
     required GameInfo game,
   }) async {
     try {
-      final ResponsesResponse response = await _responsesClient.complete(
-        _webRequest(context, language: language, game: game),
-      );
-      await _rememberCompaction(context, response);
+      final request = _webRequest(context, language: language, game: game);
+      final response = await _responsesClient.complete(request);
+      _rememberResponse(context, request, response, 'web');
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
         return _StageResult(
@@ -1822,10 +1842,13 @@ class ResponsesRulesWorkflow {
     required GameInfo game,
   }) async {
     try {
-      final ResponsesResponse response = await _responsesClient.complete(
-        _generalConversationRequest(context, language: language, game: game),
+      final request = _generalConversationRequest(
+        context,
+        language: language,
+        game: game,
       );
-      await _rememberCompaction(context, response);
+      final response = await _responsesClient.complete(request);
+      _rememberResponse(context, request, response, 'general');
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
         return _StageResult(
@@ -1873,15 +1896,14 @@ class ResponsesRulesWorkflow {
     required bool useGlobalMode,
   }) async {
     try {
-      final ResponsesResponse response = await _responsesClient.complete(
-        _knowledgeRequest(
-          context,
-          language: language,
-          game: game,
-          useGlobalMode: useGlobalMode,
-        ),
+      final request = _knowledgeRequest(
+        context,
+        language: language,
+        game: game,
+        useGlobalMode: useGlobalMode,
       );
-      await _rememberCompaction(context, response);
+      final response = await _responsesClient.complete(request);
+      _rememberResponse(context, request, response, 'fallback');
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
         return _StageResult(
@@ -2030,11 +2052,11 @@ class ResponsesRulesWorkflow {
       endpoint: _endpoint(context.config),
       instructions: system,
       input: <ResponsesInputItem>[
-        ...context.conversation.whereType<ResponsesRawInput>(),
+        // Preserve the window's interleaved input/output order. The current
+        // user prompt remains last, with this stage's documents just before it.
+        ...context.conversation.take(context.conversation.length - 1),
         ...files,
-        ...context.conversation.where(
-          (ResponsesInputItem item) => item is! ResponsesRawInput,
-        ),
+        context.conversation.last,
       ],
       maxOutputTokens: 1200,
       structuredOutput: _documentStructuredOutput(
@@ -2145,53 +2167,67 @@ class ResponsesRulesWorkflow {
     ];
   }
 
-  List<ResponsesInputItem> _compactionInputsFor({
-    required AiApiConfig config,
-    required GameInfo game,
-    required bool useGlobalMode,
-    required bool useCurrentGameKnowledge,
-    String? conversationId,
-  }) {
-    return List<ResponsesInputItem>.unmodifiable(
-      _compactionInputsByContext[_contextKey(
-            config: config,
-            game: game,
-            useGlobalMode: useGlobalMode,
-            useCurrentGameKnowledge: useCurrentGameKnowledge,
-            conversationId: conversationId,
-          )] ??
-          const <ResponsesInputItem>[],
-    );
+  static String _outputItemKey(ResponsesInputItem item) {
+    final value = item.toJson();
+    final id = value['id'];
+    return id is String && id.trim().isNotEmpty
+        ? 'id:${id.trim()}'
+        : 'json:${jsonEncode(value)}';
   }
 
-  Future<void> _rememberCompaction(
+  void _rememberResponse(
     _WorkflowContext context,
+    ResponsesRequest request,
     ResponsesResponse response,
+    String stage,
+  ) {
+    context.exchanges[stage] = (request, response);
+  }
+
+  Future<void> _commitConversationWindow(
+    _WorkflowContext context,
+    AiRunResult run,
   ) async {
-    final String scope = context.session.scopeKey;
-    if (context.compactionEpoch != (_compactionEpochByScope[scope] ?? 0) ||
+    final scope = context.session.scopeKey;
+    if (run.status != AiRunStatus.completed ||
+        run.answer == null ||
+        context.compactionEpoch != (_compactionEpochByScope[scope] ?? 0) ||
         _activeCompactionContextByScope[scope] != context.contextKey) {
       return;
     }
-    final List<ResponsesInputItem> compactionItems = response.outputItems
+    final stage = run.stages
         .where(
-          (ResponsesInputItem item) =>
-              item is ResponsesRawInput && item.value['type'] == 'compaction',
+          (stage) =>
+              stage.status == AiStageStatus.answered && stage.answer != null,
         )
-        .toList(growable: false);
-    if (compactionItems.isEmpty) return;
-    // A response may contain more than one compaction item. The last item is
-    // the newest provider snapshot; sending older opaque snapshots as well
-    // can reintroduce stale context or exceed the provider's input contract.
-    _compactionInputsByContext[context.contextKey] =
-        List<ResponsesInputItem>.unmodifiable(<ResponsesInputItem>[
-          compactionItems.last,
-        ]);
+        .lastOrNull;
+    final exchange = context.exchanges[stage?.stageId];
+    if (exchange == null) return;
     try {
-      await _compactionStore.save(_compactionInputsByContext);
+      final window = ResponsesContextWindow.capture(
+        request: exchange.$1,
+        response: exchange.$2,
+        history: context.history,
+        prompt: context.prompt,
+        answer: run.answer!.text,
+      );
+      if (window == null) {
+        _contextWindows.remove(context.contextKey);
+      } else {
+        _contextWindows[context.contextKey] = window;
+      }
+      await _saveCompactionWindows();
     } catch (_) {
-      // Compaction persistence is a cache optimization. A secure-storage
-      // failure must not turn an otherwise valid AI response into a failure.
+      // A context cache must never turn an accepted answer into a failed chat.
+      _contextWindows.remove(context.contextKey);
+    }
+  }
+
+  Future<void> _saveCompactionWindows() async {
+    try {
+      await _compactionStore.save(_contextWindows);
+    } catch (_) {
+      // The current in-memory window remains valid after a store failure.
     }
   }
 
@@ -2213,11 +2249,9 @@ class ResponsesRulesWorkflow {
     _compactionEpochByScope[scope] = (_compactionEpochByScope[scope] ?? 0) + 1;
     await _ensureCompactionLoaded();
     _activeCompactionContextByScope.remove(scope);
-    _compactionInputsByContext.removeWhere(
-      (String key, _) => key.startsWith('$scope|'),
-    );
+    _contextWindows.removeWhere((String key, _) => key.startsWith('$scope|'));
     try {
-      await _compactionStore.save(_compactionInputsByContext);
+      await _compactionStore.save(_contextWindows);
     } catch (_) {
       // The cleared in-memory context remains usable when the cache is unavailable.
     }
@@ -2260,14 +2294,14 @@ class ResponsesRulesWorkflow {
 
   Future<void> _loadCompactionState() async {
     try {
-      final Map<String, List<ResponsesInputItem>> stored =
-          await _compactionStore.load();
-      _compactionInputsByContext
+      final Map<String, ResponsesContextWindow> stored = await _compactionStore
+          .load();
+      _contextWindows
         ..clear()
         ..addAll(stored);
     } catch (_) {
       // A corrupt/unavailable secure store should not block the first chat.
-      _compactionInputsByContext.clear();
+      _contextWindows.clear();
     } finally {
       _compactionLoaded = true;
     }
@@ -2282,23 +2316,23 @@ class ResponsesRulesWorkflow {
     final String scopeKey = _scopeKey(game, useGlobalMode, conversationId);
     final String? previous = _activeCompactionContextByScope[scopeKey];
     if (previous == contextKey &&
-        !_compactionInputsByContext.keys.any(
+        !_contextWindows.keys.any(
           (String key) => key.startsWith('$scopeKey|') && key != contextKey,
         )) {
       return;
     }
     _activeCompactionContextByScope[scopeKey] = contextKey;
 
-    final bool removed = _compactionInputsByContext.keys
+    final bool removed = _contextWindows.keys
         .where(
           (String key) => key.startsWith('$scopeKey|') && key != contextKey,
         )
         .toList(growable: false)
-        .map((String key) => _compactionInputsByContext.remove(key))
-        .any((List<ResponsesInputItem>? value) => value != null);
+        .map((String key) => _contextWindows.remove(key))
+        .any((ResponsesContextWindow? value) => value != null);
     if (!removed) return;
     try {
-      await _compactionStore.save(_compactionInputsByContext);
+      await _compactionStore.save(_contextWindows);
     } catch (_) {
       // The active request remains usable if cleanup persistence is unavailable.
     }
@@ -2545,6 +2579,7 @@ class ResponsesRulesWorkflow {
         .toList();
     if (result.isEmpty ||
         result.last is! ResponsesTextInput ||
+        (result.last as ResponsesTextInput).role != ResponsesInputRole.user ||
         (result.last as ResponsesTextInput).text != prompt) {
       result.add(ResponsesTextInput(prompt));
     }
@@ -2616,7 +2651,7 @@ class ResponsesRulesWorkflow {
 }
 
 class _WorkflowContext {
-  const _WorkflowContext({
+  _WorkflowContext({
     required this.prompt,
     required this.language,
     required this.game,
@@ -2629,6 +2664,7 @@ class _WorkflowContext {
     required this.sources,
     required this.remoteAssetService,
     required this.conversation,
+    required this.history,
     required this.documents,
   });
 
@@ -2644,6 +2680,8 @@ class _WorkflowContext {
   final List<AssetSourceConfig> sources;
   final RemoteAssetService remoteAssetService;
   final List<ResponsesInputItem> conversation;
+  final List<ChatMessage> history;
+  final exchanges = <String, (ResponsesRequest, ResponsesResponse)>{};
   final List<RuleDocument> documents;
 }
 

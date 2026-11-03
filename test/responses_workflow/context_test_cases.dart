@@ -51,11 +51,17 @@ void _registerContextWorkflowTests() {
 
       await ask('conversation:first');
       await ask('conversation:second');
-      expect(client.requests[1].input.whereType<ResponsesRawInput>(), isEmpty);
+      expect(
+        client.requests[1].input.whereType<ResponsesRawInput>().where(
+          (item) => item.value['type'] == 'compaction',
+        ),
+        isEmpty,
+      );
       await ask('conversation:first');
       expect(
         client.requests[2].input
             .whereType<ResponsesRawInput>()
+            .where((item) => item.value['type'] == 'compaction')
             .single
             .value['id'],
         'first',
@@ -66,11 +72,17 @@ void _registerContextWorkflowTests() {
         useGlobalMode: false,
       );
       await ask('conversation:first');
-      expect(client.requests[3].input.whereType<ResponsesRawInput>(), isEmpty);
+      expect(
+        client.requests[3].input.whereType<ResponsesRawInput>().where(
+          (item) => item.value['type'] == 'compaction',
+        ),
+        isEmpty,
+      );
       await ask('conversation:second');
       expect(
         client.requests[4].input
             .whereType<ResponsesRawInput>()
+            .where((item) => item.value['type'] == 'compaction')
             .single
             .value['id'],
         'second',
@@ -134,7 +146,12 @@ void _registerContextWorkflowTests() {
     pending.complete(response);
     await first;
     await ask();
-    expect(client.requests.last.input.whereType<ResponsesRawInput>(), isEmpty);
+    expect(
+      client.requests.last.input.whereType<ResponsesRawInput>().where(
+        (item) => item.value['type'] == 'compaction',
+      ),
+      isEmpty,
+    );
   });
 
   test('normalizes file and web citations without inventing locations', () {
@@ -270,6 +287,7 @@ void _registerContextWorkflowTests() {
 
       final List<ResponsesRawInput> compactions = client.requests[1].input
           .whereType<ResponsesRawInput>()
+          .where((item) => item.value['type'] == 'compaction')
           .toList();
       expect(compactions, hasLength(1));
       expect(compactions.single.value['id'], 'cmp-1');
@@ -292,6 +310,12 @@ void _registerContextWorkflowTests() {
                 'id': 'cmp-persisted',
                 'encrypted_content': 'opaque-persisted',
               }),
+            ],
+            webSearchCitations: const [
+              ResponsesWebSearchCitation(
+                url: 'https://example.test/accepted',
+                title: '已采纳来源',
+              ),
             ],
           ),
         ],
@@ -349,6 +373,7 @@ void _registerContextWorkflowTests() {
           .single
           .input
           .whereType<ResponsesRawInput>()
+          .where((item) => item.value['type'] == 'compaction')
           .toList();
       expect(compactions, hasLength(1));
       expect(compactions.single.value['id'], 'cmp-persisted');
@@ -385,7 +410,7 @@ void _registerContextWorkflowTests() {
   );
 
   test(
-    'a compaction item replaces the old local conversation window',
+    'an unrelated transcript invalidates a cached compaction window',
     () async {
       final InMemoryResponsesCompactionStore store =
           InMemoryResponsesCompactionStore();
@@ -463,14 +488,15 @@ void _registerContextWorkflowTests() {
           .whereType<ResponsesTextInput>()
           .toList();
       expect(texts.map((ResponsesTextInput item) => item.text), <String>[
+        ...history.map((message) => message.text),
         '第二问',
       ]);
       expect(
         secondClient.requests.single.input
             .whereType<ResponsesRawInput>()
-            .single
-            .value['id'],
-        'cmp-replaces-history',
+            .where((item) => item.value['type'] == 'compaction')
+            .toList(),
+        isEmpty,
       );
     },
   );
@@ -545,6 +571,7 @@ void _registerContextWorkflowTests() {
       expect(
         nextClient.requests.single.input
             .whereType<ResponsesRawInput>()
+            .where((item) => item.value['type'] == 'compaction')
             .single
             .value['id'],
         'cmp-after-completed',
@@ -612,7 +639,9 @@ void _registerContextWorkflowTests() {
       );
 
       expect(
-        secondClient.requests.single.input.whereType<ResponsesRawInput>(),
+        secondClient.requests.single.input.whereType<ResponsesRawInput>().where(
+          (item) => item.value['type'] == 'compaction',
+        ),
         isEmpty,
       );
     },

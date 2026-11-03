@@ -545,11 +545,17 @@ void main() {
       await app.sendPrompt('你好', useGlobalMode: true);
       expect(client.requests, hasLength(4));
       for (final request in client.requests.take(3)) {
-        expect(request.input.whereType<ResponsesRawInput>(), isEmpty);
+        expect(
+          request.input.whereType<ResponsesRawInput>().where(
+            (item) => item.value['type'] == 'compaction',
+          ),
+          isEmpty,
+        );
       }
       expect(
         client.requests.last.input
             .whereType<ResponsesRawInput>()
+            .where((item) => item.value['type'] == 'compaction')
             .single
             .value['id'],
         'cmp-2',

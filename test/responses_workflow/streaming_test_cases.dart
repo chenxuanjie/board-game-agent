@@ -406,6 +406,7 @@ void _registerStreamingWorkflowTests() {
     expect(
       secondClient.requests.single.input
           .whereType<ResponsesRawInput>()
+          .where((item) => item.value['type'] == 'compaction')
           .single
           .value['id'],
       'cmp-stream',

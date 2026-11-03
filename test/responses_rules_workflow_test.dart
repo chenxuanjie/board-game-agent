@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
@@ -12,6 +14,7 @@ import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/responses_context_window.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/library/models/game_resource.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
@@ -23,12 +26,14 @@ import 'package:board_game_agent/features/assistant/services/ai_run_telemetry.da
 part 'responses_workflow/knowledge_test_cases.dart';
 part 'responses_workflow/streaming_test_cases.dart';
 part 'responses_workflow/context_test_cases.dart';
+part 'responses_workflow/compaction_continuity_test_cases.dart';
 part 'responses_workflow/telemetry_test_cases.dart';
 
 void main() {
   _registerKnowledgeWorkflowTests();
   _registerStreamingWorkflowTests();
   _registerContextWorkflowTests();
+  _registerCompactionContinuityTests();
   _registerTelemetryWorkflowTests();
 }
 
