@@ -529,7 +529,7 @@ extension AppAssistantController on AppController {
         messages,
         current.copyWith(text: '${current.text}$delta'),
       );
-      _notifyListeners();
+      _notifyAssistantContent();
     });
 
     final GameInfo game = featuredGame;
@@ -581,14 +581,14 @@ extension AppAssistantController on AppController {
           terminalRunResult = event.runResult;
         }
         if (event.delta.isNotEmpty) {
-          // Coalesce deltas into one UI update per frame-sized window. The
-          // activity timeline still receives each normalized event, while the
-          // markdown message avoids rebuilding once per token.
+          // Coalesce text updates independently of the application shell.
+          // Activity retains only non-text events; the unfinished Markdown
+          // block updates at most once per batch.
           deltaBatcher.add(event.delta);
-        } else {
+        } else if (event.runEvent?.type != AiRunEventType.textDelta) {
           // Every non-text event can change the visible activity row (for
           // example a citation or retry has no textual status).
-          _notifyListeners();
+          _notifyAssistantContent();
         }
         if (event.answer != null) {
           deltaBatcher.flush();

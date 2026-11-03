@@ -5,7 +5,6 @@ param(
     [string]$Target,
     [ValidateSet('package', 'release', 'push')]
     [string]$Mode = 'package',
-    [switch]$BumpBuild,
     [switch]$DryRun,
     [ValidateSet('default', 'service', 'webdav')]
     [string]$Destination = 'default',
@@ -24,6 +23,11 @@ foreach ($file in Get-ChildItem -LiteralPath $ProfilesDirectory -Filter '*.json'
 }
 if ($matchedProfiles.Count -ne 1) { throw 'Exactly one release profile must match this project' }
 $selected = $matchedProfiles[0]
+if ($Mode -in @('release', 'push') -and -not $DryRun) {
+    $batchHelper = Join-Path $env:USERPROFILE '.codex/skills/flutter-release-publisher/scripts/release_batch.py'
+    & python $batchHelper verify --project $projectRoot --profile $selected.File
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 $releasePath = if ([IO.Path]::IsPathRooted($selected.Data.releaseDir)) {
     [IO.Path]::GetFullPath($selected.Data.releaseDir)
 } else {
@@ -32,13 +36,9 @@ $releasePath = if ([IO.Path]::IsPathRooted($selected.Data.releaseDir)) {
 if (-not [StringComparer]::OrdinalIgnoreCase.Equals($releasePath, (Join-Path $projectRoot 'release'))) {
     throw 'Local retention is restricted to this project release directory'
 }
-if ($BumpBuild -and ($Mode -ne 'release' -or $Target -ne 'android' -or $DryRun)) {
-    throw 'BumpBuild requires an Android release without DryRun'
-}
 if ($DryRun -and $Mode -eq 'package') { throw 'Package is local-only; DryRun applies to push/release' }
 if ($Destination -ne 'default' -and $Mode -eq 'package') { throw 'Destination applies to push/release' }
 $arguments = @('run', 'bin/publish.dart', $Mode, '--profile', $selected.File, '--target', $Target)
-if ($BumpBuild) { $arguments += '--bump-build' }
 if ($DryRun) { $arguments += '--dry-run' }
 if ($Destination -ne 'default') { $arguments += @('--destination', $Destination) }
 Push-Location -LiteralPath $PublisherRoot

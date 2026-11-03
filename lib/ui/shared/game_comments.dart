@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/color_scheme_option.dart';
 import '../../core/theme/app_motion.dart';
 import '../../features/community/models/game_comment.dart';
 import '../../features/community/services/game_comments_service.dart';
@@ -34,6 +35,7 @@ class GameCommentsPanel extends StatefulWidget {
 class _GameCommentsPanelState extends State<GameCommentsPanel> {
   GameCommentsService? _service;
   bool _latest = false;
+  bool _refreshRequested = false;
   int _limit = 20;
   String? _freshId;
   final Set<String> _liking = {};
@@ -53,6 +55,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
       ++_actionEpoch;
       _liking.clear();
       _likeErrors.clear();
+      _refreshRequested = false;
       _limit = 20;
       _freshId = null;
     }
@@ -78,6 +81,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     _service?.removeListener(_changed);
     _service?.unwatchGame(previousGame ?? widget.gameSlug);
     _service = service;
+    _refreshRequested = false;
     service?.watchGame(widget.gameSlug);
     _freshId = null;
     _liking.clear();
@@ -96,6 +100,19 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
       _likeErrors.removeWhere((id, _) => !service.likePending(id));
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshComments() async {
+    final service = _service;
+    if (service == null || service.loading) return;
+    setState(() => _refreshRequested = true);
+    try {
+      await service.synchronize();
+    } finally {
+      if (mounted && identical(service, _service)) {
+        setState(() => _refreshRequested = false);
+      }
+    }
   }
 
   @override
@@ -311,6 +328,8 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     final mobile = MediaQuery.sizeOf(context).width < 760;
     final visible = widget.rootId == null ? roots : replies;
     final displayed = visible.take(widget.preview ? 3 : _limit).toList();
+    final showSkeleton =
+        service.loading && (visible.isEmpty || _refreshRequested);
     if (widget.rootId != null) {
       final freshReply = visible.where((c) => c.id == _freshId).firstOrNull;
       if (freshReply != null && !displayed.contains(freshReply)) {
@@ -371,7 +390,7 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                 ],
                 IconButton(
                   tooltip: service.loading ? '正在刷新评论' : '刷新评论',
-                  onPressed: service.loading ? null : service.synchronize,
+                  onPressed: service.loading ? null : _refreshComments,
                   icon: const Icon(Icons.refresh_rounded),
                 ),
               ],
@@ -441,24 +460,34 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
           ),
           const Divider(height: 24),
         ],
-        if (visible.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 28),
-            child: Text(
-              service.loading
-                  ? '正在加载评论…'
-                  : widget.rootId == null
-                  ? '还没有评论，聊聊你的桌游体验吧'
-                  : '还没有回复',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: palette.textSecondary),
+        if (palette.scheme == ColorSchemeOption.warmwoodStudy)
+          AnimatedSwitcher(
+            duration: AppMotion.duration(
+              context,
+              Duration(milliseconds: showSkeleton ? 150 : 300),
             ),
-          ),
-        for (final comment in displayed) ...[
-          _tile(comment, comments),
-          Divider(height: 24, color: palette.outline.withValues(alpha: .25)),
-        ],
-        if (widget.preview)
+            reverseDuration: AppMotion.duration(
+              context,
+              Duration(milliseconds: showSkeleton ? 300 : 150),
+            ),
+            switchInCurve: Curves.linear,
+            switchOutCurve: Curves.linear,
+            child: showSkeleton
+                ? const _CommentLoadingPlaceholder(
+                    key: ValueKey('comments-loading'),
+                  )
+                : _commentList(
+                    visible,
+                    displayed,
+                    comments,
+                    key: const ValueKey('comments-loaded'),
+                  ),
+          )
+        else
+          _commentList(visible, displayed, comments),
+        if (widget.preview &&
+            (palette.scheme != ColorSchemeOption.warmwoodStudy ||
+                visible.length > displayed.length))
           TextButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -490,6 +519,42 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
             icon: const Icon(Icons.edit_outlined),
             label: Text(service.readOnly ? '登录后评论' : '写评论'),
           ),
+      ],
+    );
+  }
+
+  Widget _commentList(
+    List<GameComment> visible,
+    List<GameComment> displayed,
+    List<GameComment> comments, {
+    Key? key,
+  }) {
+    final palette = AppPalette.of(context);
+    final service = _service!;
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (visible.isEmpty &&
+            (palette.scheme != ColorSchemeOption.warmwoodStudy ||
+                service.error == null ||
+                service.loading))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            child: Text(
+              service.loading
+                  ? '正在加载评论…'
+                  : widget.rootId == null
+                  ? '还没有评论，聊聊你的桌游体验吧'
+                  : '还没有回复',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: palette.textSecondary),
+            ),
+          ),
+        for (final comment in displayed) ...[
+          _tile(comment, comments),
+          Divider(height: 24, color: palette.outline.withValues(alpha: .25)),
+        ],
       ],
     );
   }
@@ -578,10 +643,13 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                       icon: FavoriteFeedbackIcon(
                         selected: liked,
                         size: 16,
+                        motion166: true,
                         selectedIcon: Icons.thumb_up_alt_rounded,
                         unselectedIcon: Icons.thumb_up_alt_outlined,
                       ),
-                      label: Text('$likes'),
+                      label: palette.scheme == ColorSchemeOption.warmwoodStudy
+                          ? _LikeCount(value: likes, selected: liked)
+                          : Text('$likes'),
                       style: TextButton.styleFrom(
                         foregroundColor: liked
                             ? palette.primary
@@ -660,6 +728,231 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     if (elapsed.inDays < 1) return '${elapsed.inHours} 小时前';
     final local = date.toLocal();
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class _LikeCount extends StatefulWidget {
+  const _LikeCount({required this.value, required this.selected});
+  final int value;
+  final bool selected;
+  @override
+  State<_LikeCount> createState() => _LikeCountState();
+}
+
+class _LikeCountState extends State<_LikeCount>
+    with SingleTickerProviderStateMixin {
+  late int previous = widget.value;
+  late bool previousSelected = widget.selected;
+  late final AnimationController motion = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 350),
+    value: 1,
+  );
+  @override
+  void didUpdateWidget(covariant _LikeCount oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value ||
+        oldWidget.selected != widget.selected) {
+      previous = oldWidget.value;
+      previousSelected = oldWidget.selected;
+      if (AppMotion.reduced(context)) {
+        motion.value = 1;
+      } else {
+        motion.forward(from: 0);
+      }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reduced(context)) motion.value = 1;
+  }
+
+  @override
+  void dispose() {
+    motion.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final defaultStyle = DefaultTextStyle.of(context).style;
+    Color color(bool selected) =>
+        selected ? palette.primary : palette.textSecondary;
+    return Semantics(
+      label: '${widget.value}',
+      child: ExcludeSemantics(
+        child: AnimatedBuilder(
+          animation: motion,
+          builder: (context, _) {
+            final f = Curves.easeOutCubic.transform(
+              ((motion.value * .35 - .05) / .3).clamp(0.0, 1.0),
+            );
+            final direction = widget.selected ? -1.0 : 1.0;
+            return ClipRect(
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  Opacity(
+                    opacity: 0,
+                    child: Text(
+                      '${widget.value > previous ? widget.value : previous}',
+                      style: defaultStyle,
+                    ),
+                  ),
+                  Transform.translate(
+                    offset: Offset(0, 26 * f * direction),
+                    child: Text(
+                      '$previous',
+                      style: defaultStyle.copyWith(
+                        color: color(previousSelected),
+                      ),
+                    ),
+                  ),
+                  Transform.translate(
+                    offset: Offset(0, 26 * (f - 1) * direction),
+                    child: Text(
+                      '${widget.value}',
+                      style: defaultStyle.copyWith(
+                        color: color(widget.selected),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Stable first-load geometry; existing comments stay visible during refresh.
+class _CommentLoadingPlaceholder extends StatefulWidget {
+  const _CommentLoadingPlaceholder({super.key});
+  @override
+  State<_CommentLoadingPlaceholder> createState() =>
+      _CommentLoadingPlaceholderState();
+}
+
+// Motion Prompt #069, MIT License (c) 2026 Shohei Ohtaki.
+// https://showheyohtaki.github.io/motion-prompt/#069
+class _CommentLoadingPlaceholderState extends State<_CommentLoadingPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reduced(context)) {
+      _shimmer.stop();
+      _shimmer.value = 0;
+    } else if (!_shimmer.isAnimating) {
+      _shimmer.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    Widget line(double width, double height) => Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: palette.surfaceContainer,
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+    );
+    final placeholders = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        children: [
+          for (var index = 0; index < 2; index++) ...[
+            if (index != 0) const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  key: ValueKey('skeleton-image-$index'),
+                  width: 96,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: palette.surfaceContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 340),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          FractionallySizedBox(
+                            widthFactor: 200 / 340,
+                            child: line(double.infinity, 14),
+                          ),
+                          const SizedBox(height: 8),
+                          line(double.infinity, 10),
+                          const SizedBox(height: 6),
+                          FractionallySizedBox(
+                            widthFactor: 260 / 340,
+                            child: line(double.infinity, 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+    return Semantics(
+      label: '正在加载评论',
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: AppMotion.reduced(context)
+            ? placeholders
+            : AnimatedBuilder(
+                animation: _shimmer,
+                child: placeholders,
+                builder: (context, child) => ShaderMask(
+                  blendMode: BlendMode.srcATop,
+                  shaderCallback: (bounds) {
+                    final center = -200 + _shimmer.value * (bounds.width + 400);
+                    return const LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        Color(0xbfffffff),
+                        Colors.transparent,
+                      ],
+                    ).createShader(
+                      Rect.fromLTWH(center - 80, 0, 160, bounds.height),
+                    );
+                  },
+                  child: child,
+                ),
+              ),
+      ),
+    );
   }
 }
 
@@ -848,6 +1141,17 @@ class _CommentComposerState extends State<_CommentComposer> {
         _enqueued = false;
         _error = null;
       });
+      if (AppPalette.of(context).scheme == ColorSchemeOption.warmwoodStudy) {
+        ScaffoldMessenger.maybeOf(context)
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(widget.reply == null ? '评论已发布' : '回复已发布'),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+      }
       widget.onSent(sent);
     } finally {
       _finishing = false;

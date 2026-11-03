@@ -1,15 +1,73 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:app_client/app_client.dart';
 import 'package:app_identity/app_identity.dart';
 import 'package:board_game_agent/app/state/app_controller.dart';
 import 'package:board_game_agent/features/identity/services/account_service.dart';
 import 'package:board_game_agent/features/community/services/board_public_sync.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'guest account page stays error-free on startup, resume and after logout',
+    () async {
+      var restores = 0;
+      final service = AccountService(
+        controller: FixtureApp(),
+        browserAccounts: true,
+        browserOrigin: Uri.parse('https://site.example.test'),
+        sessionStoreFactory: (_) => MemoryStorage(),
+        switchScope: (_) async {},
+        httpClientFactory: () => MockClient((request) async {
+          if (request.url.path.endsWith('/bootstrap')) {
+            return http.Response(
+              jsonEncode({'csrf_token': 'test-csrf', 'authenticated': false}),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/restore')) {
+            restores++;
+            return http.Response('{"detail":"session_rejected"}', 401);
+          }
+          if (request.url.path.endsWith('/logout')) {
+            return http.Response('{}', 200);
+          }
+          throw StateError('Unexpected request: ${request.url.path}');
+        }),
+        publicSyncFactory:
+            ({
+              required client,
+              required active,
+              required refresh,
+              required refreshPublications,
+              onStatusChanged,
+            }) async => FixturePublicSync(),
+      );
+      addTearDown(service.dispose);
+      await service.initialize();
+      expect(restores, 1);
+      expect(service.isSignedIn, isFalse);
+      expect(service.error, isNull);
+      service.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      for (var turn = 0; turn < 20 && service.isBusy; turn++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(restores, 2);
+      expect(service.error, isNull);
+      await service.signOut();
+      await service.restore();
+      expect(service.isSignedIn, isFalse);
+      expect(service.dataScopeReady, isTrue);
+      expect(service.error, isNull);
+    },
+  );
   test(
     'public subscription failure cannot block account switching or logout',
     () async {
@@ -173,7 +231,7 @@ class FixtureApp implements AppController {
   void dispose() {}
 }
 
-class MemoryStorage implements IdentitySessionStorage {
+class MemoryStorage implements IdentitySessionStorage, RefreshSessionStore {
   String? value;
   @override
   Future<String?> read() async => value;

@@ -1,29 +1,26 @@
-#!/usr/bin/env python3
-"""Serve the Flutter Web build and proxy an OpenAI-compatible AI endpoint.
-
-The provider used for local testing does not currently allow the Flutter Web
-origin in its CORS preflight response.  This local-only server follows the
-same preview-server pattern used by zheri: it serves ``build/web`` and maps
-``/v1/*`` to the configured upstream URL on the same origin.
-
-The proxy is intentionally bound to 127.0.0.1 by default.  It is a local
-development aid, not a production API gateway.
-"""
-
-from __future__ import annotations
+"""Same-origin Web preview: one application API plus the existing bounded BYOK relay."""
 
 import argparse
-import http.server
-import ssl
+import asyncio
+import hashlib
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
-from http import HTTPStatus
+from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
+import httpx
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
-HOP_BY_HOP_HEADERS = {
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from services.web_account.ai_proxy import AiRelay, AiRelayError  # noqa: E402
+
+HOP = {
     "connection",
     "keep-alive",
     "proxy-authenticate",
@@ -33,232 +30,284 @@ HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+REQUEST_HEADERS = {
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "cookie",
+    "origin",
+    "x-csrf-token",
+    "x-app-id",
+    "x-board-game-request",
+    "x-user-agent",
+    "x-powersync-user-agent",
+    "user-agent",
+    "range",
+    "if-range",
+    "if-none-match",
+    "if-modified-since",
+    "sec-fetch-site",
+}
+LIMIT = 16 * 1024 * 1024
 
 
-class PreviewHandler(http.server.SimpleHTTPRequestHandler):
-    """Static Flutter Web handler with an AI forwarding endpoint."""
+class IsolationHeaders:
+    def __init__(self, app):
+        self.app = app
 
-    protocol_version = "HTTP/1.1"
+    async def __call__(self, scope, receive, send):
+        async def with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = [
+                    (k, v)
+                    for k, v in message["headers"]
+                    if k.lower()
+                    not in {
+                        b"cross-origin-opener-policy",
+                        b"cross-origin-embedder-policy",
+                        b"x-content-type-options",
+                    }
+                ]
+                message = {
+                    **message,
+                    "headers": headers
+                    + [
+                        (b"cross-origin-opener-policy", b"same-origin"),
+                        (b"cross-origin-embedder-policy", b"require-corp"),
+                        (b"x-content-type-options", b"nosniff"),
+                    ],
+                }
+            await send(message)
 
-    def send_head(self):  # noqa: ANN001 - mirrors stdlib handler API
-        parsed = urllib.parse.urlsplit(self.path)
-        decoded_path = urllib.parse.unquote(parsed.path)
-        translated = Path(self.translate_path(decoded_path))
-        if (
-            decoded_path != "/"
-            and not translated.exists()
-            and Path(decoded_path).suffix == ""
-        ):
-            original_path = self.path
-            self.path = "/index.html"
-            try:
-                return super().send_head()
-            finally:
-                self.path = original_path
-        return super().send_head()
+        await self.app(scope, receive, with_headers)
 
-    def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
-        if self._is_ai_proxy_path():
-            self._proxy_ai()
-            return
-        super().do_GET()
 
-    def do_HEAD(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
-        if self._is_ai_proxy_path():
-            self._proxy_ai(head_only=True)
-            return
-        super().do_HEAD()
+def checked_origin(value):
+    uri = urlsplit(value)
+    if (
+        uri.scheme not in {"https", "http"}
+        or not uri.hostname
+        or uri.username
+        or uri.password
+        or uri.path not in ("", "/")
+        or uri.query
+        or uri.fragment
+        or uri.scheme == "http"
+        and uri.hostname not in {"127.0.0.1", "localhost", "::1"}
+    ):
+        raise ValueError("Use a fixed HTTPS origin, or loopback HTTP for development")
+    uri.port  # Reject an invalid port before starting the server.
+    return value.rstrip("/")
 
-    def do_OPTIONS(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
-        if self._is_ai_proxy_path():
-            self.send_response(HTTPStatus.NO_CONTENT)
-            self._write_cors_headers()
-            self.end_headers()
-            return
-        self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
-    def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
-        if self._is_ai_proxy_path():
-            self._proxy_ai()
-            return
-        self.send_error(HTTPStatus.NOT_FOUND, "Not found")
-
-    def _is_ai_proxy_path(self) -> bool:
-        parsed_path = urllib.parse.urlsplit(self.path).path
-        return parsed_path == self.server.local_prefix or parsed_path.startswith(
-            f"{self.server.local_prefix}/"
+class ProxyStream(StreamingResponse):
+    def __init__(self, upstream):
+        super().__init__(upstream.aiter_raw(), status_code=upstream.status_code)
+        dropped = HOP | {"server", "date", "x-accel-redirect"}
+        dropped.update(
+            p.strip().lower() for p in upstream.headers.get("connection", "").split(",")
         )
+        self.raw_headers = [
+            (k, v) for k, v in upstream.headers.raw if k.decode().lower() not in dropped
+        ]
+        self.upstream = upstream
 
-    def _proxy_ai(self, *, head_only: bool = False) -> None:
-        parsed = urllib.parse.urlsplit(self.path)
-        suffix = parsed.path[len(self.server.local_prefix) :]
-        target = self.server.upstream_base._replace(
-            path=_join_url_path(self.server.upstream_base.path, suffix),
-            query=parsed.query,
-        )
-        target_url = urllib.parse.urlunsplit(target)
-
-        content_length = int(self.headers.get("Content-Length", "0") or "0")
-        request_body = self.rfile.read(content_length) if content_length else None
-        forwarded_headers = {
-            key: value
-            for key, value in self.headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS
-            and key.lower() not in {"host", "content-length", "origin"}
-            and key.lower() in {"accept", "authorization", "content-type", "user-agent"}
-        }
-        forwarded_headers["Host"] = target.netloc
-
-        request = urllib.request.Request(
-            target_url,
-            data=request_body,
-            headers=forwarded_headers,
-            method=self.command,
-        )
-        context = ssl.create_default_context()
+    async def __call__(self, scope, receive, send):
         try:
-            with urllib.request.urlopen(request, context=context, timeout=90) as response:
-                body = response.read() if not head_only else b""
-                self._write_proxy_response(
-                    response.status,
-                    response.headers.items(),
-                    body,
-                    head_only=head_only,
-                )
-        except urllib.error.HTTPError as error:
-            body = error.read() if not head_only else b""
-            self._write_proxy_response(
-                error.code,
-                error.headers.items(),
-                body,
-                head_only=head_only,
-            )
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            self._send_json(
-                HTTPStatus.BAD_GATEWAY,
-                {"error": "AI proxy request failed.", "detail": str(error)},
-            )
+            async with asyncio.timeout(600):
+                await super().__call__(scope, receive, send)
+        finally:
+            await self.upstream.aclose()
 
-    def _write_proxy_response(
-        self,
-        status: int,
-        headers: object,
-        body: bytes,
-        *,
-        head_only: bool,
-    ) -> None:
-        self.send_response(status)
-        self._write_cors_headers()
-        content_length_sent = False
-        for key, value in headers:  # type: ignore[union-attr]
-            lower_key = key.lower()
-            if lower_key in HOP_BY_HOP_HEADERS or lower_key == "content-length":
-                continue
-            self.send_header(key, value)
-            if lower_key == "content-type":
-                continue
-        if not head_only:
-            self.send_header("Content-Length", str(len(body)))
-            content_length_sent = True
-        if not content_length_sent and head_only:
-            self.send_header("Content-Length", "0")
-        self.end_headers()
-        if body and not head_only:
-            self.wfile.write(body)
 
-    def _send_json(self, status: int, payload: dict[str, str]) -> None:
-        body = _json_bytes(payload)
-        self.send_response(status)
-        self._write_cors_headers()
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+class WebFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        try:
+            response = await super().get_response(path, scope)
+        except Exception as error:
+            # StaticFiles validates containment and symlinks before serving.
+            if getattr(error, "status_code", None) != 404 or Path(path).suffix:
+                raise
+            response = await super().get_response("index.html", scope)
+        return response
 
-    def _write_cors_headers(self) -> None:
-        origin = self.headers.get("Origin")
-        self.send_header("Access-Control-Allow-Origin", origin or "*")
-        self.send_header(
-            "Access-Control-Allow-Headers",
-            "Accept, Authorization, Content-Type, X-Request-ID",
-        )
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Max-Age", "600")
-        if origin:
-            self.send_header("Vary", "Origin")
-
-    def log_message(self, format: str, *args: object) -> None:
-        # Do not log request headers or bodies; this keeps API keys out of the
-        # preview terminal while retaining ordinary request diagnostics.
-        sys.stderr.write(
-            "%s - - [%s] %s\n"
-            % (self.address_string(), self.log_date_time_string(), format % args)
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        with open(full_path, "rb") as source:
+            etag = '"' + hashlib.file_digest(source, "sha256").hexdigest() + '"'
+        request_headers = dict(scope.get("headers", []))
+        validators = request_headers.get(b"if-none-match", b"").decode().split(",")
+        headers = {"ETag": etag, "Cache-Control": "no-cache"}
+        if any(value.strip().removeprefix("W/") in (etag, "*") for value in validators):
+            return Response(status_code=304, headers=headers)
+        return FileResponse(
+            full_path, stat_result=stat_result, status_code=status_code, headers=headers
         )
 
 
-class PreviewServer(http.server.ThreadingHTTPServer):
-    """HTTP server carrying immutable proxy configuration."""
+def create_app(
+    directory,
+    api_upstream,
+    *,
+    origins,
+    allowed_ai_origins=None,
+    api_client=None,
+    ai_client=None,
+):
+    api_upstream = checked_origin(api_upstream)
+    origins = frozenset(checked_origin(value) for value in origins)
+    if not origins:
+        raise ValueError("At least one preview browser origin is required")
+    owned_api, owned_ai = api_client is None, ai_client is None
+    api_client = api_client or httpx.AsyncClient(
+        trust_env=False,
+        follow_redirects=False,
+        timeout=httpx.Timeout(35, connect=10, read=90),
+        limits=httpx.Limits(max_connections=16, max_keepalive_connections=8),
+    )
+    ai_client = ai_client or httpx.AsyncClient(
+        trust_env=False,
+        follow_redirects=False,
+        timeout=httpx.Timeout(35, connect=10, read=180),
+        limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+    )
+    relay = AiRelay(
+        allowed_ai_origins
+        or (
+            "https://api.openai.com",
+            "https://api.deepseek.com",
+            "https://www.loomex.lol",
+            "https://loomex.lol",
+        ),
+        ai_client,
+    )
 
-    daemon_threads = True
+    @asynccontextmanager
+    async def lifespan(_):
+        try:
+            yield
+        finally:
+            if owned_api:
+                await api_client.aclose()
+            if owned_ai:
+                await ai_client.aclose()
 
-    def __init__(self, address, handler, *, local_prefix, upstream_base):
-        super().__init__(address, handler)
-        self.local_prefix = local_prefix
-        self.upstream_base = upstream_base
+    def origin_allowed(request):
+        origin = request.headers.get("origin")
+        return (not origin or origin in origins) and request.headers.get(
+            "sec-fetch-site"
+        ) != "cross-site"
+
+    async def api(request):
+        if not origin_allowed(request):
+            return JSONResponse({"code": "previewOriginDenied"}, 403)
+        path = request.url.path.removeprefix("/api")
+        if not path.startswith(("/v1/", "/powersync/")) or ".." in path.split("/"):
+            return JSONResponse({"code": "previewRouteNotFound"}, 404)
+        body = bytearray()
+        try:
+            async with asyncio.timeout(15):
+                async for chunk in request.stream():
+                    if len(body) + len(chunk) > LIMIT:
+                        return JSONResponse({"code": "previewRequestTooLarge"}, 413)
+                    body.extend(chunk)
+        except TimeoutError:
+            return JSONResponse({"code": "previewRequestTimeout"}, 408)
+        headers = {
+            k: v for k, v in request.headers.items() if k.lower() in REQUEST_HEADERS
+        }
+        # A local preview has no NAS file mount. Never request X-Accel delivery.
+        try:
+            target = httpx.URL(api_upstream + path).copy_with(
+                query=request.url.query.encode()
+            )
+            upstream = await api_client.send(
+                api_client.build_request(
+                    request.method, target, content=bytes(body), headers=headers
+                ),
+                stream=True,
+            )
+            if "x-accel-redirect" in upstream.headers:
+                await upstream.aclose()
+                return JSONResponse({"code": "unexpectedFileAcceleration"}, 502)
+            return ProxyStream(upstream)
+        except httpx.TimeoutException:
+            return JSONResponse({"code": "applicationServiceTimeout"}, 504)
+        except httpx.HTTPError:
+            return JSONResponse({"code": "applicationServiceUnavailable"}, 502)
+
+    async def ai(request):
+        if (
+            not origin_allowed(request)
+            or request.headers.get("x-board-game-request") != "1"
+        ):
+            return JSONResponse({"code": "aiOriginDenied"}, 403)
+        try:
+            return await relay.forward(request)
+        except AiRelayError as error:
+            return JSONResponse(
+                {"code": error.code, "message": error.message}, error.status
+            )
+
+    async def health(_):
+        return JSONResponse({"status": "ok"})
+
+    app = Starlette(
+        routes=[
+            Route("/healthz", health),
+            Route("/api/ai/request", ai, methods=["GET", "POST"]),
+            Route(
+                "/api/{path:path}",
+                api,
+                methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            ),
+            Mount(
+                "/", app=WebFiles(directory=directory, html=True, follow_symlink=False)
+            ),
+        ],
+        lifespan=lifespan,
+        middleware=[Middleware(IsolationHeaders)],
+    )
+    return app
 
 
-def _join_url_path(base_path: str, suffix: str) -> str:
-    left = "/" + base_path.strip("/")
-    right = "/" + suffix.strip("/") if suffix.strip("/") else ""
-    return (left + right) or "/"
-
-
-def _json_bytes(payload: dict[str, str]) -> bytes:
-    import json
-
-    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
-
-
-def _normalize_prefix(value: str) -> str:
-    normalized = "/" + value.strip().strip("/")
-    return normalized if normalized != "/" else "/v1"
-
-
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8081)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--directory", type=Path, default=Path(__file__).resolve().parents[1] / "build" / "web")
-    parser.add_argument("--upstream", required=True, help="OpenAI-compatible base URL, e.g. https://provider.example/v1")
-    parser.add_argument("--local-prefix", default="/v1")
+    parser.add_argument("--port", type=int, default=8083)
+    parser.add_argument(
+        "--host", choices=["127.0.0.1", "localhost", "::1"], default="127.0.0.1"
+    )
+    parser.add_argument("--directory", type=Path, default=ROOT / "build/web")
+    parser.add_argument("--api-upstream", default="https://cznas.pp.ua:18281")
+    parser.add_argument("--ssl-certfile", type=Path)
+    parser.add_argument("--ssl-keyfile", type=Path)
     args = parser.parse_args()
-
-    if not args.directory.is_dir():
-        raise SystemExit(f"Web build directory does not exist: {args.directory}")
-
-    upstream = urllib.parse.urlsplit(args.upstream.rstrip("/") + "/")
-    if upstream.scheme not in {"http", "https"} or not upstream.netloc:
-        raise SystemExit("--upstream must be an HTTP or HTTPS URL")
-
-    handler = lambda *handler_args, **handler_kwargs: PreviewHandler(  # noqa: E731
-        *handler_args,
-        directory=str(args.directory),
-        **handler_kwargs,
+    if bool(args.ssl_certfile) != bool(args.ssl_keyfile):
+        parser.error("HTTPS requires both a certificate and a private key")
+    scheme = "https" if args.ssl_certfile else "http"
+    app = create_app(
+        args.directory,
+        args.api_upstream,
+        origins=[
+            f"{scheme}://127.0.0.1:{args.port}",
+            f"{scheme}://localhost:{args.port}",
+            f"{scheme}://[::1]:{args.port}",
+        ],
     )
-    server = PreviewServer(
-        (args.host, args.port),
-        handler,
-        local_prefix=_normalize_prefix(args.local_prefix),
-        upstream_base=upstream,
+    import uvicorn
+
+    print(
+        f"Web preview: {scheme}://{args.host}:{args.port}; application API uses /api/"
     )
-    print(f"Serving {args.directory} at http://{args.host}:{args.port}/")
-    print(f"AI proxy: {server.local_prefix}/* -> {args.upstream.rstrip('/')}")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("Stopping Web preview server.")
-    finally:
-        server.server_close()
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        access_log=False,
+        ssl_certfile=str(args.ssl_certfile) if args.ssl_certfile else None,
+        ssl_keyfile=str(args.ssl_keyfile) if args.ssl_keyfile else None,
+        timeout_keep_alive=5,
+    )
 
 
 if __name__ == "__main__":

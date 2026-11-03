@@ -93,7 +93,7 @@ def stage_build_context(root, destination):
     for name in ("Dockerfile", "Dockerfile.dockerignore", "pubspec.yaml", "pubspec.lock", "lib", "web",
                  "scripts/prepare-web-assets.py", "services/web_account", "packaging/docker/nginx.conf", "packaging/docker/nginx-main.conf"):
         copy(root / name, project / name)
-    for name in ("packaging/docker/start-web.sh", "packaging/docker/Dockerfile.ai"):
+    for name in ("packaging/docker/start-web.sh", "packaging/docker/Dockerfile.ai", "packaging/docker/ai-requirements.lock", "scripts/prepare-web-layers.py"):
         if (root / name).is_file():
             copy(root / name, project / name)
     spec = importlib.util.spec_from_file_location("web_asset_plan", root / "scripts/prepare-web-assets.py")
@@ -115,6 +115,26 @@ def stage_build_context(root, destination):
         for match in re.finditer(r"(?m)^\s+path:\s*[\"']?((?:\.{1,2}/|packages/)[^\s\"'#]+)",
                                  (package / "pubspec.yaml").read_text(encoding="utf-8-sig")):
             pending.append(package / match[1])
+    # Resolve packages before copying frequently changing sources into the image.
+    # All paths keep the same relationship as in the final /workspace tree.
+    for package in sorted(visited):
+        relative = package.relative_to(root.parent)
+        for name in ("pubspec.yaml", "pubspec.lock"):
+            source = package / name
+            if source.is_file():
+                target = destination / "dependency-manifests" / relative / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                text = source.read_text(encoding="utf-8-sig")
+                if package == root and name == "pubspec.yaml":
+                    text = plan["manifest"]
+                    # The application's own version does not affect dependency
+                    # solving. Only this cache descriptor is normalized; the
+                    # real pubspec is copied back before Flutter compilation.
+                    text = re.sub(r"(?m)^version:[^\n]*", "version: 0.0.0", text)
+                target.write_text(text, encoding="utf-8", newline="\n")
+    startup = project / "packaging/docker/start-web.sh"
+    if startup.is_file():
+        startup.write_text(startup.read_text(encoding="utf-8-sig"), encoding="utf-8", newline="\n")
     print(f"Prepared allowlisted build context: {sum(p.stat().st_size for p in destination.rglob('*') if p.is_file()) / 1024**2:.1f} MiB", flush=True)
 
 

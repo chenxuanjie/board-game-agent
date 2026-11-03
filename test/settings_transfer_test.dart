@@ -1,5 +1,6 @@
 import 'support/catalog_fixture.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -111,9 +112,11 @@ class _DavStore implements WebDavSettingsStore {
 class _Tester implements WebDavConnectionTester {
   int calls = 0;
   bool fail = false;
+  Completer<WebDavConnectionTestResult>? pending;
   @override
   Future<WebDavConnectionTestResult> test(WebDavSettings settings) async {
     calls++;
+    if (pending != null) return pending!.future;
     if (fail) throw StateError('simulated network failure');
     return const WebDavConnectionTestResult.success();
   }
@@ -230,6 +233,39 @@ void main() {
     );
     expect(find.text('调整优先级'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('WebDAV button follows the actual test result', (tester) async {
+    final f = _Fixture();
+    addTearDown(f.dispose);
+    await f.setup();
+    f.tester.pending = Completer<WebDavConnectionTestResult>();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.buildTheme(f.app.palette),
+        home: ResourceConnectionScreen(service: f.service),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('webdav-test-connection'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+    expect(f.dav.isTesting, isTrue);
+    for (var i = 0; i < 50; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.text('正在检查'), findsOneWidget);
+    await tester.tap(button, warnIfMissed: false);
+    expect(f.tester.calls, 1);
+    f.tester.pending!.complete(const WebDavConnectionTestResult.success());
+    await tester.pump();
+    expect(f.dav.canEnableWebDav, isTrue);
+    for (var i = 0; i < 45; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.text('完成'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 
   test('a failed optional WebDAV check remains retryable', () async {

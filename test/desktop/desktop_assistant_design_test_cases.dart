@@ -1,6 +1,180 @@
 part of '../desktop_workspace_test.dart';
 
 void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
+  for (final mobile in [true, false]) {
+    _assistantDesignTest(
+      'long history is lazy and reaches both ends (mobile=$mobile)',
+      (tester) async {
+        final store = _WorkspaceConversationStore()
+          .._payload = jsonEncode({
+            'version': 4,
+            'selectedConversationId': 'global',
+            'conversations': {
+              'global': {
+                'id': 'global',
+                'title': 'History',
+                'scope': 'global',
+                'opened': true,
+                'createdAt': '2026-01-01T00:00:00Z',
+                'updatedAt': '2026-01-01T01:00:00Z',
+                'messages': [
+                  for (var i = 0; i < 100; i++)
+                    ChatMessage(
+                      id: 'history-$i',
+                      role: i.isEven ? ChatRole.user : ChatRole.assistant,
+                      text:
+                          'Message $i\n${List.filled(i % 5 + 1, 'Content line').join('\n')}',
+                      timestamp: DateTime.utc(2026).add(Duration(seconds: i)),
+                    ).toMap(),
+                ],
+              },
+            },
+          });
+        final controller = (await tester.runAsync(() async {
+          final controller = await _createController(
+            conversationStore: store,
+            ttsService: _UnavailableTtsService(),
+          );
+          await controller.initialize();
+          return controller;
+        }))!;
+        addTearDown(controller.dispose);
+        await tester.binding.setSurfaceSize(
+          mobile ? const Size(390, 844) : const Size(1280, 800),
+        );
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final paneKey = GlobalKey<DesktopAssistantPaneState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.buildTheme(controller.palette),
+            home: mobile
+                ? AssistantChatScreen(
+                    controller: controller,
+                    useGlobalMode: true,
+                  )
+                : Scaffold(
+                    body: DesktopAssistantPane(
+                      key: paneKey,
+                      controller: controller,
+                    ),
+                  ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        List<MessageBubble> bubbles() => tester
+            .widgetList<MessageBubble>(find.byType(MessageBubble))
+            .toList();
+        expect(bubbles().length, lessThan(30));
+        expect(
+          bubbles().any((bubble) => bubble.message.id == 'history-99'),
+          isTrue,
+        );
+        final scrollable = find.descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        );
+        tester.state<ScrollableState>(scrollable.first).position.jumpTo(0);
+        await tester.pumpAndSettle();
+        expect(
+          bubbles().any((bubble) => bubble.message.id == 'history-0'),
+          isTrue,
+        );
+        if (!mobile) {
+          paneKey.currentState!.revealMessage('history-70');
+          for (var frame = 0; frame < 120; frame++) {
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          expect(
+            bubbles().any((bubble) => bubble.message.id == 'history-70'),
+            isTrue,
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  _assistantDesignTest(
+    'stream updates stay local and cancellation retains batched text',
+    (tester) async {
+      final ai = _NextSendAi();
+      final controller = await tester.runAsync(
+        () => _createController(
+          aiService: ai,
+          preferencesService: _InMemoryPreferencesService(),
+          ttsService: _UnavailableTtsService(),
+        ),
+      );
+      addTearDown(controller!.dispose);
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(
+          apiKey: 'test-only',
+          model: 'gpt-6-sol',
+          baseUrl: 'https://test.example/v1',
+        ),
+      );
+      controller.openGlobalAssistant();
+      await _mount(tester, controller, const Size(1280, 800));
+      await _navigate(tester, 'AI助手');
+      final sending = controller.sendPrompt('stream test', useGlobalMode: true);
+      await tester.pump(const Duration(milliseconds: 100));
+      var globalChanges = 0, contentChanges = 0;
+      controller.addListener(() => globalChanges++);
+      controller.assistantContentChanges.addListener(() => contentChanges++);
+      ai.streams.single.add(
+        BoardGameAiStreamEvent(
+          runEvent: AiRunEvent(
+            runId: 'perf-run',
+            sequence: 0,
+            type: AiRunEventType.runStarted,
+            timestamp: DateTime.utc(2026),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var batch = 0; batch < 8; batch++) {
+        for (var i = 0; i < 20; i++) {
+          ai.streams.single.add(
+            BoardGameAiStreamEvent(
+              delta: 'word ',
+              runEvent: AiRunEvent(
+                runId: 'perf-run',
+                sequence: batch * 20 + i + 1,
+                type: AiRunEventType.textDelta,
+                timestamp: DateTime.utc(2026),
+                delta: 'word ',
+              ),
+            ),
+          );
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(globalChanges, 0);
+      expect(contentChanges, inInclusiveRange(8, 10));
+      expect(
+        controller.selectedConversation!.messages.last.text,
+        List.filled(160, 'word ').join(),
+      );
+      expect(
+        controller
+            .aiRunEventsForContext(useGlobalMode: true)
+            .any((event) => event.type == AiRunEventType.textDelta),
+        isFalse,
+      );
+      ai.streams.single.add(const BoardGameAiStreamEvent(delta: 'tail'));
+      await tester.pump(); // Still buffered; stopping must flush it.
+      await controller.stopGenerating(useGlobalMode: true);
+      await tester.pump();
+      await sending;
+      expect(
+        controller.selectedConversation!.messages.last.text,
+        endsWith('tail'),
+      );
+      expect(controller.isSendingForContext(useGlobalMode: true), isFalse);
+      expect(globalChanges, greaterThan(0));
+      expect(tester.takeException(), isNull);
+    },
+  );
   for (final size in const [Size(390, 844), Size(1280, 800)]) {
     for (final selected in ['', 'gpt-6-sol']) {
       _assistantDesignTest(

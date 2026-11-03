@@ -242,6 +242,20 @@ flutter:
         with self.assertRaisesRegex(release.ReleaseError, 'escaped'):
             release.stage_build_context(self.root, self.stage)
 
+    def test_build_number_changes_do_not_invalidate_dependency_metadata(self):
+        manifest = self.root / 'pubspec.yaml'
+        text = manifest.read_text().replace('name: fixture', 'name: fixture\nversion: 5.0.0+54')
+        manifest.write_text(text)
+        release.stage_build_context(self.root, self.stage)
+        cached = (self.stage / 'dependency-manifests/board-game-agent/pubspec.yaml').read_text()
+        self.assertIn('version: 0.0.0', cached)
+        self.assertIn('version: 5.0.0+54', (self.stage / 'board-game-agent/pubspec.yaml').read_text())
+        manifest.write_text(text.replace('+54', '+55'))
+        another = self.workspace / 'second-context'
+        release.stage_build_context(self.root, another)
+        self.assertEqual((another / 'dependency-manifests/board-game-agent/pubspec.yaml').read_text(), cached)
+        self.assertIn('version: 5.0.0+55', (another / 'board-game-agent/pubspec.yaml').read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

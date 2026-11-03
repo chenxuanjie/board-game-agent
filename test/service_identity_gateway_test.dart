@@ -64,6 +64,86 @@ ServiceIdentityGateway gateway(
 
 void main() {
   test(
+    'guest browser restores stay signed out without an expiry failure',
+    () async {
+      final vault = Vault();
+      var restores = 0;
+      final g = gateway(vault, (request) async {
+        if (request.url.path.endsWith('/bootstrap')) {
+          return json({'csrf_token': 'test-csrf', 'authenticated': false});
+        }
+        restores++;
+        return json({'detail': 'session_rejected'}, 401);
+      }, browser: true);
+      final controller = IdentityController(gateway: g);
+      addTearDown(() async {
+        controller.dispose();
+        await g.dispose();
+      });
+      for (var attempt = 0; attempt < 3; attempt++) {
+        await controller.restore();
+        expect(controller.phase, IdentityStatus.signedOut);
+        expect(controller.user, isNull);
+        expect(controller.failure, isNull);
+      }
+      expect(restores, 3);
+      expect(vault.value, isNull);
+    },
+  );
+  test(
+    'known browser login expiry is reported once, then guest restore is normal',
+    () async {
+      var reject = false;
+      final g = gateway(Vault(), (request) async {
+        if (request.url.path.endsWith('/bootstrap')) {
+          return json({'csrf_token': 'test-csrf', 'authenticated': !reject});
+        }
+        return reject
+            ? json({'detail': 'session_rejected'}, 401)
+            : json(response(native: false));
+      }, browser: true);
+      final controller = IdentityController(gateway: g);
+      addTearDown(() async {
+        controller.dispose();
+        await g.dispose();
+      });
+      await controller
+          .restore(); // Existing HttpOnly cookie, no cached JS user.
+      expect(controller.user?.id, userA);
+      reject = true;
+      await controller.restore();
+      expect(controller.user, isNull);
+      expect(controller.failure?.code, IdentityFailureCode.sessionRejected);
+      expect(g.cachedUser, isNull);
+      await controller.restore();
+      expect(controller.user, isNull);
+      expect(controller.failure, isNull);
+    },
+  );
+  test(
+    'guest restore does not hide service errors or successful identity mismatches',
+    () async {
+      for (final result in [
+        json({'detail': 'provider_unavailable'}, 503),
+        json({...response(native: false), 'app_id': 'other_app'}),
+        json({...response(native: false), 'user_id': 'invalid-user'}),
+      ]) {
+        final g = gateway(Vault(), (request) async {
+          if (request.url.path.endsWith('/bootstrap')) {
+            return json({'csrf_token': 'test-csrf', 'authenticated': false});
+          }
+          return result;
+        }, browser: true);
+        await expectLater(
+          g.verifyCurrentUser(),
+          throwsA(isA<IdentityFailure>()),
+        );
+        expect(g.cachedUser, isNull);
+        await g.dispose();
+      }
+    },
+  );
+  test(
     'controller deadline cannot leave a restorable late credential write',
     () async {
       final vault = Vault(), hold = Completer<void>();

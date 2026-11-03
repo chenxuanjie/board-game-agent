@@ -28,6 +28,78 @@ void main() {
     await store.close();
     await directory.delete(recursive: true);
   });
+  Map<String, dynamic> session(String id, String text) => {
+    'id': id,
+    'title': id,
+    'scope': 'global',
+    'opened': true,
+    'createdAt': '2026-10-26T00:00:00Z',
+    'updatedAt': '2026-10-26T00:01:00Z',
+    'messages': [
+      {
+        'id': 'm1',
+        'role': 'assistant',
+        'text': text,
+        'timestamp': '2026-10-26T00:01:00Z',
+        'state': 'complete',
+      },
+    ],
+  };
+  test(
+    'patching and deleting a session preserves other sessions and their upload queue',
+    () async {
+      await store.loadConversationChanges();
+      await store.saveConversationChanges({
+        'a': session('a', 'old'),
+        'b': session('b', 'keep'),
+      }, {});
+      await store.loadConversationChanges();
+      final before = await store.database.getAll('SELECT * FROM ps_crud');
+      await store.saveConversationChanges({'a': session('a', 'new')}, {});
+      final changes = await store.loadConversationChanges();
+      expect(changes.updated.keys, ['a']);
+      expect(changes.updated['a']['messages'].single['text'], 'new');
+      expect((await store.records('conversations')), hasLength(2));
+      final after = await store.database.getAll('SELECT * FROM ps_crud');
+      expect(after.take(before.length).toList(), before);
+      expect(after, hasLength(before.length + 1));
+      expect((await store.loadConversationChanges()).updated, isEmpty);
+      await store.saveConversationChanges({}, {'a'});
+      expect((await store.loadConversationChanges()).deleted, {'a'});
+      final remaining = jsonDecode(await store.loadConversations()) as Map;
+      expect(remaining['conversations'].keys, ['b']);
+      expect(
+        remaining['conversations']['b']['messages'].single['text'],
+        'keep',
+      );
+    },
+  );
+  test(
+    'message-only remote changes and tombstones refresh only their parent',
+    () async {
+      await store.loadConversationChanges();
+      await store.saveConversationChanges({
+        'a': session('a', 'old'),
+        'b': session('b', 'keep'),
+      }, {});
+      await store.loadConversationChanges();
+      await store.database.execute(
+        'UPDATE messages SET content=?,row_version=? WHERE id=?',
+        ['remote', 7, 'a|m1'],
+      );
+      final changed = await store.loadConversationChanges();
+      expect(changed.updated.keys, ['a']);
+      expect(changed.updated['a']['messages'].single['text'], 'remote');
+      await store.database.execute(
+        'UPDATE messages SET deleted_at=?,row_version=? WHERE id=?',
+        ['2026-10-27T00:00:00Z', 8, 'a|m1'],
+      );
+      final deletedMessage = await store.loadConversationChanges();
+      expect(deletedMessage.updated.keys, ['a']);
+      expect(deletedMessage.updated['a']['messages'], isEmpty);
+      expect(deletedMessage.deleted, isEmpty);
+    },
+  );
   test(
     'new account starts empty; favorites persist directly in SDK database',
     () async {

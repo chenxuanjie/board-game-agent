@@ -3,9 +3,11 @@ import '../shared/account_scope.dart';
 import '../shared/account_screen.dart';
 
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/color_scheme_option.dart';
 import '../../core/theme/ui_tokens.dart';
 import '../shared/favorite_feedback.dart';
 import '../shared/game_cover_motion.dart';
+import '../shared/loading_action_button.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
@@ -191,33 +193,48 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 5,
                                   ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(22),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        if (index == 0 &&
-                                            widget.coverOrigin != null)
-                                          HeroMode(
-                                            enabled: !AppMotion.reduced(
-                                              context,
-                                            ),
-                                            child: Hero(
-                                              tag: widget.coverOrigin!.tag,
-                                              child: _GalleryAsset(
+                                  child: Semantics(
+                                    label: copy.localized('查看大图', 'View image'),
+                                    button: true,
+                                    child: InkWell(
+                                      onTap:
+                                          AppPalette.of(context).scheme ==
+                                                  ColorSchemeOption
+                                                      .warmwoodStudy &&
+                                              gallery[index].isNotEmpty
+                                          ? () => _openGalleryImage(
+                                              gallery[index],
+                                            )
+                                          : null,
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(22),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            if (index == 0 &&
+                                                widget.coverOrigin != null)
+                                              HeroMode(
+                                                enabled: !AppMotion.reduced(
+                                                  context,
+                                                ),
+                                                child: Hero(
+                                                  tag: widget.coverOrigin!.tag,
+                                                  child: _GalleryAsset(
+                                                    controller: controller,
+                                                    game: game,
+                                                    path: gallery[index],
+                                                  ),
+                                                ),
+                                              )
+                                            else
+                                              _GalleryAsset(
                                                 controller: controller,
                                                 game: game,
                                                 path: gallery[index],
                                               ),
-                                            ),
-                                          )
-                                        else
-                                          _GalleryAsset(
-                                            controller: controller,
-                                            game: game,
-                                            path: gallery[index],
-                                          ),
-                                      ],
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -532,30 +549,97 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     );
   }
 
+  Future<void> _openGalleryImage(String path) async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black87,
+      transitionDuration: AppMotion.duration(context, AppMotion.content),
+      pageBuilder: (context, animation, secondaryAnimation) => Material(
+        color: Colors.transparent,
+        child: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              InteractiveViewer(
+                minScale: 1,
+                maxScale: 4,
+                child: DesktopResolvedImage(
+                  controller: widget.controller,
+                  assetPath: path,
+                  palette: AppPalette.of(context),
+                  fit: BoxFit.contain,
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton.filledTonal(
+                  tooltip: '关闭图片',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: .96, end: 1).animate(
+                CurvedAnimation(parent: animation, curve: AppMotion.curve),
+              ),
+              child: child,
+            ),
+          ),
+    );
+  }
+
   Widget _bottomActions(GameInfo game) => LayoutBuilder(
     builder: (context, constraints) {
       final controller = widget.controller;
       final copy = controller.copy;
       final palette = AppPalette.of(context);
-      final rules = OutlinedButton.icon(
-        key: const ValueKey('mobile-detail-rules'),
-        onPressed: _openingRulebook ? null : () => _openDocument(game),
-        icon: _openingRulebook
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.menu_book_rounded, size: 20),
-        label: Text(copy.rulesBook),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: palette.primary,
-          backgroundColor: palette.surfaceContainer,
-          side: BorderSide.none,
-          minimumSize: const Size(48, 52),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        ),
-      );
+      final warmwood = palette.scheme == ColorSchemeOption.warmwoodStudy;
+      final rules = warmwood
+          ? LoadingActionButton(
+              key: const ValueKey('mobile-detail-rules'),
+              onPressed: _openingRulebook ? null : () => _openDocument(game),
+              loading: _openingRulebook,
+              succeeded: null,
+              label: copy.rulesBook,
+              loadingLabel: copy.localized('正在准备', 'Preparing'),
+              doneLabel: copy.localized('完成', 'Done'),
+              background: palette.surfaceContainer,
+              foreground: palette.primary,
+              successBackground: palette.success,
+              successForeground: palette.onSuccess,
+            )
+          : OutlinedButton.icon(
+              key: const ValueKey('mobile-detail-rules'),
+              onPressed: _openingRulebook ? null : () => _openDocument(game),
+              icon: _openingRulebook
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.menu_book_rounded, size: 20),
+              label: Text(copy.rulesBook),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: palette.primary,
+                backgroundColor: palette.surfaceContainer,
+                side: BorderSide.none,
+                minimumSize: const Size(48, 52),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+            );
       final ai = FilledButton.icon(
         key: const ValueKey('mobile-detail-ask-ai'),
         onPressed: () {
@@ -763,6 +847,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     }
     final title = controller.copy.rulesBook;
     setState(() => _openingRulebook = true);
+    var viewerOpened = false;
     try {
       final ResolvedDocument? document = await controller
           .resolveRulebookDocument(game);
@@ -771,18 +856,22 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         _documentUnavailable(title);
         return;
       }
-      await DocumentViewerLauncher.open(
+      final viewer = DocumentViewerLauncher.open(
         context,
         controller: controller,
         document: document,
         title: title,
       );
+      // Navigator's future completes when the viewer closes, not when it opens.
+      viewerOpened = true;
+      if (mounted) setState(() => _openingRulebook = false);
+      await viewer;
     } catch (_) {
       if (mounted) {
         _documentUnavailable(title);
       }
     } finally {
-      if (mounted) {
+      if (mounted && !viewerOpened) {
         setState(() => _openingRulebook = false);
       }
     }

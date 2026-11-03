@@ -4,10 +4,12 @@ import 'package:webdav_settings/webdav_settings.dart';
 import '../../app/state/app_controller.dart';
 
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/color_scheme_option.dart';
 import '../../core/theme/ui_tokens.dart';
 import '../../features/assistant/models/ai_api_config.dart';
 import '../../features/settings/models/configuration_transfer.dart';
 import '../../features/settings/services/settings_transfer_service.dart';
+import 'loading_action_button.dart';
 
 class SettingsTransferMenu extends StatelessWidget {
   const SettingsTransferMenu({
@@ -89,6 +91,9 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
   bool _ai = false;
   bool _dav = false;
   bool _busy = false;
+  bool? _testingDav;
+  bool? _lastTestDav;
+  bool? _testSucceeded;
   bool _editInput = true;
   bool _applied = false;
   bool _explicitAiKey = false;
@@ -337,12 +342,17 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
     setState(() {
       _busy = true;
       _feedback = null;
+      _testingDav = dav;
+      _lastTestDav = null;
+      _testSucceeded = null;
     });
+    var succeeded = false;
     try {
       if (dav) {
         final result = await service.webDav!.testConnection();
         if (result.isSuccess) {
           await service.webDav!.enableWebDav();
+          succeeded = true;
           widget.onApplied?.call();
           _notice(
             service.controller.copy.localized(
@@ -363,6 +373,7 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
         final result = await service.controller.testAiApiConfig(
           service.controller.aiApiConfig,
         );
+        succeeded = result == service.controller.copy.aiApiTestSuccess;
         _notice(
           result,
           error: result != service.controller.copy.aiApiTestSuccess,
@@ -377,7 +388,14 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
         error: true,
       );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _testingDav = null;
+          _lastTestDav = dav;
+          _testSucceeded = succeeded;
+        });
+      }
     }
   }
 
@@ -606,12 +624,20 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
           Wrap(
             spacing: 10,
             children: [
-              if (_ai)
+              if (_ai &&
+                  AppPalette.of(context).scheme ==
+                      ColorSchemeOption.warmwoodStudy)
+                _testMotionButton(false)
+              else if (_ai)
                 TextButton(
                   onPressed: _busy ? null : () => _test(false),
                   child: Text(copy.localized('检测 AI', 'Check AI')),
                 ),
-              if (_dav)
+              if (_dav &&
+                  AppPalette.of(context).scheme ==
+                      ColorSchemeOption.warmwoodStudy)
+                _testMotionButton(true)
+              else if (_dav)
                 TextButton(
                   key: const ValueKey('transfer-test-webdav'),
                   onPressed: _busy ? null : () => _test(true),
@@ -623,6 +649,26 @@ class _SettingsTransferScreenState extends State<SettingsTransferScreen> {
           ),
       ],
     ];
+  }
+
+  Widget _testMotionButton(bool dav) {
+    final palette = AppPalette.of(context);
+    final copy = service.controller.copy;
+    return LoadingActionButton(
+      key: ValueKey(dav ? 'transfer-test-webdav' : 'transfer-test-ai'),
+      onPressed: _busy ? null : () => _test(dav),
+      loading: _testingDav == dav,
+      succeeded: _lastTestDav == dav ? _testSucceeded : null,
+      label: dav
+          ? copy.localized('检测并启用 WebDAV', 'Test & enable WebDAV')
+          : copy.localized('检测 AI', 'Check AI'),
+      loadingLabel: copy.localized('正在检查', 'Checking'),
+      doneLabel: copy.localized('完成', 'Done'),
+      background: palette.surfaceContainer,
+      foreground: palette.textPrimary,
+      successBackground: palette.success,
+      successForeground: palette.onSuccess,
+    );
   }
 
   Widget _configurationCard(bool dav) {

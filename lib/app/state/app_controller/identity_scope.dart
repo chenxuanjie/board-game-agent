@@ -146,6 +146,11 @@ extension AppIdentityScopeController on AppController {
     _nationalDayList = null;
 
     _conversations.clear();
+    _serializedConversations.clear();
+    _pendingConversationIds.clear();
+    _saveAllConversations = false;
+    _conversationSaveScheduled = false;
+    _conversationDirty = false;
     _generationStates.clear();
     _runExpandedByContext.clear();
     _favoriteCreatedAtBySlug.clear();

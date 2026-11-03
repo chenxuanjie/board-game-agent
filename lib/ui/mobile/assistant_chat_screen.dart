@@ -80,6 +80,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
     }
     _rememberCurrentMessages();
     widget.controller.addListener(_onControllerChanged);
+    widget.controller.assistantContentChanges.addListener(
+      _handleContentChanged,
+    );
     _lastScrollContextKey = _conversationContextKey;
     _scrollController.addListener(_handleScrollChanged);
     _scheduleInitialScrollToBottom();
@@ -107,6 +110,9 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   void dispose() {
     widget.controller.stopSpeaking();
     widget.controller.removeListener(_onControllerChanged);
+    widget.controller.assistantContentChanges.removeListener(
+      _handleContentChanged,
+    );
     _scrollController.removeListener(_handleScrollChanged);
     _saveScrollPosition();
     _drafts[_lastScrollContextKey ?? _conversationContextKey] =
@@ -223,7 +229,10 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                   child: Stack(
                     children: <Widget>[
                       AnimatedBuilder(
-                        animation: controller,
+                        animation: Listenable.merge([
+                          controller,
+                          controller.assistantContentChanges,
+                        ]),
                         builder: (context, _) {
                           final messages = controller.messagesForContext(
                             useGlobalMode: _useGlobalMode,
@@ -252,7 +261,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                             headerInset: headerInset,
                             onMetricsChanged: () {
                               if (_followNewMessages) {
-                                _scrollToBottom(animated: false);
+                                _scheduleContentScroll();
                               }
                             },
                           );
@@ -300,6 +309,29 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
         ),
       ),
     );
+  }
+
+  bool _contentScrollPending = false;
+  void _handleContentChanged() {
+    if (!mounted) return;
+    if (_followNewMessages) {
+      _scheduleContentScroll();
+    } else if (!_hasNewContent) {
+      setState(() {
+        _showJumpToBottom = true;
+        _hasNewContent = true;
+      });
+    }
+  }
+
+  void _scheduleContentScroll() {
+    if (_contentScrollPending) return;
+    _contentScrollPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _contentScrollPending = false;
+      if (mounted && _followNewMessages) _scrollToBottom(animated: false);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _onControllerChanged() {
@@ -404,6 +436,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
     final double target = _scrollController.position.maxScrollExtent;
+    if ((target - _scrollController.position.pixels).abs() < .5) return;
     final duration = AppMotion.duration(context, AppMotion.content);
     if (!animated || duration == Duration.zero) {
       _scrollController.jumpTo(target);
@@ -817,74 +850,14 @@ class _MessageList extends StatelessWidget {
           ),
         ),
       ),
-      messages: ListView(
+      messages: ListView.builder(
         controller: scrollController,
         padding: EdgeInsets.fromLTRB(16, headerInset + 6, 16, 16),
-        children: <Widget>[
-          for (int index = 0; index < messages.length; index++) ...<Widget>[
-            if (showRun && index == lastAssistantIndex)
-              AiRunActivity(
-                events: runEvents,
-                isRunning: controller.isSendingForContext(
-                  useGlobalMode: useGlobalMode,
-                ),
-                palette: AppPalette.of(context),
-                copy: copy,
-                contextKey: runContextKey,
-                initialExpanded: runExpanded,
-                onExpandedChanged: onRunExpandedChanged,
-              ),
-            if (!(messages[index].role == ChatRole.assistant &&
-                messages[index].isStreaming &&
-                messages[index].text.trim().isEmpty &&
-                showRun))
-              AssistantMessageEntrance(
-                key: ValueKey('$runContextKey:${messages[index].id}'),
-                animate: animateMessage(messages[index].id),
-                child: AnimatedContainer(
-                  key: messageKeys.putIfAbsent(
-                    messages[index].id,
-                    GlobalKey.new,
-                  ),
-                  duration: AppMotion.duration(context),
-                  decoration: BoxDecoration(
-                    color: highlightedId == messages[index].id
-                        ? AppPalette.of(context).primary.withValues(alpha: .10)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: MessageBubble(
-                    message: messages[index],
-                    palette: AppPalette.of(context),
-                    copy: copy,
-                    onSpeak:
-                        messages[index].role == ChatRole.assistant &&
-                            controller.voiceReplyAvailable
-                        ? () => controller.speakMessage(messages[index].text)
-                        : null,
-                    speakTooltip: copy.speakAgain,
-                    onCopy:
-                        messages[index].role == ChatRole.assistant &&
-                            !messages[index].isStreaming &&
-                            !messages[index].isFailed
-                        ? () => onCopy(messages[index].text)
-                        : null,
-                    copyTooltip: copy.copyAnswer,
-                    onRetry: messages[index].canRetry
-                        ? () => controller.retryMessage(
-                            messages[index],
-                            useGlobalMode: useGlobalMode,
-                          )
-                        : null,
-                    retryTooltip: copy.retry,
-                    showTimestamp: showMessageTimes,
-                    onTap: onMessageTap,
-                  ),
-                ),
-              ),
-          ],
-          if (showRun && lastAssistantIndex < 0)
-            AiRunActivity(
+        itemCount:
+            messages.length + (showRun && lastAssistantIndex < 0 ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == messages.length) {
+            return AiRunActivity(
               events: runEvents,
               isRunning: controller.isSendingForContext(
                 useGlobalMode: useGlobalMode,
@@ -894,8 +867,77 @@ class _MessageList extends StatelessWidget {
               contextKey: runContextKey,
               initialExpanded: runExpanded,
               onExpandedChanged: onRunExpandedChanged,
-            ),
-        ],
+            );
+          }
+          return Column(
+            key: ValueKey('$runContextKey:${messages[index].id}'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (showRun && index == lastAssistantIndex)
+                AiRunActivity(
+                  events: runEvents,
+                  isRunning: controller.isSendingForContext(
+                    useGlobalMode: useGlobalMode,
+                  ),
+                  palette: AppPalette.of(context),
+                  copy: copy,
+                  contextKey: runContextKey,
+                  initialExpanded: runExpanded,
+                  onExpandedChanged: onRunExpandedChanged,
+                ),
+              if (!(messages[index].role == ChatRole.assistant &&
+                  messages[index].isStreaming &&
+                  messages[index].text.trim().isEmpty &&
+                  showRun))
+                AssistantMessageEntrance(
+                  key: ValueKey('$runContextKey:${messages[index].id}'),
+                  animate: animateMessage(messages[index].id),
+                  child: AnimatedContainer(
+                    key: messageKeys.putIfAbsent(
+                      messages[index].id,
+                      GlobalKey.new,
+                    ),
+                    duration: AppMotion.duration(context),
+                    decoration: BoxDecoration(
+                      color: highlightedId == messages[index].id
+                          ? AppPalette.of(
+                              context,
+                            ).primary.withValues(alpha: .10)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: MessageBubble(
+                      message: messages[index],
+                      palette: AppPalette.of(context),
+                      copy: copy,
+                      onSpeak:
+                          messages[index].role == ChatRole.assistant &&
+                              controller.voiceReplyAvailable
+                          ? () => controller.speakMessage(messages[index].text)
+                          : null,
+                      speakTooltip: copy.speakAgain,
+                      onCopy:
+                          messages[index].role == ChatRole.assistant &&
+                              !messages[index].isStreaming &&
+                              !messages[index].isFailed
+                          ? () => onCopy(messages[index].text)
+                          : null,
+                      copyTooltip: copy.copyAnswer,
+                      onRetry: messages[index].canRetry
+                          ? () => controller.retryMessage(
+                              messages[index],
+                              useGlobalMode: useGlobalMode,
+                            )
+                          : null,
+                      retryTooltip: copy.retry,
+                      showTimestamp: showMessageTimes,
+                      onTap: onMessageTap,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -1,0 +1,56 @@
+# Reusable NAS deployment: reapply the project to pull the published NAS channel.
+# Restarting an existing container alone does not update its image.
+# HTTPS entry: https://cznas.pp.ua:8084; HTTP port: 8083.
+# Synology reverse proxy: HTTPS 8084 -> HTTP 127.0.0.1:8083.
+# API board_game_agent.browser_origin must equal the HTTPS entry above.
+# API file delivery by default; optional read-only NAS acceleration is prepared separately.
+name: board-game-agent
+services:
+  board-game-agent:
+    platform: linux/amd64
+    pull_policy: always
+    restart: unless-stopped
+    read_only: true
+    cap_drop: &id001
+    - ALL
+    security_opt: &id002
+    - no-new-privileges:true
+    logging: &id003
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    image: ghcr.io/chenxuanjie/board-game-agent:nas
+    ports:
+    - 8083:8080
+    environment:
+      APP_SERVICE_UPSTREAM: http://192.168.1.55:18280
+      LIBRARY_ACCELERATION: '0'
+    tmpfs:
+    - /tmp:rw,nosuid,nodev,size=64m
+    mem_limit: 192m
+  web-ai:
+    platform: linux/amd64
+    pull_policy: always
+    restart: unless-stopped
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    logging: *id003
+    image: ghcr.io/chenxuanjie/board-game-agent-web-ai:nas
+    environment:
+      WEB_PUBLIC_ORIGIN: https://cznas.pp.ua:8084
+      AI_ALLOWED_ORIGINS: https://api.openai.com,https://api.deepseek.com,https://www.loomex.lol,https://loomex.lol
+    tmpfs:
+    - /tmp:rw,nosuid,nodev,size=32m
+    mem_limit: 256m
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',
+        timeout=2)
+      interval: 30s
+      timeout: 3s
+      retries: 3

@@ -9,6 +9,7 @@ import '../../../features/assistant/models/rule_citation.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/localization/app_copy.dart';
 import 'assistant_motion.dart';
+import 'assistant_markdown.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -150,9 +151,9 @@ class MessageBubble extends StatelessWidget {
                                       label: copy.streaming,
                                     )
                                   else
-                                    MarkdownBody(
+                                    AssistantMarkdown(
                                       data: message.text,
-                                      selectable: true,
+                                      streaming: message.isStreaming,
                                       styleSheet:
                                           MarkdownStyleSheet.fromTheme(
                                             theme,

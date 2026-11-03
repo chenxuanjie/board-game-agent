@@ -53,6 +53,19 @@ class ConversationStore {
     return File('$folder${Platform.pathSeparator}chat_conversations.json');
   }
 
+  Future<({Map<String, dynamic> updated, Set<String> deleted})?>
+  loadChanges() async => personalStore?.loadConversationChanges();
+
+  Future<bool> saveChanges(
+    Map<String, dynamic> updated,
+    Set<String> deleted,
+  ) async {
+    final store = personalStore;
+    if (store == null) return false;
+    await store.saveConversationChanges(updated, deleted);
+    return true;
+  }
+
   Future<String?> load() async {
     if (personalStore case final store?) return store.loadConversations();
     if (browserStorage) {

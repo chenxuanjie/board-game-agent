@@ -6,6 +6,8 @@ extension AppAssistantRunController on AppController {
     final String runId = 'client-${startedAt.microsecondsSinceEpoch}';
     generation
       ..runEvents.clear()
+      ..eventIds.clear()
+      ..cachedEvents = null
       ..runId = runId
       ..runStartedAt = startedAt
       ..runCompletedAt = null
@@ -33,6 +35,8 @@ extension AppAssistantRunController on AppController {
     if (generation.syntheticRun && event.type == AiRunEventType.runStarted) {
       generation
         ..runEvents.clear()
+        ..eventIds.clear()
+        ..cachedEvents = null
         ..syntheticRun = false;
     }
     _appendRunEvent(generation, event);
@@ -42,14 +46,14 @@ extension AppAssistantRunController on AppController {
   }
 
   void _appendRunEvent(_ChatGenerationState generation, AiRunEvent event) {
-    final bool duplicate = generation.runEvents.any(
-      (AiRunEvent item) =>
-          item.runId == event.runId &&
-          item.sequence == event.sequence &&
-          item.type == event.type,
-    );
-    if (duplicate) return;
+    // Answer text has its own stream. It is neither shown in the activity
+    // timeline nor persisted in checkpoints; retaining it here was quadratic.
+    if (event.type == AiRunEventType.textDelta) return;
+    if (!generation.eventIds.add((event.runId, event.sequence, event.type))) {
+      return;
+    }
     generation.runEvents.add(event);
+    generation.cachedEvents = null;
     generation.runId = event.runId;
     if (event.type == AiRunEventType.runStarted) {
       generation.runStartedAt = event.timestamp;

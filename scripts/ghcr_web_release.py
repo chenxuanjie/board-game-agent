@@ -11,12 +11,140 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = Path("packaging/ci/shared-packages.tar.gz")
 LOCK = Path("packaging/ci/shared-packages.lock.json")
+AI_INPUTS = ("packaging/docker/Dockerfile.ai", "packaging/docker/ai-requirements.lock", "services/web_account/requirements.txt",
+             "services/web_account/ai_app.py", "services/web_account/ai_proxy.py")
+
+
+class NoRegistryRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        raise ValueError("Release registry redirects are forbidden")
+
+
+def registry_request(method, suffix, body=None):
+    origin = os.environ.get("RELEASE_SERVICE_ORIGIN", "")
+    uri = urllib.parse.urlsplit(origin)
+    key = os.environ.get("RELEASE_PUBLISH_KEY", "")
+    if (uri.scheme != "https" or not uri.hostname or uri.username or uri.password
+            or uri.path not in ("", "/") or uri.query or uri.fragment
+            or not re.fullmatch(r"[\x21-\x7e]{32,256}", key)):
+        raise ValueError("Configure the release service origin and private publishing secret")
+    request = urllib.request.Request(origin.rstrip("/") + "/v1/apps/board_game_agent/releases/batches/" + suffix,
+        method=method, data=None if body is None else json.dumps(body).encode(),
+        headers={"X-Release-Publish-Key": key, "Content-Type": "application/json"})
+    try:
+        with urllib.request.build_opener(NoRegistryRedirect()).open(request, timeout=25) as response:
+            raw = response.read(256 * 1024 + 1)
+            if response.status != 200 or len(raw) > 256 * 1024:
+                raise ValueError("Invalid release registry response")
+            return json.loads(raw)
+    except urllib.error.HTTPError as error:
+        raise ValueError(f"Release registry HTTP {error.code}; no publication confirmed") from None
+    except (urllib.error.URLError, TimeoutError):
+        raise ValueError("Release registry unavailable") from None
+
+
+def verify_batch(root=ROOT):
+    descriptor = json.loads((root / "release-batch.json").read_text(encoding="utf-8"))
+    version = str(yaml.safe_load((root / "pubspec.yaml").read_text(encoding="utf-8-sig"))["version"])
+    if (descriptor.get("schemaVersion") != 1 or descriptor.get("appId") != "board_game_agent"
+            or f"{descriptor.get('versionName')}+{descriptor.get('buildNumber')}" != version
+            or not re.fullmatch(r"[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", descriptor.get("batchId", ""))):
+        raise ValueError("Release batch descriptor and program version differ")
+    if git(root, "status", "--porcelain"):
+        raise ValueError("Freeze clean sources before a NAS release")
+    batch = registry_request("GET", descriptor["batchId"])
+    dependencies = json.loads((root / LOCK).read_text(encoding="utf-8"))["packages"]
+    if (batch.get("state") != "frozen" or batch.get("sourceRevision") != git(root, "rev-parse", "HEAD")
+            or batch.get("dependencyRevisions") != {p["name"]: p["commit"] for p in dependencies}
+            or any(batch.get(key) != value for key, value in descriptor.items() if key != "schemaVersion")):
+        raise ValueError("Registry batch is not frozen to this source and dependencies")
+    return batch
+
+
+def register_images(record_path, status, root=ROOT):
+    batch = verify_batch(root)
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    if (record.get("dirtySource") is not False or record.get("sourceRevision") != batch["sourceRevision"]
+            or record.get("applicationVersion") != f"{batch['versionName']}+{batch['buildNumber']}"):
+        raise ValueError("Image publication source differs from its frozen batch")
+    for name, component in (("web", "web"), ("webAi", "web-ai")):
+        image = record["images"][name]
+        reference = image["reference"]
+        if not re.fullmatch(r"ghcr\.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}", reference):
+            raise ValueError("Expected an immutable published image digest")
+        registry_request("PUT", batch["batchId"] + "/targets", {
+            "component": component, "kind": "image", "platform": "linux", "architecture": "amd64",
+            "channel": "nas", "status": status, "sha256": reference.rsplit(":", 1)[1],
+            "reference": reference, "sourceRevision": image["sourceRevision"],
+            # Persist provenance, not whether this particular retry pulled an
+            # image already built by the same batch. That must be idempotent.
+            "reused": image["sourceRevision"] != batch["sourceRevision"],
+            "inputDigest": image.get("inputDigest")})
+
+
+def record_failure(component, root=ROOT):
+    batch = verify_batch(root)
+    registry_request("PUT", batch["batchId"] + "/targets", {
+        "component": component, "kind": "image", "platform": "linux", "architecture": "amd64",
+        "channel": "nas", "status": "failed", "errorCode": "build_failed",
+        "sourceRevision": batch["sourceRevision"]})
+
+
+def ai_input_digest(root=ROOT):
+    locked = (root / "packaging/docker/ai-requirements.lock").read_text(encoding="utf-8")
+    for requirement in (root / "services/web_account/requirements.txt").read_text(encoding="utf-8-sig").splitlines():
+        if requirement.strip() and not requirement.startswith("#") and not any(
+                line.split(" ", 1)[0] == requirement.strip() for line in locked.splitlines()):
+            raise ValueError("Update the relay dependency lock before publishing")
+    value = hashlib.sha256(b"linux/amd64\0")
+    for name in AI_INPUTS:
+        value.update(name.encode() + b"\0")
+        value.update((root / name).read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return value.hexdigest()
+
+
+def ai_image_exists(image):
+    if not re.fullmatch(r"ghcr\.io/[a-z0-9_./-]+:inputs-[a-f0-9]{64}", image):
+        raise ValueError("Expected the input-addressed GHCR relay image")
+    return tagged_image_exists(image)
+
+
+def tagged_image_exists(image):
+    match = re.fullmatch(r"ghcr\.io/([a-z0-9_./-]+):([a-zA-Z0-9_.-]+)", image)
+    if not match:
+        raise ValueError("Expected a fixed GHCR image tag")
+    repository, tag = match.groups()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(
+                    "https://ghcr.io/token?service=ghcr.io&scope=repository:" + repository + ":pull",
+                    timeout=15) as response:
+                token = json.load(response)["token"]
+            request = urllib.request.Request("https://ghcr.io/v2/" + repository + "/manifests/" + tag,
+                method="HEAD", headers={"Authorization": "Bearer " + token,
+                "Accept": "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json"})
+            with urllib.request.urlopen(request, timeout=15) as response:
+                return response.status == 200
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return False
+            if error.code < 500 or attempt == 2:
+                raise RuntimeError("Cannot check relay registry access (HTTP " + str(error.code) + ")") from None
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise RuntimeError("Cannot check relay registry connectivity") from None
+        time.sleep(attempt + 1)
 
 
 def git(folder, *args, binary=False):
@@ -142,9 +270,11 @@ def metadata(repository, commit, branch, root=ROOT):
     tag = version.replace("+", "-") + "-" + commit[:12]
     branch_tag = "branch-" + re.sub(r"[^a-z0-9_.-]+", "-", branch.lower()).strip(".-")[:100]
     owner = repository.split("/")[0].lower()
+    ai_digest = ai_input_digest(root)
     return {"applicationVersion": version, "sourceRevision": commit, "imageTag": tag,
             "branchTag": branch_tag, "webImage": f"ghcr.io/{repository.lower()}:{tag}",
-            "aiImage": f"ghcr.io/{owner}/board-game-agent-web-ai:{tag}"}
+            "aiInputDigest": ai_digest,
+            "aiImage": f"ghcr.io/{owner}/board-game-agent-web-ai:inputs-{ai_digest}"}
 
 
 def compose(web_image, ai_image):
@@ -156,7 +286,7 @@ def compose(web_image, ai_image):
                 "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}}
     result = {"name": "board-game-agent", "services": {
         "board-game-agent": {**hardened, "image": web_image, "ports": ["8083:8080"],
-            "environment": {"APP_SERVICE_UPSTREAM": "http://192.168.1.55:18280"},
+            "environment": {"APP_SERVICE_UPSTREAM": "http://192.168.1.55:18280", "LIBRARY_ACCELERATION": "0"},
             "tmpfs": ["/tmp:rw,nosuid,nodev,size=64m"], "mem_limit": "192m"},
         "web-ai": {**hardened, "image": ai_image,
             "environment": {"WEB_PUBLIC_ORIGIN": "https://cznas.pp.ua:8084",
@@ -168,8 +298,15 @@ def compose(web_image, ai_image):
     return ("# HTTPS entry: https://cznas.pp.ua:8084; HTTP port: 8083.\n"
             "# Synology reverse proxy: HTTPS 8084 -> HTTP 127.0.0.1:8083.\n"
             "# API board_game_agent.browser_origin must equal the HTTPS entry above.\n"
-            "# No NAS library mount, old account gateway, .env, or on-NAS compilation.\n"
+            "# API file delivery by default; optional read-only NAS acceleration is prepared separately.\n"
             + yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
+
+
+def nas_compose():
+    return ("# Reusable NAS deployment: reapply the project to pull the published NAS channel.\n"
+            "# Restarting an existing container alone does not update its image.\n"
+            + compose("ghcr.io/chenxuanjie/board-game-agent:nas",
+                      "ghcr.io/chenxuanjie/board-game-agent-web-ai:nas"))
 
 
 def main():
@@ -183,10 +320,23 @@ def main():
     meta_parser.add_argument("--commit", required=True)
     meta_parser.add_argument("--branch", required=True)
     meta_parser.add_argument("--github-output", type=Path)
+    relay_parser = commands.add_parser("resolve-ai")
+    relay_parser.add_argument("--image", required=True)
+    relay_parser.add_argument("--github-output", type=Path, required=True)
+    web_parser = commands.add_parser("resolve-web")
+    web_parser.add_argument("--image", required=True)
+    web_parser.add_argument("--github-output", type=Path, required=True)
     compose_parser = commands.add_parser("compose")
     compose_parser.add_argument("--web-image", required=True)
     compose_parser.add_argument("--ai-image", required=True)
     compose_parser.add_argument("--output", type=Path, required=True)
+    nas_parser = commands.add_parser("nas-compose")
+    nas_parser.add_argument("--output", type=Path, required=True)
+    registry_parser = commands.add_parser("registry")
+    registry_parser.add_argument("operation", choices=("verify", "record", "failure"))
+    registry_parser.add_argument("--record", type=Path)
+    registry_parser.add_argument("--status", choices=("built", "published"), default="published")
+    registry_parser.add_argument("--component", choices=("web", "web-ai"))
     args = parser.parse_args()
     if args.command == "snapshot":
         snapshot()
@@ -199,6 +349,26 @@ def main():
             with args.github_output.open("a", encoding="utf-8") as output:
                 for key, value in record.items():
                     output.write(f"{key}={value}\n")
+    elif args.command in ("resolve-ai", "resolve-web"):
+        exists = (ai_image_exists if args.command == "resolve-ai" else tagged_image_exists)(args.image)
+        with args.github_output.open("a", encoding="utf-8") as output:
+            output.write("build=" + ("false" if exists else "true") + "\n")
+        print("Reuse the existing immutable image" if exists else "New image tag; build once")
+    elif args.command == "registry":
+        if args.operation == "verify":
+            verify_batch()
+        elif args.operation == "failure":
+            if not args.component:
+                parser.error("failure requires --component")
+            record_failure(args.component)
+        else:
+            if not args.record:
+                parser.error("record requires --record")
+            register_images(args.record, args.status)
+        print("Release registry " + args.operation + " passed")
+    elif args.command == "nas-compose":
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(nas_compose(), encoding="utf-8")
     else:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(compose(args.web_image, args.ai_image), encoding="utf-8")

@@ -190,33 +190,55 @@ class _AiServiceCard extends StatelessWidget {
           SizedBox(height: _px(context, 8)),
           Align(
             alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              key: ValueKey<String>('desktop-settings-ai-save-check'),
-              onPressed: saving ? null : onSaveAndCheck,
-              icon: saving
-                  ? SizedBox.square(
-                      dimension: _px(context, 15),
-                      child: CircularProgressIndicator(
-                        strokeWidth: _px(context, 1.8),
-                        color: Colors.white,
+            child:
+                AppPalette.of(context).scheme == ColorSchemeOption.warmwoodStudy
+                ? LoadingActionButton(
+                    key: const ValueKey<String>(
+                      'desktop-settings-ai-save-check',
+                    ),
+                    onPressed: saving ? null : onSaveAndCheck,
+                    loading: saving,
+                    succeeded:
+                        feedbackSucceeded == true &&
+                        controller.aiConnectivityStatus.state ==
+                            ConnectivityState.success,
+                    label: copy.localized('保存并检测', 'Save & check'),
+                    loadingLabel: copy.localized('正在检查', 'Checking'),
+                    doneLabel: copy.localized('完成', 'Done'),
+                    background: desktopColors(context).orange,
+                    foreground: Colors.white,
+                    successBackground: AppPalette.of(context).success,
+                    successForeground: AppPalette.of(context).onSuccess,
+                  )
+                : FilledButton.icon(
+                    key: ValueKey<String>('desktop-settings-ai-save-check'),
+                    onPressed: saving ? null : onSaveAndCheck,
+                    icon: saving
+                        ? SizedBox.square(
+                            dimension: _px(context, 15),
+                            child: CircularProgressIndicator(
+                              strokeWidth: _px(context, 1.8),
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(Icons.sync_rounded, size: _px(context, 17)),
+                    label: Text(
+                      saving
+                          ? copy.localized('检测中', 'Checking')
+                          : copy.localized('保存并检测', 'Save & check'),
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: Size(0, _px(context, 38)),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: _px(context, 11),
                       ),
-                    )
-                  : Icon(Icons.sync_rounded, size: _px(context, 17)),
-              label: Text(
-                saving
-                    ? copy.localized('检测中', 'Checking')
-                    : copy.localized('保存并检测', 'Save & check'),
-              ),
-              style: FilledButton.styleFrom(
-                minimumSize: Size(0, _px(context, 38)),
-                padding: EdgeInsets.symmetric(horizontal: _px(context, 11)),
-                backgroundColor: desktopColors(context).orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(_px(context, 9)),
-                ),
-              ),
-            ),
+                      backgroundColor: desktopColors(context).orange,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(_px(context, 9)),
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),

@@ -51,6 +51,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
           .map((m) => m.id),
     );
     controller.addListener(_handleControllerChanged);
+    controller.assistantContentChanges.addListener(_handleContentChanged);
     _scheduleInitialScrollToBottom();
   }
 
@@ -71,6 +72,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   @override
   void dispose() {
     controller.removeListener(_handleControllerChanged);
+    controller.assistantContentChanges.removeListener(_handleContentChanged);
     _scrollController.removeListener(_handleScrollChanged);
     _saveScrollPosition();
     if (_lastConversationId != null) {
@@ -99,15 +101,6 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
     final bool useGlobalMode = selectedConversation.isGlobal;
     final List<ChatMessage> messages = controller.messagesForContext(
       useGlobalMode: useGlobalMode,
-    );
-    final List<AiRunEvent> runEvents = controller.aiRunEventsForContext(
-      useGlobalMode: useGlobalMode,
-    );
-    final bool showRun =
-        runEvents.isNotEmpty ||
-        controller.isSendingForContext(useGlobalMode: useGlobalMode);
-    final int lastAssistantIndex = messages.lastIndexWhere(
-      (ChatMessage message) => message.role == ChatRole.assistant,
     );
     final GameInfo game = selectedConversation.gameId == null
         ? controller.featuredGame
@@ -174,148 +167,182 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
             Expanded(
               child: Stack(
                 children: <Widget>[
-                  AssistantConversationTransition(
-                    identity: selectedConversation.id,
-                    onMetricsChanged: () {
-                      if (_followNewMessages) _scrollToBottom(animated: false);
-                    },
-                    compact: narrow,
-                    showWelcome: messages.isEmpty && !showRun,
-                    welcome: LayoutBuilder(
-                      builder: (context, box) => SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: box.maxHeight),
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              contentInset,
-                              28,
-                              contentInset,
-                              28,
-                            ),
-                            child: AssistantWelcome(
-                              copy: controller.copy,
-                              compact: box.maxHeight < 320,
-                              gameTitle:
-                                  !useGlobalMode ||
-                                      controller.globalUseCurrentGameKnowledge
-                                  ? game.title
-                                  : null,
-                              onPrompt: _usePrompt,
+                  AnimatedBuilder(
+                    animation: controller.assistantContentChanges,
+                    builder: (context, _) {
+                      final messages = controller.messagesForContext(
+                        useGlobalMode: useGlobalMode,
+                      );
+                      final runEvents = controller.aiRunEventsForContext(
+                        useGlobalMode: useGlobalMode,
+                      );
+                      final showRun =
+                          runEvents.isNotEmpty ||
+                          controller.isSendingForContext(
+                            useGlobalMode: useGlobalMode,
+                          );
+                      final lastAssistantIndex = messages.lastIndexWhere(
+                        (m) => m.role == ChatRole.assistant,
+                      );
+                      return AssistantConversationTransition(
+                        identity: selectedConversation.id,
+                        onMetricsChanged: () {
+                          if (_followNewMessages) _scheduleContentScroll();
+                        },
+                        compact: narrow,
+                        showWelcome: messages.isEmpty && !showRun,
+                        welcome: LayoutBuilder(
+                          builder: (context, box) => SingleChildScrollView(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: box.maxHeight,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  contentInset,
+                                  28,
+                                  contentInset,
+                                  28,
+                                ),
+                                child: AssistantWelcome(
+                                  copy: controller.copy,
+                                  compact: box.maxHeight < 320,
+                                  gameTitle:
+                                      !useGlobalMode ||
+                                          controller
+                                              .globalUseCurrentGameKnowledge
+                                      ? game.title
+                                      : null,
+                                  onPrompt: _usePrompt,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                    messages: ListView(
-                      key: const ValueKey('assistant-message-list'),
-                      controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        contentInset,
-                        30,
-                        contentInset,
-                        16,
-                      ),
-                      children: <Widget>[
-                        for (
-                          int index = 0;
-                          index < messages.length;
-                          index++
-                        ) ...<Widget>[
-                          if (showRun && index == lastAssistantIndex)
-                            AiRunActivity(
-                              events: runEvents,
-                              isRunning: controller.isSendingForContext(
-                                useGlobalMode: useGlobalMode,
-                              ),
-                              palette: palette,
-                              copy: controller.copy,
-                              contextKey: selectedConversation.id,
-                              initialExpanded: controller
-                                  .aiRunExpandedForContext(
-                                    useGlobalMode: useGlobalMode,
-                                  ),
-                              onExpandedChanged: (bool expanded) =>
-                                  controller.setAiRunExpandedForContext(
-                                    useGlobalMode: useGlobalMode,
-                                    expanded: expanded,
-                                  ),
-                            ),
-                          if (!(messages[index].role == ChatRole.assistant &&
-                              messages[index].isStreaming &&
-                              messages[index].text.trim().isEmpty &&
-                              showRun))
-                            AssistantMessageEntrance(
+                        messages: ListView.builder(
+                          key: const ValueKey('assistant-message-list'),
+                          controller: _scrollController,
+                          padding: EdgeInsets.fromLTRB(
+                            contentInset,
+                            30,
+                            contentInset,
+                            16,
+                          ),
+                          itemCount:
+                              messages.length +
+                              (showRun && lastAssistantIndex < 0 ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == messages.length) {
+                              return AiRunActivity(
+                                events: runEvents,
+                                isRunning: controller.isSendingForContext(
+                                  useGlobalMode: useGlobalMode,
+                                ),
+                                palette: palette,
+                                copy: controller.copy,
+                                contextKey: selectedConversation.id,
+                                initialExpanded: controller
+                                    .aiRunExpandedForContext(
+                                      useGlobalMode: useGlobalMode,
+                                    ),
+                                onExpandedChanged: (bool expanded) =>
+                                    controller.setAiRunExpandedForContext(
+                                      useGlobalMode: useGlobalMode,
+                                      expanded: expanded,
+                                    ),
+                              );
+                            }
+                            return Column(
                               key: ValueKey(
                                 '${selectedConversation.id}:${messages[index].id}',
                               ),
-                              animate: _knownMessages.add(messages[index].id),
-                              child: AnimatedContainer(
-                                duration: AppMotion.duration(context),
-                                decoration: BoxDecoration(
-                                  color: _searchHighlight == messages[index].id
-                                      ? palette.primaryContainer.withValues(
-                                          alpha: .35,
-                                        )
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: MessageBubble(
-                                  key: _messageKeys.putIfAbsent(
-                                    messages[index].id,
-                                    GlobalKey.new,
-                                  ),
-                                  message: messages[index],
-                                  palette: palette,
-                                  copy: controller.copy,
-                                  showAssistantAvatar: false,
-                                  showAssistantActionLabels: true,
-                                  maxWidth: 780,
-                                  desktopLayout: true,
-                                  onSpeak:
-                                      messages[index].role ==
-                                              ChatRole.assistant &&
-                                          controller.voiceReplyAvailable
-                                      ? () => controller.speakMessage(
-                                          messages[index].text,
-                                        )
-                                      : null,
-                                  speakTooltip: controller.copy.speakAgain,
-                                  onCopy: () =>
-                                      _copyAnswer(messages[index].text),
-                                  copyTooltip: controller.copy.copyAnswer,
-                                  onRetry: messages[index].canRetry
-                                      ? () => controller.retryMessage(
-                                          messages[index],
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (showRun && index == lastAssistantIndex)
+                                  AiRunActivity(
+                                    events: runEvents,
+                                    isRunning: controller.isSendingForContext(
+                                      useGlobalMode: useGlobalMode,
+                                    ),
+                                    palette: palette,
+                                    copy: controller.copy,
+                                    contextKey: selectedConversation.id,
+                                    initialExpanded: controller
+                                        .aiRunExpandedForContext(
                                           useGlobalMode: useGlobalMode,
-                                        )
-                                      : null,
-                                  retryTooltip: controller.copy.retry,
-                                  showTimestamp: _showMessageTimes,
-                                  onTap: _toggleMessageTimes,
-                                ),
-                              ),
-                            ),
-                        ],
-                        if (showRun && lastAssistantIndex < 0)
-                          AiRunActivity(
-                            events: runEvents,
-                            isRunning: controller.isSendingForContext(
-                              useGlobalMode: useGlobalMode,
-                            ),
-                            palette: palette,
-                            copy: controller.copy,
-                            contextKey: selectedConversation.id,
-                            initialExpanded: controller.aiRunExpandedForContext(
-                              useGlobalMode: useGlobalMode,
-                            ),
-                            onExpandedChanged: (bool expanded) =>
-                                controller.setAiRunExpandedForContext(
-                                  useGlobalMode: useGlobalMode,
-                                  expanded: expanded,
-                                ),
-                          ),
-                      ],
-                    ),
+                                        ),
+                                    onExpandedChanged: (bool expanded) =>
+                                        controller.setAiRunExpandedForContext(
+                                          useGlobalMode: useGlobalMode,
+                                          expanded: expanded,
+                                        ),
+                                  ),
+                                if (!(messages[index].role ==
+                                        ChatRole.assistant &&
+                                    messages[index].isStreaming &&
+                                    messages[index].text.trim().isEmpty &&
+                                    showRun))
+                                  AssistantMessageEntrance(
+                                    key: ValueKey(
+                                      '${selectedConversation.id}:${messages[index].id}',
+                                    ),
+                                    animate: _knownMessages.add(
+                                      messages[index].id,
+                                    ),
+                                    child: AnimatedContainer(
+                                      duration: AppMotion.duration(context),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            _searchHighlight ==
+                                                messages[index].id
+                                            ? palette.primaryContainer
+                                                  .withValues(alpha: .35)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: MessageBubble(
+                                        key: _messageKeys.putIfAbsent(
+                                          messages[index].id,
+                                          GlobalKey.new,
+                                        ),
+                                        message: messages[index],
+                                        palette: palette,
+                                        copy: controller.copy,
+                                        showAssistantAvatar: false,
+                                        showAssistantActionLabels: true,
+                                        maxWidth: 780,
+                                        desktopLayout: true,
+                                        onSpeak:
+                                            messages[index].role ==
+                                                    ChatRole.assistant &&
+                                                controller.voiceReplyAvailable
+                                            ? () => controller.speakMessage(
+                                                messages[index].text,
+                                              )
+                                            : null,
+                                        speakTooltip:
+                                            controller.copy.speakAgain,
+                                        onCopy: () =>
+                                            _copyAnswer(messages[index].text),
+                                        copyTooltip: controller.copy.copyAnswer,
+                                        onRetry: messages[index].canRetry
+                                            ? () => controller.retryMessage(
+                                                messages[index],
+                                                useGlobalMode: useGlobalMode,
+                                              )
+                                            : null,
+                                        retryTooltip: controller.copy.retry,
+                                        showTimestamp: _showMessageTimes,
+                                        onTap: _toggleMessageTimes,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      );
+                    },
                   ),
                   Positioned(
                     left: 0,
@@ -358,16 +385,45 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   void revealMessage(String? messageId) {
     final String? normalized = messageId?.trim();
     if (normalized == null || normalized.isEmpty) return;
+    final conversation = controller.selectedConversation;
+    final identity = controller.identityUserId;
+    if (conversation == null ||
+        !conversation.messages.any((message) => message.id == normalized)) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final BuildContext? target = _messageKeys[normalized]?.currentContext;
-      if (target == null || !mounted) return;
-      Scrollable.ensureVisible(
-        target,
-        duration: AppMotion.duration(context, AppMotion.content),
-        curve: Curves.easeOut,
-        alignment: 0.2,
-      );
+      if (!mounted ||
+          controller.selectedConversationId != conversation.id ||
+          controller.identityUserId != identity) {
+        return;
+      }
+      // A lazy list may not have mounted the target message yet.
+      unawaited(_revealSearchResult(normalized, conversation.id, identity));
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  bool _contentScrollPending = false;
+  void _handleContentChanged() {
+    if (!mounted) return;
+    if (_followNewMessages) {
+      _scheduleContentScroll();
+    } else if (!_hasNewContent) {
+      setState(() {
+        _showJumpToBottom = true;
+        _hasNewContent = true;
+      });
+    }
+  }
+
+  void _scheduleContentScroll() {
+    if (_contentScrollPending) return;
+    _contentScrollPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _contentScrollPending = false;
+      if (mounted && _followNewMessages) _scrollToBottom(animated: false);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _handleControllerChanged() {
@@ -465,6 +521,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
     final double target = _scrollController.position.maxScrollExtent;
+    if ((target - _scrollController.position.pixels).abs() < .5) return;
     final duration = AppMotion.duration(context, AppMotion.content);
     if (!animated || duration == Duration.zero) {
       _scrollController.jumpTo(target);

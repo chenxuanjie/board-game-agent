@@ -21,6 +21,288 @@ Future<void> _openAccountMenu(WidgetTester tester) async {
 }
 
 void _registerAccountMenuTests() {
+  testWidgets('warm popover is removed when its anchor is disposed', (
+    tester,
+  ) async {
+    final (service, _) = await _configuredService(tester);
+    final visible = ValueNotifier(true);
+    addTearDown(visible.dispose);
+    await _mount(
+      tester,
+      service,
+      theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+      home: ValueListenableBuilder<bool>(
+        valueListenable: visible,
+        builder: (_, value, _) => value ? _menuHome() : const Scaffold(),
+      ),
+    );
+    await _openAccountMenu(tester);
+    visible.value = false;
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('account-popover-panel')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('warm popover honors reduced motion', (tester) async {
+    final (service, _) = await _configuredService(tester);
+    await _mount(
+      tester,
+      service,
+      theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+      home: Builder(
+        builder: (context) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: _menuHome(),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+    await tester.pump();
+    await tester.pump();
+    final panel = find.byKey(const ValueKey('account-popover-panel'));
+    final opacity = find
+        .ancestor(of: panel, matching: find.byType(Opacity))
+        .first;
+    expect(tester.widget<Opacity>(opacity).opacity, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.pump();
+    expect(panel, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('warm popover follows its anchor after resizing', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(900, 700));
+    final (service, _) = await _configuredService(tester);
+    await _mount(
+      tester,
+      service,
+      theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+      home: _menuHome(),
+    );
+    await _openAccountMenu(tester);
+    await tester.binding.setSurfaceSize(const Size(500, 700));
+    await tester.pumpAndSettle();
+    final button = tester.getRect(
+      find.byKey(const ValueKey('account-menu-button')),
+    );
+    final panel = tester.getRect(
+      find.byKey(const ValueKey('account-popover-panel')),
+    );
+    expect(panel.right, lessThanOrEqualTo(500));
+    expect(panel.right, closeTo(button.right - 16, 1));
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
+    'warm popover cannot reopen stale actions after identity changes',
+    (tester) async {
+      final (service, _) = await _configuredService(tester, signedIn: true);
+      await _mount(
+        tester,
+        service,
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: _menuHome(),
+      );
+      await _openAccountMenu(tester);
+      await tester.runAsync(service.signOut);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const ValueKey('account-menu-button'))),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('account-popover-panel')), findsNothing);
+      await _openAccountMenu(tester);
+      expect(find.text('Guest'), findsOneWidget);
+      expect(find.byKey(const ValueKey('account-menu-signOut')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('warm popover reverses smoothly on rapid reopen', (tester) async {
+    final (service, _) = await _configuredService(tester);
+    await _mount(
+      tester,
+      service,
+      theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+      home: _menuHome(),
+    );
+    await _openAccountMenu(tester);
+    final panel = find.byKey(const ValueKey('account-popover-panel'));
+    final opacity = find
+        .ancestor(of: panel, matching: find.byType(Opacity))
+        .first;
+    await tester.tapAt(const Offset(20, 400));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    final closing = tester.widget<Opacity>(opacity).opacity;
+    expect(closing, inExclusiveRange(0.0, 1.0));
+    await tester.tapAt(
+      tester.getCenter(find.byKey(const ValueKey('account-menu-button'))),
+    );
+    await tester.pump();
+    final resumed = tester.widget<Opacity>(opacity).opacity;
+    expect(resumed, closeTo(closing, .03));
+    await tester.pumpAndSettle();
+    expect(panel, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(panel, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('warm popover moves above an anchor near the bottom', (
+    tester,
+  ) async {
+    final (service, _) = await _configuredService(tester);
+    await _mount(
+      tester,
+      service,
+      theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomRight,
+          child: AccountMenuButton(
+            onOpenAccount: () {},
+            onOpenNotifications: () {},
+          ),
+        ),
+      ),
+    );
+    await _openAccountMenu(tester);
+    final panel = tester.getRect(
+      find.byKey(const ValueKey('account-popover-panel')),
+    );
+    final button = tester.getRect(
+      find.byKey(const ValueKey('account-menu-button')),
+    );
+    expect(panel.bottom, lessThan(button.top));
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('warm popover supports keyboard selection', (tester) async {
+    final (service, _) = await _configuredService(tester);
+    var accounts = 0;
+    await _mount(
+      tester,
+      service,
+      theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+      home: _menuHome(onAccount: () => accounts++),
+    );
+    await _openAccountMenu(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(accounts, 1);
+  });
+  testWidgets(
+    'warm popover keeps account actions and closes on identity change',
+    (tester) async {
+      final (service, gateway) = await _configuredService(
+        tester,
+        signedIn: true,
+      );
+      var notifications = 0;
+      await _mount(
+        tester,
+        service,
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: _menuHome(onNotifications: () => notifications++),
+      );
+      final calls = gateway.verifyCalls;
+      await _openAccountMenu(tester);
+      expect(find.text('Shane'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('account-menu-signOut')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('account-menu-notifications')),
+      );
+      await tester.pumpAndSettle();
+      expect(notifications, 1);
+      expect(gateway.verifyCalls, calls);
+      await _openAccountMenu(tester);
+      await tester.runAsync(service.signOut);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('account-popover-panel')), findsNothing);
+      await _openAccountMenu(tester);
+      expect(find.text('Guest'), findsOneWidget);
+      expect(find.byKey(const ValueKey('account-menu-signOut')), findsNothing);
+    },
+  );
+
+  for (final size in [const Size(320, 568), const Size(1440, 900)]) {
+    testWidgets('warm popover remains within $size with enlarged text', (
+      tester,
+    ) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(size);
+      final (service, _) = await _configuredService(tester, signedIn: true);
+      await _mount(
+        tester,
+        service,
+        textScale: 2,
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: _menuHome(),
+      );
+      await _openAccountMenu(tester);
+      final rect = tester.getRect(
+        find.byKey(const ValueKey('account-popover-panel')),
+      );
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(size.width));
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.bottom, lessThanOrEqualTo(size.height));
+      expect(tester.takeException(), isNull);
+    });
+  }
+  testWidgets(
+    'warm account popover opens from its anchor and closes with Escape',
+    (tester) async {
+      final (service, gateway) = await _configuredService(tester);
+      await _mount(
+        tester,
+        service,
+        theme: AppTheme.buildTheme(PaletteRegistry.warmwoodStudy),
+        home: _menuHome(),
+      );
+      final before = gateway.verifyCalls;
+      await tester.tap(find.byKey(const ValueKey('account-menu-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 140));
+      final panel = find.byKey(const ValueKey('account-popover-panel'));
+      expect(panel, findsOneWidget);
+      expect(find.byKey(const ValueKey('account-popover-arrow')), findsNothing);
+      final shape =
+          tester.widget<Material>(panel).shape! as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(16));
+      expect(tester.getSize(panel).width, inInclusiveRange(272, 320));
+      expect(
+        tester.getRect(panel).top,
+        greaterThan(
+          tester
+              .getRect(find.byKey(const ValueKey('account-menu-button')))
+              .bottom,
+        ),
+      );
+      final opacity = find
+          .ancestor(of: panel, matching: find.byType(Opacity))
+          .first;
+      expect(tester.widget<Opacity>(opacity).opacity, closeTo(.875, .03));
+      await tester.pumpAndSettle();
+      expect(gateway.verifyCalls, before);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(panel, findsNothing);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('account-menu-button')),
+            )
+            .focusNode
+            ?.hasFocus,
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('Account menu guest shows login and real unread notifications', (
     tester,
   ) async {
