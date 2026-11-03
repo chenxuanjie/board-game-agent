@@ -20,6 +20,7 @@ import '../shared/resource_connection_screen.dart';
 import '../shared/settings_section_focus.dart';
 import '../shared/settings_transfer_screen.dart';
 import '../shared/library_check_actions.dart';
+import '../shared/loading_action_button.dart';
 import '../../core/platform/android_public_reminders.dart';
 import 'android_public_reminders_tile.dart';
 import '../../features/settings/models/configuration_transfer.dart';
@@ -475,12 +476,40 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                                   Row(
                                     children: <Widget>[
                                       Expanded(
-                                        child: FilledButton(
-                                          onPressed: _isTesting
-                                              ? null
-                                              : _testAndSaveConfig,
-                                          child: Text(copy.aiApiSave),
-                                        ),
+                                        child:
+                                            palette.scheme ==
+                                                ColorSchemeOption.warmwoodStudy
+                                            ? LoadingActionButton(
+                                                key: const ValueKey(
+                                                  'mobile-settings-ai-save-check',
+                                                ),
+                                                onPressed: _isTesting
+                                                    ? null
+                                                    : _testAndSaveConfig,
+                                                loading: _isTesting,
+                                                succeeded: _lastTestSucceeded,
+                                                label: copy.aiApiSave,
+                                                loadingLabel: copy.localized(
+                                                  '正在检查',
+                                                  'Checking',
+                                                ),
+                                                doneLabel: copy.localized(
+                                                  '完成',
+                                                  'Done',
+                                                ),
+                                                background: palette.primary,
+                                                foreground: palette.onPrimary,
+                                                successBackground:
+                                                    palette.success,
+                                                successForeground:
+                                                    palette.onSuccess,
+                                              )
+                                            : FilledButton(
+                                                onPressed: _isTesting
+                                                    ? null
+                                                    : _testAndSaveConfig,
+                                                child: Text(copy.aiApiSave),
+                                              ),
                                       ),
                                       const SizedBox(width: 10),
                                       Expanded(

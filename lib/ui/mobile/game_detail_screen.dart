@@ -7,6 +7,7 @@ import '../../core/theme/color_scheme_option.dart';
 import '../../core/theme/ui_tokens.dart';
 import '../shared/favorite_feedback.dart';
 import '../shared/game_cover_motion.dart';
+import '../shared/loading_action_button.dart';
 import '../../core/theme/app_motion.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
@@ -602,25 +603,43 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       final controller = widget.controller;
       final copy = controller.copy;
       final palette = AppPalette.of(context);
-      final rules = OutlinedButton.icon(
-        key: const ValueKey('mobile-detail-rules'),
-        onPressed: _openingRulebook ? null : () => _openDocument(game),
-        icon: _openingRulebook
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.menu_book_rounded, size: 20),
-        label: Text(copy.rulesBook),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: palette.primary,
-          backgroundColor: palette.surfaceContainer,
-          side: BorderSide.none,
-          minimumSize: const Size(48, 52),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        ),
-      );
+      final warmwood = palette.scheme == ColorSchemeOption.warmwoodStudy;
+      final rules = warmwood
+          ? LoadingActionButton(
+              key: const ValueKey('mobile-detail-rules'),
+              onPressed: _openingRulebook ? null : () => _openDocument(game),
+              loading: _openingRulebook,
+              succeeded: null,
+              label: copy.rulesBook,
+              loadingLabel: copy.localized('正在准备', 'Preparing'),
+              doneLabel: copy.localized('完成', 'Done'),
+              background: palette.surfaceContainer,
+              foreground: palette.primary,
+              successBackground: palette.success,
+              successForeground: palette.onSuccess,
+            )
+          : OutlinedButton.icon(
+              key: const ValueKey('mobile-detail-rules'),
+              onPressed: _openingRulebook ? null : () => _openDocument(game),
+              icon: _openingRulebook
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.menu_book_rounded, size: 20),
+              label: Text(copy.rulesBook),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: palette.primary,
+                backgroundColor: palette.surfaceContainer,
+                side: BorderSide.none,
+                minimumSize: const Size(48, 52),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+            );
       final ai = FilledButton.icon(
         key: const ValueKey('mobile-detail-ask-ai'),
         onPressed: () {
@@ -828,6 +847,7 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     }
     final title = controller.copy.rulesBook;
     setState(() => _openingRulebook = true);
+    var viewerOpened = false;
     try {
       final ResolvedDocument? document = await controller
           .resolveRulebookDocument(game);
@@ -836,18 +856,22 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         _documentUnavailable(title);
         return;
       }
-      await DocumentViewerLauncher.open(
+      final viewer = DocumentViewerLauncher.open(
         context,
         controller: controller,
         document: document,
         title: title,
       );
+      // Navigator's future completes when the viewer closes, not when it opens.
+      viewerOpened = true;
+      if (mounted) setState(() => _openingRulebook = false);
+      await viewer;
     } catch (_) {
       if (mounted) {
         _documentUnavailable(title);
       }
     } finally {
-      if (mounted) {
+      if (mounted && !viewerOpened) {
         setState(() => _openingRulebook = false);
       }
     }
