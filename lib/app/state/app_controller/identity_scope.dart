@@ -119,17 +119,7 @@ extension AppIdentityScopeController on AppController {
       _speechService.cancelListening(),
       _ttsService.stop(),
     ]).timeout(const Duration(seconds: 8));
-    // Retry a failed fire-and-forget conversation snapshot before leaving it.
-    if (_conversationDirty) {
-      await _persistConversations(
-        throwOnError: true,
-      ).timeout(const Duration(seconds: 8));
-    }
-    if (_selectedConversationDirty) {
-      await _persistSelectedConversationId().timeout(
-        const Duration(seconds: 8),
-      );
-    }
+    await _commitConversationState();
     if (_dailyRecommendationsDirty) {
       await _preferencesService
           .saveDailyRecommendations(_dailyRecommendationHistory)
@@ -151,6 +141,8 @@ extension AppIdentityScopeController on AppController {
     _saveAllConversations = false;
     _conversationSaveScheduled = false;
     _conversationDirty = false;
+    _conversationSaveFailed = false;
+    _lastPromptSaveError = null;
     _generationStates.clear();
     _runExpandedByContext.clear();
     _favoriteCreatedAtBySlug.clear();

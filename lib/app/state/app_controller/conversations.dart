@@ -220,26 +220,126 @@ extension AppConversationController on AppController {
     }
     if (_conversationSaveScheduled) return;
     _conversationSaveScheduled = true;
-    _conversationSaveQueue = _conversationSaveQueue.then((_) async {
-      _conversationSaveScheduled = false;
-      final ids = _saveAllConversations
-          ? null
-          : Set<String>.of(_pendingConversationIds);
-      _saveAllConversations = false;
-      _pendingConversationIds.clear();
-      try {
-        await _persistConversations(throwOnError: true, changedIds: ids);
-      } catch (error, stackTrace) {
-        _conversationDirty = true;
-        if (ids == null) {
-          _saveAllConversations = true;
-        } else {
-          _pendingConversationIds.addAll(ids);
-        }
-        debugPrint('[chat] persist conversations failed: $error');
-        debugPrint('$stackTrace');
+    _conversationWriteOperations++;
+    _conversationSaveQueue = _conversationSaveQueue
+        .then((_) async {
+          _conversationSaveScheduled = false;
+          final ids = _saveAllConversations
+              ? null
+              : Set<String>.of(_pendingConversationIds);
+          _saveAllConversations = false;
+          _pendingConversationIds.clear();
+          try {
+            await _persistConversations(throwOnError: true, changedIds: ids);
+          } catch (error, stackTrace) {
+            _conversationDirty = true;
+            if (ids == null) {
+              _saveAllConversations = true;
+            } else {
+              _pendingConversationIds.addAll(ids);
+            }
+            _setConversationSaveFailed(true);
+            debugPrint('[chat] persist conversations failed: $error');
+            debugPrint('$stackTrace');
+          }
+        })
+        .whenComplete(_finishConversationWrite);
+  }
+
+  void _finishConversationWrite() {
+    _conversationWriteOperations--;
+    if (_conversationWriteOperations == 0 &&
+        !_conversationDirty &&
+        !_generationStates.values.any((state) => state.isSending)) {
+      _notifyListeners();
+    }
+  }
+
+  void _setConversationSaveFailed(bool failed) {
+    if (_conversationSaveFailed == failed) return;
+    _conversationSaveFailed = failed;
+    _notifyListeners();
+  }
+
+  /// Confirm local commits only. A pending/offline remote upload is unrelated.
+  Future<void> retryConversationSave() => _commitConversationState();
+
+  Future<void> _commitConversationState() {
+    if (_conversationCommitFuture == null &&
+        !_conversationDirty &&
+        !_selectedConversationDirty &&
+        _conversationWriteOperations == 0) {
+      return Future<void>.value();
+    }
+    Future<void> wait(Future<void> work) => work.timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        _setConversationSaveFailed(true);
+        throw ConversationSaveException(copy.aiConversationNotSaved);
+      },
+    );
+    final active = _conversationCommitFuture;
+    if (active != null) return wait(active);
+    final work = _commitConversationStateNow();
+    _conversationCommitFuture = work;
+    // Keep the underlying operation tracked even if a caller times out.
+    void release() {
+      if (identical(_conversationCommitFuture, work)) {
+        _conversationCommitFuture = null;
       }
-    });
+    }
+
+    unawaited(
+      work.then<void>(
+        (_) => release(),
+        onError: (Object _, StackTrace _) => release(),
+      ),
+    );
+    return wait(work);
+  }
+
+  Future<void> _commitConversationStateNow() async {
+    final epoch = _identityScopeEpoch;
+    void guard() {
+      if (epoch != _identityScopeEpoch) {
+        throw StateError('Account scope changed');
+      }
+    }
+
+    Future<void> drain() async {
+      while (true) {
+        final pending = _conversationSaveQueue;
+        await pending;
+        guard();
+        if (identical(pending, _conversationSaveQueue)) break;
+      }
+    }
+
+    try {
+      await drain();
+      if (_conversationDirty) {
+        // The background queue deliberately remains usable after an error.
+        // Retry once, then inspect durable state instead of trusting its Future.
+        _queueConversationSave();
+        await drain();
+      }
+      while (true) {
+        final pending = _selectedConversationSaveQueue;
+        await pending;
+        guard();
+        if (identical(pending, _selectedConversationSaveQueue)) break;
+      }
+      if (_selectedConversationDirty) await _persistSelectedConversationId();
+      guard();
+      if (_conversationDirty || _selectedConversationDirty) {
+        throw ConversationSaveException(copy.aiConversationNotSaved);
+      }
+      _setConversationSaveFailed(false);
+    } catch (_) {
+      guard();
+      _setConversationSaveFailed(true);
+      throw ConversationSaveException(copy.aiConversationNotSaved);
+    }
   }
 
   void _touchConversation(String conversationId) {
@@ -265,6 +365,7 @@ extension AppConversationController on AppController {
 
   void _queueSelectedConversationSave(String conversationId) {
     _selectedConversationDirty = true;
+    final version = ++_selectionWriteVersion;
     final preferences = _preferencesService;
     final persistedId = _conversations[conversationId]?.isDraft == false
         ? conversationId
@@ -276,7 +377,9 @@ extension AppConversationController on AppController {
           } else {
             await preferences.saveSelectedConversationId(persistedId);
           }
-          _selectedConversationDirty = false;
+          if (version == _selectionWriteVersion) {
+            _selectedConversationDirty = false;
+          }
         })
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint('[chat] persist selected conversation failed: $error');
@@ -400,6 +503,7 @@ extension AppConversationController on AppController {
         });
         _conversationDirty =
             _conversationSaveScheduled || _pendingConversationIds.isNotEmpty;
+        if (!_conversationDirty) _setConversationSaveFailed(false);
         return;
       }
       // Keep the existing atomic guest snapshot, but encode only changed
@@ -443,6 +547,7 @@ extension AppConversationController on AppController {
         ..addAll(encoded);
       _conversationDirty =
           _conversationSaveScheduled || _pendingConversationIds.isNotEmpty;
+      if (!_conversationDirty) _setConversationSaveFailed(false);
     } catch (error, stackTrace) {
       debugPrint('[chat] persist conversations failed: $error');
       debugPrint('$stackTrace');

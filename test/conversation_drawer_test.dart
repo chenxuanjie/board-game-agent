@@ -580,6 +580,50 @@ void main() {
   );
 
   for (final desktop in [false, true]) {
+    _uiTest('unsaved chat warning retries on both layouts desktop=$desktop', (
+      tester,
+    ) async {
+      final store = _MemoryStore();
+      final ai = _DelayedAi();
+      final controller = await _controller(store, ai: ai);
+      addTearDown(controller.dispose);
+      controller.openGlobalAssistant();
+      await controller.saveAiApiConfig(
+        controller.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      final send = controller.sendPrompt('保存故障时保留回答', useGlobalMode: true);
+      await ai.started.future;
+      store.fail = true;
+      ai.events.add(
+        BoardGameAiStreamEvent(
+          answer: BoardGameAiAnswer(
+            text: '不能丢失的回答',
+            source: AnswerSource.generalAdvice,
+          ),
+          isDone: true,
+        ),
+      );
+      await ai.events.close();
+      await send;
+      await expectLater(controller.prepareForAppUpdate(), throwsStateError);
+      await _mount(
+        tester,
+        controller,
+        desktop ? const Size(1280, 800) : const Size(320, 700),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(controller.copy.aiConversationNotSaved), findsOneWidget);
+      store.fail = false;
+      await tester.tap(find.text(controller.copy.retryConversationSave));
+      await tester.pumpAndSettle();
+      expect(find.text(controller.copy.aiConversationNotSaved), findsNothing);
+      expect(store.value, contains('不能丢失的回答'));
+      expect(tester.takeException(), isNull);
+      await controller.disposeServices();
+    });
+  }
+
+  for (final desktop in [false, true]) {
     _uiTest(
       'delete entry confirms, retries and clears deleted drafts desktop=$desktop',
       (tester) async {

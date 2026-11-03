@@ -1,3 +1,4 @@
+import 'support/pump_local_commit.dart';
 import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:convert';

@@ -141,6 +141,16 @@ class AppCopy {
     }
   }
 
+  String get aiConversationNotSaved => isChinese
+      ? '会话尚未保存到本机，请重试保存。保存成功前无法安装更新或切换账号。'
+      : 'Conversation not saved locally. Retry saving before installing an update or switching accounts.';
+  String get aiPromptCannotSave => isChinese
+      ? '提问过长或包含无法保存的内容，请修改后重试。'
+      : 'This prompt is too large or contains unsupported content. Edit it and try again.';
+  String get aiPromptNotSaved => isChinese
+      ? '提问尚未保存到本机，未发送给模型。请重试。'
+      : 'Your prompt was not saved locally and was not sent to the model. Please retry.';
+  String get retryConversationSave => isChinese ? '重试保存' : 'Retry saving';
   String get aiReplyFailed => isChinese
       ? '这次回答失败了，请稍后再试。'
       : 'The assistant could not answer this time. Please try again.';

@@ -203,6 +203,9 @@ class AppController extends ChangeNotifier {
       !_controllerDisposed &&
       !_switchingIdentityScope &&
       !_personalReloadCommit &&
+      !_conversationDirty &&
+      _conversationWriteOperations == 0 &&
+      !_selectedConversationDirty &&
       !_gameVotes.saving &&
       !(_nationalDayList?.saving ?? false) &&
       !_generationStates.values.any((state) => state.isSending) &&
@@ -372,10 +375,20 @@ class AppController extends ChangeNotifier {
   int _homeAssetsTotal = 0;
   Future<void> _conversationSaveQueue = Future<void>.value();
   bool _conversationSaveScheduled = false;
+  int _conversationWriteOperations = 0;
+  int _selectionWriteVersion = 0;
   bool _saveAllConversations = false;
   final Set<String> _pendingConversationIds = {};
   final Map<String, String> _serializedConversations = {};
   bool _conversationDirty = false;
+  bool _conversationSaveFailed = false;
+  Future<void>? _conversationCommitFuture;
+  String? _lastPromptSaveError;
+  String? get lastPromptSaveError => _lastPromptSaveError;
+  String? get conversationSaveError =>
+      _conversationSaveFailed ? copy.aiConversationNotSaved : null;
+  bool get hasUnsavedConversations => _conversationDirty;
+
   Future<void>? _aiConfigSaveQueue;
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
   bool _selectedConversationDirty = false;
@@ -1042,6 +1055,7 @@ class AppController extends ChangeNotifier {
     }
 
     checkIdle();
+    await _commitConversationState();
     await Future.wait<void>([
       _conversationSaveQueue,
       ?_aiConfigSaveQueue,
@@ -1052,6 +1066,7 @@ class AppController extends ChangeNotifier {
       _recentGamesMutationQueue,
       _dailyRecommendationSaveQueue,
     ]).timeout(const Duration(seconds: 15));
+    await _commitConversationState();
     checkIdle();
   }
 
@@ -1068,7 +1083,18 @@ class AppController extends ChangeNotifier {
         generationAbort.complete();
       }
     }
-    await _conversationSaveQueue;
+    Object? saveFailure;
+    StackTrace? saveStack;
+    try {
+      await Future.wait<void>([
+        for (final state in _generationStates.values)
+          if (state.finished != null) state.finished!.future,
+      ]).timeout(const Duration(seconds: 15));
+      await _commitConversationState();
+    } catch (error, stack) {
+      saveFailure = error;
+      saveStack = stack;
+    }
     await _aiConfigSaveQueue;
     await _selectedConversationSaveQueue;
     await _activitySaveQueue;
@@ -1077,6 +1103,7 @@ class AppController extends ChangeNotifier {
     await _speechService.cancelListening();
     await _ttsService.stop();
     _aiService.dispose();
+    if (saveFailure != null) Error.throwWithStackTrace(saveFailure, saveStack!);
   }
 
   void _notifyListeners() {

@@ -205,6 +205,45 @@ class BoardPersonalStore extends ChangeNotifier {
     List<String>? changedFields,
   }) async {
     final fields = _fields[table]!;
+    final metadata = _validatedMutation(
+      table,
+      r,
+      delete: delete,
+      changedFields: changedFields,
+    );
+    await tx.execute(
+      'INSERT OR REPLACE INTO $table('
+      'id,dataset_id,${fields.join(',')},deleted_at,_metadata) '
+      'VALUES(${List.filled(fields.length + 4, '?').join(',')})',
+      [
+        r['id'],
+        datasetId,
+        for (final field in fields)
+          _booleans.contains(field)
+              ? (r[field] == true ? 1 : 0)
+              : _jsonFields.contains(field)
+              ? jsonEncode(r[field] ?? [])
+              : r[field],
+        delete ? DateTime.now().toUtc().toIso8601String() : null,
+        jsonEncode(metadata),
+      ],
+    );
+  }
+
+  /// Validate the exact row/envelope budget before accepting a user prompt.
+  static void validateConversationMessage(
+    String conversationId,
+    Map<String, dynamic> message,
+  ) {
+    _validatedMutation('messages', _messageRecord(conversationId, message));
+  }
+
+  static Map<String, dynamic> _validatedMutation(
+    String table,
+    Map<String, dynamic> r, {
+    bool delete = false,
+    List<String>? changedFields,
+  }) {
     void validateJson(Object? value, [int depth = 0]) {
       if (depth > 20 || value is String && value.contains('\u0000')) {
         throw const FormatException('个人数据包含不可保存的字符或结构');
@@ -241,24 +280,25 @@ class BoardPersonalStore extends ChangeNotifier {
     if (utf8.encode(jsonEncode(metadata)).length > 480 * 1024) {
       throw StateError('单条个人数据过大，尚未保存');
     }
-    await tx.execute(
-      'INSERT OR REPLACE INTO $table('
-      'id,dataset_id,${fields.join(',')},deleted_at,_metadata) '
-      'VALUES(${List.filled(fields.length + 4, '?').join(',')})',
-      [
-        r['id'],
-        datasetId,
-        for (final field in fields)
-          _booleans.contains(field)
-              ? (r[field] == true ? 1 : 0)
-              : _jsonFields.contains(field)
-              ? jsonEncode(r[field] ?? [])
-              : r[field],
-        delete ? DateTime.now().toUtc().toIso8601String() : null,
-        jsonEncode(metadata),
-      ],
-    );
+    return metadata;
   }
+
+  static Map<String, dynamic> _messageRecord(
+    String conversationId,
+    Map<String, dynamic> message,
+  ) => {
+    'id': '$conversationId|${message['id']}',
+    'conversation_id': conversationId,
+    'role': message['role'],
+    'content': message['text'],
+    'created_at': _utc(message['timestamp']),
+    'state': message['state'] == 'failed' ? 'failed' : 'complete',
+    'source': message['source'],
+    'citations': message['citations'] ?? [],
+    'evidence': message['evidence'] ?? [],
+    'can_retry': message['canRetry'] == true,
+    'retry_prompt': message['retryPrompt'],
+  };
 
   static const preferenceDefaults = <String, dynamic>{
     'id': 'profile',
@@ -481,19 +521,7 @@ class BoardPersonalStore extends ChangeNotifier {
       });
       for (final message
           in (s['messages'] as List).cast<Map<String, dynamic>>()) {
-        m.add({
-          'id': '${s['id']}|${message['id']}',
-          'conversation_id': s['id'],
-          'role': message['role'],
-          'content': message['text'],
-          'created_at': _utc(message['timestamp']),
-          'state': message['state'] == 'failed' ? 'failed' : 'complete',
-          'source': message['source'],
-          'citations': message['citations'] ?? [],
-          'evidence': message['evidence'] ?? [],
-          'can_retry': message['canRetry'] == true,
-          'retry_prompt': message['retryPrompt'],
-        });
+        m.add(_messageRecord(s['id'] as String, message));
       }
     }
     // Parent rows are queued before children. Each upload is independently

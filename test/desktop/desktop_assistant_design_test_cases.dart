@@ -116,6 +116,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await _mount(tester, controller, const Size(1280, 800));
       await _navigate(tester, 'AI助手');
       final sending = controller.sendPrompt('stream test', useGlobalMode: true);
+      await pumpUntilLocalCommit(tester, () => ai.streams.isNotEmpty);
       await tester.pump(const Duration(milliseconds: 100));
       var globalChanges = 0, contentChanges = 0;
       controller.addListener(() => globalChanges++);
@@ -325,6 +326,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await _mount(tester, controller, const Size(1280, 800));
       await _navigate(tester, 'AI助手');
       final sending = controller.sendPrompt('第一个问题', useGlobalMode: true);
+      await pumpUntilLocalCommit(tester, () => ai.configs.isNotEmpty);
       await tester.pump();
       expect(ai.configs.single.model, 'gpt-6-astra');
       expect(ai.modes.single, AiAnswerMode.knowledgeThenDirect);
@@ -401,6 +403,7 @@ void _registerAssistantDesignTests(_DesktopWorkspaceTestContext context) {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final next = controller.sendPrompt('下一个问题', useGlobalMode: true);
+      await pumpUntilLocalCommit(tester, () => ai.configs.length == 2);
       await tester.pump();
       expect(ai.configs.last.model, 'gpt-5.6-sol');
       expect(ai.configs.last.reasoningEffort, AiReasoningEffort.high);

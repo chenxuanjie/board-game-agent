@@ -361,6 +361,7 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
                 ],
               ),
             ),
+            ConversationSaveNotice(controller: controller),
             Padding(
               padding: EdgeInsets.fromLTRB(composerInset, 9, composerInset, 18),
               child: AssistantComposer(
@@ -772,8 +773,24 @@ class DesktopAssistantPaneState extends State<DesktopAssistantPane> {
       );
       return;
     }
+    final conversationId = controller.selectedConversationId;
     _draftController.clear();
-    await controller.sendPrompt(text, useGlobalMode: useGlobalMode);
+    final accepted = await controller.sendPrompt(
+      text,
+      useGlobalMode: useGlobalMode,
+    );
+    if (!accepted &&
+        mounted &&
+        _draftController.text.isEmpty &&
+        controller.selectedConversationId == conversationId) {
+      _draftController.text = text;
+      final error = controller.lastPromptSaveError;
+      if (error != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
+      }
+    }
   }
 }
 

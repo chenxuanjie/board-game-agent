@@ -1,3 +1,4 @@
+import 'support/pump_local_commit.dart';
 import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -385,6 +386,7 @@ void main() {
         );
         await tester.pump();
         await tester.tap(find.byKey(const ValueKey('desktop-composer-send')));
+        await pumpUntilLocalCommit(tester, () => ai.requests == 1);
         await tester.pumpAndSettle();
         expect(ai.requests, 1);
         expect(ai.answerMode, AiAnswerMode.knowledgeThenDirect);

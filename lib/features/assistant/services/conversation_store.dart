@@ -43,6 +43,13 @@ class ConversationStore {
     return scope == null ? _browserKey : 'personal_v1.$scope.$_browserKey';
   }
 
+  void validateUserMessage(
+    String conversationId,
+    Map<String, dynamic> message,
+  ) {
+    BoardPersonalStore.validateConversationMessage(conversationId, message);
+  }
+
   Future<File> _file() async {
     final support = directory ?? await getApplicationSupportDirectory();
     final scope = PreferencesService.identityStorageId(identityUserId);
@@ -97,4 +104,9 @@ class ConversationStore {
     // Commit only a complete JSON snapshot; a failed write leaves the old file.
     await staged.rename(file.path);
   }
+}
+
+/// A local durability failure, independent from remote upload availability.
+class ConversationSaveException extends StateError {
+  ConversationSaveException(super.message);
 }

@@ -1,6 +1,7 @@
 import 'support/catalog_fixture.dart';
 import 'dart:async';
 import 'dart:io';
+import 'package:powersync/powersync.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter/foundation.dart';
@@ -16,6 +17,8 @@ import 'package:board_game_agent/core/theme/color_scheme_option.dart';
 import 'package:board_game_agent/features/assistant/models/ai_answer_mode.dart';
 import 'package:board_game_agent/features/assistant/models/ai_api_config.dart';
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/answer_source.dart';
+import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/features/assistant/services/ai_service.dart';
 import 'package:board_game_agent/features/assistant/services/ai_run_telemetry.dart';
 import 'package:board_game_agent/features/assistant/services/responses_rules_workflow.dart';
@@ -455,6 +458,247 @@ void main() {
   );
 
   test(
+    'local answer failure blocks update and reload, then a retry survives reconstruction',
+    () async {
+      final faults = _StoreFaults();
+      final ai = _SavingAi(onStart: () => faults.failWrites = true);
+      final app = await _app(store: _FaultStore(faults), ai: ai);
+      addTearDown(() => faults.failWrites = false);
+      app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await app.sendPrompt('必须留存的提问', useGlobalMode: true);
+      expect(ai.calls, 1);
+      await expectLater(
+        app.prepareForAppUpdate(),
+        throwsA(isA<ConversationSaveException>()),
+      );
+      expect(app.hasUnsavedConversations, isTrue);
+      expect(app.conversationSaveError, isNotNull);
+      final before = app
+          .messagesForContext(useGlobalMode: true)
+          .map((message) => message.text)
+          .toList();
+      expect(await app.reloadServicePersonalState(), isFalse);
+      expect(
+        app
+            .messagesForContext(useGlobalMode: true)
+            .map((message) => message.text)
+            .toList(),
+        before,
+      );
+      faults.failWrites = false;
+      await app.prepareForAppUpdate();
+      expect(app.hasUnsavedConversations, isFalse);
+      expect(app.conversationSaveError, isNull);
+      expect(faults.snapshots[null], contains('已保存的回答'));
+      final restored = await _app(store: _FaultStore(faults));
+      await restored.initialize();
+      expect(
+        restored
+            .messagesForContext(useGlobalMode: true)
+            .map((message) => message.text),
+        containsAll(['必须留存的提问', '已保存的回答']),
+      );
+    },
+  );
+
+  test(
+    'failed user commit never starts a model and remains recoverable',
+    () async {
+      final faults = _StoreFaults()..failWrites = true;
+      final ai = _SavingAi();
+      final app = await _app(store: _FaultStore(faults), ai: ai);
+      addTearDown(() => faults.failWrites = false);
+      app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await app.sendPrompt('尚未提交的问题', useGlobalMode: true);
+      expect(ai.calls, 0);
+      expect(app.messagesForContext(useGlobalMode: true).first.text, '尚未提交的问题');
+      expect(
+        app.messagesForContext(useGlobalMode: true).last.text,
+        contains('未发送给模型'),
+      );
+      await expectLater(
+        app.prepareForAppUpdate(),
+        throwsA(isA<ConversationSaveException>()),
+      );
+      faults.failWrites = false;
+      await app.retryMessage(
+        app.messagesForContext(useGlobalMode: true).last,
+        useGlobalMode: true,
+      );
+      await app.prepareForAppUpdate();
+      expect(ai.calls, 1);
+      expect(
+        app
+            .messagesForContext(useGlobalMode: true)
+            .where((message) => message.role == ChatRole.user),
+        hasLength(1),
+      );
+      expect(app.conversationSaveError, isNull);
+    },
+  );
+
+  test(
+    'model invocation waits for acknowledgement of the durable user input',
+    () async {
+      final store = _HeldConversationStore();
+      final ai = _SavingAi(
+        onStart: () => expect(store.value, contains('先本机提交')),
+      );
+      final app = await _app(store: store, ai: ai);
+      app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      final send = app.sendPrompt('先本机提交', useGlobalMode: true);
+      await store.started.future;
+      expect(ai.calls, 0);
+      await expectLater(app.prepareForAppUpdate(), throwsStateError);
+      store.release.complete();
+      await send;
+      expect(ai.calls, 1);
+      await app.prepareForAppUpdate();
+    },
+  );
+
+  test(
+    'real SQLite rollback blocks update, and pending offline uploads do not block retry',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'board-durability-test-',
+      );
+      final db = PowerSyncDatabase(
+        schema: boardPersonalSchema,
+        path: '${directory.path}/personal.sqlite',
+      );
+      await db.initialize();
+      final store = BoardPersonalStore(
+        database: db,
+        datasetId: 'personal-board-test',
+      );
+      addTearDown(() async {
+        await store.close();
+        await directory.delete(recursive: true);
+      });
+      final ai = _SavingAi(
+        onStart: () async {
+          expect(
+            (await store.records(
+              'messages',
+            )).where((row) => row['role'] == 'user'),
+            hasLength(1),
+          );
+          await db.execute(
+            "CREATE TRIGGER fail_answer_write INSTEAD OF INSERT ON messages WHEN NEW.role = 'assistant' AND NEW.content <> '' BEGIN SELECT RAISE(ABORT, 'injected local rollback'); END",
+          );
+        },
+      );
+      final app = await _app(ai: ai);
+      await app.switchIdentityScope('sqlite-user', personalStore: store);
+      app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await app.sendPrompt('真实事务提问', useGlobalMode: true);
+      await expectLater(
+        app.prepareForAppUpdate(),
+        throwsA(isA<ConversationSaveException>()),
+      );
+      expect(
+        (await store.records('messages')).map((row) => row['content']),
+        isNot(contains('已保存的回答')),
+      );
+      await db.execute('DROP TRIGGER fail_answer_write');
+      await app.retryConversationSave();
+      await app.prepareForAppUpdate();
+      expect(
+        (await store.records('messages')).map((row) => row['content']),
+        contains('已保存的回答'),
+      );
+      expect(
+        await db.getCrudBatch(),
+        isNotNull,
+      ); // no network/upload acknowledgement
+      final restored = await _app();
+      await restored.switchIdentityScope('sqlite-user', personalStore: store);
+      expect(
+        restored
+            .messagesForContext(useGlobalMode: true)
+            .map((message) => message.text),
+        containsAll(['真实事务提问', '已保存的回答']),
+      );
+    },
+  );
+
+  test(
+    'oversized UTF-8 and invalid input are rejected before SQLite or a model request',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'board-input-validation-test-',
+      );
+      final db = PowerSyncDatabase(
+        schema: boardPersonalSchema,
+        path: '${directory.path}/personal.sqlite',
+      );
+      await db.initialize();
+      final store = BoardPersonalStore(
+        database: db,
+        datasetId: 'personal-board-test',
+      );
+      addTearDown(() async {
+        await store.close();
+        await directory.delete(recursive: true);
+      });
+      final ai = _SavingAi();
+      final app = await _app(ai: ai);
+      await app.switchIdentityScope('sqlite-user', personalStore: store);
+      app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      for (final prompt in ['x' * 500000, '中' * 170000, 'invalid\u0000text']) {
+        expect(await app.sendPrompt(prompt, useGlobalMode: true), isFalse);
+        expect(app.lastPromptSaveError, isNotNull);
+      }
+      expect(ai.calls, 0);
+      expect(app.messagesForContext(useGlobalMode: true), isEmpty);
+      expect(await store.records('messages'), isEmpty);
+      await app.sendPrompt('可以正常保存', useGlobalMode: true);
+      await app.prepareForAppUpdate();
+      expect(ai.calls, 1);
+      expect(app.lastPromptSaveError, isNull);
+    },
+  );
+
+  test(
+    'service disposal reports local durability failure and still releases AI',
+    () async {
+      final faults = _StoreFaults();
+      final ai = _SavingAi(onStart: () => faults.failWrites = true);
+      final app = await _app(store: _FaultStore(faults), ai: ai);
+      addTearDown(() => faults.failWrites = false);
+      app.openGlobalAssistant();
+      await app.saveAiApiConfig(
+        app.aiApiConfig.copyWith(model: 'gpt-5.6-luna'),
+      );
+      await app.sendPrompt('退出前尚未保存', useGlobalMode: true);
+      await expectLater(
+        app.disposeServices(),
+        throwsA(isA<ConversationSaveException>()),
+      );
+      expect(ai.disposed, isTrue);
+      faults.failWrites = false;
+      await app.retryConversationSave();
+      expect(faults.snapshots[null], contains('已保存的回答'));
+    },
+  );
+
+  test(
     'failed conversation drain keeps old scope locked and supports retry',
     () async {
       final faults = _StoreFaults()..failWrites = true;
@@ -845,4 +1089,58 @@ class _NoNetwork extends RemoteAssetService {
     required List<AssetSourceConfig> sources,
     required String remotePath,
   }) async => null;
+}
+
+class _HeldConversationStore extends ConversationStore {
+  final started = Completer<void>();
+  final release = Completer<void>();
+  String? value;
+  @override
+  ConversationStore forIdentityScope(
+    String? userId, {
+    BoardPersonalStore? store,
+  }) => this;
+  @override
+  Future<String?> load() async => value;
+  @override
+  Future<void> save(String payload) async {
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    value = payload;
+  }
+}
+
+class _SavingAi extends _UnusedAi {
+  _SavingAi({this.onStart});
+  final FutureOr<void> Function()? onStart;
+  int calls = 0;
+  bool disposed = false;
+  @override
+  Stream<BoardGameAiStreamEvent> streamReply({
+    required String prompt,
+    required AppLanguage language,
+    required GameInfo game,
+    required AiAnswerMode answerMode,
+    required bool useGlobalMode,
+    required AiApiConfig config,
+    required List<AssetSourceConfig> assetSourceConfigs,
+    required RemoteAssetService remoteAssetService,
+    required List<ChatMessage> conversationHistory,
+    String? conversationId,
+    bool useCurrentGameKnowledge = false,
+    Future<void>? abortTrigger,
+  }) async* {
+    calls++;
+    await onStart?.call();
+    yield BoardGameAiStreamEvent(
+      answer: BoardGameAiAnswer(
+        text: '已保存的回答',
+        source: AnswerSource.generalAdvice,
+      ),
+      isDone: true,
+    );
+  }
+
+  @override
+  void dispose() => disposed = true;
 }

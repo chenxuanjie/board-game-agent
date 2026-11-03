@@ -1,3 +1,4 @@
+import 'features/assistant/services/conversation_store.dart';
 import 'dart:async';
 import 'core/platform/native_window_surface.dart';
 import 'ui/shared/spatial/spatial_workspace.dart';
@@ -214,7 +215,11 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
     widget.accountService?.onPublications = null;
     _releaseMonitor.dispose();
     widget.accountService?.dispose();
-    widget.controller.disposeServices();
+    unawaited(
+      widget.controller.disposeServices().catchError((Object _) {
+        debugPrint('[chat] local save incomplete during service disposal');
+      }),
+    );
     widget.updateSettingsController.dispose();
     _windowChrome.sidebarVisible.dispose();
     super.dispose();
@@ -493,6 +498,8 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
       }
       try {
         await widget.controller.prepareForAppUpdate();
+      } on ConversationSaveException catch (error) {
+        throw AppUpdateFailure(error.message);
       } catch (_) {
         throw AppUpdateFailure('请结束正在进行的操作，再重试更新');
       }

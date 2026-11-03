@@ -8,6 +8,7 @@ extension AppAssistantController on AppController {
       throw StateError('Account transition in progress');
     }
     final id = conversationId.trim();
+    _conversationWriteOperations++;
     final write = _conversationSaveQueue.then((_) async {
       final deleted = _conversations[id];
       if (deleted == null) return;
@@ -77,7 +78,9 @@ extension AppAssistantController on AppController {
       }
       _notifyListeners();
     });
-    _conversationSaveQueue = write.catchError((Object _) {});
+    _conversationSaveQueue = write
+        .catchError((Object _) {})
+        .whenComplete(_finishConversationWrite);
     await write;
   }
 
@@ -437,15 +440,16 @@ extension AppAssistantController on AppController {
     _notifyListeners();
   }
 
-  Future<void> sendPrompt(String prompt, {bool useGlobalMode = false}) async {
-    if (_switchingIdentityScope) return;
+  Future<bool> sendPrompt(String prompt, {bool useGlobalMode = false}) async {
+    if (_switchingIdentityScope) return false;
     final trimmed = prompt.trim();
     final _ChatGenerationState generation = _generationStateForContext(
       useGlobalMode: useGlobalMode,
     );
     if (trimmed.isEmpty || generation.isSending) {
-      return;
+      return false;
     }
+    _lastPromptSaveError = null;
     final AiApiConfig requestConfig = _aiApiConfig;
     final AiAnswerMode answerMode = chatAnswerMode(
       useGlobalMode: useGlobalMode,
@@ -471,7 +475,7 @@ extension AppAssistantController on AppController {
         conversationId: _conversationIdForContext(useGlobalMode: useGlobalMode),
       );
       _notifyListeners();
-      return;
+      return false;
     }
     final List<ChatMessage> messages = _messagesForContext(
       useGlobalMode: useGlobalMode,
@@ -486,6 +490,17 @@ extension AppAssistantController on AppController {
       text: trimmed,
       timestamp: DateTime.now(),
     );
+
+    try {
+      _conversationStore.validateUserMessage(
+        conversationId,
+        userMessage.toMap(),
+      );
+    } catch (_) {
+      _lastPromptSaveError = copy.aiPromptCannotSave;
+      _notifyListeners();
+      return false;
+    }
 
     final firstSubmission = !messages.any((item) => item.role == ChatRole.user);
     messages.add(userMessage);
@@ -537,7 +552,20 @@ extension AppAssistantController on AppController {
       '[chat] send prompt game=${game.slug} global=$useGlobalMode mode=${answerMode.code}',
     );
 
+    bool promptCommitted = false;
     try {
+      await _commitConversationState();
+      promptCommitted = true;
+      if (generation.wasStopped ||
+          generation.operationToken != operationToken ||
+          generation.contextEpoch != contextEpoch ||
+          _switchingIdentityScope) {
+        messages.removeWhere(
+          (message) => message.id == draftId && message.text.isEmpty,
+        );
+        _queueConversationSave(conversationId: conversationId);
+        return true;
+      }
       BoardGameAiAnswer? finalAnswer;
       BoardGameAiStreamEvent? terminalEvent;
       AiRunResult? terminalRunResult;
@@ -599,7 +627,7 @@ extension AppAssistantController on AppController {
 
       if (generation.operationToken != operationToken ||
           generation.contextEpoch != contextEpoch) {
-        return;
+        return true;
       }
 
       deltaBatcher.flush();
@@ -709,7 +737,7 @@ extension AppAssistantController on AppController {
       debugPrint('$stackTrace');
       if (generation.operationToken != operationToken ||
           generation.contextEpoch != contextEpoch) {
-        return;
+        return true;
       }
       if (generation.wasStopped) {
         _finishRunPresentation(generation, AiRunStatus.cancelled);
@@ -730,10 +758,14 @@ extension AppAssistantController on AppController {
         final ChatMessage? currentDraft = _messageById(messages, draftId);
         final String partialText = currentDraft?.text.trim() ?? '';
         final String failureNotice = _failureNotice(
-          copy.aiReplyFailed,
-          reason: _safeStatusError(error),
-          attempts: _runAttemptCount(generation),
-          progressLines: _confirmedProgressLines(generation),
+          promptCommitted ? copy.aiReplyFailed : copy.aiPromptNotSaved,
+          reason: promptCommitted
+              ? _safeStatusError(error)
+              : copy.aiConversationNotSaved,
+          attempts: promptCommitted ? _runAttemptCount(generation) : 0,
+          progressLines: promptCommitted
+              ? _confirmedProgressLines(generation)
+              : const [],
           partialOutputRetained: partialText.isNotEmpty,
         );
         final String text = partialText.isEmpty
@@ -751,7 +783,9 @@ extension AppAssistantController on AppController {
         _recordActivity(
           kind: AppActivityKind.aiFailed,
           title: copy.activityAiFailedTitle,
-          message: _safeStatusError(error),
+          message: promptCommitted
+              ? _safeStatusError(error)
+              : copy.aiPromptNotSaved,
           conversationId: conversationId,
           messageId: draftId,
         );
@@ -767,6 +801,7 @@ extension AppAssistantController on AppController {
         _notifyListeners();
       }
     }
+    return true;
   }
 
   Future<void> retryMessage(

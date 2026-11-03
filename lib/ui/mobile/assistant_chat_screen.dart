@@ -19,6 +19,7 @@ import '../shared/assistant/conversation_search_dialog.dart';
 import '../shared/assistant/assistant_toolbar_icon.dart';
 import '../shared/assistant/conversation_actions.dart';
 import '../shared/assistant/scroll_to_bottom_button.dart';
+import '../shared/assistant/conversation_save_notice.dart';
 
 class AssistantChatScreen extends StatefulWidget {
   const AssistantChatScreen({
@@ -284,6 +285,7 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
                     ],
                   ),
                 ),
+                ConversationSaveNotice(controller: controller),
                 Padding(
                   padding: EdgeInsets.fromLTRB(
                     screenWidth >= 720 ? 28 : 16,
@@ -720,8 +722,24 @@ class _AssistantChatScreenState extends State<AssistantChatScreen> {
       return;
     }
 
+    final conversationId = widget.controller.selectedConversationId;
     _textController.clear();
-    await widget.controller.sendPrompt(text, useGlobalMode: _useGlobalMode);
+    final accepted = await widget.controller.sendPrompt(
+      text,
+      useGlobalMode: _useGlobalMode,
+    );
+    if (!accepted &&
+        mounted &&
+        _textController.text.isEmpty &&
+        widget.controller.selectedConversationId == conversationId) {
+      _textController.text = text;
+      final error = widget.controller.lastPromptSaveError;
+      if (error != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
+      }
+    }
   }
 
   Future<void> _sendQuickPrompt(String prompt) async {
