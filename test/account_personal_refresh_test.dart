@@ -32,6 +32,59 @@ void main() {
   });
   tearDown(() => h.close());
 
+  test('collection and preference changes skip chat version scans', () async {
+    final store = h.store;
+    final scans = store.conversationReads;
+    await store.addFavorite('cabo');
+    await store.setPreference('nickname', 'collections-only');
+    await _until(
+      () =>
+          h.app.favoriteCount == 1 &&
+          h.service.displayName == 'collections-only',
+    );
+    expect(store.conversationReads, scans);
+    await store.loadConversationChanges(); // prepare actual session baselines
+    final before = store.conversationReads;
+    await store.saveConversationChanges({'chat': _session('first')}, {});
+    await _until(() => h.app.conversations.any((c) => c.id == 'chat'));
+    expect(store.conversationReads, greaterThan(before));
+    final checkpointReads = store.conversationReads;
+    await store.saveConversationChanges({
+      'chat': {
+        ..._session('first'),
+        'lastRun': {'id': 'local-checkpoint'},
+      },
+    }, {});
+    await _until(() => store.conversationReads > checkpointReads);
+    final reads = store.conversationReads;
+    await store.setPreference('nickname', 'still-no-chat-scan');
+    await _until(() => h.service.displayName == 'still-no-chat-scan');
+    expect(store.conversationReads, reads);
+  });
+
+  test(
+    'chat invalidation during a collection refresh survives the follow-up',
+    () async {
+      final store = h.store;
+      await store.loadConversationChanges();
+      final hold = store.holdFavorites();
+      await store.setPreference('nickname', 'held-collection');
+      await hold.entered.future.timeout(const Duration(seconds: 3));
+      await store.saveConversationChanges({'chat': _session('late chat')}, {});
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      hold.release.complete();
+      await _until(() => h.app.conversations.any((c) => c.id == 'chat'));
+      expect(
+        h.app.conversations
+            .singleWhere((c) => c.id == 'chat')
+            .messages
+            .single
+            .text,
+        'late chat',
+      );
+    },
+  );
+
   test(
     'a change arriving during projection is applied without another notification',
     () async {
@@ -183,6 +236,14 @@ class _SlowStore extends BoardPersonalStore {
       concurrentReads = 0,
       maxConcurrentReads = 0,
       failures = 0;
+  int conversationReads = 0;
+  @override
+  Future<({Map<String, dynamic> updated, Set<String> deleted})>
+  loadConversationChanges() {
+    conversationReads++;
+    return super.loadConversationChanges();
+  }
+
   _Hold holdFavorites() {
     final hold = _Hold();
     holds.add(hold);
@@ -253,6 +314,24 @@ class _SlowStore extends BoardPersonalStore {
     // Real SQLite/watch/projection; no NAS or external PowerSync transport.
   }
 }
+
+Map<String, dynamic> _session(String content) => {
+  'id': 'chat',
+  'title': 'chat',
+  'scope': 'global',
+  'opened': true,
+  'createdAt': '2026-11-03T00:00:00Z',
+  'updatedAt': '2026-11-03T00:01:00Z',
+  'messages': [
+    {
+      'id': 'm',
+      'role': 'assistant',
+      'text': content,
+      'timestamp': '2026-11-03T00:01:00Z',
+      'state': 'complete',
+    },
+  ],
+};
 
 class _Harness {
   _Harness(this.directory, this.app);

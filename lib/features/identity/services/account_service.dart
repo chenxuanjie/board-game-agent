@@ -434,27 +434,28 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
             if (active() && identical(_personalStore, store)) notifyListeners();
           });
           _nickname = (await store.preferences())['nickname'] as String;
-          for (final table in [
-            'favorites',
-            'recent_games',
-            'preferences',
-            'conversations',
-            'messages',
-            'votes',
-          ]) {
-            _personalWatchers.add(
-              store.database
-                  .watch('SELECT * FROM $table')
-                  .listen(
-                    (_) {
-                      if (active()) _schedulePersonalRefresh(store, active);
-                    },
-                    onError: (Object _) {
-                      /* SDK keeps the database and pending queue. */
-                    },
-                  ),
-            );
-          }
+          _personalWatchers.add(
+            store.watchPersonalChanges().listen(
+              (tables) {
+                if (active()) {
+                  _schedulePersonalRefresh(
+                    store,
+                    active,
+                    conversationsChanged: tables.any(
+                      const {
+                        'conversations',
+                        'messages',
+                        'run_checkpoints',
+                      }.contains,
+                    ),
+                  );
+                }
+              },
+              onError: (Object _) {
+                /* SDK keeps the database and pending queue. */
+              },
+            ),
+          );
           // First network synchronization never blocks successful local login.
           unawaited(
             store
@@ -487,8 +488,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   void _schedulePersonalRefresh(
     BoardPersonalStore store,
-    bool Function() active,
-  ) {
+    bool Function() active, {
+    required bool conversationsChanged,
+  }) {
     if (_disposed || !active() || !identical(_personalStore, store)) return;
     var refresh = _personalRefresh;
     if (refresh == null || !identical(refresh.store, store)) {
@@ -498,6 +500,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     }
     // Keep the intent even if a projection is in flight or the app is paused.
     refresh.pending = true;
+    refresh.conversationsPending |= conversationsChanged;
     _armPersonalRefresh(refresh);
   }
 
@@ -526,18 +529,28 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _refreshPersonalState(_PersonalRefresh refresh) async {
     if (!_personalRefreshActive(refresh) || !_personalForeground) return;
     refresh.pending = false;
+    final reloadConversations = refresh.conversationsPending;
+    refresh.conversationsPending = false;
     refresh.running = true;
     try {
-      final refreshed = await _controller.reloadServicePersonalState();
+      final refreshed = await _controller.reloadServicePersonalState(
+        reloadConversations: reloadConversations,
+      );
       if (!_personalRefreshActive(refresh)) return;
       final nickname =
           (await refresh.store.preferences())['nickname'] as String;
       if (!_personalRefreshActive(refresh)) return;
       _nickname = nickname;
-      if (!refreshed) refresh.pending = true;
+      if (!refreshed) {
+        refresh.pending = true;
+        refresh.conversationsPending |= reloadConversations;
+      }
       notifyListeners();
     } catch (_) {
-      if (_personalRefreshActive(refresh)) refresh.pending = true;
+      if (_personalRefreshActive(refresh)) {
+        refresh.pending = true;
+        refresh.conversationsPending |= reloadConversations;
+      }
     } finally {
       // This state belongs to one scope. An obsolete finally must not clear a
       // new account's busy/pending state or install its own retry there.
@@ -801,6 +814,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       _personalForeground = true;
       if (_personalRefresh case final refresh?) {
         refresh.pending = true;
+        refresh.conversationsPending = true;
         _armPersonalRefresh(refresh);
       }
       final sync = _publicSync;
@@ -866,5 +880,5 @@ final class _PersonalRefresh {
   final BoardPersonalStore store;
   final bool Function() active;
   Timer? timer;
-  bool pending = false, running = false;
+  bool pending = false, conversationsPending = false, running = false;
 }

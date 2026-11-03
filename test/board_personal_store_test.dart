@@ -45,6 +45,115 @@ void main() {
       },
     ],
   };
+
+  test(
+    'table invalidations cover writes, same-count replacement, tombstones and deletes',
+    () async {
+      final events = <Set<String>>[];
+      final subscription = store.watchPersonalChanges().listen(events.add);
+      addTearDown(subscription.cancel);
+      Future<void> saw(String table, Future<void> Function() action) async {
+        events.clear();
+        await action();
+        final deadline = Stopwatch()..start();
+        while (!events.any((tables) => tables.contains(table))) {
+          if (deadline.elapsed > const Duration(seconds: 3)) {
+            fail('Missing $table invalidation');
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(
+          events.every(
+            (tables) => BoardPersonalStore.personalTables.containsAll(tables),
+          ),
+          isTrue,
+        );
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(events.single, BoardPersonalStore.personalTables);
+      await store.loadConversationChanges();
+      await saw(
+        'messages',
+        () => store.saveConversationChanges({'a': session('a', 'first')}, {}),
+      );
+      expect(
+        (await store.loadConversationChanges())
+            .updated['a']['messages']
+            .single['text'],
+        'first',
+      );
+      final headers = await store.database.getAll(
+        'SELECT row_version,updated_at FROM messages',
+      );
+      await saw(
+        'messages',
+        () => store.saveConversationChanges({
+          'a': session('a', 'local update'),
+        }, {}),
+      );
+      expect(
+        await store.database.getAll(
+          'SELECT row_version,updated_at FROM messages',
+        ),
+        headers,
+      );
+      expect(
+        (await store.loadConversationChanges())
+            .updated['a']['messages']
+            .single['text'],
+        'local update',
+      );
+      await saw(
+        'messages',
+        () => store.database.execute(
+          'UPDATE messages SET deleted_at=?,row_version=? WHERE id=?',
+          ['2026-11-04T00:00:00Z', 2, 'a|m1'],
+        ),
+      );
+      expect(
+        (await store.loadConversationChanges()).updated['a']['messages'],
+        isEmpty,
+      );
+      await saw(
+        'conversations',
+        () => store.database.execute('DELETE FROM conversations WHERE id=?', [
+          'a',
+        ]),
+      );
+      expect((await store.loadConversationChanges()).deleted, {'a'});
+      await saw(
+        'favorites',
+        () => store.database.execute(
+          "INSERT INTO favorites(id,dataset_id,game_slug,created_at) VALUES('one',?,'cabo','2026-11-03T00:00:00Z')",
+          [store.datasetId],
+        ),
+      );
+      await saw(
+        'favorites',
+        () => store.database.writeTransaction((tx) async {
+          await tx.execute("DELETE FROM favorites WHERE id='one'");
+          await tx.execute(
+            "INSERT INTO favorites(id,dataset_id,game_slug,created_at) VALUES('two',?,'scout','2026-11-03T00:00:00Z')",
+            [store.datasetId],
+          );
+        }),
+      );
+      expect((await store.records('favorites')).single['game_slug'], 'scout');
+      await saw(
+        'run_checkpoints',
+        () => store.database.execute(
+          "INSERT INTO run_checkpoints(id,payload,modified_at) VALUES('local','{}','2026-11-03T00:00:00Z')",
+        ),
+      );
+      await saw(
+        'run_checkpoints',
+        () => store.database.execute(
+          "DELETE FROM run_checkpoints WHERE id='local'",
+        ),
+      );
+    },
+  );
   test(
     'patching and deleting a session preserves other sessions and their upload queue',
     () async {

@@ -189,7 +189,9 @@ extension AppIdentityScopeController on AppController {
     _notifyListeners();
   }
 
-  Future<void> _reloadIdentityPersonalState() async {
+  Future<void> _reloadIdentityPersonalState({
+    bool reloadConversations = true,
+  }) async {
     await _restoreGameGallerySelections();
     _voiceReplyEnabled = await _preferencesService
         .loadVoiceReplyEnabled()
@@ -230,8 +232,10 @@ extension AppIdentityScopeController on AppController {
     _dailyRecommendationHistory = await _preferencesService
         .loadDailyRecommendations()
         .timeout(const Duration(seconds: 8));
-    await _restoreConversations(throwOnError: true);
-    _refreshConversationMetadata();
+    if (reloadConversations) {
+      await _restoreConversations(throwOnError: true);
+      _refreshConversationMetadata();
+    }
     _selectedConversationId = _resolveSelectedConversationId(
       _selectedConversationId,
     );
@@ -239,7 +243,9 @@ extension AppIdentityScopeController on AppController {
 
   /// Refresh only while editing and streaming have settled. Called after
   /// PowerSync commits remote rows, never in the middle of a local mutation.
-  Future<bool> reloadServicePersonalState() async {
+  Future<bool> reloadServicePersonalState({
+    bool reloadConversations = true,
+  }) async {
     if (!personalDataIdle) return false;
     await Future.wait([
       _conversationSaveQueue,
@@ -254,7 +260,9 @@ extension AppIdentityScopeController on AppController {
     _switchingIdentityScope = true;
     try {
       _favoriteRecordsLoaded = false;
-      await _reloadIdentityPersonalState();
+      await _reloadIdentityPersonalState(
+        reloadConversations: reloadConversations,
+      );
       await _gameVotes.reload();
     } finally {
       _personalReloadCommit = false;

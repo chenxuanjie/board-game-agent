@@ -95,6 +95,27 @@ class BoardPersonalStore extends ChangeNotifier {
   bool _closed = false;
   String? syncError;
 
+  static const personalTables = {
+    'favorites',
+    'recent_games',
+    'preferences',
+    'conversations',
+    'messages',
+    'votes',
+    'run_checkpoints',
+  };
+
+  /// SDK table invalidations carry no rows or message bodies. PowerSync maps
+  /// native/Web storage notifications back to these logical schema names.
+  /// Coalescing and in-flight retries belong to the account's projection lane.
+  Stream<Set<String>> watchPersonalChanges() => database
+      .onChange(personalTables, throttle: null)
+      .map(
+        (event) => event.tables.isEmpty
+            ? personalTables
+            : event.tables.intersection(personalTables),
+      );
+
   static Future<BoardPersonalStore> open(String scope, String datasetId) async {
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(scope)) {
       throw ArgumentError('Invalid account scope');
