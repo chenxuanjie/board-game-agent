@@ -18,6 +18,40 @@ class AiErrorPresentation {
   }) {
     final bool chinese = language == AppLanguage.zhHans;
     final String value = _flatten(error).toLowerCase();
+    if (value.contains('knowledge_integrity')) {
+      return AiErrorPresentation(
+        code: 'knowledge_integrity',
+        message: chinese
+            ? '资料已更新或校验失败，请刷新资料库后重试'
+            : 'The published file changed or failed verification. Refresh the library and retry',
+      );
+    }
+    if (value.contains('knowledge_unavailable')) {
+      return AiErrorPresentation(
+        code: 'knowledge_unavailable',
+        message: chinese
+            ? '当前发布的资料正文暂不可用，请刷新资料库后重试'
+            : 'The published file is unavailable. Refresh the library and retry',
+      );
+    }
+    if (value.contains('knowledge_preparation_timeout')) {
+      return AiErrorPresentation(
+        code: 'knowledge_preparation_timeout',
+        message: chinese
+            ? '资料准备超时，请稍后重试'
+            : 'Preparing the published files timed out. Please retry',
+      );
+    }
+    if (value.contains('request_too_large') ||
+        _hasStatus(value, 413) ||
+        value.contains('request exceeds') && value.contains('size limit')) {
+      return AiErrorPresentation(
+        code: 'request_too_large',
+        message: chinese
+            ? '资料和对话超出本次请求容量，请减少资料或新建对话'
+            : 'The files and conversation exceed this request limit. Use fewer files or start a new conversation',
+      );
+    }
     if (value.contains('请先登录后使用 loomex') || value.contains('请先登录后使用loomex')) {
       return AiErrorPresentation(
         code: 'account_required',

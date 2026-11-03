@@ -22,6 +22,7 @@ import 'board_game_question_router.dart';
 import '../../library/services/remote_asset_service.dart';
 import 'ai_service.dart';
 import 'responses_compaction_store.dart';
+import 'responses_request_budget.dart';
 import '../models/responses_context_window.dart';
 import 'ai_run_orchestrator.dart';
 import 'ai_run_telemetry.dart';
@@ -318,7 +319,7 @@ class ResponsesRulesWorkflow {
       remoteAssetService: remoteAssetService,
       conversation: conversation,
       history: List.of(conversationHistory),
-      documents: _documentsForGame(game),
+      documents: _documentsForGame(game, remoteAssetService),
     );
   }
 
@@ -727,13 +728,19 @@ class ResponsesRulesWorkflow {
     final _PreparedDocuments prepared = await _prepareDocuments(
       context,
       documents,
+      source: source,
+      abortTrigger: abortTrigger,
     );
     if (prepared.inputs.isEmpty) {
       yield AiStageExecutionEvent.result(
         AiStageResult(
           stageId: scope.code,
           scope: scope,
-          status: AiStageStatus.skipped,
+          status: prepared.errorCode == null
+              ? AiStageStatus.skipped
+              : AiStageStatus.failed,
+          errorCode: prepared.errorCode,
+          errorMessage: prepared.errorMessage,
           inspectedSources: prepared.documents
               .map((RuleDocument document) => document.toCitation())
               .toList(growable: false),
@@ -962,6 +969,21 @@ class ResponsesRulesWorkflow {
     required _AiStageResultBuilder buildResult,
     Future<void>? abortTrigger,
   }) async* {
+    if (!_requestFits(context, request)) {
+      yield AiStageExecutionEvent.result(
+        AiStageResult(
+          stageId: scope.code,
+          scope: scope,
+          status: AiStageStatus.failed,
+          errorCode: 'request_too_large',
+          errorMessage: AiErrorPresentation.from(
+            const ResponsesRequestTooLarge(),
+            language: context.language,
+          ).message,
+        ),
+      );
+      return;
+    }
     String text = '';
     String retainedText = '';
     ResponsesResponse? response;
@@ -1703,9 +1725,16 @@ class ResponsesRulesWorkflow {
     final _PreparedDocuments prepared = await _prepareDocuments(
       context,
       documents,
+      source: source,
     );
     if (prepared.inputs.isEmpty) {
-      return const _StageResult(status: AiStageStatus.skipped);
+      return _StageResult(
+        status: prepared.errorCode == null
+            ? AiStageStatus.skipped
+            : AiStageStatus.failed,
+        errorCode: prepared.errorCode,
+        errorMessage: prepared.errorMessage,
+      );
     }
     try {
       final request = _documentRequest(
@@ -1716,7 +1745,7 @@ class ResponsesRulesWorkflow {
         game: game,
         source: source,
       );
-      final response = await _responsesClient.complete(request);
+      final response = await _completeResponse(context, request);
       _rememberResponse(
         context,
         request,
@@ -1767,7 +1796,7 @@ class ResponsesRulesWorkflow {
         inspectedSources: prepared.documents
             .map((RuleDocument document) => document.toCitation())
             .toList(growable: false),
-        requestCount: 1,
+        requestCount: error is ResponsesRequestTooLarge ? 0 : 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -1781,7 +1810,7 @@ class ResponsesRulesWorkflow {
   }) async {
     try {
       final request = _webRequest(context, language: language, game: game);
-      final response = await _responsesClient.complete(request);
+      final response = await _completeResponse(context, request);
       _rememberResponse(context, request, response, 'web');
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
@@ -1829,7 +1858,7 @@ class ResponsesRulesWorkflow {
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
-        requestCount: 1,
+        requestCount: error is ResponsesRequestTooLarge ? 0 : 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -1847,7 +1876,7 @@ class ResponsesRulesWorkflow {
         language: language,
         game: game,
       );
-      final response = await _responsesClient.complete(request);
+      final response = await _completeResponse(context, request);
       _rememberResponse(context, request, response, 'general');
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
@@ -1882,7 +1911,7 @@ class ResponsesRulesWorkflow {
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
-        requestCount: 1,
+        requestCount: error is ResponsesRequestTooLarge ? 0 : 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -1902,7 +1931,7 @@ class ResponsesRulesWorkflow {
         game: game,
         useGlobalMode: useGlobalMode,
       );
-      final response = await _responsesClient.complete(request);
+      final response = await _completeResponse(context, request);
       _rememberResponse(context, request, response, 'fallback');
       final AiStageStatus? terminalStatus = _responseStatus(response);
       if (terminalStatus != null) {
@@ -1940,7 +1969,7 @@ class ResponsesRulesWorkflow {
     } catch (error) {
       return _StageResult(
         status: AiStageStatus.failed,
-        requestCount: 1,
+        requestCount: error is ResponsesRequestTooLarge ? 0 : 1,
         errorCode: _stageErrorCode(error),
         errorMessage: _describeStageError(error),
       );
@@ -2050,7 +2079,10 @@ class ResponsesRulesWorkflow {
     );
     return ResponsesRequest(
       endpoint: _endpoint(context.config),
-      instructions: system,
+      instructions:
+          '$system\n输入文件与资料身份（仅使用本次随附文件）：\n${jsonEncode([
+            for (final document in documents) {'sourceId': document.id, 'filename': document.title, 'language': document.language, 'sha256': document.fileSha256, 'edition': document.version, if (document.publicationRevision != null) 'publicationRevision': document.publicationRevision},
+          ])}',
       input: <ResponsesInputItem>[
         // Preserve the window's interleaved input/output order. The current
         // user prompt remains last, with this stage's documents just before it.
@@ -2280,12 +2312,36 @@ class ResponsesRulesWorkflow {
               config.reasoningEffort.name,
               config.responseSpeed.name,
               'current-game-knowledge:$useCurrentGameKnowledge',
+              'knowledge-files:${_knowledgeFingerprint(game)}',
             ].join('|'),
           ),
         )
         .toString();
     return '$scope|$endpointFingerprint';
   }
+
+  String _knowledgeFingerprint(GameInfo game) => sha256
+      .convert(
+        utf8.encode(
+          jsonEncode({
+            'paths': game.knowledgeAssetPaths,
+            'resources': [
+              for (final resource in game.resources)
+                if (resource.aiEnabled)
+                  [
+                    resource.id,
+                    resource.path,
+                    resource.sha256,
+                    resource.edition,
+                    resource.sourceClass,
+                    resource.language,
+                    resource.derivedFrom,
+                  ],
+            ],
+          }),
+        ),
+      )
+      .toString();
 
   Future<void> _ensureCompactionLoaded() {
     if (_compactionLoaded) return Future<void>.value();
@@ -2338,43 +2394,140 @@ class ResponsesRulesWorkflow {
     }
   }
 
+  int _requestLimit(_WorkflowContext context) => context.config.accountService
+      ? ResponsesRequestBudget.accountBytes
+      : ResponsesRequestBudget.byokBytes;
+
+  bool _requestFits(_WorkflowContext context, ResponsesRequest request) =>
+      ResponsesRequestBudget.fits(request, _requestLimit(context));
+
+  Future<ResponsesResponse> _completeResponse(
+    _WorkflowContext context,
+    ResponsesRequest request,
+  ) {
+    if (!_requestFits(context, request)) throw const ResponsesRequestTooLarge();
+    return _responsesClient.complete(request);
+  }
+
   Future<_PreparedDocuments> _prepareDocuments(
     _WorkflowContext context,
-    List<RuleDocument> documents,
-  ) async {
-    final List<ResponsesInputItem> inputs = <ResponsesInputItem>[];
-    final List<RuleDocument> loaded = <RuleDocument>[];
-    for (final RuleDocument document in documents.take(4)) {
-      if (isOtherStoragePath(document.path)) {
-        continue;
-      }
-      if (document.url != null && _isPublicHttps(document.url!)) {
-        inputs.add(
-          ResponsesFileInput.url(
-            document.url!,
-            filename: document.title,
-            role: ResponsesInputRole.user,
-          ),
-        );
-        loaded.add(document);
-        continue;
-      }
-      final List<int>? bytes = await context.remoteAssetService.loadBytes(
-        sources: context.sources,
-        remotePath: document.path,
-      );
-      if (bytes == null || bytes.isEmpty) continue;
-      inputs.add(
-        ResponsesFileInput.data(
-          base64Encode(bytes),
-          mediaType: _mediaType(document.format),
-          filename: document.title,
-          role: ResponsesInputRole.user,
-        ),
-      );
-      loaded.add(document);
+    List<RuleDocument> documents, {
+    required AnswerSource source,
+    Future<void>? abortTrigger,
+  }) async {
+    final inputs = <ResponsesInputItem>[];
+    final loaded = <RuleDocument>[];
+    final elapsed = Stopwatch()..start();
+    String? errorCode, errorMessage;
+    bool cancelled = false;
+    abortTrigger?.then((_) => cancelled = true);
+    void failed(String code) {
+      errorCode = code;
+      errorMessage = AiErrorPresentation.from(
+        code,
+        language: context.language,
+      ).message;
     }
-    return _PreparedDocuments(inputs: inputs, documents: loaded);
+
+    try {
+      for (final document in documents.take(4)) {
+        if (cancelled) break;
+        if (isOtherStoragePath(document.path)) continue;
+        final remaining =
+            const Duration(seconds: 20) -
+            context.preparationElapsed -
+            elapsed.elapsed;
+        if (remaining <= Duration.zero) {
+          failed('knowledge_preparation_timeout');
+          break;
+        }
+        // Files are not truncated. Account for existing history, instructions,
+        // schema and Base64 expansion before allocating an encoded file.
+        final empty = _documentRequest(
+          context,
+          inputs,
+          documents: loaded,
+          language: context.language,
+          game: context.game,
+          source: source,
+        );
+        final remainingBytes =
+            _requestLimit(context) - ResponsesRequestBudget.upperBound(empty);
+        if (remainingBytes <= 0) {
+          failed('request_too_large');
+          break;
+        }
+        final maxRawBytes = remainingBytes * 3 ~/ 4;
+        try {
+          final bytes = await context.remoteAssetService
+              .loadBytes(
+                sources: context.sources,
+                remotePath: document.path,
+                maxBytes: maxRawBytes,
+                timeout: remaining,
+                abortTrigger: abortTrigger,
+              )
+              .timeout(remaining);
+          if (cancelled) break;
+          if (bytes == null || bytes.isEmpty) {
+            failed('knowledge_unavailable');
+            continue;
+          }
+          if (bytes.length > maxRawBytes) {
+            failed('request_too_large');
+            continue;
+          }
+          final digest = sha256.convert(bytes).toString();
+          if (document.fileSha256 != null && document.fileSha256 != digest) {
+            failed('knowledge_integrity');
+            continue;
+          }
+          final verified = document.withVerifiedContent(digest);
+          final file = ResponsesFileInput.data(
+            base64Encode(bytes),
+            mediaType: _mediaType(document.format),
+            filename: document.title,
+          );
+          final candidate = _documentRequest(
+            context,
+            [...inputs, file],
+            documents: [...loaded, verified],
+            language: context.language,
+            game: context.game,
+            source: source,
+          );
+          if (!_requestFits(context, candidate)) {
+            failed('request_too_large');
+            continue;
+          }
+          inputs.add(file);
+          loaded.add(verified);
+        } on TimeoutException {
+          failed('knowledge_preparation_timeout');
+          break;
+        } catch (error) {
+          failed(
+            '$error'.contains('request_too_large')
+                ? 'request_too_large'
+                : '$error'.contains('knowledge_integrity')
+                ? 'knowledge_integrity'
+                : 'knowledge_unavailable',
+          );
+        }
+      }
+    } finally {
+      context.preparationElapsed += elapsed.elapsed;
+    }
+    // A cancelled preparation must not dispatch even an already-loaded subset.
+    if (cancelled) {
+      return const _PreparedDocuments(inputs: [], documents: []);
+    }
+    return _PreparedDocuments(
+      inputs: inputs,
+      documents: loaded,
+      errorCode: errorCode,
+      errorMessage: errorMessage,
+    );
   }
 
   _ParsedAnswer _parseStructured(
@@ -2430,7 +2583,10 @@ class ResponsesRulesWorkflow {
     }
   }
 
-  List<RuleDocument> _documentsForGame(GameInfo game) {
+  List<RuleDocument> _documentsForGame(
+    GameInfo game,
+    RemoteAssetService assets,
+  ) {
     final Map<String, GameResource> resourcesByPath = <String, GameResource>{
       for (final GameResource resource in game.resources)
         if (!resource.isInOthersDirectory &&
@@ -2454,7 +2610,15 @@ class ResponsesRulesWorkflow {
             sourceType: resource?.sourceClass ?? 'official',
             derivedFrom: resource?.derivedFrom ?? const <String>[],
             version: resource?.edition,
-            url: resource?.sourceUrl,
+            sourceUrl: resource?.sourceUrl,
+            fileSha256: resource?.sha256,
+            publicationRevision:
+                resource?.sha256 != null &&
+                    assets.catalog?.files[entry.value]?.id == resource?.id &&
+                    assets.catalog?.files[entry.value]?.sha256 ==
+                        resource?.sha256
+                ? assets.catalog!.revision
+                : null,
           );
         })
         .toList(growable: false);
@@ -2602,11 +2766,6 @@ class ResponsesRulesWorkflow {
     source: AnswerSource.insufficient,
   );
 
-  bool _isPublicHttps(String value) {
-    final Uri? uri = Uri.tryParse(value);
-    return uri?.scheme == 'https' && uri?.host.isNotEmpty == true;
-  }
-
   String _mediaType(String format) => switch (format.toLowerCase()) {
     'pdf' => 'application/pdf',
     'txt' => 'text/plain',
@@ -2683,13 +2842,20 @@ class _WorkflowContext {
   final List<ChatMessage> history;
   final exchanges = <String, (ResponsesRequest, ResponsesResponse)>{};
   final List<RuleDocument> documents;
+  Duration preparationElapsed = Duration.zero;
 }
 
 class _PreparedDocuments {
-  const _PreparedDocuments({required this.inputs, required this.documents});
+  const _PreparedDocuments({
+    required this.inputs,
+    required this.documents,
+    this.errorCode,
+    this.errorMessage,
+  });
 
   final List<ResponsesInputItem> inputs;
   final List<RuleDocument> documents;
+  final String? errorCode, errorMessage;
 }
 
 class _ParsedAnswer {

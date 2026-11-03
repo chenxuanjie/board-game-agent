@@ -7,6 +7,30 @@ import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/features/assistant/services/ai_error_presenter.dart';
 
 void main() {
+  test(
+    'capacity and integrity failures keep actionable copy without raw details',
+    () {
+      for (final error in [
+        'request_too_large',
+        'HTTP 413',
+        'AI request exceeds its size limit',
+        'AI request exceeds the gateway size limit',
+      ]) {
+        expect(AiErrorPresentation.from(error).code, 'request_too_large');
+      }
+      expect(
+        AiErrorPresentation.from('knowledge_integrity').message,
+        contains('刷新资料库'),
+      );
+      expect(
+        AiErrorPresentation.from(
+          'knowledge_preparation_timeout',
+          language: AppLanguage.en,
+        ).code,
+        'knowledge_preparation_timeout',
+      );
+    },
+  );
   test('maps provider status codes to readable Chinese categories', () {
     final AiErrorPresentation authentication = AiErrorPresentation.from(
       const AiTransportException('HTTP 401: invalid api key'),

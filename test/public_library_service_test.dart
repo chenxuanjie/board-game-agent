@@ -28,6 +28,133 @@ void main() {
     await directory.delete(recursive: true);
   });
   test(
+    'bounded AI reads reject oversized whole files and reuse verified native cache',
+    () async {
+      await service.loadCatalog();
+      await expectLater(
+        service.loadBytes(
+          sources: [],
+          remotePath: 'assets/games/cabo/docs/rules.md',
+          maxBytes: 4,
+          timeout: const Duration(seconds: 1),
+        ),
+        throwsStateError,
+      );
+      expect(
+        utf8.decode(
+          (await service.loadBytes(
+            sources: [],
+            remotePath: 'assets/games/cabo/docs/rules.md',
+            maxBytes: 8,
+            timeout: const Duration(seconds: 1),
+          ))!,
+        ),
+        'rules',
+      );
+      fixture.offline = true;
+      expect(
+        utf8.decode(
+          (await service.loadBytes(
+            sources: [],
+            remotePath: 'assets/games/cabo/docs/rules.md',
+            maxBytes: 8,
+            timeout: const Duration(seconds: 1),
+          ))!,
+        ),
+        'rules',
+      );
+      expect(
+        directory
+            .listSync(recursive: true)
+            .where((file) => file.path.endsWith('.knowledge')),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'browser AI reads use versioned same-origin resource bytes with a bound',
+    () async {
+      service.dispose();
+      service = RemoteAssetService(
+        client: fixture.client,
+        cacheDirectory: directory,
+        browser: true,
+        serviceOrigin: () => origin,
+      );
+      await service.loadCatalog();
+      fixture.requests.clear();
+      final bytes = await service.loadBytes(
+        sources: [],
+        remotePath: 'assets/games/cabo/docs/rules.md',
+        maxBytes: 20,
+        timeout: const Duration(seconds: 1),
+      );
+      expect(utf8.decode(bytes!), 'rules');
+      expect(
+        fixture.requests.single.url.path,
+        '/api/v1/apps/board_game_agent/catalog/resources/cabo-rules/content',
+      );
+      expect(
+        fixture.requests.single.url.queryParameters['version'],
+        service.catalog!.files['assets/games/cabo/docs/rules.md']!.sha256,
+      );
+    },
+  );
+
+  for (final cancelExplicitly in [false, true]) {
+    test(
+      'bounded input read aborts the underlying HTTP body (explicit=$cancelExplicitly)',
+      () async {
+        service.dispose();
+        final started = Completer<void>(), aborted = Completer<void>();
+        final stop = Completer<void>();
+        final body = StreamController<List<int>>();
+        final client = MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/cabo-rules/content')) {
+            expect(request, isA<http.Abortable>());
+            (request as http.Abortable).abortTrigger!.then((_) {
+              if (!aborted.isCompleted) aborted.complete();
+              if (!body.isClosed) unawaited(body.close());
+            });
+            started.complete();
+            return http.StreamedResponse(body.stream, 200);
+          }
+          final response = await fixture.handle(
+            http.Request(request.method, request.url),
+          );
+          return http.StreamedResponse(
+            Stream.value(response.bodyBytes),
+            response.statusCode,
+            headers: response.headers,
+          );
+        });
+        service = RemoteAssetService(
+          client: client,
+          cacheDirectory: directory,
+          serviceOrigin: () => origin,
+        );
+        await service.loadCatalog();
+        final read = service.loadBytes(
+          sources: [],
+          remotePath: 'assets/games/cabo/docs/rules.md',
+          maxBytes: 20,
+          timeout: Duration(milliseconds: cancelExplicitly ? 1000 : 150),
+          abortTrigger: stop.future,
+        );
+        final assertion = expectLater(read, throwsA(isA<TimeoutException>()));
+        await started.future;
+        if (cancelExplicitly) stop.complete();
+        await assertion;
+        await aborted.future;
+        expect(
+          await service.cachedFileFor('assets/games/cabo/docs/rules.md'),
+          isNull,
+        );
+      },
+    );
+  }
+  test(
     'anonymous SQL snapshot and files use new endpoints, verify hashes and coalesce downloads',
     () async {
       final snapshot = await service.loadCatalog();

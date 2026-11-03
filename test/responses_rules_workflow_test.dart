@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:crypto/crypto.dart';
+import 'support/catalog_http_fixture.dart';
 
 import 'package:app_ai_client/app_ai_client.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +17,8 @@ import 'package:board_game_agent/core/localization/app_language.dart';
 import 'package:board_game_agent/features/library/models/asset_source_config.dart';
 import 'package:board_game_agent/features/assistant/models/board_game_ai_answer.dart';
 import 'package:board_game_agent/features/assistant/models/chat_message.dart';
+import 'package:board_game_agent/features/assistant/models/rule_citation.dart';
+import 'package:board_game_agent/features/assistant/services/responses_request_budget.dart';
 import 'package:board_game_agent/features/assistant/models/responses_context_window.dart';
 import 'package:board_game_agent/features/games/models/game_info.dart';
 import 'package:board_game_agent/features/library/models/game_resource.dart';
@@ -24,6 +29,7 @@ import 'package:board_game_agent/features/assistant/services/responses_rules_wor
 import 'package:board_game_agent/features/assistant/services/ai_run_telemetry.dart';
 
 part 'responses_workflow/knowledge_test_cases.dart';
+part 'responses_workflow/published_inputs_test_cases.dart';
 part 'responses_workflow/streaming_test_cases.dart';
 part 'responses_workflow/context_test_cases.dart';
 part 'responses_workflow/compaction_continuity_test_cases.dart';
@@ -31,6 +37,7 @@ part 'responses_workflow/telemetry_test_cases.dart';
 
 void main() {
   _registerKnowledgeWorkflowTests();
+  _registerPublishedInputTests();
   _registerStreamingWorkflowTests();
   _registerContextWorkflowTests();
   _registerCompactionContinuityTests();
@@ -163,6 +170,9 @@ class _FakeRemoteAssetService extends RemoteAssetService {
   Future<List<int>?> loadBytes({
     required List<AssetSourceConfig> sources,
     required String remotePath,
+    int maxBytes = 64 * 1024 * 1024,
+    Duration? timeout,
+    Future<void>? abortTrigger,
   }) async => utf8.encode(remotePath);
 }
 
@@ -179,6 +189,9 @@ class _UnavailableRemoteAssetService extends RemoteAssetService {
   Future<List<int>?> loadBytes({
     required List<AssetSourceConfig> sources,
     required String remotePath,
+    int maxBytes = 64 * 1024 * 1024,
+    Duration? timeout,
+    Future<void>? abortTrigger,
   }) async => null;
 }
 

@@ -463,5 +463,8 @@ class _FakeResponsesRemoteAssetService extends RemoteAssetService {
   Future<List<int>?> loadBytes({
     required List<AssetSourceConfig> sources,
     required String remotePath,
+    int maxBytes = 64 * 1024 * 1024,
+    Duration? timeout,
+    Future<void>? abortTrigger,
   }) async => utf8.encode('# Cabo 官方规则\n游戏开始时每位玩家获得四张牌。');
 }

@@ -119,7 +119,7 @@ class RemoteAssetService {
         final body = BytesBuilder(copy: false);
         await for (final bytes in stream.stream) {
           if (body.length + bytes.length > maxBytes) {
-            throw StateError('Response too large');
+            throw StateError('request_too_large');
           }
           body.add(bytes);
         }
@@ -558,7 +558,21 @@ class RemoteAssetService {
   Future<List<int>?> loadBytes({
     required List<AssetSourceConfig> sources,
     required String remotePath,
+    int maxBytes = 64 * 1024 * 1024,
+    Duration? timeout,
+    Future<void>? abortTrigger,
   }) async {
+    if (maxBytes < 0) throw ArgumentError.value(maxBytes, 'maxBytes');
+    if (timeout != null ||
+        abortTrigger != null ||
+        maxBytes != 64 * 1024 * 1024) {
+      return _loadBoundedBytes(
+        remotePath,
+        maxBytes,
+        timeout ?? requestTimeout,
+        abortTrigger,
+      );
+    }
     if (browser) {
       final resource = await _record(remotePath), origin = _currentOrigin();
       if (resource == null || origin == null) return null;
@@ -581,6 +595,110 @@ class RemoteAssetService {
       throw StateError('资料超过单次内存读取上限');
     }
     return file.readAsBytes();
+  }
+
+  /// Small AI inputs use a bounded, cancellable read on every platform. The
+  /// normal PDF viewer's streamed disk-download path stays independent.
+  Future<List<int>?> _loadBoundedBytes(
+    String path,
+    int maxBytes,
+    Duration timeout,
+    Future<void>? abortTrigger,
+  ) async {
+    final abort = Completer<void>();
+    final timer = Timer(timeout, () {
+      if (!abort.isCompleted) abort.complete();
+    });
+    abortTrigger?.then((_) {
+      if (!abort.isCompleted) abort.complete();
+    });
+    final origin = _currentOrigin();
+    void guard() {
+      if (abort.isCompleted) {
+        throw TimeoutException('Knowledge preparation cancelled or timed out');
+      }
+      if (origin == null || !_current(origin)) {
+        throw StateError('Library source changed');
+      }
+    }
+
+    Future<List<int>?> read() async {
+      final resource = await _record(path);
+      guard();
+      if (resource == null) return null;
+      final key = _objectKey(origin!, resource);
+      List<int>? cached;
+      if (browser) {
+        cached = await readBrowserAsset(key);
+      } else {
+        final file = await _file(key);
+        if (await file.exists()) {
+          if (await file.length() > maxBytes) {
+            throw StateError('request_too_large');
+          }
+          cached = await file.readAsBytes();
+        }
+      }
+      guard();
+      if (cached != null && cached.length > maxBytes) {
+        throw StateError('request_too_large');
+      }
+      if (cached != null &&
+          sha256.convert(cached).toString() == resource.sha256 &&
+          _sameResource(origin, path, resource)) {
+        return cached;
+      }
+      final uri = resourceUri(path);
+      if (uri == null) return null;
+      final response = await _request(uri, abort: abort, maxBytes: maxBytes);
+      guard();
+      if (response.statusCode != 200) throw StateError('knowledge_unavailable');
+      if (response.bodyBytes.isEmpty ||
+          sha256.convert(response.bodyBytes).toString() != resource.sha256 ||
+          !_sameResource(origin, path, resource)) {
+        throw StateError('knowledge_integrity');
+      }
+      try {
+        if (browser) {
+          await writeBrowserAsset(key, response.bodyBytes);
+        } else {
+          final file = await _file(key);
+          await file.parent.create(recursive: true);
+          final staged = File('${file.path}.${_sequence++}.knowledge');
+          try {
+            await staged.writeAsBytes(response.bodyBytes, flush: true);
+            guard();
+            if (!_sameResource(origin, path, resource)) {
+              throw StateError('Library changed');
+            }
+            await staged.rename(file.path);
+          } finally {
+            if (await staged.exists()) await staged.delete();
+          }
+        }
+      } catch (_) {
+        // Caching is optional; identity and digest verification are mandatory.
+      }
+      guard();
+      if (!_sameResource(origin, path, resource)) {
+        throw StateError('knowledge_integrity');
+      }
+      return response.bodyBytes;
+    }
+
+    try {
+      return await Future.any<List<int>?>([
+        read(),
+        abort.future.then<List<int>?>(
+          (_) => throw TimeoutException(
+            'Knowledge preparation cancelled or timed out',
+          ),
+        ),
+      ]);
+    } finally {
+      timer.cancel();
+      if (!abort.isCompleted) abort.complete();
+    }
   }
 
   Future<String?> loadText({

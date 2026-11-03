@@ -11,7 +11,9 @@ class RuleDocument {
     required this.sourceType,
     this.derivedFrom = const <String>[],
     this.version,
-    this.url,
+    this.sourceUrl,
+    this.fileSha256,
+    this.publicationRevision,
   });
 
   final String id;
@@ -28,14 +30,35 @@ class RuleDocument {
   /// stage instead of being mixed with an unrelated source class.
   final List<String> derivedFrom;
   final String? version;
-  final String? url;
+
+  /// Provenance only. Never a provider file URL or a content-download fallback.
+  final String? sourceUrl;
+  final String? fileSha256;
+  final int? publicationRevision;
+
+  RuleDocument withVerifiedContent(String digest) => RuleDocument(
+    id: id,
+    title: title,
+    path: path,
+    format: format,
+    language: language,
+    sourceType: sourceType,
+    derivedFrom: derivedFrom,
+    version: version,
+    sourceUrl: sourceUrl,
+    fileSha256: digest,
+    publicationRevision: publicationRevision,
+  );
 
   RuleCitation toCitation() => RuleCitation(
     sourceType: sourceType,
     sourceId: id,
     title: title,
     path: path,
-    url: url,
+    url: sourceUrl,
     language: language,
+    fileSha256: fileSha256,
+    edition: version,
+    publicationRevision: publicationRevision,
   );
 }
