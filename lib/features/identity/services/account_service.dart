@@ -31,6 +31,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     RefreshSessionStore Function(ServiceConfiguration)? sessionStoreFactory,
     http.Client Function()? httpClientFactory,
     PublicSyncFactory? publicSyncFactory,
+    Future<BoardPersonalStore> Function(String scope, String datasetId)?
+    personalStoreFactory,
     Future<void> Function(String?)? switchScope,
     bool? signInSupported,
     bool? browserAccounts,
@@ -41,6 +43,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
        _storeFactory = sessionStoreFactory,
        _httpClientFactory = httpClientFactory ?? createDefaultAiHttpClient,
        _publicSyncFactory = publicSyncFactory ?? BoardPublicSync.open,
+       _personalStoreFactory = personalStoreFactory ?? BoardPersonalStore.open,
        _switchScope = switchScope,
        _browserOrigin = browserOrigin,
        usesWebAccount = browserAccounts ?? kIsWeb,
@@ -57,6 +60,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   final RefreshSessionStore Function(ServiceConfiguration)? _storeFactory;
   final http.Client Function() _httpClientFactory;
   final PublicSyncFactory _publicSyncFactory;
+  final Future<BoardPersonalStore> Function(String scope, String datasetId)
+  _personalStoreFactory;
   final Future<void> Function(String?)? _switchScope;
   final SavedLoginStore _savedLogins;
   ServiceConfiguration? _serviceConfiguration;
@@ -83,8 +88,8 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> Function(Uri, List<PublicPublication>)? onPublications;
   String? get publicSyncError => _publicSyncError ?? _publicSync?.error;
   final _personalWatchers = <StreamSubscription<dynamic>>[];
-  Timer? _personalRefresh;
-  bool _refreshingPersonal = false;
+  _PersonalRefresh? _personalRefresh;
+  bool _personalForeground = true;
   String? get personalSyncError => _personalStore?.syncError;
 
   AppController get controller => _controller;
@@ -294,6 +299,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
 
   void _queueScope(String? target) {
     final generation = ++_scopeGeneration;
+    _stopPersonalRefresh();
     _scopeChanging = true;
     _scopeError = null;
     _nickname = null;
@@ -313,7 +319,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
         _comments = null;
         _businessClient?.close();
         _businessClient = null;
-        _personalRefresh?.cancel();
         for (final watcher in _personalWatchers) {
           await watcher.cancel();
         }
@@ -348,7 +353,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
             dataset =
                 ((result['datasets'] as List).single as Map)['id'] as String;
           }
-          nextStore = await BoardPersonalStore.open(target, dataset);
+          nextStore = await _personalStoreFactory(target, dataset);
         }
         if (_disposed || generation != _scopeGeneration) {
           await nextStore?.close();
@@ -484,23 +489,66 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     BoardPersonalStore store,
     bool Function() active,
   ) {
-    _personalRefresh?.cancel();
-    _personalRefresh = Timer(const Duration(milliseconds: 250), () async {
-      if (!active() || _refreshingPersonal) return;
-      _refreshingPersonal = true;
-      try {
-        final refreshed = await _controller.reloadServicePersonalState();
-        if (active()) {
-          _nickname = (await store.preferences())['nickname'] as String;
-          notifyListeners();
-          if (!refreshed) _schedulePersonalRefresh(store, active);
-        }
-      } catch (_) {
-        if (active()) _schedulePersonalRefresh(store, active);
-      } finally {
-        _refreshingPersonal = false;
-      }
+    if (_disposed || !active() || !identical(_personalStore, store)) return;
+    var refresh = _personalRefresh;
+    if (refresh == null || !identical(refresh.store, store)) {
+      _stopPersonalRefresh();
+      refresh = _PersonalRefresh(store, active);
+      _personalRefresh = refresh;
+    }
+    // Keep the intent even if a projection is in flight or the app is paused.
+    refresh.pending = true;
+    _armPersonalRefresh(refresh);
+  }
+
+  bool _personalRefreshActive(_PersonalRefresh refresh) =>
+      !_disposed &&
+      identical(_personalRefresh, refresh) &&
+      identical(_personalStore, refresh.store) &&
+      refresh.active();
+
+  void _armPersonalRefresh(_PersonalRefresh refresh) {
+    if (!_personalRefreshActive(refresh) ||
+        !_personalForeground ||
+        refresh.running ||
+        refresh.timer != null ||
+        !refresh.pending) {
+      return;
+    }
+    // Coalesce without postponing an existing deadline: sustained changes must
+    // not starve the projection. Each follow-up yields through a new timer.
+    refresh.timer = Timer(const Duration(milliseconds: 250), () {
+      refresh.timer = null;
+      unawaited(_refreshPersonalState(refresh));
     });
+  }
+
+  Future<void> _refreshPersonalState(_PersonalRefresh refresh) async {
+    if (!_personalRefreshActive(refresh) || !_personalForeground) return;
+    refresh.pending = false;
+    refresh.running = true;
+    try {
+      final refreshed = await _controller.reloadServicePersonalState();
+      if (!_personalRefreshActive(refresh)) return;
+      final nickname =
+          (await refresh.store.preferences())['nickname'] as String;
+      if (!_personalRefreshActive(refresh)) return;
+      _nickname = nickname;
+      if (!refreshed) refresh.pending = true;
+      notifyListeners();
+    } catch (_) {
+      if (_personalRefreshActive(refresh)) refresh.pending = true;
+    } finally {
+      // This state belongs to one scope. An obsolete finally must not clear a
+      // new account's busy/pending state or install its own retry there.
+      refresh.running = false;
+      _armPersonalRefresh(refresh);
+    }
+  }
+
+  void _stopPersonalRefresh() {
+    _personalRefresh?.timer?.cancel();
+    _personalRefresh = null;
   }
 
   Future<void> _startPublicSync(
@@ -714,6 +762,7 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _disconnect() async {
+    _stopPersonalRefresh();
     await _stopPublicSync();
     _verificationTimer?.cancel();
     _identity?.removeListener(_identityChanged);
@@ -722,7 +771,6 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     final gateway = _gateway;
     _gateway = null;
     await gateway?.dispose();
-    _personalRefresh?.cancel();
     for (final watcher in _personalWatchers) {
       await watcher.cancel();
     }
@@ -750,6 +798,11 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _personalForeground = true;
+      if (_personalRefresh case final refresh?) {
+        refresh.pending = true;
+        _armPersonalRefresh(refresh);
+      }
       final sync = _publicSync;
       if (sync != null) {
         unawaited(sync.setForeground(true).catchError((Object _) {}));
@@ -766,6 +819,9 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
       }
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
+      _personalForeground = false;
+      _personalRefresh?.timer?.cancel();
+      _personalRefresh?.timer = null;
       unawaited(_publicSync?.setForeground(false).catchError((Object _) {}));
     }
     if (state == AppLifecycleState.resumed && !isBusy && isConfigured) {
@@ -802,4 +858,13 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_disconnect());
     super.dispose();
   }
+}
+
+/// Projection scheduling state is owned by one immutable account database.
+final class _PersonalRefresh {
+  _PersonalRefresh(this.store, this.active);
+  final BoardPersonalStore store;
+  final bool Function() active;
+  Timer? timer;
+  bool pending = false, running = false;
 }
