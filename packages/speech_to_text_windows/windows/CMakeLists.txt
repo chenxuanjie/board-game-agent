@@ -6,6 +6,7 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 set(PLUGIN_NAME "speech_to_text_windows_plugin")
 
 list(APPEND PLUGIN_SOURCES
+  "platform_event_window.h"
   "speech_to_text_windows_plugin.cpp"
   "speech_to_text_windows_plugin.h"
 )

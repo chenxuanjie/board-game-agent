@@ -211,6 +211,8 @@ class AppController extends ChangeNotifier {
       !_generationStates.values.any((state) => state.isSending) &&
       !_isListening;
   Future<void>? _initializationFuture;
+  bool _startupDataRestored = false;
+  bool _startupSpeechInitialized = false;
   Future<bool>? _gameCatalogFuture;
   Completer<void>? _gameCatalogAbort;
   Timer? _gameCatalogDeadline;
@@ -868,9 +870,56 @@ class AppController extends ChangeNotifier {
     return nearest ?? conversation.updatedAt.difference(createdAt).abs();
   }
 
-  Future<void> initialize() => _initializationFuture ??= _initialize();
+  Future<void> initialize() {
+    if (_controllerDisposed) {
+      return Future<void>.error(StateError('Controller is disposed'));
+    }
+    return _initializationFuture ??= _initializeRetryable();
+  }
+
+  Future<void> _initializeRetryable() async {
+    try {
+      await _initialize();
+    } catch (_) {
+      // Only an in-flight or successful attempt is shared. Completed stages
+      // remain reusable, while a failed stage can be retried in this process.
+      _initializationFuture = null;
+      rethrow;
+    }
+  }
 
   Future<void> _initialize() async {
+    if (!_startupDataRestored) {
+      await _restoreStartupData();
+      _startupDataRestored = true;
+    }
+    if (!_startupSpeechInitialized) {
+      try {
+        _speechAvailable = await _speechService.initialize(
+          onListeningStopped: _handleListeningStopped,
+        );
+      } catch (_) {
+        _speechAvailable = false;
+      }
+      _startupSpeechInitialized = true;
+    }
+    await _ttsService.initialize(_language);
+    if (!voiceReplyAvailable) {
+      _voiceReplyEnabled = false;
+    }
+    // Start side effects only after all required startup stages have succeeded.
+    _queueConversationSave();
+    unawaited(() async {
+      if (_remoteAssetService.usesPublishedLibrary) await retryGameCatalog();
+      if (!_controllerDisposed) await _initializeRemoteLibrary();
+    }());
+    if (_aiApiConfig.isConfigured && !_aiApiConfig.accountService) {
+      unawaited(_refreshAiModelsOnInitialize());
+    }
+    notifyListeners();
+  }
+
+  Future<void> _restoreStartupData() async {
     _language = await _preferencesService.loadLanguage();
     _colorScheme = await _preferencesService.loadColorScheme();
     _voiceReplyEnabled = await _preferencesService.loadVoiceReplyEnabled();
@@ -974,26 +1023,6 @@ class AppController extends ChangeNotifier {
     for (final source in _assetSourceConfigs) {
       _assetSourceStatuses[source.id] = ConnectivityStatus.unknown('未检测');
     }
-    try {
-      _speechAvailable = await _speechService.initialize(
-        onListeningStopped: _handleListeningStopped,
-      );
-    } catch (_) {
-      _speechAvailable = false;
-    }
-    await _ttsService.initialize(_language);
-    if (!voiceReplyAvailable) {
-      _voiceReplyEnabled = false;
-    }
-    _queueConversationSave();
-    unawaited(() async {
-      if (_remoteAssetService.usesPublishedLibrary) await retryGameCatalog();
-      if (!_controllerDisposed) await _initializeRemoteLibrary();
-    }());
-    if (_aiApiConfig.isConfigured && !_aiApiConfig.accountService) {
-      unawaited(_refreshAiModelsOnInitialize());
-    }
-    notifyListeners();
   }
 
   Future<void> setLanguage(AppLanguage next) async {

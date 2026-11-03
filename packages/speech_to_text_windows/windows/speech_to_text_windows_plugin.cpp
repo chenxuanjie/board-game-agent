@@ -16,55 +16,55 @@ namespace speech_to_text_windows {
 
 namespace {
 
-std::string EscapeJson(const std::string& value) {
+std::string EscapeJson(const std::string &value) {
   std::string escaped;
   escaped.reserve(value.size());
 
   static constexpr char hex[] = "0123456789abcdef";
   for (unsigned char character : value) {
     switch (character) {
-      case '\\':
-        escaped += "\\\\";
-        break;
-      case '"':
-        escaped += "\\\"";
-        break;
-      case '\b':
-        escaped += "\\b";
-        break;
-      case '\f':
-        escaped += "\\f";
-        break;
-      case '\n':
-        escaped += "\\n";
-        break;
-      case '\r':
-        escaped += "\\r";
-        break;
-      case '\t':
-        escaped += "\\t";
-        break;
-      default:
-        if (character < 0x20) {
-          escaped += "\\u00";
-          escaped += hex[(character >> 4) & 0x0f];
-          escaped += hex[character & 0x0f];
-        } else {
-          escaped.push_back(static_cast<char>(character));
-        }
-        break;
+    case '\\':
+      escaped += "\\\\";
+      break;
+    case '"':
+      escaped += "\\\"";
+      break;
+    case '\b':
+      escaped += "\\b";
+      break;
+    case '\f':
+      escaped += "\\f";
+      break;
+    case '\n':
+      escaped += "\\n";
+      break;
+    case '\r':
+      escaped += "\\r";
+      break;
+    case '\t':
+      escaped += "\\t";
+      break;
+    default:
+      if (character < 0x20) {
+        escaped += "\\u00";
+        escaped += hex[(character >> 4) & 0x0f];
+        escaped += hex[character & 0x0f];
+      } else {
+        escaped.push_back(static_cast<char>(character));
+      }
+      break;
     }
   }
   return escaped;
 }
 
-std::string WideToUtf8(const wchar_t* value) {
+std::string WideToUtf8(const wchar_t *value) {
   if (value == nullptr || *value == L'\0') {
     return {};
   }
 
-  const int required = WideCharToMultiByte(
-      CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
+  const int required =
+      WideCharToMultiByte(CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
   if (required <= 1) {
     return {};
   }
@@ -81,19 +81,19 @@ std::string WideToUtf8(const wchar_t* value) {
 
 std::string HResultToString(HRESULT status) {
   std::ostringstream stream;
-  stream << "HRESULT 0x" << std::hex
-         << static_cast<unsigned long>(status);
+  stream << "HRESULT 0x" << std::hex << static_cast<unsigned long>(status);
   return stream.str();
 }
 
-std::string ExtractRecognitionText(ISpRecoResult* result) {
+std::string ExtractRecognitionText(ISpRecoResult *result) {
   if (result == nullptr) {
     return {};
   }
 
   LPWSTR text = nullptr;
-  const HRESULT status = result->GetText(
-      SP_GETWHOLEPHRASE, SP_GETWHOLEPHRASE, TRUE, &text, nullptr);
+  const HRESULT status = result->GetText(static_cast<ULONG>(SP_GETWHOLEPHRASE),
+                                         static_cast<ULONG>(SP_GETWHOLEPHRASE),
+                                         TRUE, &text, nullptr);
   if (FAILED(status) || text == nullptr) {
     return {};
   }
@@ -103,10 +103,10 @@ std::string ExtractRecognitionText(ISpRecoResult* result) {
   return utf8;
 }
 
-}  // namespace
+} // namespace
 
 void SpeechToTextWindowsPlugin::RegisterWithRegistrar(
-    flutter::PluginRegistrarWindows* registrar) {
+    flutter::PluginRegistrarWindows *registrar) {
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(), "speech_to_text_windows",
@@ -116,7 +116,7 @@ void SpeechToTextWindowsPlugin::RegisterWithRegistrar(
   plugin->m_channel = std::move(channel);
 
   plugin->m_channel->SetMethodCallHandler(
-      [plugin_pointer = plugin.get()](const auto& call, auto result) {
+      [plugin_pointer = plugin.get()](const auto &call, auto result) {
         plugin_pointer->HandleMethodCall(call, std::move(result));
       });
 
@@ -124,13 +124,10 @@ void SpeechToTextWindowsPlugin::RegisterWithRegistrar(
 }
 
 SpeechToTextWindowsPlugin::SpeechToTextWindowsPlugin()
-    : m_cpRecognizer(nullptr),
-      m_cpRecoContext(nullptr),
-      m_cpRecoGrammar(nullptr),
-      m_cpAudio(nullptr),
-      m_initialized(false),
-      m_listening(false),
-      m_com_initialized(false) {
+    : m_cpRecognizer(nullptr), m_cpRecoContext(nullptr),
+      m_cpRecoGrammar(nullptr), m_cpAudio(nullptr), m_initialized(false),
+      m_listening(false), m_com_initialized(false),
+      m_events([this](auto token) { HandleSpeechEvents(token); }) {
   std::cout << "SpeechToTextWindowsPlugin created" << std::endl;
   const HRESULT status = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   m_com_initialized = SUCCEEDED(status);
@@ -139,22 +136,28 @@ SpeechToTextWindowsPlugin::SpeechToTextWindowsPlugin()
 SpeechToTextWindowsPlugin::~SpeechToTextWindowsPlugin() {
   std::cout << "SpeechToTextWindowsPlugin destroyed" << std::endl;
 
-  // Stop joins the worker before any SAPI object is released. The old plugin
-  // called Stop while holding m_mutex, which could deadlock during shutdown.
+  m_events.AssertOwner();
   Stop(nullptr);
-
-  {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    ReleaseSapiObjects();
-    m_initialized = false;
-  }
+  ReleaseSapiObjects();
+  m_initialized = false;
 
   if (m_com_initialized) {
     CoUninitialize();
   }
 }
 
-void SpeechToTextWindowsPlugin::ReleaseSapiObjects() {
+void SpeechToTextWindowsPlugin::ReleaseRecognitionContext() {
+  m_events.AssertOwner();
+  m_events.Invalidate();
+  if (m_cpRecoContext != nullptr) {
+    // Unregister SAPI's asynchronous notifications before destroying the
+    // window.
+    const HRESULT status = m_cpRecoContext->SetNotifySink(nullptr);
+    if (FAILED(status)) {
+      std::cerr << "Unable to detach SAPI notifications: "
+                << HResultToString(status) << std::endl;
+    }
+  }
   if (m_cpRecoGrammar != nullptr) {
     m_cpRecoGrammar->Release();
     m_cpRecoGrammar = nullptr;
@@ -163,6 +166,10 @@ void SpeechToTextWindowsPlugin::ReleaseSapiObjects() {
     m_cpRecoContext->Release();
     m_cpRecoContext = nullptr;
   }
+}
+
+void SpeechToTextWindowsPlugin::ReleaseSapiObjects() {
+  ReleaseRecognitionContext();
   if (m_cpRecognizer != nullptr) {
     m_cpRecognizer->Release();
     m_cpRecognizer = nullptr;
@@ -174,9 +181,10 @@ void SpeechToTextWindowsPlugin::ReleaseSapiObjects() {
 }
 
 void SpeechToTextWindowsPlugin::HandleMethodCall(
-    const flutter::MethodCall<flutter::EncodableValue>& method_call,
+    const flutter::MethodCall<flutter::EncodableValue> &method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  const std::string& method_name = method_call.method_name();
+  m_events.AssertOwner();
+  const std::string &method_name = method_call.method_name();
   std::cout << "Method called: " << method_name << std::endl;
 
   if (method_name == "hasPermission") {
@@ -197,21 +205,25 @@ void SpeechToTextWindowsPlugin::HandleMethodCall(
 }
 
 void SpeechToTextWindowsPlugin::Initialize(
-    const flutter::MethodCall<flutter::EncodableValue>& /*method_call*/,
+    const flutter::MethodCall<flutter::EncodableValue> & /*method_call*/,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  std::lock_guard<std::mutex> lock(m_mutex);
+  m_events.AssertOwner();
 
   if (m_initialized) {
     result->Success(flutter::EncodableValue(true));
     return;
   }
 
+  if (!m_com_initialized || !m_events.handle()) {
+    result->Success(flutter::EncodableValue(false));
+    return;
+  }
   std::cout << "Initializing SAPI speech recognition..." << std::endl;
   HRESULT status = S_OK;
 
   status = CoCreateInstance(CLSID_SpInprocRecognizer, nullptr,
                             CLSCTX_INPROC_SERVER, IID_ISpRecognizer,
-                            reinterpret_cast<void**>(&m_cpRecognizer));
+                            reinterpret_cast<void **>(&m_cpRecognizer));
   if (FAILED(status)) {
     std::cout << "Failed to create speech recognizer: "
               << HResultToString(status) << std::endl;
@@ -220,12 +232,12 @@ void SpeechToTextWindowsPlugin::Initialize(
     return;
   }
 
-  status = CoCreateInstance(CLSID_SpMMAudioIn, nullptr, CLSCTX_INPROC_SERVER,
-                            IID_ISpAudio,
-                            reinterpret_cast<void**>(&m_cpAudio));
+  status =
+      CoCreateInstance(CLSID_SpMMAudioIn, nullptr, CLSCTX_INPROC_SERVER,
+                       IID_ISpAudio, reinterpret_cast<void **>(&m_cpAudio));
   if (FAILED(status)) {
-    std::cout << "Failed to create audio input: "
-              << HResultToString(status) << std::endl;
+    std::cout << "Failed to create audio input: " << HResultToString(status)
+              << std::endl;
     ReleaseSapiObjects();
     result->Success(flutter::EncodableValue(false));
     return;
@@ -240,13 +252,24 @@ void SpeechToTextWindowsPlugin::Initialize(
     return;
   }
 
-  status = m_cpRecognizer->CreateRecoContext(&m_cpRecoContext);
+  status = CreateRecognitionContext();
   if (FAILED(status)) {
-    std::cout << "Failed to create recognition context: "
-              << HResultToString(status) << std::endl;
     ReleaseSapiObjects();
     result->Success(flutter::EncodableValue(false));
     return;
+  }
+  m_initialized = true;
+  result->Success(flutter::EncodableValue(true));
+}
+
+HRESULT SpeechToTextWindowsPlugin::CreateRecognitionContext() {
+  m_events.AssertOwner();
+  HRESULT status = m_cpRecognizer->CreateRecoContext(&m_cpRecoContext);
+  if (FAILED(status)) {
+    std::cout << "Failed to create recognition context: "
+              << HResultToString(status) << std::endl;
+    ReleaseRecognitionContext();
+    return status;
   }
 
   const ULONGLONG event_interest =
@@ -256,167 +279,136 @@ void SpeechToTextWindowsPlugin::Initialize(
   if (FAILED(status)) {
     std::cout << "Failed to configure recognition events: "
               << HResultToString(status) << std::endl;
-    ReleaseSapiObjects();
-    result->Success(flutter::EncodableValue(false));
-    return;
+    ReleaseRecognitionContext();
+    return status;
   }
 
   status = m_cpRecoContext->CreateGrammar(0, &m_cpRecoGrammar);
   if (FAILED(status)) {
     std::cout << "Failed to create grammar: " << HResultToString(status)
               << std::endl;
-    ReleaseSapiObjects();
-    result->Success(flutter::EncodableValue(false));
-    return;
+    ReleaseRecognitionContext();
+    return status;
   }
 
   status = m_cpRecoGrammar->LoadDictation(nullptr, SPLO_STATIC);
   if (FAILED(status)) {
-    std::cout << "Failed to load dictation grammar: "
-              << HResultToString(status) << std::endl;
-    ReleaseSapiObjects();
-    result->Success(flutter::EncodableValue(false));
-    return;
+    std::cout << "Failed to load dictation grammar: " << HResultToString(status)
+              << std::endl;
+    ReleaseRecognitionContext();
+    return status;
   }
 
-  m_initialized = true;
-  std::cout << "SAPI speech recognition initialized successfully!" << std::endl;
-  result->Success(flutter::EncodableValue(true));
+  return S_OK;
 }
 
 void SpeechToTextWindowsPlugin::Listen(
-    const flutter::MethodCall<flutter::EncodableValue>& /*method_call*/,
+    const flutter::MethodCall<flutter::EncodableValue> & /*method_call*/,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  std::lock_guard<std::mutex> lock(m_mutex);
-
-  if (!m_initialized || m_cpRecoGrammar == nullptr ||
-      m_cpRecoContext == nullptr) {
+  m_events.AssertOwner();
+  if (!m_initialized) {
     result->Error("NOT_INITIALIZED", "Speech recognition not initialized");
     return;
   }
-
-  if (m_listening.load()) {
+  if (m_listening) {
     result->Success(flutter::EncodableValue(true));
     return;
   }
-
-  // A worker can finish after reporting an error. Reclaim it before starting
-  // another session, otherwise assigning a new std::thread would terminate.
-  if (m_recognition_thread.joinable()) {
-    m_recognition_thread.join();
+  HRESULT status = S_OK;
+  if (!m_cpRecoContext)
+    status = CreateRecognitionContext();
+  if (SUCCEEDED(status)) {
+    const auto token = m_events.BeginSession();
+    status = m_cpRecoContext->SetNotifyWindowMessage(
+        m_events.handle(), PlatformEventWindow::kEventMessage, token, 0);
   }
-
-  const HRESULT status = m_cpRecoGrammar->SetDictationState(SPRS_ACTIVE);
+  if (SUCCEEDED(status)) {
+    status = m_cpRecoGrammar->SetDictationState(SPRS_ACTIVE);
+  }
   if (FAILED(status)) {
+    ReleaseRecognitionContext();
     SendError("Unable to activate dictation: " + HResultToString(status));
     result->Success(flutter::EncodableValue(false));
     return;
   }
-
-  m_listening.store(true);
+  m_listening = true;
   SendStatus("listening");
-
-  try {
-    m_recognition_thread = std::thread([this]() {
-      std::cout << "Recognition thread started" << std::endl;
-      const HRESULT com_status = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-      const bool uninitialize_com = SUCCEEDED(com_status);
-
-      while (m_listening.load()) {
-        // The worker is joined before the SAPI context is released, so this
-        // pointer remains valid for the complete recognition session.
-        ISpRecoContext* context = m_cpRecoContext;
-        if (context == nullptr) {
-          break;
-        }
-
-        SPEVENT event{};
-        ULONG fetched = 0;
-        const HRESULT event_status = context->GetEvents(1, &event, &fetched);
-        if (FAILED(event_status)) {
-          if (m_listening.exchange(false)) {
-            SendError("SAPI event loop failed: " +
-                      HResultToString(event_status));
-            SendStatus("notListening");
-          }
-          break;
-        }
-
-        if (fetched > 0) {
-          switch (event.eEventId) {
-            case SPEI_RECOGNITION:
-            case SPEI_HYPOTHESIS: {
-              auto* recognition =
-                  reinterpret_cast<ISpRecoResult*>(event.lParam);
-              const std::string text = ExtractRecognitionText(recognition);
-              if (recognition != nullptr) {
-                recognition->Release();
-              }
-              if (!text.empty()) {
-                SendTextRecognition(text,
-                                    event.eEventId == SPEI_RECOGNITION);
-              }
-              break;
-            }
-            case SPEI_SOUND_START:
-              SendStatus("soundDetected");
-              break;
-            case SPEI_SOUND_END:
-              SendStatus("soundEnded");
-              break;
-            default:
-              break;
-          }
-        }
-
-        // GetEvents is non-blocking on the in-process recognizer. A short
-        // bounded wait avoids a busy loop without adding visible latency.
-        Sleep(30);
-      }
-
-      if (uninitialize_com) {
-        CoUninitialize();
-      }
-      std::cout << "Recognition thread ended" << std::endl;
-    });
-  } catch (const std::exception& error) {
-    m_listening.store(false);
-    m_cpRecoGrammar->SetDictationState(SPRS_INACTIVE);
-    SendError(std::string("Unable to start recognition thread: ") +
-              error.what());
-    result->Success(flutter::EncodableValue(false));
-    return;
-  }
-
   result->Success(flutter::EncodableValue(true));
+}
+
+void SpeechToTextWindowsPlugin::HandleSpeechEvents(
+    PlatformEventWindow::Token token) {
+  m_events.AssertOwner();
+  if (!m_events.IsCurrent(token) || !m_listening || !m_cpRecoContext)
+    return;
+  // Bound work per window message so speech cannot monopolize the UI thread.
+  for (int count = 0; count < 32; ++count) {
+    SPEVENT event{};
+    ULONG fetched = 0;
+    const HRESULT status = m_cpRecoContext->GetEvents(1, &event, &fetched);
+    if (FAILED(status)) {
+      Stop(nullptr);
+      SendError("SAPI event loop failed: " + HResultToString(status));
+      return;
+    }
+    if (fetched == 0)
+      return;
+    switch (event.eEventId) {
+    case SPEI_RECOGNITION:
+    case SPEI_HYPOTHESIS: {
+      const std::string text = ExtractRecognitionText(
+          reinterpret_cast<ISpRecoResult *>(event.lParam));
+      if (!text.empty()) {
+        SendTextRecognition(text, event.eEventId == SPEI_RECOGNITION);
+      }
+      break;
+    }
+    case SPEI_SOUND_START:
+      SendStatus("soundDetected");
+      break;
+    case SPEI_SOUND_END:
+      SendStatus("soundEnded");
+      break;
+    default:
+      break;
+    }
+    // Release every SAPI payload, including unexpected event types.
+    if (event.elParamType == SPET_LPARAM_IS_TOKEN ||
+        event.elParamType == SPET_LPARAM_IS_OBJECT) {
+      if (event.lParam)
+        reinterpret_cast<IUnknown *>(event.lParam)->Release();
+    } else if (event.elParamType == SPET_LPARAM_IS_POINTER ||
+               event.elParamType == SPET_LPARAM_IS_STRING) {
+      CoTaskMemFree(reinterpret_cast<void *>(event.lParam));
+    }
+    if (!m_events.IsCurrent(token))
+      return;
+  }
+  if (!m_events.Post(token)) {
+    Stop(nullptr);
+    SendError("Unable to schedule speech events");
+  }
 }
 
 void SpeechToTextWindowsPlugin::Stop(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  std::thread worker;
-  bool was_listening = false;
-
-  {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    was_listening = m_listening.exchange(false);
-    if (was_listening && m_cpRecoGrammar != nullptr) {
-      m_cpRecoGrammar->SetDictationState(SPRS_INACTIVE);
-    }
-    if (m_recognition_thread.joinable()) {
-      worker = std::move(m_recognition_thread);
-    }
+  m_events.AssertOwner();
+  const bool was_listening = m_listening;
+  m_listening = false;
+  m_events.Invalidate();
+  HRESULT status = S_OK;
+  if (m_cpRecoGrammar) {
+    status = m_cpRecoGrammar->SetDictationState(SPRS_INACTIVE);
   }
-
-  if (worker.joinable()) {
-    worker.join();
-  }
-
-  if (was_listening) {
+  // New sessions get a new SAPI queue, not just a new notification token.
+  // Neither old window messages nor unread recognition results can leak in.
+  ReleaseRecognitionContext();
+  if (was_listening)
     SendStatus("notListening");
-  }
-  if (result) {
+  if (FAILED(status))
+    SendError("Unable to stop dictation: " + HResultToString(status));
+  if (result)
     result->Success(flutter::EncodableValue(nullptr));
-  }
 }
 
 void SpeechToTextWindowsPlugin::Cancel(
@@ -433,8 +425,9 @@ void SpeechToTextWindowsPlugin::GetLocales(
   result->Success(flutter::EncodableValue(locales));
 }
 
-void SpeechToTextWindowsPlugin::SendTextRecognition(const std::string& text,
+void SpeechToTextWindowsPlugin::SendTextRecognition(const std::string &text,
                                                     bool is_final) {
+  m_events.AssertOwner();
   if (!m_channel) {
     return;
   }
@@ -443,9 +436,8 @@ void SpeechToTextWindowsPlugin::SendTextRecognition(const std::string& text,
   // plugin only sent recognizedWords/finalResult, which made JSON parsing fail
   // before the app's onResult callback could run.
   const std::string json_result =
-      "{\"alternates\":[{\"recognizedWords\":\"" +
-      EscapeJson(text) +
-      "\",\"recognizedPhrases\":null,\"confidence\":-1.0}],"+
+      "{\"alternates\":[{\"recognizedWords\":\"" + EscapeJson(text) +
+      "\",\"recognizedPhrases\":null,\"confidence\":-1.0}]," +
       "\"finalResult\":" + (is_final ? "true" : "false") + "}";
 
   m_channel->InvokeMethod(
@@ -453,26 +445,28 @@ void SpeechToTextWindowsPlugin::SendTextRecognition(const std::string& text,
       std::make_unique<flutter::EncodableValue>(json_result));
 }
 
-void SpeechToTextWindowsPlugin::SendError(const std::string& error) {
+void SpeechToTextWindowsPlugin::SendError(const std::string &error) {
+  m_events.AssertOwner();
   if (!m_channel) {
     return;
   }
 
-  const std::string json_error = "{\"errorMsg\":\"" + EscapeJson(error) +
-                                 "\",\"permanent\":false}";
+  const std::string json_error =
+      "{\"errorMsg\":\"" + EscapeJson(error) + "\",\"permanent\":false}";
   m_channel->InvokeMethod(
       "notifyError", std::make_unique<flutter::EncodableValue>(json_error));
 }
 
-void SpeechToTextWindowsPlugin::SendStatus(const std::string& status) {
+void SpeechToTextWindowsPlugin::SendStatus(const std::string &status) {
+  m_events.AssertOwner();
   if (!m_channel) {
     return;
   }
-  m_channel->InvokeMethod(
-      "notifyStatus", std::make_unique<flutter::EncodableValue>(status));
+  m_channel->InvokeMethod("notifyStatus",
+                          std::make_unique<flutter::EncodableValue>(status));
 }
 
-}  // namespace speech_to_text_windows
+} // namespace speech_to_text_windows
 
 extern "C" __declspec(dllexport) void
 SpeechToTextWindowsPluginRegisterWithRegistrar(

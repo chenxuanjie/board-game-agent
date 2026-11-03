@@ -281,6 +281,85 @@ void main() {
   );
 
   test(
+    'startup failure can recover and concurrent retries share one attempt',
+    () async {
+      final preferences = _RetryPreferences()..failures = 2;
+      final manifests = _Manifests();
+      final c = _controller(manifests, preferences: preferences);
+      addTearDown(c.dispose);
+      await expectLater(c.initialize(), throwsStateError);
+      await expectLater(c.initialize(), throwsStateError);
+      final gate = Completer<void>();
+      preferences.gate = gate;
+      final retry = c.initialize();
+      expect(identical(retry, c.initialize()), isTrue);
+      gate.complete();
+      await retry;
+      final calls = manifests.calls;
+      await c.initialize();
+      expect(preferences.initializations, 3);
+      expect(manifests.calls, calls);
+    },
+  );
+
+  test(
+    'retry after a late startup failure reuses data and speech stages',
+    () async {
+      final preferences = _Preferences();
+      final speech = _CountingSpeech();
+      final tts = _RetryTts();
+      final manifests = _Manifests();
+      final c = _controller(
+        manifests,
+        preferences: preferences,
+        speech: speech,
+        tts: tts,
+      );
+      addTearDown(c.dispose);
+      await expectLater(c.initialize(), throwsStateError);
+      final catalogCalls = manifests.calls;
+      await c.initialize();
+      await c.initialize();
+      expect(preferences.initializations, 1);
+      expect(manifests.calls, catalogCalls);
+      expect(speech.calls, 1);
+      expect(tts.calls, 2);
+    },
+  );
+
+  testWidgets('startup retry button recovers on the same controller', (
+    tester,
+  ) async {
+    final preferences = _RetryPreferences()..failures = 1;
+    final c = _controller(_Manifests(), preferences: preferences);
+    final settings = WebDavSettingsController(
+      store: _Store(),
+      connectionTester: _Tester(),
+    );
+    await tester.pumpWidget(
+      BoardGameAgentApp(controller: c, updateSettingsController: settings),
+    );
+    Future<void> settleStartup() async {
+      for (var i = 0; i < 15; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 15)),
+        );
+        await tester.pump(const Duration(milliseconds: 15));
+      }
+    }
+
+    await settleStartup();
+    expect(find.text('启动失败'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    await settleStartup();
+    expect(find.text('启动失败'), findsNothing);
+    expect(find.byKey(const ValueKey('app-startup-loading')), findsNothing);
+    expect(preferences.initializations, 2);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test(
     'background check retries a failed catalog even when its revision is unchanged',
     () async {
       final remote = _WebRemote()..allowed = true;
@@ -487,13 +566,15 @@ AppController _controller(
   _Preferences? preferences,
   RemoteAssetService? remote,
   AiService? ai,
+  SpeechService? speech,
+  TtsService? tts,
 }) => AppController(
   preferencesService: preferences ?? _Preferences(),
   aiService: ai ?? _Ai(),
   gameManifestService: manifests,
   remoteAssetService: remote ?? RemoteAssetService(),
-  speechService: _Speech(),
-  ttsService: _Tts(),
+  speechService: speech ?? _Speech(),
+  ttsService: tts ?? _Tts(),
   conversationStore: const ConversationStore(browserStorage: true),
 );
 
@@ -545,6 +626,38 @@ class _BrokenPreferences extends _Preferences {
   @override
   Future<AppLanguage> loadLanguage() async =>
       throw StateError('local storage failed');
+}
+
+class _RetryPreferences extends _Preferences {
+  int failures = 0;
+  Completer<void>? gate;
+  @override
+  Future<AppLanguage> loadLanguage() async {
+    initializations++;
+    await gate?.future;
+    if (failures > 0) {
+      failures--;
+      throw StateError('transient preference failure');
+    }
+    return AppLanguage.zhHans;
+  }
+}
+
+class _CountingSpeech extends _Speech {
+  int calls = 0;
+  @override
+  Future<bool> initialize({VoidCallback? onListeningStopped}) async {
+    calls++;
+    return false;
+  }
+}
+
+class _RetryTts extends _Tts {
+  int calls = 0;
+  @override
+  Future<void> initialize(AppLanguage language) async {
+    if (++calls == 1) throw StateError('transient TTS failure');
+  }
 }
 
 class _KnowledgePreferences extends _Preferences {

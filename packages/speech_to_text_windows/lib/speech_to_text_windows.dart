@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text_platform_interface/speech_to_text_platform_interface.dart';
 
-/// Windows implementation of the speech_to_text plugin using UWP Speech APIs
+/// Windows implementation of the speech_to_text plugin using SAPI dictation.
 class SpeechToTextWindows extends SpeechToTextPlatform {
   static const MethodChannel _channel = MethodChannel('speech_to_text_windows');
 
