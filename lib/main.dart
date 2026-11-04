@@ -498,6 +498,7 @@ class _BoardGameAgentAppState extends State<BoardGameAgentApp>
       }
       try {
         await widget.controller.prepareForAppUpdate();
+        await widget.accountService?.drainLocalWrites();
       } on ConversationSaveException catch (error) {
         throw AppUpdateFailure(error.message);
       } catch (_) {

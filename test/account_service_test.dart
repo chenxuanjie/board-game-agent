@@ -11,10 +11,64 @@ import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'support/failing_preferences_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'failed drafts block logout until recovery, then repeated logout succeeds',
+    () async {
+      final store = FailingPreferencesStore()..install();
+      final service = AccountService(
+        controller: FixtureApp(),
+        gatewayFactory: (_) async => FixtureGateway(),
+        savedLoginStorage: MemoryStorage(),
+        switchScope: (_) async {},
+        publicSyncFactory:
+            ({
+              required client,
+              required active,
+              required refresh,
+              required refreshPublications,
+              onStatusChanged,
+            }) async => FixturePublicSync(),
+      );
+      addTearDown(service.dispose);
+      await service.configureService('https://service.example.test');
+      await service.signIn(account: 'alice', password: 'fixture');
+      final comments = service.comments!;
+      store.reject = (key) => key.contains('.draft.');
+      await expectLater(
+        comments.saveDraft('cabo', null, {'text': 'Alice draft'}),
+        throwsStateError,
+      );
+      await expectLater(service.drainLocalWrites(), throwsStateError);
+      await service.signOut();
+      expect(service.isSignedIn, isFalse);
+      expect(service.dataScopeReady, isFalse);
+      await service.restore();
+      expect(service.dataScopeReady, isFalse);
+      store.reject = (_) => false;
+      await service.restore();
+      expect(service.dataScopeReady, isTrue);
+      expect(service.error, isNull);
+      final draftKey = (await store.getAll()).keys.singleWhere(
+        (key) => key.contains('.draft.'),
+      );
+      expect((await store.getAll())[draftKey], contains('Alice draft'));
+      await service.signOut();
+      await service.drainLocalWrites();
+      expect(service.dataScopeReady, isTrue);
+      await service.signIn(account: 'bob', password: 'fixture');
+      expect(await service.comments!.readDraft('cabo', null), isNull);
+      await expectLater(
+        comments.saveDraft('cabo', null, {'text': 'late'}),
+        throwsStateError,
+      );
+      expect((await store.getAll())[draftKey], contains('Alice draft'));
+    },
+  );
   test(
     'guest account page stays error-free on startup, resume and after logout',
     () async {

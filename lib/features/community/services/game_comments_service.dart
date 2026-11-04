@@ -33,6 +33,8 @@ final class GameCommentsService extends ChangeNotifier {
   final _likes = <String, bool>{};
   Future<void>? _ready, _sync;
   Future<void>? _writes;
+  final _pendingDrafts = <String, String?>{};
+  bool _stateDirty = false;
   SharedPreferences? _prefs;
   bool _disposed = false, loading = false;
   String? error;
@@ -100,17 +102,22 @@ final class GameCommentsService extends ChangeNotifier {
     }
   })();
   Future<void> _local(Future<void> Function() work) {
-    final next = (_writes ?? Future<void>.value())
-        .catchError((Object _) {})
-        .then((_) async {
-          _check();
-          await work();
-        });
-    _writes = next;
+    final next = (_writes ?? Future<void>.value()).then((_) async {
+      if (_disposed) throw StateError('评论服务已关闭');
+      await work();
+    });
+    // The scheduler stays usable; callers still receive their own failure.
+    // Pending payloads, rather than a rejected Future, govern handoff safety.
+    final tail = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    _writes = tail;
+    tail.then((_) {
+      if (identical(_writes, tail)) _writes = null;
+    });
     return next;
   }
 
   Future<void> _save() async {
+    _stateDirty = true;
     final raw = jsonEncode({
       'commands': _commands,
       'optimistic': _optimistic.values.toList(),
@@ -119,6 +126,7 @@ final class GameCommentsService extends ChangeNotifier {
         !await _prefs!.setString(_key, raw)) {
       throw StateError('待发送内容未保存，请重试');
     }
+    _stateDirty = false;
   }
 
   Future<void> _enqueue(
@@ -281,6 +289,7 @@ final class GameCommentsService extends ChangeNotifier {
           throw StateError('Invalid acknowledgement');
         }
         await _local(() async {
+          _check();
           _commands.removeAt(0);
           try {
             await _save();
@@ -342,7 +351,10 @@ final class GameCommentsService extends ChangeNotifier {
   Future<Map<String, dynamic>?> readDraft(String game, String? parent) async {
     await initialize();
     _check();
-    final value = _prefs!.getString(_draft(game, parent));
+    final key = _draft(game, parent);
+    final value = _pendingDrafts.containsKey(key)
+        ? _pendingDrafts[key]
+        : _prefs!.getString(key);
     return value == null ? null : jsonDecode(value) as Map<String, dynamic>;
   }
 
@@ -352,15 +364,39 @@ final class GameCommentsService extends ChangeNotifier {
     Map<String, Object?>? draft,
   ) async {
     await initialize();
-    await _local(() async {
-      final saved = draft == null
-          ? await _prefs!.remove(_draft(game, parent))
-          : await _prefs!.setString(_draft(game, parent), jsonEncode(draft));
-      if (!saved) throw StateError('草稿未保存');
-    });
+    _check();
+    final key = _draft(game, parent);
+    // Freeze accepted input before queueing; retain it through failed writes
+    // and identity invalidation. Only this instance's namespace is retried.
+    final value = draft == null ? null : jsonEncode(draft);
+    _pendingDrafts[key] = value;
+    await _local(() => _saveDraftValue(key, value));
   }
 
-  Future<void> drain() => _writes ?? Future.value();
+  Future<void> _saveDraftValue(String key, String? value) async {
+    final saved = value == null
+        ? await _prefs!.remove(key)
+        : await _prefs!.setString(key, value);
+    if (!saved) throw StateError('草稿未保存，请重试');
+    if (_pendingDrafts.containsKey(key) && _pendingDrafts[key] == value) {
+      _pendingDrafts.remove(key);
+    }
+  }
+
+  /// Local durability only: retry accepted content even after sign-out has
+  /// invalidated network permissions. A real storage failure still blocks.
+  Future<void> drain() {
+    if (_writes == null && !_stateDirty && _pendingDrafts.isEmpty) {
+      return Future<void>.value();
+    }
+    return _local(() async {
+      if (_stateDirty) await _save();
+      for (final entry in _pendingDrafts.entries.toList()) {
+        await _saveDraftValue(entry.key, entry.value);
+      }
+    }).timeout(const Duration(seconds: 15));
+  }
+
   @override
   void dispose() {
     _disposed = true;

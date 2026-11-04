@@ -395,6 +395,8 @@ class AppController extends ChangeNotifier {
   Future<void> _selectedConversationSaveQueue = Future<void>.value();
   bool _selectedConversationDirty = false;
   Future<void> _activitySaveQueue = Future<void>.value();
+  bool _activitiesDirty = false;
+  int _activitySaveRevision = 0;
   Future<void> _favoriteMutationQueue = Future<void>.value();
   Future<void> _searchHistoryMutationQueue = Future<void>.value();
   Future<void> _recentGamesMutationQueue = Future<void>.value();
@@ -714,14 +716,29 @@ class AppController extends ChangeNotifier {
   }
 
   void _queueActivitySave() {
+    _activitiesDirty = true;
+    _activitySaveRevision++;
+    _saveActivitySnapshot();
+  }
+
+  Future<void> _saveActivitySnapshot() {
     final preferences = _preferencesService;
+    final revision = _activitySaveRevision;
     final List<AppActivity> snapshot = List<AppActivity>.from(_activities);
-    _activitySaveQueue = _activitySaveQueue
-        .catchError((Object _) {})
-        .then((_) => preferences.saveActivities(snapshot));
-    _activitySaveQueue.catchError((Object error) {
-      debugPrint('[activities] save failed: $error');
+    final operation = _activitySaveQueue.then((_) async {
+      await preferences.saveActivities(snapshot);
+      if (identical(preferences, _preferencesService) &&
+          revision == _activitySaveRevision) {
+        _activitiesDirty = false;
+      }
     });
+    _activitySaveQueue = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {
+        debugPrint('[activities] local save failed');
+      },
+    );
+    return operation;
   }
 
   Future<void> markActivitiesRead() async {
@@ -1089,13 +1106,14 @@ class AppController extends ChangeNotifier {
       _conversationSaveQueue,
       ?_aiConfigSaveQueue,
       _selectedConversationSaveQueue,
-      _activitySaveQueue,
+      _drainActivityWrites(),
       _favoriteMutationQueue,
       _searchHistoryMutationQueue,
       _recentGamesMutationQueue,
       _dailyRecommendationSaveQueue,
     ]).timeout(const Duration(seconds: 15));
     await _commitConversationState();
+    await _drainActivityWrites();
     checkIdle();
   }
 
@@ -1120,13 +1138,13 @@ class AppController extends ChangeNotifier {
           if (state.finished != null) state.finished!.future,
       ]).timeout(const Duration(seconds: 15));
       await _commitConversationState();
+      await _drainActivityWrites();
     } catch (error, stack) {
       saveFailure = error;
       saveStack = stack;
     }
     await _aiConfigSaveQueue;
     await _selectedConversationSaveQueue;
-    await _activitySaveQueue;
     await _searchHistoryMutationQueue;
     await _recentGamesMutationQueue;
     await _speechService.cancelListening();

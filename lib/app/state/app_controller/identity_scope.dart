@@ -10,14 +10,11 @@ extension AppIdentityScopeController on AppController {
   }
 
   Future<void> _drainActivityWrites() async {
-    try {
+    await (() async {
       await _activitySaveQueue;
-    } catch (_) {
-      await _preferencesService.saveActivities(
-        List<AppActivity>.of(_activities),
-      );
-      _activitySaveQueue = Future<void>.value();
-    }
+      if (_activitiesDirty) await _saveActivitySnapshot();
+      if (_activitiesDirty) throw StateError('消息记录尚未保存，请重试');
+    })().timeout(const Duration(seconds: 15));
   }
 
   Future<void> _trackVoiceOperation(Future<void> Function() action) {
@@ -216,12 +213,17 @@ extension AppIdentityScopeController on AppController {
     _selectedConversationId = await _preferencesService
         .loadSelectedConversationId()
         .timeout(const Duration(seconds: 8));
-    _activities = latestActivitiesByKind(
-      await _preferencesService.loadActivities().timeout(
-        const Duration(seconds: 8),
-      ),
-      maxEntries: AppController._maxActivities,
-    );
+    if (!_activitiesDirty) {
+      final storedActivities = await _preferencesService
+          .loadActivities()
+          .timeout(const Duration(seconds: 8));
+      if (!_activitiesDirty) {
+        _activities = latestActivitiesByKind(
+          storedActivities,
+          maxEntries: AppController._maxActivities,
+        );
+      }
+    }
     await _ensureFavoriteRecords().timeout(const Duration(seconds: 8));
     _searchHistory = await _preferencesService.loadSearchHistory().timeout(
       const Duration(seconds: 8),

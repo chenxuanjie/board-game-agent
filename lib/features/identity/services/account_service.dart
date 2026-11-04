@@ -749,6 +749,16 @@ final class AccountService extends ChangeNotifier with WidgetsBindingObserver {
     await _scopeQueue;
   }
 
+  /// Confirm only local comment durability; an offline upload is not required.
+  Future<void> drainLocalWrites() async {
+    final generation = _scopeGeneration;
+    if (_scopeChanging || _disposed) throw StateError('账号数据正在切换，请稍后重试');
+    await _comments?.drain();
+    if (_scopeChanging || _disposed || generation != _scopeGeneration) {
+      throw StateError('账号数据正在切换，请稍后重试');
+    }
+  }
+
   Future<void> saveNickname(String nickname) async {
     if (user == null || isBusy || nickname.trim().length > 80) return;
     final key = nicknameKey;

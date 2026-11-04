@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'support/failing_preferences_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,157 @@ void main() {
         applicationId: 'board_game_agent',
         client: MockClient(handler),
       );
+  test('failed drafts retry actual content after scope invalidation', () async {
+    final store = FailingPreferencesStore()..install();
+    store.reject = (key) => key.contains('.draft.');
+    var active = true;
+    final api = client((_) async => throw StateError('No network expected'));
+    addTearDown(api.close);
+    final service = GameCommentsService(
+      client: api,
+      scope: 'alice',
+      isActive: () => active,
+      displayName: () => 'Alice',
+    );
+    addTearDown(service.dispose);
+    await expectLater(
+      service.saveDraft('cabo', null, {'text': '不能丢失的草稿'}),
+      throwsStateError,
+    );
+    expect((await service.readDraft('cabo', null))!['text'], '不能丢失的草稿');
+    active = false;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await expectLater(service.drain(), throwsStateError);
+    }
+    expect(await store.getAll(), isEmpty);
+    store.reject = (_) => false;
+    await service.drain();
+    final saved = await store.getAll();
+    expect(saved.values.single, contains('不能丢失的草稿'));
+    final writes = store.attempts.length;
+    await service.drain();
+    expect(store.attempts, hasLength(writes));
+    await expectLater(
+      service.saveDraft('cabo', null, {'text': '迟到的旧页面'}),
+      throwsStateError,
+    );
+    expect(await store.getAll(), saved);
+  });
+
+  test(
+    'a successful unrelated write cannot hide another failed draft',
+    () async {
+      final store = FailingPreferencesStore()..install();
+      store.reject = (key) => key.contains('.cabo.');
+      store.throwOnRejection = false;
+      final api = client((_) async => throw StateError('No network expected'));
+      addTearDown(api.close);
+      final service = GameCommentsService(
+        client: api,
+        scope: 'alice',
+        isActive: () => true,
+        displayName: () => '',
+      );
+      addTearDown(service.dispose);
+      await expectLater(
+        service.saveDraft('cabo', null, {'text': 'A'}),
+        throwsStateError,
+      );
+      await service.saveDraft('scout', null, {'text': 'B'});
+      await expectLater(service.drain(), throwsStateError);
+      store.reject = (_) => false;
+      await service.drain();
+      expect(
+        (await store.getAll()).values,
+        containsAll(['{"text":"A"}', '{"text":"B"}']),
+      );
+      // A failed deletion is a pending tombstone, not an absent intent.
+      store.reject = (_) => true;
+      await expectLater(
+        service.saveDraft('cabo', null, null),
+        throwsStateError,
+      );
+      expect(await service.readDraft('cabo', null), isNull);
+      await expectLater(service.drain(), throwsStateError);
+      store.reject = (_) => false;
+      await service.drain();
+      expect((await store.getAll()).values, ['{"text":"B"}']);
+    },
+  );
+
+  test(
+    'handoff waits for accepted edits and saves the newest queued value',
+    () async {
+      final store = FailingPreferencesStore()..install();
+      final entered = Completer<void>(), release = Completer<void>();
+      store.beforeWrite = (_) async {
+        if (!entered.isCompleted) {
+          entered.complete();
+          await release.future;
+        }
+      };
+      var active = true;
+      final api = client((_) async => throw StateError('No network expected'));
+      addTearDown(api.close);
+      final service = GameCommentsService(
+        client: api,
+        scope: 'old-account',
+        isActive: () => active,
+        displayName: () => '',
+      );
+      addTearDown(service.dispose);
+      final first = service.saveDraft('cabo', null, {'text': 'first'});
+      await entered.future;
+      final last = service.saveDraft('cabo', null, {'text': 'latest'});
+      await Future<void>.delayed(Duration.zero);
+      active = false;
+      var drained = false;
+      final handoff = service.drain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      release.complete();
+      await Future.wait([first, last, handoff]);
+      final saved = await store.getAll();
+      expect(saved.keys.single, contains('old-account.draft'));
+      expect(saved.values.single, '{"text":"latest"}');
+    },
+  );
+  test(
+    'failed acknowledgement persistence retries locally without resending',
+    () async {
+      final store = FailingPreferencesStore()..install();
+      var posts = 0;
+      final api = client((request) async {
+        posts++;
+        final command = jsonDecode(request.body) as Map;
+        store.reject = (_) => true;
+        return http.Response(
+          jsonEncode({'id': command['id'], 'status': 'applied'}),
+          200,
+        );
+      });
+      addTearDown(api.close);
+      final service = GameCommentsService(
+        client: api,
+        scope: 'alice',
+        uid: 'alice',
+        token: () async => 'token',
+        isActive: () => true,
+        displayName: () => '',
+      );
+      addTearDown(service.dispose);
+      final id = await service.publish(game: 'cabo', text: '本地持久命令');
+      await service.synchronize();
+      expect(service.pendingIds, contains(id));
+      await expectLater(service.drain(), throwsStateError);
+      store.reject = (_) => false;
+      await service.drain();
+      expect(posts, 1);
+      final persisted =
+          jsonDecode((await store.getAll()).values.single as String) as Map;
+      expect((persisted['commands'] as List).single['id'], id);
+    },
+  );
   test(
     'updates during a read queue a fresh snapshot; watchers are reference counted',
     () async {

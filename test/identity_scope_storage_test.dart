@@ -1,4 +1,5 @@
 import 'support/catalog_fixture.dart';
+import 'support/failing_preferences_store.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:powersync/powersync.dart';
@@ -40,6 +41,104 @@ import 'package:board_game_agent/features/identity/services/board_personal_store
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  Future<AppController> failedActivityApp(FailingPreferencesStore store) async {
+    store.install();
+    final prefs = PreferencesService();
+    await prefs.saveActivities([
+      AppActivity(
+        id: 'unread',
+        kind: AppActivityKind.info,
+        title: '提示',
+        message: '待保存的已读状态',
+        createdAt: DateTime.utc(2026),
+      ),
+    ]);
+    final app = await _app(preferences: prefs);
+    await app.initialize();
+    store.reject = (key) => key.endsWith('app_activities');
+    await app.markActivitiesRead();
+    await Future<void>.delayed(Duration.zero);
+    return app;
+  }
+
+  test(
+    'update retries dirty activities without needing a new notification',
+    () async {
+      final store = FailingPreferencesStore();
+      final app = await failedActivityApp(store);
+      addTearDown(() => store.reject = (_) => false);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await expectLater(app.prepareForAppUpdate(), throwsStateError);
+      }
+      // A sync projection must not replace the pending local edit with disk's
+      // older unread state while the store is still unavailable.
+      await (await SharedPreferences.getInstance()).reload();
+      expect(await app.reloadServicePersonalState(), isTrue);
+      expect(
+        app.activities.singleWhere((item) => item.id == 'unread').isRead,
+        isTrue,
+      );
+      store.reject = (_) => false;
+      await app.prepareForAppUpdate();
+      await (await SharedPreferences.getInstance()).reload();
+      final restored = await PreferencesService().loadActivities();
+      expect(
+        restored.singleWhere((item) => item.id == 'unread').isRead,
+        isTrue,
+      );
+      final writes = store.attempts
+          .where((key) => key.endsWith('app_activities'))
+          .length;
+      await app.prepareForAppUpdate();
+      expect(
+        store.attempts.where((key) => key.endsWith('app_activities')),
+        hasLength(writes),
+      );
+    },
+  );
+
+  test(
+    'activity handoff retries the old scope and leaves the new scope empty',
+    () async {
+      final store = FailingPreferencesStore();
+      final app = await failedActivityApp(store);
+      addTearDown(() => store.reject = (_) => false);
+      await expectLater(app.switchIdentityScope('next'), throwsStateError);
+      expect(app.isSwitchingIdentityScope, isTrue);
+      store.reject = (_) => false;
+      await app.switchIdentityScope('next');
+      expect(app.isSwitchingIdentityScope, isFalse);
+      expect(app.activities, isEmpty);
+      await app.prepareForAppUpdate();
+      await (await SharedPreferences.getInstance()).reload();
+      expect(
+        (await PreferencesService().loadActivities())
+            .singleWhere((item) => item.id == 'unread')
+            .isRead,
+        isTrue,
+      );
+      expect(
+        await PreferencesService(identityUserId: 'next').loadActivities(),
+        isEmpty,
+      );
+    },
+  );
+
+  test('disposal retries activities after storage recovery', () async {
+    final store = FailingPreferencesStore();
+    final app = await failedActivityApp(store);
+    addTearDown(() => store.reject = (_) => false);
+    await expectLater(app.disposeServices(), throwsStateError);
+    store.reject = (_) => false;
+    await app.disposeServices();
+    await (await SharedPreferences.getInstance()).reload();
+    expect(
+      (await PreferencesService().loadActivities())
+          .singleWhere((item) => item.id == 'unread')
+          .isRead,
+      isTrue,
+    );
+  });
   test(
     'account switch drains cancelled knowledge preparation without waiting for late bytes',
     () async {
