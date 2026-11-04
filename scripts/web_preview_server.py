@@ -216,6 +216,8 @@ def create_app(
         headers = {
             k: v for k, v in request.headers.items() if k.lower() in REQUEST_HEADERS
         }
+        if request.client:
+            headers["X-Forwarded-For"] = request.client.host
         # A local preview has no NAS file mount. Never request X-Accel delivery.
         try:
             target = httpx.URL(api_upstream + path).copy_with(

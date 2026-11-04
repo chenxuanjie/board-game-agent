@@ -8,6 +8,8 @@
 
 ## 端口与服务地址
 
+认证限流的代理地址契约见 [共用后台说明](../../apps/app_data_service/docs/trusted-proxies.md)。Web Nginx 的 `BGA_TRUSTED_PROXIES` 默认为空，仅在核对实际 NAS 上级代理及端口可达边界后填写；它覆盖发给 API 的客户端地址头。API 的 `APP_DATA_TRUSTED_PROXIES` 独立配置，不因允许某个浏览器 Origin 就信任该来源提供的地址。需配套更新 API/Web 镜像和配置，不涉及数据库迁移。
+
 - 本地及 NAS HTTP 端口为 **8083**，HTTPS 端口为 **8084**。
 - NAS Compose 映射 `8083:8080`；群晖反代设置为 HTTPS `cznas.pp.ua:8084` → HTTP `127.0.0.1:8083`。
 - 浏览器正式入口为 `https://cznas.pp.ua:8084`。HTTP NAS 地址可验证静态页面，安全 Cookie 登录和完整 Web 数据库使用 HTTPS。

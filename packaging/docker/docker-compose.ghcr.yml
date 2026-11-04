@@ -26,6 +26,7 @@ services:
     environment:
       APP_SERVICE_UPSTREAM: http://192.168.1.55:18280
       LIBRARY_ACCELERATION: '0'
+      BGA_TRUSTED_PROXIES: ''
     tmpfs:
     - /tmp:rw,nosuid,nodev,size=64m
     mem_limit: 192m

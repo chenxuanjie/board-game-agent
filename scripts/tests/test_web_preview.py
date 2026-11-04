@@ -34,6 +34,20 @@ class Bytes(httpx.AsyncByteStream):
 
 
 class PreviewTests(unittest.TestCase):
+    def test_preview_replaces_caller_forwarded_address_with_its_actual_peer(self):
+        async def upstream(request):
+            return httpx.Response(200, stream=Bytes(b'{}'))
+
+        with TestClient(self.app(upstream), base_url=SITE, client=("127.0.0.1", 123)) as client:
+            result = client.get('/api/v1/test', headers={
+                'X-Forwarded-For': '203.0.113.99', 'X-Real-IP': '203.0.113.98',
+                'Forwarded': 'for=203.0.113.97',
+            })
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(self.requests[0].headers['x-forwarded-for'], '127.0.0.1')
+            self.assertNotIn('x-real-ip', self.requests[0].headers)
+            self.assertNotIn('forwarded', self.requests[0].headers)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

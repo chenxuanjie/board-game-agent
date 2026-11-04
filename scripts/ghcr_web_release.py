@@ -286,7 +286,7 @@ def compose(web_image, ai_image):
                 "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}}
     result = {"name": "board-game-agent", "services": {
         "board-game-agent": {**hardened, "image": web_image, "ports": ["8083:8080"],
-            "environment": {"APP_SERVICE_UPSTREAM": "http://192.168.1.55:18280", "LIBRARY_ACCELERATION": "0"},
+            "environment": {"APP_SERVICE_UPSTREAM": "http://192.168.1.55:18280", "LIBRARY_ACCELERATION": "0", "BGA_TRUSTED_PROXIES": ""},
             "tmpfs": ["/tmp:rw,nosuid,nodev,size=64m"], "mem_limit": "192m"},
         "web-ai": {**hardened, "image": ai_image,
             "environment": {"WEB_PUBLIC_ORIGIN": "https://cznas.pp.ua:8084",
