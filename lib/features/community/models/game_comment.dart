@@ -1,5 +1,26 @@
-/// Public comment DTO. The service, rather than a client-supplied NAS UID,
-/// establishes authorship. Author IDs are application-specific pseudonyms.
+/// A retained local command that needs explicit user intervention.
+final class CommentCommandIssue {
+  const CommentCommandIssue({
+    required this.id,
+    required this.commentId,
+    required this.game,
+    required this.action,
+    required this.text,
+    required this.code,
+    this.parent,
+  });
+  final String id, commentId, game, action, text, code;
+  final String? parent;
+  String get message => switch (code) {
+    'comment_parent_unavailable' => '原评论已不可回复，内容已保留',
+    'comment_rejected' => '评论未获接受，内容已保留',
+    'comment_deleted' || 'comment_unavailable' => '评论已不可用，操作未执行',
+    'comment_not_owned' => '无法删除这条评论',
+    _ => '关联的待发送操作未完成，请处理后再发',
+  };
+}
+
+/// Public comment DTO. The server establishes authorship using app pseudonyms.
 final class CommentOperation {
   const CommentOperation({
     required this.id,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:app_client/app_client.dart';
+import 'package:app_identity/app_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -29,6 +30,8 @@ final class GameCommentsService extends ChangeNotifier {
   final _requestedGames = <String>{};
   final _rows = <String, Map<String, dynamic>>{};
   final _commands = <Map<String, dynamic>>[];
+  final _rejections = <String, String>{};
+  final _withdrawn = <String>{};
   final _optimistic = <String, Map<String, dynamic>>{};
   final _likes = <String, bool>{};
   Future<void>? _ready, _sync;
@@ -42,6 +45,86 @@ final class GameCommentsService extends ChangeNotifier {
   int _attempts = 0;
   String get _key => 'board.community.api.v1.$scope';
   bool get pending => _commands.isNotEmpty;
+  bool wasWithdrawn(String id) => _withdrawn.contains(id);
+  List<CommentCommandIssue> get issues {
+    final codes = _blockedCodes();
+    return [
+      for (final command in _commands)
+        if (codes[command['id']] case final code?)
+          CommentCommandIssue(
+            id: command['id'] as String,
+            commentId: command['comment_id'] as String,
+            game: command['game_slug'] as String,
+            action: command['action'] as String,
+            text: command['body'] as String? ?? '',
+            parent: command['parent_id'] as String?,
+            code: code,
+          ),
+    ];
+  }
+
+  Map<String, String> _blockedCodes() {
+    final codes = Map<String, String>.of(_rejections);
+    var changed = true;
+    while (changed) {
+      changed = false;
+      final parents = {
+        for (final command in _commands)
+          if (command['action'] == 'publish' &&
+              codes.containsKey(command['id']))
+            command['comment_id'],
+      };
+      final earlierBlocked = <Object?>{};
+      for (final command in _commands) {
+        final id = command['id'] as String;
+        if (!codes.containsKey(id) &&
+            (parents.contains(command['parent_id']) ||
+                earlierBlocked.contains(command['comment_id']))) {
+          codes[id] = 'comment_dependency_blocked';
+          changed = true;
+        }
+        if (codes.containsKey(id)) earlierBlocked.add(command['comment_id']);
+      }
+    }
+    return codes;
+  }
+
+  Map<String, dynamic>? _nextCommand() {
+    final blocked = _blockedCodes();
+    final publishes = {
+      for (final command in _commands)
+        if (command['action'] == 'publish') command['comment_id'],
+    };
+    final earlier = <Object?>{};
+    for (final command in _commands) {
+      final target = command['comment_id'];
+      final waitsForParent =
+          command['parent_id'] != null &&
+          publishes.contains(command['parent_id']);
+      final waitsForEarlier = earlier.contains(target);
+      earlier.add(target);
+      if (!blocked.containsKey(command['id']) &&
+          !waitsForParent &&
+          !waitsForEarlier) {
+        return command;
+      }
+    }
+    return null;
+  }
+
+  String? _permanentCode(Map<String, dynamic> command, AppClientFailure error) {
+    final action = command['action'];
+    final permanent = switch ((action, error.status, error.code)) {
+      ('publish', 409, 'comment_parent_unavailable') => true,
+      ('publish', 409 || 422, 'comment_rejected') => true,
+      ('delete' || 'like', 404, 'comment_unavailable') => true,
+      ('like', 409, 'comment_deleted') => true,
+      ('delete', 403, 'comment_not_owned') => true,
+      _ => false,
+    };
+    return permanent ? error.code : null;
+  }
+
   Set<String> get pendingIds => {
     for (final c in _commands)
       if (c['action'] == 'publish') c['comment_id'] as String,
@@ -96,6 +179,9 @@ final class GameCommentsService extends ChangeNotifier {
     if (raw == null) return;
     final data = jsonDecode(raw) as Map<String, dynamic>;
     _commands.addAll((data['commands'] as List).cast<Map<String, dynamic>>());
+    _rejections.addAll(
+      (data['rejections'] as Map? ?? {}).cast<String, String>(),
+    );
     _games.addAll(_commands.map((command) => command['game_slug'] as String));
     for (final r in (data['optimistic'] as List).cast<Map<String, dynamic>>()) {
       _optimistic[r['id'] as String] = r;
@@ -120,6 +206,7 @@ final class GameCommentsService extends ChangeNotifier {
     _stateDirty = true;
     final raw = jsonEncode({
       'commands': _commands,
+      'rejections': _rejections,
       'optimistic': _optimistic.values.toList(),
     });
     if (utf8.encode(raw).length > 512 * 1024 ||
@@ -277,12 +364,32 @@ final class GameCommentsService extends ChangeNotifier {
       await initialize();
       _check();
       for (var n = 0; n < 100 && _commands.isNotEmpty; n++) {
-        final command = _commands.first;
-        final response = await client.request(
-          '/v1/community/commands',
-          token: await token!(),
-          body: command,
-        );
+        final command = _nextCommand();
+        if (command == null) break;
+        late final Map<String, dynamic> response;
+        try {
+          response = await client.request(
+            '/v1/community/commands',
+            token: await token!(),
+            body: command,
+          );
+        } on AppClientFailure catch (failure) {
+          _check();
+          final code = _permanentCode(command, failure);
+          if (code == null) rethrow;
+          await _local(() async {
+            _check();
+            final id = command['id'] as String;
+            _rejections[id] = code;
+            try {
+              await _save();
+            } catch (_) {
+              _rejections.remove(id);
+              rethrow;
+            }
+          });
+          continue;
+        }
         _check();
         if (response['id'] != command['id'] ||
             response['status'] != 'applied') {
@@ -290,11 +397,12 @@ final class GameCommentsService extends ChangeNotifier {
         }
         await _local(() async {
           _check();
-          _commands.removeAt(0);
+          final index = _commands.indexOf(command);
+          _commands.removeAt(index);
           try {
             await _save();
           } catch (_) {
-            _commands.insert(0, command);
+            _commands.insert(index, command);
             rethrow;
           }
         });
@@ -330,10 +438,37 @@ final class GameCommentsService extends ChangeNotifier {
             !_commands.any((command) => command['game_slug'] == game),
       );
       _attempts = 0;
-    } catch (_) {
+    } catch (failure) {
       if (!_disposed && isActive()) {
-        error = pending ? '发送未完成，本机内容已保留，请重试' : '评论刷新未完成，请重试';
-        if (pending && _attempts < 4) {
+        final authentication =
+            failure is AppClientFailure &&
+                (failure.status == 401 || failure.status == 403) ||
+            failure is IdentityFailure &&
+                const {
+                  IdentityFailureCode.sessionRejected,
+                  IdentityFailureCode.invalidCredentials,
+                  IdentityFailureCode.accountDenied,
+                  IdentityFailureCode.otpRequired,
+                  IdentityFailureCode.invalidOtp,
+                  IdentityFailureCode.passwordChangeRequired,
+                }.contains(failure.code);
+        error = authentication
+            ? '评论身份或权限验证未完成，请重新登录后重试'
+            : pending
+            ? '发送未完成，本机内容已保留，请重试'
+            : '评论刷新未完成，请重试';
+        final retryable = switch (failure) {
+          AppClientFailure(:final status) =>
+            status == null || status == 408 || status == 429 || status >= 500,
+          IdentityFailure(:final code) => const {
+            IdentityFailureCode.network,
+            IdentityFailureCode.timeout,
+            IdentityFailureCode.rateLimited,
+            IdentityFailureCode.providerUnavailable,
+          }.contains(code),
+          _ => true,
+        };
+        if (retryable && _nextCommand() != null && _attempts < 4) {
           _retry = Timer(
             Duration(seconds: 2 << _attempts++),
             () => unawaited(synchronize()),
@@ -344,6 +479,86 @@ final class GameCommentsService extends ChangeNotifier {
       loading = false;
       _notify();
     }
+  }
+
+  /// Explicit user action: retain a publish as an editable draft before removing
+  /// its rejected command. Dependants remain visible and require their own action.
+  Future<void> withdrawRejected(String id, {bool asRoot = false}) async {
+    await initialize();
+    await _local(() async {
+      _check();
+      if (!canWrite || loading) throw StateError('请等待同步结束后重试');
+      if (!_blockedCodes().containsKey(id)) throw StateError('这条内容不需要处理');
+      final command = _commands.firstWhere((c) => c['id'] == id);
+      if (command['action'] == 'publish') {
+        final key = _draft(
+          command['game_slug'] as String,
+          command['parent_id'] as String?,
+        );
+        final current = _pendingDrafts.containsKey(key)
+            ? _pendingDrafts[key]
+            : _prefs!.getString(key);
+        final draft = current == null ? null : jsonDecode(current) as Map;
+        if (draft != null &&
+            draft['id'] != id &&
+            draft['withdraws'] != id &&
+            ((draft['text'] as String? ?? '').isNotEmpty ||
+                draft['rating'] != null)) {
+          throw StateError('已有其他草稿，请先保存或处理后再修改这条内容');
+        }
+        final value = jsonEncode({
+          'id': newId(),
+          'text': command['body'],
+          'rating': command['rating'],
+          'enqueued': false,
+          'asRoot': asRoot,
+          'recovered': true,
+          'withdraws': id,
+        });
+        _pendingDrafts[key] = value;
+        await _saveDraftValue(key, value);
+      }
+      final oldCodes = Map<String, String>.of(_rejections);
+      final index = _commands.indexOf(command);
+      final affected = <Object?>{command['comment_id']};
+      final dependants = <String>{};
+      var changed = true;
+      while (changed) {
+        changed = false;
+        for (var n = 0; n < _commands.length; n++) {
+          final next = _commands[n], nextId = next['id'] as String;
+          if (nextId == id || dependants.contains(nextId)) continue;
+          if (affected.contains(next['parent_id']) ||
+              (n > index && affected.contains(next['comment_id']))) {
+            dependants.add(nextId);
+            if (next['action'] == 'publish') affected.add(next['comment_id']);
+            changed = true;
+          }
+        }
+      }
+      for (final dependant in dependants) {
+        _rejections.putIfAbsent(dependant, () => 'comment_dependency_changed');
+      }
+      _commands.removeAt(index);
+      _rejections.remove(id);
+      final optimistic = command['action'] == 'publish'
+          ? _optimistic.remove(command['comment_id'])
+          : null;
+      try {
+        await _save();
+      } catch (_) {
+        _commands.insert(index, command);
+        _rejections
+          ..clear()
+          ..addAll(oldCodes);
+        if (optimistic != null) {
+          _optimistic[command['comment_id'] as String] = optimistic;
+        }
+        rethrow;
+      }
+      _withdrawn.add(id);
+      _notify();
+    });
   }
 
   String _draft(String game, String? parent) =>
@@ -399,6 +614,7 @@ final class GameCommentsService extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _retry?.cancel();
     super.dispose();

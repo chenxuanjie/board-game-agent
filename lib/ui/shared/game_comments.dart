@@ -146,6 +146,13 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     setState(() => _likeErrors.remove(comment.id));
     try {
       await service.toggleLike(comment);
+      if (service.issues.any(
+        (issue) => issue.action == 'like' && issue.commentId == comment.id,
+      )) {
+        // The retained issue card owns permanent failures; do not tell the
+        // user to retry their network for a deleted or unavailable comment.
+        return;
+      }
       if (mounted &&
           identical(service, _service) &&
           epoch == _actionEpoch &&
@@ -256,6 +263,124 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
     }
   }
 
+  Future<void> _handleIssue(
+    CommentCommandIssue issue, {
+    bool edit = false,
+  }) async {
+    final service = _service;
+    if (service == null || !service.canWrite || service.loading) return;
+    if (!edit) {
+      final confirmed = await showAppDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('取消发送？'),
+          content: Text(
+            issue.action == 'publish'
+                ? '评论正文会保留为草稿，关联的待发送操作仍需分别处理。'
+                : '取消这次待发送操作，关联的待发送操作仍需分别处理。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('保留'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('取消发送'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted || !identical(service, _service)) {
+        return;
+      }
+    }
+    await _work(() async {
+      await service.withdrawRejected(
+        issue.id,
+        asRoot: edit && issue.parent != null,
+      );
+      if (!edit ||
+          !mounted ||
+          !identical(service, _service) ||
+          !service.canWrite) {
+        return;
+      }
+      final parent = issue.parent;
+      final operation = parent == null
+          ? null
+          : service.projection.comments[parent] ??
+                CommentOperation(
+                  id: parent,
+                  uid: '',
+                  game: issue.game,
+                  at: DateTime.now(),
+                  author: '原评论',
+                );
+      await _compose(
+        operation == null
+            ? null
+            : GameComment(
+                operation: operation,
+                deleted: false,
+                likes: 0,
+                likedByMe: false,
+                pending: false,
+              ),
+      );
+    });
+  }
+
+  Widget _issueCard(CommentCommandIssue issue, GameCommentsService service) {
+    final palette = AppPalette.of(context);
+    return Padding(
+      key: ValueKey('comment-issue-${issue.id}'),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        color: palette.surfaceContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(issue.message, style: TextStyle(color: palette.warning)),
+              if (issue.text.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(issue.text, maxLines: 3, overflow: TextOverflow.ellipsis),
+              ],
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (issue.text.isNotEmpty)
+                    TextButton(
+                      onPressed: () => _work(
+                        () =>
+                            Clipboard.setData(ClipboardData(text: issue.text)),
+                      ),
+                      child: const Text('复制'),
+                    ),
+                  if (issue.action == 'publish')
+                    TextButton(
+                      onPressed: service.canWrite && !service.loading
+                          ? () => _handleIssue(issue, edit: true)
+                          : null,
+                      child: const Text('修改'),
+                    ),
+                  TextButton(
+                    onPressed: service.canWrite && !service.loading
+                        ? () => _handleIssue(issue)
+                        : null,
+                    child: const Text('取消发送'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -304,18 +429,23 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
       );
     }
     final projection = service.projection;
-    final comments = projection.forGame(
-      widget.gameSlug,
-      service.pendingIds,
-      latest: _latest,
-    );
+    final issues = service.issues;
+    final rejectedPublishes = {
+      for (final issue in issues)
+        if (issue.action == 'publish') issue.commentId,
+    };
+    final comments = projection
+        .forGame(widget.gameSlug, service.pendingIds, latest: _latest)
+        .where((comment) => !rejectedPublishes.contains(comment.id))
+        .toList();
     final roots = comments.where((c) => c.operation.root == null).toList();
     final fresh = roots.where((c) => c.id == _freshId).firstOrNull;
     if (fresh != null) {
       roots.remove(fresh);
       roots.insert(0, fresh);
     }
-    final root = widget.rootId == null
+    final root =
+        widget.rootId == null || rejectedPublishes.contains(widget.rootId)
         ? null
         : projection.comments[widget.rootId];
     final replies =
@@ -398,6 +528,10 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
           ],
         ),
         const SizedBox(height: 12),
+        for (final issue in issues.where(
+          (issue) => issue.game == widget.gameSlug,
+        ))
+          _issueCard(issue, service),
         if (service.error != null &&
             !service.onlyLikesPending &&
             (_likeErrors.isEmpty || comments.any((c) => c.pending)))
@@ -605,7 +739,11 @@ class _GameCommentsPanelState extends State<GameCommentsPanel> {
                     ),
                   if (comment.pending)
                     Text(
-                      service.error == null ? '发送中' : '待重试',
+                      service.issues.any((issue) => issue.id == comment.id)
+                          ? '待处理'
+                          : service.error == null
+                          ? '发送中'
+                          : '待重试',
                       style: TextStyle(color: palette.warning, fontSize: 12),
                     ),
                 ],
@@ -1103,6 +1241,7 @@ class _CommentComposerState extends State<_CommentComposer> {
   int? _rating;
   bool _ready = false, _sending = false, _enqueued = false;
   bool _finishing = false;
+  bool _loadingDraft = false, _asRoot = false, _recovered = false;
   String? _error;
   @override
   void initState() {
@@ -1112,6 +1251,14 @@ class _CommentComposerState extends State<_CommentComposer> {
   }
 
   void _confirmed() {
+    if (mounted &&
+        _ready &&
+        _enqueued &&
+        !_sending &&
+        widget.service.wasWithdrawn(_id)) {
+      unawaited(_load());
+      return;
+    }
     if (mounted &&
         _ready &&
         _enqueued &&
@@ -1146,7 +1293,9 @@ class _CommentComposerState extends State<_CommentComposer> {
           ?..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
-              content: Text(widget.reply == null ? '评论已发布' : '回复已发布'),
+              content: Text(
+                widget.reply == null || _asRoot ? '评论已发布' : '回复已发布',
+              ),
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 3),
             ),
@@ -1159,6 +1308,8 @@ class _CommentComposerState extends State<_CommentComposer> {
   }
 
   Future<void> _load() async {
+    if (_loadingDraft) return;
+    _loadingDraft = true;
     try {
       final draft = await widget.service.readDraft(
         widget.game,
@@ -1169,6 +1320,8 @@ class _CommentComposerState extends State<_CommentComposer> {
         _text.text = draft['text'] as String;
         _id = draft['id'] as String;
         _rating = draft['rating'] as int?;
+        _asRoot = draft['asRoot'] as bool? ?? false;
+        _recovered = draft['recovered'] as bool? ?? false;
         _enqueued = draft['enqueued'] as bool? ?? false;
         _enqueued = _enqueued || widget.service.pendingIds.contains(_id);
       }
@@ -1176,14 +1329,20 @@ class _CommentComposerState extends State<_CommentComposer> {
       _confirmed();
     } catch (_) {
       if (mounted) setState(() => _error = '草稿读取未完成，请重试');
+    } finally {
+      _loadingDraft = false;
     }
   }
 
-  Future<void> _persist() => widget.service.saveDraft(
-    widget.game,
-    widget.reply?.id,
-    {'id': _id, 'text': _text.text, 'rating': _rating, 'enqueued': _enqueued},
-  );
+  Future<void> _persist() =>
+      widget.service.saveDraft(widget.game, widget.reply?.id, {
+        'id': _id,
+        'text': _text.text,
+        'rating': _rating,
+        'enqueued': _enqueued,
+        'asRoot': _asRoot,
+        'recovered': _recovered,
+      });
   void _edited() {
     if (mounted) setState(() => _error = null);
     unawaited(
@@ -1205,7 +1364,7 @@ class _CommentComposerState extends State<_CommentComposer> {
         game: widget.game,
         text: _text.text,
         rating: _rating,
-        parent: widget.reply?.id,
+        parent: _asRoot ? null : widget.reply?.id,
         operationId: _id,
       );
       _enqueued = true;
@@ -1213,7 +1372,12 @@ class _CommentComposerState extends State<_CommentComposer> {
       await widget.service.synchronize();
       if (!mounted) return;
       if (widget.service.pendingIds.contains(_id)) {
-        setState(() => _error = widget.service.error ?? '发送未完成，请重试');
+        final issue = widget.service.issues
+            .where((issue) => issue.id == _id)
+            .firstOrNull;
+        setState(
+          () => _error = issue?.message ?? widget.service.error ?? '发送未完成，请重试',
+        );
         return;
       }
       await _finishSent();
@@ -1223,6 +1387,28 @@ class _CommentComposerState extends State<_CommentComposer> {
           () => _error = failure is StateError
               ? failure.message.toString()
               : '发送未完成，请重试',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _recoverIssue() async {
+    if (_sending || !_ready || !widget.service.canWrite) return;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      await widget.service.withdrawRejected(_id, asRoot: widget.reply != null);
+      await _load();
+    } catch (failure) {
+      if (mounted) {
+        setState(
+          () => _error = failure is StateError
+              ? failure.message.toString()
+              : '草稿恢复未完成，请重试',
         );
       }
     } finally {
@@ -1246,7 +1432,22 @@ class _CommentComposerState extends State<_CommentComposer> {
         if (widget.reply != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text('回复 ${widget.reply!.operation.author}'),
+            child: Text(
+              _asRoot ? '改发为新评论' : '回复 ${widget.reply!.operation.author}',
+            ),
+          ),
+        if (widget.reply != null && _recovered && !_enqueued)
+          CheckboxListTile(
+            value: _asRoot,
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('作为新评论发布'),
+            onChanged: !_ready || _sending
+                ? null
+                : (value) {
+                    setState(() => _asRoot = value!);
+                    _edited();
+                  },
           ),
         TextField(
           key: const ValueKey('comment-input'),
@@ -1281,6 +1482,7 @@ class _CommentComposerState extends State<_CommentComposer> {
 
   Widget _actions() => LayoutBuilder(
     builder: (context, constraints) {
+      final needsAction = widget.service.issues.any((issue) => issue.id == _id);
       final send = FilledButton.icon(
         key: const ValueKey('comment-send'),
         onPressed:
@@ -1289,6 +1491,8 @@ class _CommentComposerState extends State<_CommentComposer> {
                 !widget.service.canWrite ||
                 _text.text.trim().isEmpty
             ? null
+            : needsAction
+            ? _recoverIssue
             : _send,
         icon: _sending
             ? const SizedBox(
@@ -1296,8 +1500,17 @@ class _CommentComposerState extends State<_CommentComposer> {
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.send_rounded, size: 18),
-        label: Text(_enqueued ? '重试发送' : '发布'),
+            : Icon(
+                needsAction ? Icons.edit_outlined : Icons.send_rounded,
+                size: 18,
+              ),
+        label: Text(
+          needsAction
+              ? '修改'
+              : _enqueued
+              ? '重试发送'
+              : '发布',
+        ),
       );
       if (widget.reply != null) {
         return Align(alignment: Alignment.centerRight, child: send);
