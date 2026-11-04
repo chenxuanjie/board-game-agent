@@ -1,73 +1,66 @@
-"""Exercise default artifact verification without Docker or business fixtures."""
-import contextlib
-import io
-import json
+"""Retired delivery commands must stop before touching Docker or artifacts."""
+import importlib.util
+import os
 from pathlib import Path
-import runpy
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from docker_fixtures import write_image_archive
-
-SCRIPTS = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SCRIPTS))
-from release_retention import digest
+ROOT = Path(__file__).resolve().parents[2]
 
 
-class ValidationScopeTests(unittest.TestCase):
-    def test_default_skips_business_but_still_rejects_wrong_imported_image(self):
-        for corrupt in (False, True):
-            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
-                bundle = root / 'board-game-agent-linux-amd64-images.tar'
-                references = ['board-game-agent:fixture', 'board-game-agent-web-account:fixture']
-                write_image_archive(bundle, references)
-                support = root / 'reports/docker-linux-amd64'
-                support.mkdir(parents=True)
-                release = {
-                    'artifact': {'fileName': bundle.name, 'sha256': digest(bundle)},
-                    'images': [{'reference': ref, 'id': f'sha256:fixture-{i}'}
-                               for i, ref in enumerate(references)],
-                }
-                (support / 'release.json').write_text(json.dumps(release))
-                (support / 'docker-compose.yml').write_text('services: {}\n')
-                calls = []
+class RetiredDeliveryTests(unittest.TestCase):
+    def test_python_commands_fail_without_touching_existing_outputs(self):
+        for name, arguments in (
+            ("build-docker-release.py", ["--output", "release"]),
+            ("verify-docker-release.py", ["--archive", "release/images.tar", "--full-validation"]),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                cwd = Path(temporary)
+                (cwd / "release").mkdir()
+                previous = cwd / "release/images.tar"
+                previous.write_bytes(b"previous delivery")
+                # No project files or Docker CLI: retirement must be the first check.
+                env = dict(os.environ, PATH="")
+                result = subprocess.run([sys.executable, str(ROOT / "scripts" / name), *arguments],
+                                        cwd=cwd, env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("retired", result.stderr)
+                self.assertIn("docs/web-ghcr.md", result.stderr)
+                self.assertEqual(previous.read_bytes(), b"previous delivery")
+                self.assertEqual(list((cwd / "release").iterdir()), [previous])
 
-                def execute(command, **kwargs):
-                    calls.append(command)
-                    if 'compose' in command:
-                        self.assertIn('config', command)
-                        value = {'services': {'web': {'image': references[0]},
-                                              'api': {'image': references[1]}}}
-                    elif command[:3] == ['docker', 'image', 'load']:
-                        value = None
-                    elif command[:3] == ['docker', 'image', 'inspect']:
-                        index = references.index(command[-1])
-                        value = [{'Id': 'sha256:wrong' if corrupt else f'sha256:fixture-{index}',
-                                  'Os': 'linux', 'Architecture': 'amd64'}]
-                    else:
-                        raise AssertionError(f'Unexpected runtime/business command: {command}')
-                    return subprocess.CompletedProcess(command, 0, json.dumps(value), '')
+    def test_imported_legacy_builder_also_refuses_before_side_effects(self):
+        spec = importlib.util.spec_from_file_location("retired_builder", ROOT / "scripts/build-docker-release.py")
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        with patch('subprocess.run', side_effect=AssertionError('must not invoke Docker')):
+            with self.assertRaisesRegex(builder.ReleaseError, 'retired'):
+                builder.build_release(root=Path('missing-project'), docker=object())
 
-                with patch.object(sys, 'argv', ['verify-docker-release.py', '--archive', str(bundle)]), \
-                        patch('subprocess.run', side_effect=execute), \
-                        contextlib.redirect_stdout(io.StringIO()):
-                    if corrupt:
-                        with self.assertRaises(AssertionError):
-                            runpy.run_path(str(SCRIPTS / 'verify-docker-release.py'), run_name='__main__')
-                        self.assertFalse((support / 'validation.json').exists())
-                    else:
-                        with self.assertRaises(SystemExit) as stopped:
-                            runpy.run_path(str(SCRIPTS / 'verify-docker-release.py'), run_name='__main__')
-                        self.assertEqual(stopped.exception.code, 0)
-                        result = json.loads((support / 'validation.json').read_text())
-                        self.assertTrue(result['passed'])
-                        self.assertEqual(result['businessTests'], 'not_run')
-                        self.assertEqual(result['validationScope'], 'artifact-and-compose')
-                self.assertFalse(any('run' in command or 'up' in command for command in calls))
+    @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 is unavailable')
+    def test_powershell_wrappers_do_not_invoke_a_publisher_or_create_outputs(self):
+        for name, arguments in (
+            ('build-docker-release.ps1', ['-Mode', 'build', '-Publisher', 'missing-publisher.ps1']),
+            ('package-docker.ps1', ['-OutputDirectory', 'new-output']),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-File',
+                                         str(ROOT / 'scripts' / name), *arguments], cwd=temporary,
+                                        capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn('retired', result.stderr)
+                self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_old_compose_files_have_no_runtime_services_or_builds(self):
+        import yaml
+        for name in ('docker-compose.yml', 'docker-compose.build.yml'):
+            document = yaml.safe_load((ROOT / name).read_text())
+            self.assertEqual(document['services'], {})
+            self.assertIn(':?Legacy Web Compose is retired', document['name'])
 
 
 if __name__ == '__main__':

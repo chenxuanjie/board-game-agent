@@ -1,164 +1,77 @@
-> 当前源码已接入新应用账号、匿名公开资料与 PowerSync 类型化个人业务；阶段 2、3 见 [接入记录](docs/service-business.md)。本轮未构建、上传或部署，旧包/旧网关不能代表当前协议。以下版本历史中的 FileStation 同步说明已退役。
-
 # 桌游导师
 
-这是一个参考 Ludomentor 风格制作的 Flutter 安卓项目，用于把桌游目录、规则资料和 AI 助手整合到同一个应用里。
+Flutter 桌游目录、规则阅读与 AI 助手，支持 Android、Windows 和 Web。游客可浏览公开资料、检查和下载程序更新；账号用于个人收藏、偏好与对话等数据同步。
 
-当前源码进入 **V5（5.0.0+38）**。群晖使用预构建镜像及独立 YAML 部署，账号网关与只读挂载资料的实现、验证边界见 [Docker 部署](docs/docker-deployment.md)。
+程序版本以 [pubspec.yaml](pubspec.yaml) 为准，发布批次以 `release-batch.json` 和后台登记为准；README 不另维护版本号或桌游数量。实际可见桌游由后台已发布目录决定。
 
-当前版本已经不再是早期的单桌游原型，而是一个以 `catalog + game.json + manifest.json + 远端资源缓存` 为核心的数据驱动应用。现在目录中已接入 `21` 款桌游，并支持按资源源优先级从远端拉取图片、文档和桌游元数据。
+开发、审查、测试与交付先阅读唯一标准入口：[开发规范与标准](docs/development-standards.md)。源码完成、自动测试通过、镜像发布和现场部署分别验收。
 
-开发、审查、验证与交付统一遵循 [开发规范与标准](docs/development-standards.md)。后续标准只在该文件维护，包含工程分层、UI、数据与权限、AI、同步、测试和交付；当前客户端与新后台的接入边界见其中的 [实现基线](docs/development-standards.md#implementation)。
+## 当前运行架构
 
-## 同步与更新检查
+| 内容 | 当前路径 |
+| --- | --- |
+| 账号 | 共用应用服务；固定 `board_game_agent` 应用作用域，账号/应用/origin 隔离 |
+| 公开桌游库 | PostgreSQL 发布目录，经匿名 `/v1/apps/board_game_agent/catalog` 接口读取元数据与资源 |
+| 图片、PDF 与正文 | 资源 ID + 发布摘要校验，按需下载；按服务 origin / SHA-256 缓存，读取失败保留已确认缓存 |
+| 个人业务 | PowerSync 本机 SQLite、离线上传队列和应用 API；按账号隔离 |
+| AI | 登录后默认可选后台 Loomex，同时保留自带 API/Key；游客使用自带配置 |
+| Web | 同源 Nginx 转发共用 API / PowerSync；`web-ai` 仅代理自带 Key 的模型请求 |
 
-桌游详情支持文字评论、楼中楼回复、点赞和可选的 1～10 分桌友评分，两端复用现有 NAS 账号。评论独立于收藏/投票统计保存，目录准备、评分与删除规则、重试及范围见 [桌游评论](docs/game-comments.md)。
+运行时不再使用旧 `catalog.json`、`game.json`、`manifest.json` 或 DSM/FileStation 账号网关。工程及 NAS 上保留的旧资料是整理源/测试输入，不是运行时回退。WebDAV 实现作为独立备用能力保留，不参与当前默认资料、私人同步或程序升级链路。
 
-资料检查、资源可用性、账号同步和应用更新是独立任务，术语见 [开发规范：同步与检查](docs/development-standards.md#sync)，当前调度、预算与限制见 [实现基线](docs/development-standards.md#implementation)。
+Web 默认由 API 传输资源，也可配置 Nginx 只读挂载**新资料存储卷**以加速文件交付；目录和资源权限仍由 SQL/API 决定，不能绕过发布状态直接暴露目录。详见 [SQL 资料客户端](docs/catalog-client.md)、[Web 交付及文件直送](docs/web-ghcr.md)。
 
-上述 WebDAV 与下载确认针对原生端；Web 改用同源只读挂载资料，保留检查调度与界面，资料变化在后台重新读取。完整检查由服务端检查登记文件元数据，PDF 按需分段读取；正文不再内置 Web 或 Docker 源码包。详见 [Web 同源资料](docs/web-library.md)。
+## 本地开发
 
-Web 默认通过预构建 Docker 镜像交付，开发电脑构建、NAS 导入运行；源码构建保留为开发入口。镜像版、源码版、配置、更新和回滚见 [Docker 部署](docs/docker-deployment.md)。
+需要当前 `pubspec.yaml` 约束匹配的 Flutter/Dart、Git，以及清单声明的同级 `../shared_packages/` 公共包和仓库内平台插件。直接开发使用实际公共包工作区；镜像 CI 使用已提交的依赖快照。不要把缺失的 path 依赖改成空包。
 
-## 当前功能
-
-- 账号已在开发分支切换为共用应用服务：Android/Windows 配置应用服务地址，Web 使用同源会话。旧 DSM 直连和旧 Web 登录适配器已移除，不转换旧会话；业务同步、公开资料和模型服务仍待分别接入。当前不是全功能迁移交付，部署前提与真实验收范围见 [实现基线](docs/development-standards.md#implementation)。
-- 默认简体中文，同时支持英文界面切换
-- 多桌游目录首页，卡片与详情页基于 `assets/catalog.json` 和各游戏 `game.json` 生成
-- 每个桌游都有独立 AI 助手入口，首页还有一个通用 AI 入口
-- AI 对话按上下文分开保存
-  - 每个桌游各自保留一套历史对话
-  - 通用 AI 入口单独保留一套历史对话
-- 支持文字输入、语音转文字、文字转语音朗读
-- AI 支持两种回答模式
-  - `仅知识库`：只根据当前桌游知识库回答
-  - `智能补充`：知识库不足时，结合当前桌游信息继续回答
-- 规则书、FAQ、Markdown 摘要等文档资源按需下载
-  - 第一次打开时下载到本地缓存
-  - 后续再次打开优先直接读取缓存
-- 首页图片会在进入后后台预加载，并复用本地缓存
-- 支持检测远端桌游资料更新，并提示用户是否同步到本地
-- Android 下载更新时使用前台服务及通知栏真实进度；后台安装包校验完成后等待返回应用再安装，见 [Android 后台更新](docs/android-background-updates.md)（真机切屏验收待执行）
-- 支持 AI 接口配置测试、资源源优先级配置和资源访问测试
-
-## 资源与数据结构
-
-项目当前的数据组织方式是：
-
-- `assets/catalog.json`
-  - 控制桌游目录顺序、启用状态
-- `assets/games/<slug>/game.json`
-  - 控制单款桌游的标题、简介、图片和本地展示文案
-- `assets/games/<slug>/manifest.json`
-  - 登记资源路径、来源分类、版本、状态、`aiEnabled` 和优先级
-- 远端资源库
-  - 提供游戏目录、每款桌游的 game/manifest 文件、图片和规则资料
-- 本地缓存
-  - 用于保存首次下载后的图片和文档，减少后续重复请求
-
-## 当前实现重点
-
-- 首屏启动优先保证尽快进入首页，不让远端请求阻塞启动
-- 桌游的 `game.json` 和 `manifest.json` 启动时优先使用缓存或包内资源
-- Android APK 不内置桌游正文，包括 PDF、Markdown 和知识资料；通过已登录账号访问 NAS，按需下载缓存。资源范围见 [Android APK 资源规则](docs/android-asset-policy.md)。
-- AI 回答优先利用当前桌游知识库，必要时再做智能补充
-
-## AI 架构参考、规范与借鉴范围
-
-本项目没有直接复制某个开源 AI 应用，也没有把下列产品作为运行时依赖。参考对象分为三类：
-
-1. **协议标准**：必须遵循的 API 事件、请求字段和输出约束；
-2. **架构/流程借鉴**：用于设计运行阶段、工具调用、引用、重试和上下文边界；
-3. **交互借鉴**：用于参考成熟产品如何展示来源、状态和对话。
-
-### 各参考方案分别借鉴什么
-
-| 参考对象 | 主要借鉴内容 | 当前项目中的处理 | 是否直接引入/遵循 |
-| --- | --- | --- | --- |
-| [OpenAI Responses API 官方规范](https://developers.openai.com/api/docs/guides/streaming-responses) | 流式事件、完成边界、工具调用、引用、服务端 Compaction、Structured Outputs | 由共享包 `app_ai_client` 负责协议映射；应用层使用事件、最终完成和结构化输出，不把中间增量直接当成最终答案 | 直接遵循协议；不复制官方实现 |
-| [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/streaming/) | Run/Turn/Item 生命周期、工具循环、Session、Guardrail、Usage、取消与恢复 | 仅迁移其运行状态和生命周期思想，映射为本项目的路由、阶段、流式状态和可恢复错误；Flutter 项目没有直接引入 Python/TypeScript SDK | 否，架构借鉴 |
-| [LibreChat](https://github.com/danny-avila/LibreChat) | 多供应商适配、Responses 会话、引用转换、重试、对话持久化和产品级错误处理 | 用于检查多供应商与长对话的产品级边界；实现保持为本项目自己的 Dart/Flutter 代码 | 否，产品流程借鉴 |
-| [Open WebUI](https://github.com/open-webui/open-webui) | RAG/知识库边界、来源展示、工具与知识的显式注入、搜索工作流 | 用于设计官方资料、社区资料、联网搜索和模型兜底的分层，以及引用在界面中的可见性 | 否，知识工作流借鉴 |
-| [Vercel AI SDK](https://github.com/vercel/ai) | 文本块、工具块、状态块分离，以及前端流式 UI 数据模型 | 用于约束 `BoardGameAiStreamEvent`、状态提示和最终答案提交；项目不引入其 TypeScript 包 | 否，UI 数据模型借鉴 |
-| [LobeHub](https://github.com/lobehub/lobe-chat) | Agent、工作区、项目上下文和长期记忆的隔离方式 | 用于后续规划通用助手、桌游助手和规则研究助手的上下文边界 | 否，未来架构借鉴 |
-
-### 当前代码与参考规范的对应关系
-
-| 程序部分 | 当前实现 | 参考来源 |
-| --- | --- | --- |
-| Responses 传输层 | `shared_packages/app_ai_client` 中的 `OpenAiDartResponsesAiClient` | OpenAI Responses API 官方请求/流式规范 |
-| 问题路由 | `lib/features/assistant/services/board_game_question_router.dart` | 应用层本地规则；不是 OpenAI 自动提供的能力 |
-| 模糊问题分类 | `lib/features/assistant/services/board_game_question_classifier.dart` | Responses Structured Outputs；分类结果只用于选路，不展示给用户 |
-| AI 流程编排 | `lib/features/assistant/services/responses_rules_workflow.dart` | Agents SDK 的生命周期思想、LibreChat 的产品级流程 |
-| 规则资料检索 | `lib/features/assistant/services/rule_knowledge_retriever.dart`、`lib/features/library/services/remote_asset_service.dart` | Open WebUI 的知识库/RAG 分层思想 |
-| 流式状态与最终答案 | `lib/features/assistant/services/ai_service.dart`、`lib/app/state/app_controller.dart` | Responses 流式事件边界、Agents SDK 运行状态、Vercel AI SDK 的 UI 数据分离 |
-| 引用与来源 | `RuleCitation`、官方/社区/Web 阶段解析逻辑 | OpenAI Web Search 引用要求、LibreChat/Open WebUI 的来源展示方式 |
-| 上下文与 Compaction | `lib/features/assistant/services/responses_compaction_store.dart`、`ResponsesRulesWorkflow` | Responses API 的服务端上下文管理；本地保存负责跨重启恢复 |
-
-### 当前 AI 问答流程
-
-`智能补充`模式采用 local-first 路由，顺序如下：
-
-```text
-用户问题
-  ↓
-本地明确规则判断
-  ├─ 明确普通问题 → 普通对话
-  ├─ 明确桌游问题 → 官方资料 → 联网搜索 → 谨慎兜底
-  └─ 无法判断 → 一次结构化分类请求 → 按结果进入上述路径
+```powershell
+flutter pub get
+flutter analyze --no-pub
+flutter test --no-pub
 ```
 
-`仅知识库`模式不会因为路由器或分类器而转入普通对话；资料不足时明确返回不知道。分类请求失败时采用安全回退：通用 AI 入口回退普通对话，桌游专属页面回退桌游知识流程。
+部分现有测试仍通过 `test/support/catalog_fixture.dart` 读取本机 `assets/catalog.json` 与各桌游 JSON 夹具；纯 Git 检出缺少这些整理文件时，全量测试尚不能完全复现。这是待处理的测试输入缺口，不表示客户端需要恢复旧资料协议。具体失败应区分缺夹具与业务回归。
 
-### 直接遵循与仅借鉴的边界
+Web 本地预览需要同源 API/模型转发，不能只启动静态文件服务器后验证账号：
 
-- **直接遵循**：Responses API 的请求/响应字段、流式事件语义、Structured Outputs 和 Compaction 字段由共享客户端统一映射。
-- **应用层自有设计**：桌游问题路由、官方/社区/联网阶段顺序、知识库来源校验、失败回退和 Flutter 页面状态。
-- **仅作参考**：Agents SDK、LibreChat、Open WebUI、Vercel AI SDK、LobeHub 的产品结构和工作方式；它们没有被当作 Dart 依赖直接打包。
-- `openai_dart` 是社区维护的 Dart 包，本项目通过它完成 HTTP/SSE 和 Responses 协议适配；它不是 OpenAI 官方 Flutter/Dart SDK，也不提供本项目的 UI、重试、会话和桌游领域逻辑。OpenAI 的事件语义以官方文档为准。
-- 当前依赖、仓库和本机可检查的包索引中没有找到名为 `hostpand` 的可用包，因此没有假设它提供会话、重连或 Agent 能力；如果名称有误，需要先确认准确项目地址和许可证。
-- `openai_dart` 底层虽有 Conversation 和 `previous_response_id` 的模型/资源，但本项目的 `ResponsesRequest` 目前没有把它们暴露到业务层；当前请求明确使用 `store=false`，因此本轮只恢复本地检查点和加密 Compaction，不把本地 Run 误称为服务端 Session。接入服务端会话前还需要能力协商、隐私开关和自定义供应商降级测试。
-- **许可证边界**：借鉴开源项目时只参考公开的架构与交互，不复制其受许可证约束的实现；如未来直接复用代码，必须在引入前单独核对许可证和归属声明。
+```powershell
+pwsh -NoProfile -File scripts/start-web-preview.ps1
+```
 
-这意味着 `ResponsesRulesWorkflow` 当前是项目自己的过渡编排层，而不是某个官方框架类。后续继续扩展工具调用、重试、取消、评测和多 Agent 能力时，应优先把路由、阶段执行、流式归并、上下文存储拆成独立组件，避免所有能力继续堆叠在同一个类中。
+默认 HTTP `http://127.0.0.1:8083`，HTTPS 预留 `8084`；localhost 使用同端口。预览要求已有 Web 编译输出及所需 Python 运行环境；该命令不等于重新构建当前源码。HTTPS 需要显式配置证书。服务地址、浏览器来源白名单和可选文件卷配置见 [Web GHCR 交付](docs/web-ghcr.md)。
 
-## Phase 3–7 落地状态
+Android/Windows 使用应用服务地址。Web 只访问自己的 `/api/`，由预览服务或 Nginx 转发到共用后台；不能将 NAS 反代、浏览器来源配置与普通跨域放行混为一谈。
 
-Phase 0–2 已建立运行事件、公共 Responses 事件适配和独立阶段编排；后续阶段当前实现如下：
+## 主要功能与行为边界
 
-| 阶段 | 当前落地内容 | 关键边界 |
-| --- | --- | --- |
-| Phase 3：上下文范围 | 通用入口默认不读取当前桌游文件；桌游入口按当前桌游加载资料；通用入口可显式开启“使用当前桌游资料”；问题路由先走本地规则，模糊问题才调用一次结构化分类 | 路由器是应用层策略，不是模型自动行为；`knowledgeOnly` 不会偷偷退回普通聊天 |
-| Phase 4：结构化答案与引用 | 官方/社区阶段使用 JSON Schema；`sourceIds` 必须全部来自本阶段声明的真实目录；Web 阶段只接受 Responses annotations 的 HTTP(S) 引用；没有有效引用不会标记为联网回答 | 混入伪造来源、缺失来源或无效 JSON 时，阶段只会进入 `insufficient`，不会提交气泡 |
-| Phase 5：Session 与 Compaction | Session/Compaction 按知识范围、桌游、供应商、模型、认证指纹和生成设置隔离；`store=false` 显式发送；最新 compaction item 替换旧本地窗口并加密持久化；自定义接口不支持 Compaction 时自动降级 | 切换模型/供应商/知识范围会清理同一上下文作用域的旧压缩状态，避免串上下文 |
-| Phase 6：可靠性与遥测 | 每次 Run 保存 `runId`、上下文、阶段、模型、responseId、请求数、输入/输出/推理 tokens、时间、终止事件、错误和引用计数；默认主程序使用本地有界 `SharedPreferences` 账本 | 遥测写入失败不会覆盖正常答案；账本不保存 API key、提示词或文件内容 |
-| Phase 7：发布与验收 | 工作流和共享客户端覆盖完成边界、尾部 output item、取消/失败、引用校验、Compaction 恢复和能力降级测试；发布前分别执行 Web、Windows、Android 构建检查 | 单元测试/模拟客户端不等于真实线上接口验证；真实 OpenAI 或自定义服务商需在目标环境提供可用凭据后再做 smoke test |
+- 多语言目录、搜索、筛选、详情、规则书和图片浏览；资料公开，文件按需读取。
+- 收藏、评论、点赞、排行榜和专题等业务通过应用服务及同步链路更新；个人数据和公共投影分别处理。
+- 通用/桌游助手、历史对话、规则知识范围、模型配置、流式回答及资料引用；语音能力依平台支持。
+- `仅知识库` 与 `智能补充` 两种回答模式；资料准备使用已校验的发布正文，来源网页只作为追溯信息。
+- 会话本机提交与远端上传分开；保存失败阻止更新/账号切换等主动交接，离线但本机已提交时允许升级。
+- AI 压缩保存边界和后续输入/输出；停止操作贯穿资料准备与模型请求，清理当前消费者，不中断独立阅读器下载。
+- 匿名程序更新清单与下载、资料/程序发布通知；系统通知通道和真机后台行为另行验收。
 
-### 当前固定验收集
+## 构建与发布
 
-`test/responses_rules_workflow_test.dart`、`test/ai_run_orchestrator_test.dart`、`test/ai_run_telemetry_test.dart` 和共享包的 `test/responses_client_test.dart` 覆盖以下行为：普通问题不加载桌游文件、官方/社区/Web 顺序、Web 中间文本不进入气泡、真实引用校验、尾部失败不覆盖已收集诊断、等待 `response.completed`、最近 12 条输入、Compaction 跨实例恢复和替换旧窗口、模型/知识范围隔离、自定义 Responses 能力降级、遥测有界持久化，以及事件状态一致性。
+APK、Windows 和 Web 共用程序版本与后台发布批次机制。确定语义版本、申请编号、提交并冻结来源后，再按授权构建/发布；重试与补平台复用原批次，构建不自行递增编号。规则见 [版本与发布标准](docs/development-standards.md#delivery)。
 
-当前没有把 LibreChat、Open WebUI、Vercel AI SDK 或 Agents SDK 当作 Flutter 运行时依赖；它们只提供架构和交互参考。Responses API 的字段与事件语义由 `shared_packages/app_ai_client` 统一映射，应用层只提交经过阶段校验的最终答案。
+- **APK / Windows**：使用共享 `flutter-release-publisher`；项目 [package-app-release.ps1](scripts/package-app-release.ps1) 包装已构建产物的打包/发布，打包不等于重新编译。匿名更新契约见 [游客程序更新](docs/public-updates.md)。
+- **Web 镜像**：受支持入口为 [web-ghcr.yml](.github/workflows/web-ghcr.yml)，构建、验收并发布 Web 与 BYOK 代理两张镜像。工具为 `scripts/ghcr_web_release.py`，上下文准备为 `scripts/docker_build_context.py`。
+- **NAS Web Compose**：使用 [docker-compose.ghcr.yml](packaging/docker/docker-compose.ghcr.yml) 或工作流生成的固定摘要版本。HTTP `8083:8080`，群晖反代 HTTPS `8084`；重新应用项目才拉取并重建，单纯重启旧容器不会更新镜像。
+- **共用后台 Compose**：属于独立 `app_data_service` 工程，包含 PostgreSQL、API、PowerSync；不是这里的 Web Compose。数据库结构变更按后台迁移流程处理。
 
-### 本轮可靠性补强
+旧 `build-docker-release.py/.ps1`、`package-docker.ps1`、`verify-docker-release.py`、`packaging/docker/deploy.sh` 及根 Compose 均已退役，直接报错退出，不再生成账号网关 TAR/源码 ZIP。历史交付与验收资料仍可查阅，但不能作为当前部署命令；已有 NAS 数据和旧产物不会自动删除。
 
-- 终态事件现在携带完整的 `AiRunResult`。失败时，控制器会从已经完成或已确认部分结果的阶段生成“已确认进度”，并同时保留可安全显示的部分答案、可读失败原因、尝试次数和重试入口；进度会逐阶段展示真实资料标题、章节、页码、引用内容和来源，缺失字段不会编造。
-- `AiConversation` 会保存最近一次 Run 的本地检查点。应用重启后可恢复阶段时间线、引用元数据、响应 ID、错误分类和耗时；每个 token 的 `delta`、提示词、工具参数、文件原文和 API 密钥不会写入检查点。
-- 检查点事件有数量上限，并过滤高频文本增量；它是本地 UI/诊断恢复，不等同于 OpenAI 的服务端 Conversation，也不会伪造服务端会话关系。
-- `openai_dart` 是 `app_ai_client` 使用的传输/协议依赖，提供请求、SSE 事件和响应解析；它不负责本项目的桌游问题路由、阶段编排、失败文案、滚动跟随、会话文件或跨平台 UI。这些属于应用产品层，因此仍需要在本项目中实现。
-- 当前测试新增了检查点往返和终态 `AiRunResult` 传播验证；真实 OpenAI、自定义服务商、断网、Windows/Web/Android smoke test 仍需在目标环境提供可用配置后执行，不能由离线单元测试代替。
+## 代码与专项文档
 
-## 相关文档
+- 结构与长期规则：[开发规范与标准](docs/development-standards.md)
+- 账号、个人业务与公共业务：[业务接入记录](docs/service-business.md)
+- 资料版本、文件和离线边界：[SQL 资料客户端](docs/catalog-client.md)
+- Loomex 与自带配置：[模型服务](docs/loomex-service.md)
+- Web 部署、本机预览及 NAS 文件加速：[Web GHCR 交付](docs/web-ghcr.md)
+- Android 下载后台行为：[后台更新](docs/android-background-updates.md)
+- 历史旧网关交付：[Docker 历史记录](docs/docker-deployment.md)
 
-- 当前主题：暖木书房（默认）、空间影院。空间影院使用独立外壳；实现范围、原生窗口及验收记录见 [空间影院](docs/spatial-cinema-theme.md)。
-- 浏览位置、图片加载、局部反馈与浮层动效见 [浏览位置与交互反馈](docs/interaction-continuity.md)
-- 环境安装与 APK 打包步骤见 [BUILD_APK.md](BUILD_APK.md)
-- 启动流程、资源更新与运行逻辑概览见 [DEVELOPER_FLOW_OVERVIEW.md](DEVELOPER_FLOW_OVERVIEW.md)
-- 桌游资源整理规范见 [assets/ASSET_SPEC.md](assets/ASSET_SPEC.md)
-
-## 说明
-
-- 如果首次打开某个规则书或 FAQ，应用可能会先下载远端文件，再进入阅读页
-- AI 和资源访问能力依赖当前配置的接口地址、资源源可达性以及本地缓存状态
-
-账号个人数据已改用 PowerSync 与应用 API，公开资料匿名读取；标准见 [开发规范](docs/development-standards.md)，契约及验证见 [业务接入](docs/service-business.md)。
+应用业务位于 `lib/features/`，共享用例入口位于 `lib/app/state/`，宽窄屏界面位于 `lib/ui/`。后台和公共包是独立仓库；调整本应用不代表它们已同步发布或部署。

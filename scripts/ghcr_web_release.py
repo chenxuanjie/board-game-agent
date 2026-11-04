@@ -252,7 +252,7 @@ def prepare(destination, root=ROOT):
             extract(archive, project)
         with tarfile.open(fileobj=io.BytesIO(packed), mode="r:gz") as archive:
             extract(archive, workspace, record["files"])
-        spec = importlib.util.spec_from_file_location("bga_docker_release", root / "scripts/build-docker-release.py")
+        spec = importlib.util.spec_from_file_location("bga_build_context", root / "scripts/docker_build_context.py")
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         helper.stage_build_context(project, destination)

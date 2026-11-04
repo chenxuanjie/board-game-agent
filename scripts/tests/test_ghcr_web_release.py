@@ -90,6 +90,14 @@ class GhcrWebTests(unittest.TestCase):
     def test_compose_has_new_ports_and_no_old_nas_data_dependencies(self):
         text = release.compose("ghcr.io/example/board-game-agent:5.0.0-54-test", "ghcr.io/example/board-game-agent-web-ai:5.0.0-54-test")
         document = release.yaml.safe_load(text)
+        services = document['services']
+        self.assertEqual(set(services), {'board-game-agent', 'web-ai'})
+        self.assertNotIn('ports', services['web-ai'])
+        self.assertEqual(services['board-game-agent']['environment']['APP_SERVICE_UPSTREAM'],
+                         'http://192.168.1.55:18280')
+        nginx = (ROOT / 'packaging/docker/nginx.conf').read_text()
+        self.assertIn('http://web-ai:8000', nginx)
+        self.assertIn('proxy_pass ${APP_SERVICE_UPSTREAM}/;', nginx)
         self.assertEqual(document["services"]["board-game-agent"]["ports"], ["8083:8080"])
         self.assertEqual(document["services"]["web-ai"]["environment"]["WEB_PUBLIC_ORIGIN"], "https://cznas.pp.ua:8084")
         self.assertNotIn("18887", text)

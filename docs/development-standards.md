@@ -422,7 +422,7 @@ Native 构建复用共享 `flutter-release-publisher`，本地已有结果的打
 
 仅在发布/推送已获授权时使用对应 `-Mode release` 或 `-Mode push`；本地 `package` 不等于重新编译。发布设置与凭据保留在私有 profile，不进入工程。
 
-Docker 使用 `scripts/build-docker-release.ps1` 的 plan/build/verify 入口，委托共享发布器；版本准备遵守第 12.1 节，构建不再递增或回滚编号。桌游正式准备入口为 `scripts/prepare-app-release.ps1 -Mode prepare -Version <目标语义版本>`，提交后执行 `-Mode freeze`；`verify` 核对冻结来源，`status` 查询平台结果。真正开启下一批次时 prepare 增加 `-New`，失败重试不加。新架构上线按实际服务拓扑重新核对，不能把旧 Web 网关 TAR 当成共用 API 交付。
+Web 镜像的受支持交付入口为 `.github/workflows/web-ghcr.yml`，复用 `scripts/ghcr_web_release.py` 和 `scripts/docker_build_context.py`；NAS 使用 `packaging/docker/docker-compose.ghcr.yml` 或工作流生成的固定摘要 Compose。旧 `build-docker-release.py/.ps1`、`package-docker.ps1`、`verify-docker-release.py`、`packaging/docker/deploy.sh` 与根 Compose 已退役，必须在修改产物或容器之前明确失败，不再生成账号网关交付。历史镜像和 NAS 数据不因此删除。版本准备遵守第 12.1 节，构建不自行递增或回滚编号；桌游正式准备使用 `scripts/prepare-app-release.ps1 -Mode prepare -Version <目标语义版本>`，提交后执行 `-Mode freeze`；`verify` 核对冻结来源，`status` 查询平台结果。真正开启下一批次时 prepare 增加 `-New`，失败重试不加。
 
 本机构建先检查 Linux Docker、Buildx 和已配置 HTTPS 代理到 Registry 鉴权接口的连通性；失败立即停止。构建及导出阶段输出与耗时保存在忽略的 `.local/task-logs/`，包括超时或取消前的输出；单张镜像构建预算 4 小时，导出预算 1 小时；长任务仍在运行时不因几分钟无新输出而取消。本机构建固定由 Windows PowerShell 发起、Ubuntu WSL 运行 Docker；后台测试固定使用 Windows `.venv` 的 `tools/run_checks.py`，持有 WSL 租约并预检真实 PostgreSQL，不临时切到 WSL 跑 pytest，不把数据库测试加入普通镜像构建。环境失败先定位当前阶段，不直接反复重跑完整流程。
 

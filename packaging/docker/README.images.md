@@ -1,5 +1,7 @@
 # NAS 镜像导入文件
 
+> 历史账号网关交付说明。本文配套的旧构建/导入入口已退役，不能生成当前协议的部署。当前入口见 [Web GHCR 交付](../../docs/web-ghcr.md)；已有历史镜像包和 NAS 数据不作清理。
+
 交付文件为 `board-game-agent-linux-amd64-images.tar`，可直接在 Container Manager“映像 → 导入”选择。它包含已构建的 Web 与账号网关两个镜像，不需要解压 ZIP。桌游正文不在镜像中，继续读取 NAS 既有只读目录。
 
 **DSM 会话兼容修复**：网关采用逐请求 Cookie 和 `X-SYNO-TOKEN`，解决只在 POST 表单中传会话导致的 DSM 119。新域名、资料路径及会话协议已通过真实 NAS 读取验证。本次镜像版本以 `release.json` 为准，镜像部署验证结果见 `validation.json`。NAS 网页可访问不代表资料挂载的容器身份正确，部署后还需验证目录、规则书与评论读取。

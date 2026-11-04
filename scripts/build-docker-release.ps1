@@ -1,14 +1,4 @@
 [CmdletBinding()]
-param(
-    [ValidateSet('plan', 'build', 'verify')]
-    [string]$Mode = 'build',
-    [string]$Publisher = (Join-Path $env:USERPROFILE '.codex/skills/flutter-release-publisher/scripts/flutter-release.ps1')
-)
-$ErrorActionPreference = 'Stop'
-$projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if (-not (Test-Path -LiteralPath $Publisher -PathType Leaf)) {
-    throw 'Flutter release publisher is required. Register the project Docker profile before building.'
-}
-# One entry point owns version bump, build, verification and rollback together.
-& $Publisher docker -Project $projectRoot -DockerMode $Mode
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+param([string]$Mode = 'build', [string]$Publisher)
+[Console]::Error.WriteLine('Legacy Web account-gateway delivery is retired and cannot serve the current SQL/API protocol. Use .github/workflows/web-ghcr.yml and packaging/docker/docker-compose.ghcr.yml; see docs/web-ghcr.md. No images or deployment files were changed.')
+exit 2

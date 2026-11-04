@@ -1,6 +1,5 @@
 """Real loopback forwarding and diagnostic failure tests; no external services."""
 import json
-import importlib.util
 from pathlib import Path
 import socket
 import socketserver
@@ -17,18 +16,14 @@ from build_diagnostics import TaskLog
 
 
 class BuildEnvironmentTests(unittest.TestCase):
-    def test_docker_capture_keeps_stdout_for_callers_and_on_disk(self):
-        from unittest.mock import patch
-        spec = importlib.util.spec_from_file_location('builder_diagnostic_test', ROOT / 'scripts/build-docker-release.py')
-        builder = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(builder)
-        with tempfile.TemporaryDirectory() as temporary, patch.object(builder.shutil, 'which', return_value=sys.executable):
-            docker = builder.Docker(Path(temporary))
-            result = docker.run('--version')
+    def test_capture_keeps_stdout_for_callers_and_on_disk(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = TaskLog(temporary, 'capture-test')
+            result = log.run('python-version', [sys.executable, '--version'], capture=True, timeout=10)
             self.assertIn('Python', result.stdout)
-            record = docker.log.stages[0]
+            record = log.stages[0]
             self.assertEqual(record['status'], 'passed')
-            self.assertEqual((docker.log.directory / record['log']).read_text().strip(), result.stdout.strip())
+            self.assertEqual((log.directory / record['log']).read_text().strip(), result.stdout.strip())
 
     def test_failed_and_timed_out_stages_keep_complete_output(self):
         with tempfile.TemporaryDirectory() as temporary:

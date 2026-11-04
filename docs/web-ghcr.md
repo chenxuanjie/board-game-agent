@@ -4,6 +4,8 @@
 `ghcr.io/chenxuanjie/board-game-agent` 和 `ghcr.io/chenxuanjie/board-game-agent-web-ai`。
 前者提供 Flutter、PowerSync Worker/WASM 与新 API 同源转发；后者只提供自带 Key 的受控模型转发，不包含旧登录、FileStation、评论文件或资料扫描接口。
 
+旧账号网关的 TAR 构建、源码 ZIP、验证和导入命令，以及根 `docker-compose.yml` / `docker-compose.build.yml` 已退役：调用时直接报错退出，不更新版本、不调用 Docker、不替换旧产物。构建上下文准备已独立到 `scripts/docker_build_context.py`，当前 GHCR 流程不再导入旧构建器。历史交付步骤及验收记录保留用于追溯，不代表仍支持生成当前版本。
+
 ## 端口与服务地址
 
 - 本地及 NAS HTTP 端口为 **8083**，HTTPS 端口为 **8084**。
