@@ -4,12 +4,13 @@ HTTPX owns TLS/streaming and Starlette owns disconnect handling. Only explicitly
 configured HTTPS origins and the app's existing model/chat/Responses routes run.
 """
 import asyncio
-import json
 import re
+import tempfile
 import time
 from urllib.parse import urlsplit
 
 import httpx
+import ijson
 from starlette.responses import Response, StreamingResponse
 
 
@@ -32,6 +33,12 @@ class _RelayResponse(StreamingResponse):
 
 class AiRelay:
     request_limit = 16 * 1024 * 1024
+    # One worker owns these counters. Admission never awaits or queues bodies.
+    # All active requests share one full-size upload, rather than eight copies.
+    request_bytes_budget = 16 * 1024 * 1024
+    max_inflight = 8
+    json_structure_limit = 65536
+    json_depth_limit = 64
     response_limit = 64 * 1024 * 1024
     total_seconds = 180
     forwarded_headers = {"authorization", "api-key", "x-api-key", "content-type",
@@ -40,6 +47,33 @@ class AiRelay:
     def __init__(self, allowed_origins, client):
         self.allowed_origins, self.client = frozenset(allowed_origins), client
         self.inflight = 0
+        self.reserved_request_bytes = 0
+
+    def _validate_json(self, body):
+        # Validate events, not a decoded document/tree. Only one scalar and a
+        # bounded parser buffer are materialized, even for large PDF strings.
+        # Pin ijson/YAJL in the runtime lock; do not implement a second parser.
+        depth = 0
+        try:
+            for count, (event, _) in enumerate(ijson.basic_parse(body), 1):
+                if count == 1 and event != 'start_map':
+                    raise ValueError()
+                if event in ('start_map', 'start_array'):
+                    depth += 1
+                elif event in ('end_map', 'end_array'):
+                    depth -= 1
+                if count > self.json_structure_limit or depth > self.json_depth_limit:
+                    raise AiRelayError("aiRequestTooComplex", "AI 请求结构过于复杂，请减少历史或附件。", 413)
+        except (ijson.JSONError, ValueError, TypeError, UnicodeError):
+            raise AiRelayError("aiInvalidRequest", "AI 请求格式不正确。", 400) from None
+
+    @staticmethod
+    async def _upload(body):
+        try:
+            while chunk := body.read(64 * 1024):
+                yield chunk
+        finally:
+            body.close()
 
     def target(self, value, method):
         try:
@@ -68,10 +102,22 @@ class AiRelay:
         keys = [headers.get(name) for name in ("authorization", "api-key", "x-api-key") if headers.get(name)]
         if not keys or any(len(value) > 8192 or re.search(r"[^\x20-\x7e]", value) for value in keys):
             raise AiRelayError("aiKeyRequired", "请填写有效的 AI 接口密钥。", 401)
-        if self.inflight >= 8:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            if not re.fullmatch(r"[0-9]{1,10}", content_length):
+                raise AiRelayError("aiInvalidRequest", "AI 请求格式不正确。", 400)
+            content_length = int(content_length)
+            if content_length > self.request_limit:
+                raise AiRelayError("aiRequestTooLarge", "AI 请求内容过大。", 413)
+        # Chunked uploads reserve their maximum up front, so competing uploads
+        # cannot deadlock while waiting for memory or exceed the combined cap.
+        reservation = (content_length if content_length is not None else self.request_limit) if request.method == "POST" else 0
+        if self.inflight >= self.max_inflight or self.reserved_request_bytes + reservation > self.request_bytes_budget:
             raise AiRelayError("aiBusy", "AI 请求较多，请稍后重试。", 429)
         self.inflight += 1
+        self.reserved_request_bytes += reservation
         upstream = None
+        body = None
         closed = False
 
         async def cleanup():
@@ -83,29 +129,42 @@ class AiRelay:
                 if upstream is not None:
                     await upstream.aclose()
             finally:
-                self.inflight -= 1
+                try:
+                    if body is not None:
+                        body.close()
+                finally:
+                    self.inflight -= 1
+                    self.reserved_request_bytes -= reservation
 
         deadline = time.monotonic() + self.total_seconds
         try:
-            body = bytearray()
+            # Production /tmp is a bounded tmpfs. Anonymous files avoid keeping
+            # a second, growable copy on Python's heap; no body survives close.
+            body = tempfile.TemporaryFile(mode="w+b")
+            body_size = 0
             async with asyncio.timeout_at(deadline):
                 async for chunk in request.stream():
-                    if len(body) + len(chunk) > self.request_limit:
+                    body_size += len(chunk)
+                    if body_size > self.request_limit:
                         raise AiRelayError("aiRequestTooLarge", "AI 请求内容过大。", 413)
-                    body.extend(chunk)
+                    if (request.method != "POST" and chunk or
+                            content_length is not None and body_size > content_length):
+                        raise AiRelayError("aiInvalidRequest", "AI 请求格式不正确。", 400)
+                    body.write(chunk)
+                if content_length is not None and body_size != content_length:
+                    raise AiRelayError("aiInvalidRequest", "AI 请求格式不正确。", 400)
+                body.seek(0)
                 if request.method == "POST":
-                    try:
-                        if request.headers.get("content-type", "").split(";")[0] != "application/json" or not isinstance(json.loads(body), dict):
-                            raise ValueError()
-                    except (ValueError, TypeError):
+                    if request.headers.get("content-type", "").split(";")[0] != "application/json":
                         raise AiRelayError("aiInvalidRequest", "AI 请求格式不正确。", 400) from None
-                elif body:
-                    raise AiRelayError("aiInvalidRequest", "模型列表请求不应包含正文。", 400)
+                    self._validate_json(body)
+                    body.seek(0)
                 # Never forward browser/DSM cookies, tokens or proxy identity.
                 headers["cookie"] = ""
                 headers["accept-encoding"] = "identity"
+                headers["content-length"] = str(body_size)
                 upstream = await self.client.send(self.client.build_request(request.method, target,
-                    headers=headers, content=bytes(body)), stream=True, follow_redirects=False)
+                    headers=headers, content=self._upload(body)), stream=True, follow_redirects=False)
             if 300 <= upstream.status_code < 400:
                 raise AiRelayError("aiRedirectDenied", "AI 接口返回了重定向，请填写最终接口地址。")
             media = upstream.headers.get("content-type", "").split(";")[0].lower()

@@ -1,3 +1,4 @@
 starlette==1.8.0
 uvicorn==0.54.0
 httpx==0.28.1
+ijson==3.6.0

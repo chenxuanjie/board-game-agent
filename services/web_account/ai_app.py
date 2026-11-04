@@ -54,7 +54,8 @@ def create_app(public_origin=None, allowed_origins=None, upstream=None):
         return await relay.forward(request)
 
     async def failure(_, error):
-        return JSONResponse({"code": error.code, "message": error.message}, status_code=error.status)
+        return JSONResponse({"code": error.code, "message": error.message}, status_code=error.status,
+                            headers={"Retry-After": "1"} if error.status == 429 else None)
 
     async def unexpected(_, __):
         return JSONResponse({"code": "aiUnavailable"}, status_code=502)

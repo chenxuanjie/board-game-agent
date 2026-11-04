@@ -6,6 +6,16 @@
 
 旧账号网关的 TAR 构建、源码 ZIP、验证和导入命令，以及根 `docker-compose.yml` / `docker-compose.build.yml` 已退役：调用时直接报错退出，不更新版本、不调用 Docker、不替换旧产物。构建上下文准备已独立到 `scripts/docker_build_context.py`，当前 GHCR 流程不再导入旧构建器。历史交付步骤及验收记录保留用于追溯，不代表仍支持生成当前版本。
 
+## BYOK 代理容量
+
+`web-ai` 保持单进程、256 MiB 容器限制。单次正文仍允许 16 MiB，最多 8 个活跃请求，但所有活跃请求合计只能预留 16 MiB 正文预算；大请求会减少可同时接纳的请求数，小请求仍可使用 8 个槽位。预算从接收正文之前保留到响应关闭，避免上游响应头延迟或慢流累计占用内存。没有 Content-Length 的分块请求按完整 16 MiB 预留，不排队等待内存。预算不足返回 `429 aiBusy` 和 `Retry-After: 1`；超出单次大小或结构预算返回 413，不转发上游。失败、超时、取消及下游断开均归还预算。
+
+正文写入匿名临时文件，生产环境使用既有 `/tmp` 内存盘，不保留完整 Python 上传缓冲副本；校验使用 [ijson 3.6.0 的 basic_parse](https://pypi.org/project/ijson/3.6.0/) 事件流，不构造完整 JSON 对象树，也不重新序列化正文。HTTPX 按 64 KiB 分块读取，转发准确 Content-Length，上传完成即关闭文件，其他路径由统一清理关闭；匿名文件不会成为持久资料或 NAS 数据。现有 32 MiB tmpfs 可容纳全局最多 16 MiB 的正文。网络正文要求有效 UTF-8 JSON 对象，不接受 NaN、多个顶层值或截断内容。额外限制为 64 层嵌套、65,536 个解析事件，PDF/Base64 等单个大字符串仍受原 16 MiB 大小限制。依赖为 BSD-3-Clause / ISC 许可、无新增传递依赖，Linux amd64 CPython 3.13 的 YAJL C 扩展 wheel 在 `ai-requirements.lock` 固定版本及 SHA-256；更换 Python、架构或解析器版本时须更新锁并重新测量，不把纯 Python 后端的测试代替生产后端容量验收。
+
+容量回归使用已有生产运行镜像的 Python 3.13 和锁定依赖，挂载待验证源码，经真实 Uvicorn HTTP 发送 8 个接近 16 MiB 的正文、混合 Unicode 正文，以及 8 个接近 2 MiB 的正文，上游响应头由隔离夹具延迟。客户端在容器外，容器启用 256 MiB 内存上限且无额外 swap，检查进程 RSS、cgroup 峰值、OOM 事件及完成后的计数归零。入口为 `scripts/tests/test_ai_capacity_container.py`，通过 `BGA_AI_TEST_IMAGE` 显式选择已有镜像；验证新依赖时可用 `BGA_AI_TEST_DEPS` 只读挂载已校验 wheel 的解包目录。此检查不构建或发布镜像，不访问 NAS；报告写入 `.local/a03-capacity.json`。正式构建后的原镜像仍须在发布验收中复验。
+
+本次容量修复只需后续更新 `web-ai` 镜像；Compose 的 256 MiB 配置保持不变，不涉及 APK、EXE、共用 FastAPI、数据库迁移或 PowerSync 规则。
+
 ## 端口与服务地址
 
 认证限流的代理地址契约见 [共用后台说明](../../apps/app_data_service/docs/trusted-proxies.md)。Web Nginx 的 `BGA_TRUSTED_PROXIES` 默认为空，仅在核对实际 NAS 上级代理及端口可达边界后填写；它覆盖发给 API 的客户端地址头。API 的 `APP_DATA_TRUSTED_PROXIES` 独立配置，不因允许某个浏览器 Origin 就信任该来源提供的地址。需配套更新 API/Web 镜像和配置，不涉及数据库迁移。
